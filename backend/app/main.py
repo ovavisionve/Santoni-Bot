@@ -1,13 +1,14 @@
 import time
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
 from app.config import get_settings
 from app.database import engine, Base, SessionLocal
 from app.api.routes import auth, chat, users, admin, export, knowledge
+from app.middleware.auth import get_current_user
 from app.utils.seed import create_admin_user
 from app.utils.seed_demo import seed_demo_data
 from app.utils.logger import setup_logging, get_logger
@@ -32,19 +33,28 @@ app = FastAPI(
     description="Sistema Inteligente de Análisis de Datos Empresariales - Alimentos Santoni",
     version="1.0.0",
     lifespan=lifespan,
+    docs_url="/api/docs" if settings.debug else None,
+    redoc_url="/api/redoc" if settings.debug else None,
 )
 
-# CORS
+# CORS - explicit methods and headers
+_cors_origins = [
+    "http://localhost:3000",
+    "http://localhost",
+    "https://localhost",
+]
+if settings.app_env == "production" and hasattr(settings, "domain"):
+    _cors_origins = [
+        f"https://{settings.domain}",
+        f"http://{settings.domain}",
+    ]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://localhost",
-        "https://localhost",
-    ],
+    allow_origins=_cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
 
@@ -87,8 +97,8 @@ def health_check():
 
 
 @app.get("/api/health/detailed")
-def health_check_detailed():
-    """Detailed health check for monitoring."""
+def health_check_detailed(current_user=Depends(get_current_user)):
+    """Detailed health check - requires authentication."""
     checks = {}
 
     # PostgreSQL (internal)
@@ -97,13 +107,12 @@ def health_check_detailed():
         db.execute(text("SELECT 1"))
         db.close()
         checks["database"] = {"status": "ok"}
-    except Exception as e:
-        checks["database"] = {"status": "error", "detail": str(e)}
+    except Exception:
+        checks["database"] = {"status": "error"}
 
-    # Groq API key
+    # Groq
     checks["groq"] = {
         "status": "ok" if settings.groq_api_key else "not_configured",
-        "model": settings.groq_model,
     }
 
     # Anthropic (optional)
@@ -111,11 +120,9 @@ def health_check_detailed():
         "status": "ok" if settings.anthropic_api_key else "not_configured",
     }
 
-    # iDempiere DB
+    # iDempiere
     checks["idempiere"] = {
         "status": "configured" if settings.idempiere_db_password else "not_configured",
-        "host": settings.idempiere_db_host,
-        "database": settings.idempiere_db_name,
     }
 
     overall = "ok" if checks["database"]["status"] == "ok" and checks["groq"]["status"] == "ok" else "degraded"
@@ -124,6 +131,5 @@ def health_check_detailed():
         "status": overall,
         "app": settings.app_name,
         "version": "1.0.0",
-        "env": settings.app_env,
         "checks": checks,
     }

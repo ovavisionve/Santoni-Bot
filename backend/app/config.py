@@ -6,7 +6,8 @@ class Settings(BaseSettings):
     # General
     app_name: str = "SantoniBot"
     app_env: str = "development"
-    debug: bool = True
+    debug: bool = False
+    domain: str = "localhost"
 
     # Backend
     backend_port: int = 8000
