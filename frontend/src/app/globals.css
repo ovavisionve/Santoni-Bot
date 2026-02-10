@@ -50,11 +50,33 @@
   animation: fadeInUp 0.3s ease-out;
 }
 
-/* Typing dots */
-@keyframes typingDot {
-  0%, 60%, 100% { opacity: 0.3; }
-  30% { opacity: 1; }
+/* Typing dots - bouncing animation */
+@keyframes typingBounce {
+  0%, 60%, 100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  30% {
+    transform: translateY(-6px);
+    opacity: 1;
+  }
 }
-.typing-dot:nth-child(1) { animation: typingDot 1.4s infinite 0s; }
-.typing-dot:nth-child(2) { animation: typingDot 1.4s infinite 0.2s; }
-.typing-dot:nth-child(3) { animation: typingDot 1.4s infinite 0.4s; }
+.typing-dot:nth-child(1) { animation: typingBounce 1.4s infinite 0s; }
+.typing-dot:nth-child(2) { animation: typingBounce 1.4s infinite 0.2s; }
+.typing-dot:nth-child(3) { animation: typingBounce 1.4s infinite 0.4s; }
+
+/* Copy button tooltip */
+.copy-btn {
+  @apply opacity-0 transition-opacity duration-200;
+}
+.message-bubble:hover .copy-btn {
+  @apply opacity-100;
+}
+
+/* Character counter warning */
+.char-warning {
+  @apply text-amber-500;
+}
+.char-danger {
+  @apply text-red-500;
+}

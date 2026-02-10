@@ -3,11 +3,13 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
+import { Eye, EyeOff } from "lucide-react";
 
 export default function LoginPage() {
   const router = useRouter();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -21,7 +23,7 @@ export default function LoginPage() {
       router.push("/chat");
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : "Error al iniciar sesión"
+        err instanceof Error ? err.message : "Error al iniciar sesion"
       );
     } finally {
       setLoading(false);
@@ -39,7 +41,7 @@ export default function LoginPage() {
             </div>
             <h1 className="text-2xl font-bold text-gray-900">SantoniBot</h1>
             <p className="text-gray-500 mt-1">
-              Sistema Inteligente de Análisis
+              Sistema Inteligente de Analisis
             </p>
           </div>
 
@@ -69,17 +71,28 @@ export default function LoginPage() {
                 htmlFor="password"
                 className="block text-sm font-medium text-gray-700 mb-1"
               >
-                Contraseña
+                Contrasena
               </label>
-              <input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="input-field"
-                placeholder="Ingrese su contraseña"
-                required
-              />
+              <div className="relative">
+                <input
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="input-field pr-10"
+                  placeholder="Ingrese su contrasena"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                  tabIndex={-1}
+                  aria-label={showPassword ? "Ocultar contrasena" : "Mostrar contrasena"}
+                >
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
             </div>
 
             {error && (
@@ -99,7 +112,7 @@ export default function LoginPage() {
                   Ingresando...
                 </span>
               ) : (
-                "Iniciar Sesión"
+                "Iniciar Sesion"
               )}
             </button>
           </form>

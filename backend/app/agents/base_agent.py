@@ -5,6 +5,7 @@ system prompt, data fetching, and query processing logic.
 """
 
 import json
+import logging
 from abc import ABC, abstractmethod
 
 from langchain_groq import ChatGroq
@@ -13,6 +14,7 @@ from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from app.config import get_settings
 
 settings = get_settings()
+logger = logging.getLogger("santonibot.agents")
 
 
 class BaseAgent(ABC):
@@ -83,6 +85,18 @@ class BaseAgent(ABC):
         3. Send to LLM for natural language response
         """
         messages = [SystemMessage(content=self._system_prompt)]
+
+        # RAG: retrieve relevant knowledge-base context (optional)
+        try:
+            from app.services.rag_service import get_rag_service
+
+            rag = get_rag_service()
+            rag_context = rag.get_context_for_agent(self.department, message)
+            if rag_context:
+                messages.append(SystemMessage(content=rag_context))
+        except Exception as exc:
+            # RAG is optional -- never block the agent if it fails
+            logger.debug("RAG context unavailable for %s: %s", self.name, exc)
 
         # Fetch real data from the database
         data_context = self.fetch_data(message)

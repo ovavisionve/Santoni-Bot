@@ -1,12 +1,28 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import Sidebar from "@/components/layout/Sidebar";
 import ChatWindow from "@/components/chat/ChatWindow";
 import type { ConversationListItem, Message } from "@/types";
 import { api } from "@/lib/api";
+
+/**
+ * Generate an auto-title from the user's first message.
+ * Takes the first 50 characters and appends "..." if truncated.
+ */
+function generateAutoTitle(content: string): string {
+  const cleaned = content.replace(/\n/g, " ").trim();
+  if (cleaned.length <= 50) return cleaned;
+  // Cut at last space before 50 chars for cleaner truncation
+  const truncated = cleaned.slice(0, 50);
+  const lastSpace = truncated.lastIndexOf(" ");
+  if (lastSpace > 30) {
+    return truncated.slice(0, lastSpace) + "...";
+  }
+  return truncated + "...";
+}
 
 export default function ChatPage() {
   const router = useRouter();
@@ -19,6 +35,11 @@ export default function ChatPage() {
   >(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Track whether this is the first exchange in a new conversation
+  const isNewConversationRef = useRef(true);
+  const firstUserMessageRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -46,6 +67,9 @@ export default function ChatPage() {
       const conv = await api.getConversation(id);
       setActiveConversationId(id);
       setMessages(conv.messages);
+      // Not a new conversation
+      isNewConversationRef.current = false;
+      firstUserMessageRef.current = null;
     } catch {
       // ignore
     }
@@ -54,9 +78,17 @@ export default function ChatPage() {
   const handleNewChat = () => {
     setActiveConversationId(null);
     setMessages([]);
+    isNewConversationRef.current = true;
+    firstUserMessageRef.current = null;
   };
 
   const handleSendMessage = async (content: string) => {
+    // Track if this is the first message for auto-title
+    const isFirstMessage = isNewConversationRef.current && messages.length === 0;
+    if (isFirstMessage) {
+      firstUserMessageRef.current = content;
+    }
+
     // Optimistically add user message
     const userMsg: Message = {
       id: Date.now(),
@@ -66,6 +98,7 @@ export default function ChatPage() {
       created_at: new Date().toISOString(),
     };
     setMessages((prev) => [...prev, userMsg]);
+    setIsLoading(true);
 
     try {
       const response = await api.sendMessage(
@@ -88,18 +121,81 @@ export default function ChatPage() {
       };
       setMessages((prev) => [...prev, assistantMsg]);
 
-      // Refresh sidebar
+      // Auto-generate title for new conversations after first bot response
+      if (isFirstMessage && firstUserMessageRef.current) {
+        const autoTitle = generateAutoTitle(firstUserMessageRef.current);
+        // Try to update the title on the server
+        try {
+          await api.updateConversationTitle(
+            response.conversation_id,
+            autoTitle
+          );
+        } catch {
+          // If server update fails, we still update locally
+        }
+        // Update the conversation title in the sidebar list locally
+        setConversations((prev) => {
+          const existing = prev.find(
+            (c) => c.id === response.conversation_id
+          );
+          if (existing) {
+            return prev.map((c) =>
+              c.id === response.conversation_id
+                ? {
+                    ...c,
+                    title: autoTitle,
+                    last_message_preview: response.message.slice(0, 80),
+                    updated_at: new Date().toISOString(),
+                  }
+                : c
+            );
+          }
+          // New conversation - add it to the top
+          return [
+            {
+              id: response.conversation_id,
+              title: autoTitle,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+              message_count: 2,
+              last_message_preview: response.message.slice(0, 80),
+            },
+            ...prev,
+          ];
+        });
+
+        isNewConversationRef.current = false;
+        firstUserMessageRef.current = null;
+      } else {
+        // Update the last message preview for existing conversations
+        setConversations((prev) =>
+          prev.map((c) =>
+            c.id === (activeConversationId || response.conversation_id)
+              ? {
+                  ...c,
+                  last_message_preview: response.message.slice(0, 80),
+                  updated_at: new Date().toISOString(),
+                  message_count: c.message_count + 2,
+                }
+              : c
+          )
+        );
+      }
+
+      // Refresh sidebar to get any server-side updates
       loadConversations();
     } catch (err) {
       const errorMsg: Message = {
         id: Date.now() + 1,
         role: "assistant",
         content:
-          "Lo siento, ocurrió un error al procesar tu consulta. Por favor intenta de nuevo.",
+          "Lo siento, ocurrio un error al procesar tu consulta. Por favor intenta de nuevo.",
         agent_used: null,
         created_at: new Date().toISOString(),
       };
       setMessages((prev) => [...prev, errorMsg]);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -149,6 +245,7 @@ export default function ChatPage() {
       <ChatWindow
         messages={messages}
         user={user}
+        isLoading={isLoading}
         onSendMessage={handleSendMessage}
         onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
       />

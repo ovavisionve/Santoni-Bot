@@ -102,6 +102,16 @@ class ApiClient {
     });
   }
 
+  async updateConversationTitle(id: number, title: string) {
+    return this.request<import("@/types").Conversation>(
+      `/api/chat/conversations/${id}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ title }),
+      }
+    );
+  }
+
   // Admin
   async getUsers() {
     return this.request<import("@/types").User[]>("/api/users/");

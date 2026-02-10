@@ -160,11 +160,14 @@ def export_to_excel(content: str, agent_used: str | None = None) -> bytes:
         # Auto-width columns
         for col in ws.columns:
             max_length = 0
-            col_letter = col[0].column_letter
+            col_letter = None
             for cell in col:
+                if hasattr(cell, "column_letter"):
+                    col_letter = cell.column_letter
                 if cell.value:
                     max_length = max(max_length, len(str(cell.value)))
-            ws.column_dimensions[col_letter].width = min(max_length + 2, 40)
+            if col_letter:
+                ws.column_dimensions[col_letter].width = min(max_length + 2, 40)
     else:
         # Text content
         for line in content.split("\n"):

@@ -1,8 +1,16 @@
 "use client";
 
+import { useState } from "react";
 import type { Message } from "@/types";
 import ReactMarkdown from "react-markdown";
-import { Download, FileText, Table2, FileSpreadsheet } from "lucide-react";
+import {
+  Download,
+  FileText,
+  Table2,
+  FileSpreadsheet,
+  Copy,
+  Check,
+} from "lucide-react";
 
 interface ChatMessageProps {
   message: Message;
@@ -30,13 +38,59 @@ function downloadExport(messageId: number, format: string) {
     .catch(() => alert("Error al exportar"));
 }
 
+/**
+ * Returns a Spanish relative time string like "ahora", "hace 5 min", "hace 2h", "ayer"
+ */
+function getRelativeTime(dateStr: string): string {
+  const now = new Date();
+  const date = new Date(dateStr);
+  const diffMs = now.getTime() - date.getTime();
+  const diffSec = Math.floor(diffMs / 1000);
+  const diffMin = Math.floor(diffSec / 60);
+  const diffHour = Math.floor(diffMin / 60);
+  const diffDay = Math.floor(diffHour / 24);
+
+  if (diffSec < 60) return "ahora";
+  if (diffMin === 1) return "hace 1 min";
+  if (diffMin < 60) return `hace ${diffMin} min`;
+  if (diffHour === 1) return "hace 1 hora";
+  if (diffHour < 24) return `hace ${diffHour}h`;
+  if (diffDay === 1) return "ayer";
+  if (diffDay < 7) return `hace ${diffDay} dias`;
+  return date.toLocaleDateString("es-VE", {
+    day: "2-digit",
+    month: "short",
+  });
+}
+
 export default function ChatMessage({
   message,
   userName,
   agentLabel,
 }: ChatMessageProps) {
+  const [copied, setCopied] = useState(false);
   const isUser = message.role === "user";
   const hasTable = !isUser && message.content.includes("|");
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(message.content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Fallback for older browsers
+      const textarea = document.createElement("textarea");
+      textarea.value = message.content;
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textarea);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
 
   return (
     <div
@@ -55,12 +109,27 @@ export default function ChatMessage({
 
       {/* Message bubble */}
       <div
-        className={`max-w-[75%] ${
+        className={`message-bubble group relative max-w-[75%] ${
           isUser
             ? "bg-santoni-600 text-white rounded-2xl rounded-tr-sm"
             : "bg-white border border-gray-100 shadow-sm rounded-2xl rounded-tl-sm"
         } px-4 py-3`}
       >
+        {/* Copy button for assistant messages */}
+        {!isUser && (
+          <button
+            onClick={handleCopy}
+            className="copy-btn absolute top-2 right-2 p-1.5 rounded-md bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-400 hover:text-gray-600 transition-all"
+            title={copied ? "Copiado" : "Copiar respuesta"}
+          >
+            {copied ? (
+              <Check size={13} className="text-green-500" />
+            ) : (
+              <Copy size={13} />
+            )}
+          </button>
+        )}
+
         {/* Agent badge */}
         {!isUser && agentLabel && (
           <div className="text-xs text-santoni-600 font-medium mb-1">
@@ -80,21 +149,29 @@ export default function ChatMessage({
             <ReactMarkdown
               components={{
                 table: ({ children }) => (
-                  <div className="overflow-x-auto my-2">
-                    <table className="min-w-full text-xs border-collapse border border-gray-200">
+                  <div className="overflow-x-auto my-3 rounded-lg border border-gray-200">
+                    <table className="min-w-full text-xs border-collapse">
                       {children}
                     </table>
                   </div>
                 ),
+                thead: ({ children }) => (
+                  <thead className="bg-santoni-50">{children}</thead>
+                ),
                 th: ({ children }) => (
-                  <th className="border border-gray-200 bg-gray-50 px-2 py-1 text-left font-medium">
+                  <th className="border-b border-gray-200 px-3 py-2 text-left font-semibold text-gray-700 text-xs whitespace-nowrap">
                     {children}
                   </th>
                 ),
                 td: ({ children }) => (
-                  <td className="border border-gray-200 px-2 py-1">
+                  <td className="border-b border-gray-100 px-3 py-1.5 text-xs">
                     {children}
                   </td>
+                ),
+                tr: ({ children, ...props }) => (
+                  <tr className="hover:bg-gray-50 transition-colors" {...props}>
+                    {children}
+                  </tr>
                 ),
               }}
             >
@@ -109,11 +186,8 @@ export default function ChatMessage({
             isUser ? "text-santoni-200" : "text-gray-400"
           }`}
         >
-          <span className="text-xs">
-            {new Date(message.created_at).toLocaleTimeString("es-VE", {
-              hour: "2-digit",
-              minute: "2-digit",
-            })}
+          <span className="text-xs" title={new Date(message.created_at).toLocaleString("es-VE")}>
+            {getRelativeTime(message.created_at)}
           </span>
 
           {/* Export buttons for assistant messages with data */}

@@ -32,6 +32,7 @@ export interface ConversationListItem {
   created_at: string;
   updated_at: string;
   message_count: number;
+  last_message_preview?: string;
 }
 
 export interface ChatResponse {

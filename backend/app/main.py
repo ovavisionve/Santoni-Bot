@@ -7,7 +7,7 @@ from sqlalchemy import text
 
 from app.config import get_settings
 from app.database import engine, Base, SessionLocal
-from app.api.routes import auth, chat, users, admin, export
+from app.api.routes import auth, chat, users, admin, export, knowledge
 from app.utils.seed import create_admin_user
 from app.utils.seed_demo import seed_demo_data
 from app.utils.logger import setup_logging, get_logger
@@ -74,6 +74,7 @@ app.include_router(chat.router, prefix="/api")
 app.include_router(users.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
 app.include_router(export.router, prefix="/api")
+app.include_router(knowledge.router, prefix="/api")
 
 
 @app.get("/api/health")
