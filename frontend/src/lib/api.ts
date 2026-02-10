@@ -156,11 +156,13 @@ class ApiClient {
       data: Array<{
         id: number;
         user_id: number;
+        username: string | null;
+        full_name: string | null;
         action: string;
         resource: string;
         detail: string;
         agent_used: string;
-        ip_address: string;
+        ip_address: string | null;
         created_at: string;
       }>;
     }>(`/api/admin/audit-logs?page=${page}&limit=${limit}`);

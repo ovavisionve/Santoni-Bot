@@ -15,6 +15,14 @@ router = APIRouter(prefix="/auth", tags=["Autenticación"])
 def login(data: UserLogin, request: Request, db: Session = Depends(get_db)):
     user = authenticate_user(db, data.username, data.password)
     if not user:
+        log_action(
+            db,
+            user_id=None,
+            action="login_failed",
+            resource="auth",
+            detail=f"Intento fallido para usuario: {data.username[:50]}",
+            ip_address=request.client.host if request.client else None,
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Credenciales incorrectas",

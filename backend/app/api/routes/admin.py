@@ -68,6 +68,8 @@ def get_audit_logs(
             {
                 "id": log.id,
                 "user_id": log.user_id,
+                "username": log.user.username if log.user else None,
+                "full_name": log.user.full_name if log.user else None,
                 "action": log.action,
                 "resource": log.resource,
                 "detail": log.detail,

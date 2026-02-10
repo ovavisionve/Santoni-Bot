@@ -52,10 +52,13 @@ export default function AdminPage() {
     Array<{
       id: number;
       user_id: number;
+      username: string | null;
+      full_name: string | null;
       action: string;
       resource: string;
       detail: string;
       agent_used: string;
+      ip_address: string | null;
       created_at: string;
     }>
   >([]);
@@ -409,6 +412,9 @@ export default function AdminPage() {
                     Fecha
                   </th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600">
+                    Usuario
+                  </th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600">
                     Acción
                   </th>
                   <th className="text-left px-4 py-3 font-medium text-gray-600">
@@ -417,31 +423,82 @@ export default function AdminPage() {
                   <th className="text-left px-4 py-3 font-medium text-gray-600">
                     Agente
                   </th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-600">
+                    IP
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {auditLogs.map((log) => (
-                  <tr key={log.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 text-gray-500 whitespace-nowrap">
+                  <tr
+                    key={log.id}
+                    className={`hover:bg-gray-50 ${
+                      log.action === "access_denied" || log.action === "login_failed"
+                        ? "bg-red-50"
+                        : ""
+                    }`}
+                  >
+                    <td className="px-4 py-3 text-gray-500 whitespace-nowrap text-xs">
                       {new Date(log.created_at).toLocaleString("es-VE")}
                     </td>
                     <td className="px-4 py-3">
-                      <span className="inline-block px-2 py-0.5 rounded bg-gray-100 text-xs font-mono">
-                        {log.action}
+                      {log.username ? (
+                        <div>
+                          <div className="font-medium text-gray-900 text-xs">
+                            {log.full_name}
+                          </div>
+                          <div className="text-gray-400 text-xs">
+                            @{log.username}
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="text-gray-400 text-xs italic">
+                          Desconocido
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
+                          log.action === "login"
+                            ? "bg-green-100 text-green-700"
+                            : log.action === "login_failed"
+                              ? "bg-red-100 text-red-700"
+                              : log.action === "access_denied"
+                                ? "bg-red-100 text-red-700"
+                                : log.action === "chat_query"
+                                  ? "bg-blue-100 text-blue-700"
+                                  : "bg-gray-100 text-gray-700"
+                        }`}
+                      >
+                        {log.action === "login"
+                          ? "Inicio sesión"
+                          : log.action === "login_failed"
+                            ? "Login fallido"
+                            : log.action === "access_denied"
+                              ? "ACCESO DENEGADO"
+                              : log.action === "chat_query"
+                                ? "Consulta"
+                                : log.action}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-gray-600 max-w-md truncate">
+                    <td className="px-4 py-3 text-gray-600 max-w-sm truncate text-xs">
                       {log.detail}
                     </td>
-                    <td className="px-4 py-3 text-gray-500">
-                      {log.agent_used || "-"}
+                    <td className="px-4 py-3 text-gray-500 text-xs">
+                      {log.agent_used
+                        ? DEPARTMENT_LABELS[log.agent_used] || log.agent_used
+                        : "-"}
+                    </td>
+                    <td className="px-4 py-3 text-gray-400 text-xs font-mono">
+                      {log.ip_address || "-"}
                     </td>
                   </tr>
                 ))}
                 {auditLogs.length === 0 && (
                   <tr>
                     <td
-                      colSpan={4}
+                      colSpan={6}
                       className="px-4 py-8 text-center text-gray-400"
                     >
                       No hay registros de auditoría

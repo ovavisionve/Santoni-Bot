@@ -98,16 +98,28 @@ async def send_message(
     db.commit()
     db.refresh(assistant_msg)
 
-    # Audit log
-    log_action(
-        db,
-        user_id=current_user.id,
-        action="chat_query",
-        resource="chat",
-        detail=f"Consulta: {data.message[:200]}",
-        agent_used=result.get("agent_used"),
-        ip_address=request.client.host if request.client else None,
-    )
+    # Audit log - differentiate access_denied from normal queries
+    metadata = result.get("metadata") or {}
+    if metadata.get("classification") == "no_access" or metadata.get("access_denied"):
+        log_action(
+            db,
+            user_id=current_user.id,
+            action="access_denied",
+            resource="chat",
+            detail=f"ACCESO DENEGADO - Consulta: {data.message[:200]}",
+            agent_used=result.get("agent_used"),
+            ip_address=request.client.host if request.client else None,
+        )
+    else:
+        log_action(
+            db,
+            user_id=current_user.id,
+            action="chat_query",
+            resource="chat",
+            detail=f"Consulta: {data.message[:200]}",
+            agent_used=result.get("agent_used"),
+            ip_address=request.client.host if request.client else None,
+        )
 
     return ChatResponse(
         message=result["response"],
