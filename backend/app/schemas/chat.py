@@ -9,6 +9,7 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     message: str
+    message_id: int
     conversation_id: int
     agent_used: str | None = None
     metadata: dict | None = None

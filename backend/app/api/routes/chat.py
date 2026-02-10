@@ -96,6 +96,7 @@ async def send_message(
     )
     db.add(assistant_msg)
     db.commit()
+    db.refresh(assistant_msg)
 
     # Audit log
     log_action(
@@ -110,6 +111,7 @@ async def send_message(
 
     return ChatResponse(
         message=result["response"],
+        message_id=assistant_msg.id,
         conversation_id=conversation.id,
         agent_used=result.get("agent_used"),
         metadata=result.get("metadata"),

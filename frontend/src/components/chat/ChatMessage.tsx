@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { Message } from "@/types";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   Download,
   FileText,
@@ -26,7 +27,13 @@ function downloadExport(messageId: number, format: string) {
 
   const url = `${API_BASE}/api/export/message/${messageId}?format=${format}`;
   fetch(url, { headers: { Authorization: `Bearer ${token}` } })
-    .then((res) => res.blob())
+    .then(async (res) => {
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `Error ${res.status}`);
+      }
+      return res.blob();
+    })
     .then((blob) => {
       const ext = format === "excel" ? "xlsx" : format;
       const a = document.createElement("a");
@@ -35,7 +42,7 @@ function downloadExport(messageId: number, format: string) {
       a.click();
       URL.revokeObjectURL(a.href);
     })
-    .catch(() => alert("Error al exportar"));
+    .catch((err) => alert(`Error al exportar: ${err.message}`));
 }
 
 /**
@@ -147,6 +154,7 @@ export default function ChatMessage({
             <p className="m-0">{message.content}</p>
           ) : (
             <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
               components={{
                 table: ({ children }) => (
                   <div className="overflow-x-auto my-3 rounded-lg border border-gray-200">

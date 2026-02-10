@@ -41,9 +41,11 @@ class TestSendMessage:
         assert response.status_code == 200
         data = response.json()
         assert "message" in data
+        assert "message_id" in data
         assert "conversation_id" in data
         assert data["agent_used"] == "ventas"
         assert data["conversation_id"] > 0
+        assert data["message_id"] > 0
 
     @patch("app.api.routes.chat.orchestrator")
     def test_send_message_creates_conversation(

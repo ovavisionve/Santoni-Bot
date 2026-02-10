@@ -111,9 +111,9 @@ export default function ChatPage() {
         setActiveConversationId(response.conversation_id);
       }
 
-      // Add assistant message
+      // Add assistant message (use real DB ID for export)
       const assistantMsg: Message = {
-        id: Date.now() + 1,
+        id: response.message_id,
         role: "assistant",
         content: response.message,
         agent_used: response.agent_used,

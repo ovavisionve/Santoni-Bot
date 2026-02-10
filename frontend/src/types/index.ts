@@ -37,6 +37,7 @@ export interface ConversationListItem {
 
 export interface ChatResponse {
   message: string;
+  message_id: number;
   conversation_id: number;
   agent_used: string | null;
   metadata: Record<string, unknown> | null;
