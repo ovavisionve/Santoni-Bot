@@ -1,10 +1,12 @@
+from datetime import datetime, timedelta, timezone
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, cast, Date
 
 from app.database import get_db
 from app.middleware.auth import require_admin, require_supervisor_or_admin
-from app.models.user import User
+from app.models.user import User, Department
 from app.models.audit import AuditLog
 from app.models.conversation import Conversation, Message
 
@@ -75,4 +77,113 @@ def get_audit_logs(
             }
             for log in logs
         ],
+    }
+
+
+@router.get("/metrics")
+def get_usage_metrics(
+    days: int = Query(7, ge=1, le=90),
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Usage metrics dashboard: daily activity, top users, department breakdown."""
+    now = datetime.now(timezone.utc)
+    since = now - timedelta(days=days)
+
+    # --- Daily message counts ---
+    daily_messages = (
+        db.query(
+            func.date(Message.created_at).label("day"),
+            func.count(Message.id).label("count"),
+        )
+        .filter(Message.created_at >= since)
+        .group_by(func.date(Message.created_at))
+        .order_by(func.date(Message.created_at))
+        .all()
+    )
+
+    # --- Daily conversation counts ---
+    daily_conversations = (
+        db.query(
+            func.date(Conversation.created_at).label("day"),
+            func.count(Conversation.id).label("count"),
+        )
+        .filter(Conversation.created_at >= since)
+        .group_by(func.date(Conversation.created_at))
+        .order_by(func.date(Conversation.created_at))
+        .all()
+    )
+
+    # --- Top users by message count (period) ---
+    top_users = (
+        db.query(
+            User.username,
+            User.full_name,
+            User.department,
+            func.count(Message.id).label("message_count"),
+        )
+        .join(Conversation, Conversation.user_id == User.id)
+        .join(Message, Message.conversation_id == Conversation.id)
+        .filter(Message.created_at >= since)
+        .group_by(User.id, User.username, User.full_name, User.department)
+        .order_by(func.count(Message.id).desc())
+        .limit(10)
+        .all()
+    )
+
+    # --- Department breakdown ---
+    dept_stats = (
+        db.query(
+            User.department,
+            func.count(func.distinct(User.id)).label("users"),
+            func.count(Message.id).label("messages"),
+        )
+        .outerjoin(Conversation, Conversation.user_id == User.id)
+        .outerjoin(Message, Message.conversation_id == Conversation.id)
+        .filter(User.is_active == True)
+        .group_by(User.department)
+        .all()
+    )
+
+    # --- Agent response time (average messages per conversation) ---
+    avg_msgs = (
+        db.query(func.avg(
+            db.query(func.count(Message.id))
+            .filter(Message.conversation_id == Conversation.id)
+            .correlate(Conversation)
+            .scalar_subquery()
+        ))
+        .select_from(Conversation)
+        .filter(Conversation.created_at >= since)
+        .scalar()
+    )
+
+    return {
+        "period_days": days,
+        "daily_messages": [
+            {"date": str(row.day), "count": row.count}
+            for row in daily_messages
+        ],
+        "daily_conversations": [
+            {"date": str(row.day), "count": row.count}
+            for row in daily_conversations
+        ],
+        "top_users": [
+            {
+                "username": row.username,
+                "full_name": row.full_name,
+                "department": row.department.value if row.department else None,
+                "message_count": row.message_count,
+            }
+            for row in top_users
+        ],
+        "department_breakdown": [
+            {
+                "department": row.department.value if row.department else None,
+                "active_users": row.users,
+                "messages": row.messages,
+            }
+            for row in dept_stats
+        ],
+        "avg_messages_per_conversation": round(float(avg_msgs or 0), 1),
     }
