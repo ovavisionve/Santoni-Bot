@@ -1,0 +1,68 @@
+name: CI - Backend
+
+on:
+  push:
+    branches: [main, develop, claude/*]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/ci-backend.yml'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'backend/**'
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: santonibot_test
+          POSTGRES_USER: santonibot
+          POSTGRES_PASSWORD: testpassword
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          cd backend
+          pip install -r requirements.txt
+
+      - name: Run tests
+        env:
+          APP_ENV: testing
+          SECRET_KEY: test-secret-key-for-ci-minimum-32-chars
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_DB: santonibot_test
+          POSTGRES_USER: santonibot
+          POSTGRES_PASSWORD: testpassword
+          GROQ_API_KEY: fake-key-for-tests
+          ANTHROPIC_API_KEY: fake-key-for-tests
+        run: |
+          cd backend
+          pytest -v --tb=short --junitxml=test-results.xml
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-test-results
+          path: backend/test-results.xml
