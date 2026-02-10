@@ -4,7 +4,14 @@ Especializado en: flujo de caja, cuentas por cobrar/pagar, bancos,
 presupuestos, indicadores financieros, rentabilidad.
 """
 
+import re
+
 from app.agents.base_agent import BaseAgent
+from app.services.query_service import (
+    build_financial_summary,
+    build_overdue_receivables,
+    execute_demo_query,
+)
 
 
 class FinanzasAgent(BaseAgent):
@@ -24,7 +31,7 @@ class FinanzasAgent(BaseAgent):
     def description(self) -> str:
         return (
             "Consultas financieras: flujo de caja, cuentas por cobrar/pagar, "
-            "bancos, presupuestos, indicadores financieros, rentabilidad por producto/cliente"
+            "bancos, presupuestos, indicadores financieros"
         )
 
     def get_system_prompt(self) -> str:
@@ -32,48 +39,73 @@ class FinanzasAgent(BaseAgent):
 Tu especialidad es el análisis financiero empresarial.
 
 CAPACIDADES:
-- Consultas de flujo de caja y posición de tesorería
-- Análisis de cuentas por cobrar y cuentas por pagar
-- Estado de cuentas bancarias y conciliaciones
-- Seguimiento de presupuestos y ejecución presupuestaria
-- Cálculo de indicadores financieros (liquidez, solvencia, rentabilidad)
-- Análisis de rentabilidad por producto, cliente o línea de negocio
+- Flujo de caja y posición de tesorería
+- Cuentas por cobrar y cuentas por pagar
+- Estado de cuentas bancarias
+- Indicadores financieros
 - Alertas de morosidad y vencimientos
-- Comparativas entre períodos
 
 REGLAS:
 - Responde siempre en español, de forma profesional y clara
-- Cuando presentes datos numéricos, usa formato de moneda (Bs. o $) y separadores de miles
-- Si no tienes datos suficientes para responder, indica qué información adicional necesitas
-- Siempre indica el período o fecha de los datos que estás presentando
-- Si detectas anomalías en los datos, menciónalo proactivamente
-- Presenta los datos en tablas cuando sea apropiado
-- NUNCA inventes datos. Si no tienes la información, dilo claramente
-
-CONTEXTO EMPRESA:
-- Alimentos Santoni es una empresa agroindustrial venezolana
-- Ubicada en Agua Blanca (plantas) y Araure (oficinas administrativas)
-- Productos principales: arroz y maíz procesados
-- Moneda principal: Bolívares (Bs.), algunas operaciones en USD ($)
-- ERP: iDempiere
-
-NOTA: Este es un entorno de datos de prueba. Cuando no tengas datos reales disponibles,
-indica al usuario que el sistema está en fase de configuración y que los datos se conectarán
-con iDempiere próximamente."""
+- Usa formato de moneda (Bs. o $) y separadores de miles
+- Indica el período o fecha de los datos
+- Los datos que recibes son REALES de la base de datos de Santoni"""
 
     def get_sql_context(self) -> str:
         return """
--- Tablas relevantes de iDempiere para Finanzas:
--- C_Invoice: Facturas (cuentas por cobrar y pagar)
--- C_Payment: Pagos recibidos y realizados
--- C_BankStatement: Estados de cuenta bancarios
--- C_BankStatementLine: Líneas de estados de cuenta
--- C_CashLine: Movimientos de caja
--- C_Budget: Presupuestos
--- Fact_Acct: Asientos contables (para análisis financiero)
--- C_BPartner: Socios de negocio (clientes y proveedores)
-
--- Nota: Las consultas SQL se ejecutarán contra la BD de iDempiere (PostgreSQL 13)
--- con acceso de solo lectura. Los nombres exactos de columnas se mapearán
--- durante la fase de integración.
+Tablas: demo_cuentas_bancarias, demo_movimientos_bancarios, demo_cuentas_por_pagar
 """
+
+    def fetch_data(self, message: str) -> str | None:
+        msg = message.lower()
+        sections = []
+
+        anio = 2025
+        year_match = re.search(r'20\d{2}', message)
+        if year_match:
+            anio = int(year_match.group())
+
+        mes = None
+        meses_map = {
+            "enero": 1, "febrero": 2, "marzo": 3, "abril": 4,
+            "mayo": 5, "junio": 6, "julio": 7, "agosto": 8,
+            "septiembre": 9, "octubre": 10, "noviembre": 11, "diciembre": 12,
+        }
+        for nombre, num in meses_map.items():
+            if nombre in msg:
+                mes = num
+                break
+
+        summary = build_financial_summary(mes=mes, anio=anio)
+        sections.append(self._format_summary(summary, f"Resumen Financiero {anio}"))
+
+        if any(w in msg for w in ["banco", "cuenta", "saldo", "bancari"]):
+            try:
+                banks = execute_demo_query(
+                    "SELECT banco, numero_cuenta, tipo, moneda, saldo, fecha_saldo "
+                    "FROM demo_cuentas_bancarias ORDER BY saldo DESC"
+                )
+                sections.append("## Cuentas Bancarias")
+                sections.append(self._format_table(banks))
+            except Exception:
+                pass
+
+        if any(w in msg for w in ["pagar", "proveedor", "deuda", "pasivo"]):
+            try:
+                payables = execute_demo_query(
+                    "SELECT proveedor, numero_factura, fecha_vencimiento, "
+                    "monto_original, monto_pendiente, estado "
+                    "FROM demo_cuentas_por_pagar WHERE monto_pendiente > 0 "
+                    "ORDER BY fecha_vencimiento"
+                )
+                sections.append("## Cuentas por Pagar Pendientes")
+                sections.append(self._format_table(payables))
+            except Exception:
+                pass
+
+        if any(w in msg for w in ["cobrar", "morosidad", "vencid", "atras"]):
+            data = build_overdue_receivables()
+            sections.append("## Cuentas por Cobrar Vencidas")
+            sections.append(self._format_table(data))
+
+        return "\n\n".join(sections) if sections else None

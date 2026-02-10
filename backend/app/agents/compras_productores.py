@@ -4,7 +4,10 @@ Especializado en: compras de materia prima agrícola (arroz, maíz) a productore
 volúmenes, precios por kilo/tonelada, pagos pendientes, productores registrados.
 """
 
+import re
+
 from app.agents.base_agent import BaseAgent
+from app.services.query_service import build_producer_purchases, execute_demo_query
 
 
 class ComprasProductoresAgent(BaseAgent):
@@ -31,50 +34,90 @@ class ComprasProductoresAgent(BaseAgent):
         return """Eres el Agente de Compras a Productores de SantoniBot, el sistema inteligente de Alimentos Santoni, C.A.
 Tu especialidad es la gestión de compras de materia prima agrícola a productores.
 
-CAPACIDADES:
-- Consultas de compras de arroz paddy húmedo (volumen y monto)
-- Consultas de compras de maíz (volumen y monto)
-- Productores registrados y su información (arroz: ~1,679 productores, maíz: ~168 productores)
-- Volúmenes de compra por productor, zona y período
-- Precios por kilo y por tonelada
-- Pagos pendientes a productores
-- Ubicación de productores por estado (Apure, Lara, Barinas, Portuguesa, Cojedes)
-- Históricos de compra y tendencias por ciclo agrícola
-- Comparativas entre ciclos de cosecha
-
-PREGUNTAS TÍPICAS QUE DEBES SABER RESPONDER:
-- "¿Cuánto es la compra de arroz paddy húmedo en el año 2025?"
-- "¿Cuánto es la compra de maíz en el año 2025?"
-- "¿Cuántos productores de arroz tenemos registrados?"
-- "¿Cuáles son los principales productores por volumen?"
-- "¿Cuánto debemos a productores?"
-
 REGLAS:
-- Responde siempre en español, de forma clara y precisa
-- Presenta volúmenes en kilogramos (kg) y toneladas (ton)
-- Presenta precios en Bs./kg o $/kg según corresponda
-- Distingue entre arroz paddy húmedo, arroz paddy seco, y maíz
-- NUNCA inventes datos. Si no tienes la información, dilo claramente
+- Responde siempre en español
+- Presenta volúmenes en kg y toneladas
+- Presenta precios en Bs./kg
+- Distingue entre Arroz Paddy Húmedo y Maíz
+- Los datos que recibes son REALES de la base de datos de Santoni
 
 CONTEXTO:
-- Alimentos Santoni: agroindustria procesadora de arroz y maíz
-- Responsable del área: Marlenis Figueredo
-- Productos: Arroz paddy húmedo, Maíz
-- Zonas productoras: Apure, Lara, Barinas, Portuguesa, Cojedes
-- ERP: iDempiere
-
-NOTA: Entorno de datos de prueba. Los datos reales se conectarán con iDempiere."""
+- Responsable: Marlenis Figueredo
+- Productos: Arroz Paddy Húmedo, Maíz
+- Zonas productoras: Portuguesa, Barinas, Apure, Lara, Cojedes"""
 
     def get_sql_context(self) -> str:
         return """
--- Tablas relevantes de iDempiere para Compras a Productores:
--- C_Order: Órdenes de compra a productores (IsSOTrx = 'N')
--- C_OrderLine: Líneas de órdenes
--- C_Invoice: Facturas de compra de materia prima
--- C_Payment: Pagos a productores
--- C_BPartner: Productores agrícolas (IsVendor = 'Y', con grupo específico)
--- C_BPartner_Location: Ubicación de productores
--- M_Product: Arroz paddy, Maíz (productos de materia prima)
--- M_InOut: Recepciones de materia prima
--- C_Region: Estados (Portuguesa, Barinas, Apure, Lara, Cojedes)
+Tablas: demo_productores, demo_compras_productores
 """
+
+    def fetch_data(self, message: str) -> str | None:
+        msg = message.lower()
+        sections = []
+
+        anio = 2025
+        year_match = re.search(r'20\d{2}', message)
+        if year_match:
+            anio = int(year_match.group())
+
+        producto = None
+        if "arroz" in msg:
+            producto = "Arroz Paddy Húmedo"
+        elif "maíz" in msg or "maiz" in msg:
+            producto = "Maíz"
+
+        summary = build_producer_purchases(producto=producto, anio=anio)
+        sections.append(self._format_summary(summary, f"Compras a Productores {anio}"))
+
+        if any(w in msg for w in ["productor", "registrad", "cuántos", "cuantos"]):
+            try:
+                by_state = execute_demo_query(
+                    "SELECT estado, tipo_producto, COUNT(*) as cantidad "
+                    "FROM demo_productores WHERE activo = true "
+                    "GROUP BY estado, tipo_producto ORDER BY cantidad DESC"
+                )
+                sections.append("## Productores Registrados por Estado")
+                sections.append(self._format_table(by_state))
+
+                total = execute_demo_query(
+                    "SELECT tipo_producto, COUNT(*) as total "
+                    "FROM demo_productores WHERE activo = true GROUP BY tipo_producto"
+                )
+                sections.append("## Total por Tipo de Producto")
+                sections.append(self._format_table(total))
+            except Exception:
+                pass
+
+        if any(w in msg for w in ["pago", "pendiente", "deuda", "deb"]):
+            try:
+                data = execute_demo_query(
+                    "SELECT p.nombre as productor, p.estado as ubicacion, "
+                    "c.producto, c.peso_neto_kg, c.monto_total, c.fecha "
+                    "FROM demo_compras_productores c "
+                    "JOIN demo_productores p ON c.productor_id = p.id "
+                    "WHERE c.estado_pago = 'pendiente' ORDER BY c.monto_total DESC"
+                )
+                total_pendiente = sum(d["monto_total"] for d in data)
+                sections.append(
+                    f"## Pagos Pendientes ({len(data)} guías - Total: Bs. {total_pendiente:,.2f})"
+                )
+                sections.append(self._format_table(data))
+            except Exception:
+                pass
+
+        if any(w in msg for w in ["precio", "costo", "valor"]):
+            try:
+                data = execute_demo_query(
+                    "SELECT producto, "
+                    "MIN(precio_kg) as precio_min, AVG(precio_kg) as precio_promedio, "
+                    "MAX(precio_kg) as precio_max, COUNT(*) as compras "
+                    "FROM demo_compras_productores "
+                    "WHERE EXTRACT(YEAR FROM fecha) = :anio GROUP BY producto",
+                    {"anio": anio},
+                )
+                sections.append(f"## Análisis de Precios {anio} (Bs./kg)")
+                sections.append(self._format_table(data))
+            except Exception:
+                pass
+
+        return "\n\n".join(sections) if sections else None
