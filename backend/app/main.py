@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.database import engine, Base
-from app.api.routes import auth, chat, users, admin
+from app.api.routes import auth, chat, users, admin, export
 from app.utils.seed import create_admin_user
 from app.utils.seed_demo import seed_demo_data
 
@@ -47,6 +47,7 @@ app.include_router(auth.router, prefix="/api")
 app.include_router(chat.router, prefix="/api")
 app.include_router(users.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
+app.include_router(export.router, prefix="/api")
 
 
 @app.get("/api/health")

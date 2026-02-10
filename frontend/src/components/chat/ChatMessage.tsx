@@ -2,11 +2,32 @@
 
 import type { Message } from "@/types";
 import ReactMarkdown from "react-markdown";
+import { Download, FileText, Table2, FileSpreadsheet } from "lucide-react";
 
 interface ChatMessageProps {
   message: Message;
   userName: string;
   agentLabel?: string;
+}
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+function downloadExport(messageId: number, format: string) {
+  const token = localStorage.getItem("santonibot_token");
+  if (!token) return;
+
+  const url = `${API_BASE}/api/export/message/${messageId}?format=${format}`;
+  fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+    .then((res) => res.blob())
+    .then((blob) => {
+      const ext = format === "excel" ? "xlsx" : format;
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `santonibot_reporte.${ext}`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    })
+    .catch(() => alert("Error al exportar"));
 }
 
 export default function ChatMessage({
@@ -15,6 +36,7 @@ export default function ChatMessage({
   agentLabel,
 }: ChatMessageProps) {
   const isUser = message.role === "user";
+  const hasTable = !isUser && message.content.includes("|");
 
   return (
     <div
@@ -50,9 +72,7 @@ export default function ChatMessage({
         <div
           className={`text-sm leading-relaxed ${
             isUser ? "text-white" : "text-gray-800"
-          } prose prose-sm max-w-none ${
-            isUser ? "prose-invert" : ""
-          }`}
+          } prose prose-sm max-w-none ${isUser ? "prose-invert" : ""}`}
         >
           {isUser ? (
             <p className="m-0">{message.content}</p>
@@ -83,16 +103,48 @@ export default function ChatMessage({
           )}
         </div>
 
-        {/* Timestamp */}
+        {/* Export buttons + Timestamp */}
         <div
-          className={`text-xs mt-1 ${
+          className={`flex items-center justify-between mt-2 ${
             isUser ? "text-santoni-200" : "text-gray-400"
           }`}
         >
-          {new Date(message.created_at).toLocaleTimeString("es-VE", {
-            hour: "2-digit",
-            minute: "2-digit",
-          })}
+          <span className="text-xs">
+            {new Date(message.created_at).toLocaleTimeString("es-VE", {
+              hour: "2-digit",
+              minute: "2-digit",
+            })}
+          </span>
+
+          {/* Export buttons for assistant messages with data */}
+          {!isUser && hasTable && (
+            <div className="flex items-center gap-1">
+              <span className="text-xs text-gray-400 mr-1">
+                <Download size={12} />
+              </span>
+              <button
+                onClick={() => downloadExport(message.id, "csv")}
+                className="text-xs text-gray-400 hover:text-santoni-600 transition-colors px-1"
+                title="Exportar CSV"
+              >
+                <Table2 size={14} />
+              </button>
+              <button
+                onClick={() => downloadExport(message.id, "excel")}
+                className="text-xs text-gray-400 hover:text-green-600 transition-colors px-1"
+                title="Exportar Excel"
+              >
+                <FileSpreadsheet size={14} />
+              </button>
+              <button
+                onClick={() => downloadExport(message.id, "pdf")}
+                className="text-xs text-gray-400 hover:text-red-600 transition-colors px-1"
+                title="Exportar PDF"
+              >
+                <FileText size={14} />
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>
