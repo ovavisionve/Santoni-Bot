@@ -3,10 +3,10 @@ Orchestrator: Classifies user intent and routes to the appropriate agent.
 This is the central brain of SantoniBot that decides which specialist handles each query.
 """
 
-from langchain_groq import ChatGroq
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.config import get_settings
+from app.services.llm_factory import create_llm
 from app.models.user import User
 from app.agents.finanzas import FinanzasAgent
 from app.agents.contabilidad import ContabilidadAgent
@@ -45,11 +45,10 @@ class Orchestrator:
     """Routes user queries to the appropriate specialized agent."""
 
     def __init__(self):
-        self.classifier = ChatGroq(
-            api_key=settings.groq_api_key,
-            model=settings.groq_model,
+        self.classifier = create_llm(
             temperature=0,
             max_tokens=50,
+            purpose="classifier",
         )
 
         # Initialize all agents

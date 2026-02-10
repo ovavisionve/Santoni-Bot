@@ -8,10 +8,10 @@ import json
 import logging
 from abc import ABC, abstractmethod
 
-from langchain_groq import ChatGroq
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 
 from app.config import get_settings
+from app.services.llm_factory import create_llm
 
 settings = get_settings()
 logger = logging.getLogger("santonibot.agents")
@@ -21,11 +21,10 @@ class BaseAgent(ABC):
     """Base agent for all department-specific agents."""
 
     def __init__(self):
-        self.llm = ChatGroq(
-            api_key=settings.groq_api_key,
-            model=settings.groq_model,
+        self.llm = create_llm(
             temperature=0.1,
             max_tokens=4096,
+            purpose="agent",
         )
         self._system_prompt = self.get_system_prompt()
 

@@ -7,7 +7,7 @@ from sqlalchemy import text
 
 from app.config import get_settings
 from app.database import engine, Base, SessionLocal
-from app.api.routes import auth, chat, users, admin, export, knowledge
+from app.api.routes import auth, chat, users, admin, export, knowledge, documents
 from app.middleware.auth import get_current_user
 from app.utils.seed import create_admin_user
 from app.utils.seed_demo import seed_demo_data
@@ -85,6 +85,7 @@ app.include_router(users.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
 app.include_router(export.router, prefix="/api")
 app.include_router(knowledge.router, prefix="/api")
+app.include_router(documents.router, prefix="/api")
 
 
 @app.get("/api/health")
@@ -110,14 +111,11 @@ def health_check_detailed(current_user=Depends(get_current_user)):
     except Exception:
         checks["database"] = {"status": "error"}
 
-    # Groq
-    checks["groq"] = {
-        "status": "ok" if settings.groq_api_key else "not_configured",
-    }
-
-    # Anthropic (optional)
-    checks["anthropic"] = {
-        "status": "ok" if settings.anthropic_api_key else "not_configured",
+    # AI Provider
+    checks["ai_provider"] = {
+        "active": settings.ai_provider,
+        "groq": "ok" if settings.groq_api_key else "not_configured",
+        "anthropic": "ok" if settings.anthropic_api_key else "not_configured",
     }
 
     # iDempiere

@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     idempiere_db_password: str = ""
 
     # AI Providers
+    # ai_provider: "groq" (default, free) or "anthropic" (Claude, paid, supports documents)
+    ai_provider: str = "groq"
     groq_api_key: str = ""
     groq_model: str = "llama-3.3-70b-versatile"
     anthropic_api_key: str = ""
