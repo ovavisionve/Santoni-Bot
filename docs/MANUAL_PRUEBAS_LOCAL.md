@@ -190,295 +190,454 @@ NEXT_PUBLIC_APP_NAME=SantoniBot
 
 ## Paso 3: Levantar el Proyecto con Docker
 
-### 3.1 Asegurarse de que Docker Desktop está corriendo
+### 3.1 Abrir Docker Desktop
 
 **Windows:**
-- Buscar "Docker Desktop" en el menú Inicio y abrirlo
-- Esperar a que el ícono de la ballena (abajo a la derecha, en la barra de tareas) esté quieto (sin animación)
-- Si dice "Docker Desktop is starting...", esperar
+1. Clic en el botón de **Inicio** de Windows (abajo a la izquierda)
+2. Escribir `Docker Desktop`
+3. Clic en **"Docker Desktop"** cuando aparezca
+4. Se abre la ventana de Docker. En la parte inferior izquierda verás un indicador:
+   - Si dice **"Engine running"** con un punto verde → perfecto, sigue al paso 3.2
+   - Si dice **"Starting..."** → esperar 1-2 minutos hasta que cambie a verde
+   - Si no aparece nada, esperar
 
 **macOS:**
-- Abrir Docker desde Applications
-- Esperar a que el ícono de la ballena en la barra superior esté quieto
+1. Abrir **Finder** → **Aplicaciones** → doble clic en **Docker**
+2. En la barra superior del Mac, aparece un ícono de ballena 🐳
+3. Clic en la ballena → debe decir **"Docker Desktop is running"**
+4. Si dice "Starting...", esperar 1-2 minutos
 
-### 3.2 Volver a la terminal donde estás en la carpeta del proyecto
+### 3.2 Abrir una Terminal DENTRO de la carpeta del proyecto
 
-Verificar que estás en la carpeta correcta:
+Esto es clave. La terminal debe estar **dentro de la carpeta Santoni-Bot** para que Docker encuentre los archivos.
+
+**Windows - Forma más fácil:**
+1. Abrir el **Explorador de Archivos** (la carpeta amarilla en la barra de tareas)
+2. Navegar hasta la carpeta **Santoni-Bot** (donde hiciste el git clone, probablemente en Escritorio)
+3. Entrar a la carpeta hasta que veas los archivos: `backend`, `frontend`, `docker-compose.yml`, `.env`, etc.
+4. Clic en la **barra de direcciones** (arriba, donde dice la ruta)
+5. Escribir `cmd` y presionar **Enter**
+6. Se abre una ventana negra de terminal. Ya estás dentro de la carpeta correcta.
+
+**macOS - Forma más fácil:**
+1. Abrir **Finder**
+2. Navegar hasta la carpeta **Santoni-Bot**
+3. Clic derecho en la carpeta → **"Nuevo Terminal en la carpeta"**
+   - Si no ves esa opción: abrir Terminal (Cmd+Espacio → "Terminal") y escribir: `cd ~/Desktop/Santoni-Bot` y presionar Enter
+
+**Verificar que estás en el lugar correcto:**
+
+Escribir en la terminal y presionar Enter:
 ```
-ls docker-compose.yml
+dir
 ```
-Si dice "No such file", volver a la carpeta:
+(En Mac usar `ls` en vez de `dir`)
+
+Debes ver estos archivos en la lista:
 ```
-cd Desktop/Santoni-Bot
+backend
+frontend
+docker-compose.yml
+.env
+nginx
+docs
+scripts
 ```
 
-### 3.3 Construir y levantar los contenedores
+Si NO ves `docker-compose.yml` en la lista, no estás en la carpeta correcta. Volver al punto 1 de esta sección.
+
+### 3.3 Escribir el comando para levantar todo
+
+Copiar este comando, pegarlo en la terminal y presionar **Enter**:
 
 ```
 docker compose up -d --build
 ```
 
-**Qué pasa ahora:**
-- Docker descarga las imágenes necesarias (PostgreSQL, ChromaDB, Node, Python, Nginx)
-- Esto puede tardar **5-15 minutos la primera vez** (depende de tu internet)
-- Verás muchas líneas de texto en la terminal. Es normal.
-- Al final debe decir algo como:
-  ```
-  ✔ Container santoni-bot-db-1        Started
-  ✔ Container santoni-bot-chromadb-1   Started
-  ✔ Container santoni-bot-backend-1    Started
-  ✔ Container santoni-bot-frontend-1   Started
-  ✔ Container santoni-bot-nginx-1      Started
-  ```
+> **Cómo pegar en la terminal:**
+> - **Windows (cmd):** Clic derecho → "Pegar"
+> - **Windows (PowerShell/Terminal):** Ctrl + V
+> - **macOS:** Cmd + V
 
-### 3.4 Verificar en Docker Desktop
+### 3.4 Qué pasa ahora (esperar)
 
-1. Abrir **Docker Desktop**
-2. Clic en **"Containers"** en la barra lateral izquierda
-3. Verás un grupo llamado **"santoni-bot"** (o similar)
-4. Clic en la flechita para expandir
-5. Debes ver **5 contenedores**, todos con un punto **verde** (Running):
+Después de presionar Enter, Docker empieza a trabajar:
 
-   | Contenedor | Estado esperado |
-   |-----------|----------------|
-   | santoni-bot-db-1 | 🟢 Running |
-   | santoni-bot-chromadb-1 | 🟢 Running |
-   | santoni-bot-backend-1 | 🟢 Running |
-   | santoni-bot-frontend-1 | 🟢 Running |
-   | santoni-bot-nginx-1 | 🟢 Running |
+1. **Primero** descarga las imágenes (PostgreSQL, Python, Node.js, etc.)
+   - Verás líneas como `Pulling db...`, `Pulling backend...`, `Downloading...`
+   - **Esto tarda 5-15 minutos la primera vez** (depende de tu internet)
+   - Es normal ver muchas líneas de texto. No tocar nada, dejar que termine.
 
-**Si algún contenedor tiene punto rojo o amarillo:**
-- Clic en el nombre del contenedor
-- Clic en la pestaña **"Logs"** (arriba)
-- Leer el error. Los más comunes:
-  - `"password authentication failed"` → La POSTGRES_PASSWORD en .env no coincide. Solución: borrar volúmenes (Paso 8.1)
-  - `"port is already allocated"` → Otro programa usa ese puerto. Cerrar ese programa o cambiar el puerto en docker-compose.yml
-  - `"GROQ_API_KEY"` error → No pusiste la API key en .env
+2. **Después** construye los contenedores
+   - Verás líneas como `Building backend...`, `Step 1/8...`
+   - Puede tardar 3-5 minutos más
 
-### 3.5 Ver los logs del backend (para ver la contraseña admin)
-
-En la terminal:
-```
-docker compose logs backend | head -50
-```
-
-O en **Docker Desktop:**
-1. Clic en el contenedor **"santoni-bot-backend-1"**
-2. Se abre la pestaña **"Logs"** automáticamente
-3. Buscar la línea que dice:
+3. **Al final** levanta todo. Debes ver algo como esto:
    ```
-   Admin user created with generated password. Temporary password: XXXXXXXXX
+   ✔ Container santoni-bot-db-1        Started
+   ✔ Container santoni-bot-chromadb-1   Started
+   ✔ Container santoni-bot-backend-1    Started
+   ✔ Container santoni-bot-frontend-1   Started
+   ✔ Container santoni-bot-nginx-1      Started
    ```
-4. **Copiar esa contraseña.** La vas a necesitar para hacer login.
 
-> **Importante:** El password admin se genera automáticamente la primera vez. Aparece UNA SOLA VEZ en los logs. Si lo pierdes, necesitas borrar la base de datos y reiniciar (Paso 8.1).
+4. Cuando vuelve a aparecer el cursor parpadeando, **terminó**.
+
+> **Si ves errores en rojo**, no te preocupes todavía. Ve al Paso 3.5 para verificar el estado.
+
+### 3.5 Verificar que todo levantó correctamente
+
+Ahora vamos a **Docker Desktop** para ver si todo está bien:
+
+1. Ir a la ventana de **Docker Desktop** (clic en el ícono de la ballena en la barra de tareas/menú)
+2. En la barra lateral izquierda, clic en **"Containers"** (el primer ícono, parece una caja)
+3. Verás una fila que dice **"santoni-bot"** con una flechita ▶ a la izquierda
+4. **Clic en la flechita ▶** para expandir y ver los 5 contenedores
+
+Debes ver esto:
+
+| Nombre del contenedor | Color del punto | Significa |
+|----------------------|-----------------|-----------|
+| santoni-bot-db-1 | 🟢 Verde | Base de datos OK |
+| santoni-bot-chromadb-1 | 🟢 Verde | Vector DB OK |
+| santoni-bot-backend-1 | 🟢 Verde | API del backend OK |
+| santoni-bot-frontend-1 | 🟢 Verde | Interfaz web OK |
+| santoni-bot-nginx-1 | 🟢 Verde | Proxy web OK |
+
+**Si todos tienen punto verde:** Perfecto. Ve al Paso 3.6.
+
+**Si alguno tiene punto rojo o amarillo:**
+1. Clic en el **nombre** del contenedor que tiene el problema (el texto azul)
+2. Se abre una nueva vista. Arriba verás pestañas: **Logs**, Inspect, Bind mounts...
+3. La pestaña **"Logs"** ya debería estar seleccionada
+4. Lee el texto que aparece. Busca líneas en rojo o que digan "error"
+5. Los errores más comunes:
+
+| Lo que dice el error | Qué pasó | Cómo arreglarlo |
+|---------------------|----------|-----------------|
+| `password authentication failed` | El password de la base de datos no coincide | Ir a la sección "Reinicio limpio" al final del manual |
+| `port is already allocated` | Otro programa ya usa ese puerto | Cerrar Skype, otro servidor local, o cualquier programa que use el puerto 80, 3000, 5432 u 8000 |
+| `no such file or directory: .env` | No creaste el archivo .env | Volver al Paso 2 |
+| `Cannot connect to the Docker daemon` | Docker Desktop no está corriendo | Volver al Paso 3.1 |
+
+### 3.6 Buscar la contraseña del administrador
+
+La contraseña del admin se genera automáticamente la primera vez. Necesitas encontrarla en los logs.
+
+**En Docker Desktop:**
+1. En la lista de contenedores, clic en **"santoni-bot-backend-1"** (el texto azul)
+2. Se abren los **Logs** (registros del backend)
+3. Buscar con los ojos una línea que diga algo como:
+   ```
+   Admin user created with generated password. Temporary password: AbCdEf123456
+   ```
+4. La parte después de `Temporary password:` es tu contraseña. **Selecciónala con el mouse y cópiala** (Ctrl+C / Cmd+C)
+5. **Pegar la contraseña en un lugar seguro** (un archivo de texto, un post-it, etc.). La necesitas en el Paso 5.
+
+> **Si no encuentras la línea:** Usar Ctrl+F (o Cmd+F) dentro de los logs y buscar `password`. Si aún no aparece, esperar 30 segundos (el backend puede estar aún iniciando) y refrescar los logs cerrando y abriendo el contenedor de nuevo.
 
 ---
 
-## Paso 4: Verificar que el API funciona
+## Paso 4: Verificar que el Sistema Funciona
 
-### 4.1 En el navegador
+### 4.1 Abrir el navegador web
 
-Abrir esta URL en Chrome/Firefox/Edge:
-```
-http://localhost:8000/api/health
-```
+1. Abrir **Google Chrome**, **Firefox**, o **Microsoft Edge** (el que uses)
 
-Debes ver:
-```json
-{"status":"ok","app":"SantoniBot","version":"1.0.0"}
-```
+### 4.2 Probar que el backend está funcionando
 
-Si ves eso, el backend está funcionando.
+1. En la **barra de direcciones** del navegador (arriba, donde se escribe la URL)
+2. Escribir: `localhost:8000/api/health`
+3. Presionar **Enter**
+4. Debes ver este texto en la pantalla:
+   ```
+   {"status":"ok","app":"SantoniBot","version":"1.0.0"}
+   ```
+5. Si ves eso: **el backend funciona**.
 
-### 4.2 Ver la documentación del API (modo desarrollo)
+**Si ves "No se puede acceder a este sitio" o "Unable to connect":**
+- Esperar 30 segundos más (el backend puede estar iniciando)
+- Verificar que los contenedores están verdes en Docker Desktop (Paso 3.5)
+- Refrescar la página (F5 o Ctrl+R)
 
-Abrir en el navegador:
-```
-http://localhost:8000/api/docs
-```
+### 4.3 Ver la documentación de la API (opcional, solo si tienes curiosidad)
 
-Verás la documentación Swagger con todos los endpoints. Esto solo funciona con `DEBUG=true`.
+1. En el navegador, ir a: `localhost:8000/api/docs`
+2. Verás una página con todos los endpoints del API documentados (Swagger UI)
+3. Esto es solo informativo, no necesitas hacer nada aquí
 
 ---
 
 ## Paso 5: Entrar a la Aplicación
 
-### 5.1 Abrir el frontend
+### 5.1 Abrir SantoniBot
 
-Abrir en el navegador:
-```
-http://localhost:3000
-```
+1. En el **navegador**, ir a la barra de direcciones
+2. Escribir: `localhost:3000`
+3. Presionar **Enter**
+4. Debe aparecer la **pantalla de login** de SantoniBot:
+   - Fondo con degradado naranja
+   - Logo con la letra "S"
+   - Campos para "Usuario" y "Contraseña"
+   - Botón "Ingresar"
 
-Verás la pantalla de login de SantoniBot con el logo naranja.
+**Si ves una página en blanco o un error:**
+- Esperar 1 minuto (el frontend tarda en compilar la primera vez)
+- Refrescar la página (F5)
+- Verificar que el contenedor `santoni-bot-frontend-1` está verde en Docker Desktop
 
 ### 5.2 Hacer login
 
-1. En el campo **"Usuario"**: escribir `admin`
-2. En el campo **"Contraseña"**: pegar la contraseña que copiaste de los logs (Paso 3.5)
-3. Clic en el botón **"Ingresar"**
-
-Si todo está bien, te lleva a la pantalla de chat.
+1. Clic en el campo **"Usuario"**
+2. Escribir: `admin`
+3. Clic en el campo **"Contraseña"**
+4. Pegar la contraseña que copiaste en el Paso 3.6 (Ctrl+V / Cmd+V)
+5. Clic en el botón **"Ingresar"**
 
 **Si dice "Credenciales inválidas":**
-- Verificar que copiaste bien la contraseña de los logs
-- Verificar que no hay espacios extras al inicio/final
+- La contraseña tiene que ser EXACTA. Verificar que no copiaste un espacio extra al inicio o final
+- Volver a Docker Desktop → contenedor backend → Logs → buscar la línea con `Temporary password`
+- Si de verdad no encuentras la contraseña, hacer un **Reinicio limpio** (al final del manual) y buscarla de nuevo
 
-### 5.3 Qué debes ver
+### 5.3 Lo que debes ver después del login
 
-La pantalla de chat tiene 3 áreas:
-- **Izquierda:** Barra lateral con "Nueva conversación", tu nombre, "Administración"
-- **Centro:** Área de chat con sugerencias de preguntas
-- **Abajo:** Campo de texto para escribir tu pregunta
+Después de hacer login exitoso, llegas a la pantalla principal del chat:
+
+**Barra lateral izquierda:**
+- Botón **"Nueva conversación"** (arriba)
+- Lista de conversaciones (vacía por ahora)
+- Tu nombre: "Administrador SantoniBot"
+- Link **"Administración"** (solo visible para admin)
+- Botón **"Cerrar sesión"** (abajo)
+
+**Área central:**
+- Texto de bienvenida: "Bienvenido a SantoniBot"
+- Botones de sugerencias con preguntas de ejemplo
+- Campo de texto abajo: "Escribe tu consulta..."
 
 ---
 
 ## Paso 6: Probar los Agentes de IA
 
-### 6.1 Hacer tu primera pregunta
+### 6.1 Tu primera pregunta
 
-1. Clic en el campo de texto que dice "Escribe tu consulta..."
-2. Escribir: `¿Cuáles son los top 10 clientes por facturación?`
-3. Presionar **Enter** (o clic en el botón de enviar)
-4. Esperar la respuesta (verás puntos animados mientras procesa, 5-15 segundos)
+1. Clic en el **campo de texto** abajo que dice "Escribe tu consulta..."
+2. Escribir (o copiar y pegar) esta pregunta:
+   ```
+   ¿Cuáles son los top 10 clientes por facturación?
+   ```
+3. Presionar la tecla **Enter** en el teclado
+4. Aparecen **tres puntos animados** (el bot está pensando)
+5. Esperar **5 a 15 segundos**
+6. Aparece la respuesta del bot
 
-**Resultado esperado:** Una tabla con los 10 clientes con más facturación, generada por el Agente de Ventas.
+**Lo que debes ver en la respuesta:**
+- Una etiqueta azul que dice **"Agente de Ventas"** (significa que el sistema detectó que es una pregunta de ventas)
+- Una tabla o lista con los clientes principales
+- Nombres de empresas venezolanas (son datos demo)
+- Montos en bolívares
 
-### 6.2 Probar cada departamento
+**Si el bot no responde después de 30 segundos:**
+- Verificar que pusiste la GROQ_API_KEY en el archivo .env (Paso 2)
+- Ver los logs del backend en Docker Desktop por si hay error
 
-Copia y pega estas preguntas una por una. Clic en **"Nueva conversación"** (barra lateral) entre cada una para mantener el contexto limpio:
+### 6.2 Probar los 7 departamentos
 
-**Ventas** (clic en "Nueva conversación" primero):
-```
-¿Cuáles son los top 10 clientes por facturación en 2025?
-```
+Ahora vamos a probar que cada agente funcione. Para cada pregunta:
 
-**Finanzas** (clic en "Nueva conversación" primero):
-```
-¿Cuál es el flujo de caja actual?
-```
+1. Primero, clic en **"Nueva conversación"** en la barra lateral izquierda (para empezar limpio)
+2. Luego, copiar la pregunta y pegarla en el campo de texto
+3. Presionar **Enter**
+4. Esperar la respuesta
 
-**Contabilidad** (clic en "Nueva conversación" primero):
-```
-Dame el balance general del primer trimestre 2025
-```
+**Pregunta 1 - Ventas:**
+1. Clic en **"Nueva conversación"**
+2. Copiar y pegar en el campo de texto:
+   ```
+   ¿Cuáles son los top 10 clientes por facturación en 2025?
+   ```
+3. Presionar Enter
+4. Verificar que responde el **"Agente de Ventas"** con una tabla de clientes
 
-**RRHH** (clic en "Nueva conversación" primero):
-```
-¿Cuántos empleados activos hay y cuál es la nómina?
-```
+**Pregunta 2 - Finanzas:**
+1. Clic en **"Nueva conversación"**
+2. Copiar y pegar:
+   ```
+   ¿Cuál es el flujo de caja actual?
+   ```
+3. Presionar Enter
+4. Verificar que responde el **"Agente de Finanzas"** con datos bancarios
 
-**Producción** (clic en "Nueva conversación" primero):
-```
-¿Cuál es la producción diaria de esta semana?
-```
+**Pregunta 3 - Contabilidad:**
+1. Clic en **"Nueva conversación"**
+2. Copiar y pegar:
+   ```
+   Dame el balance general del primer trimestre 2025
+   ```
+3. Presionar Enter
+4. Verificar que responde el **"Agente de Contabilidad"**
 
-**Compras Insumos** (clic en "Nueva conversación" primero):
-```
-¿Cuáles son las órdenes de compra pendientes?
-```
+**Pregunta 4 - RRHH:**
+1. Clic en **"Nueva conversación"**
+2. Copiar y pegar:
+   ```
+   ¿Cuántos empleados activos hay y cuál es la nómina?
+   ```
+3. Presionar Enter
+4. Verificar que responde el **"Agente de RRHH"**
 
-**Compras Productores** (clic en "Nueva conversación" primero):
-```
-¿Cuánto arroz hemos comprado en 2025?
-```
+**Pregunta 5 - Producción:**
+1. Clic en **"Nueva conversación"**
+2. Copiar y pegar:
+   ```
+   ¿Cuál es la producción diaria de esta semana?
+   ```
+3. Presionar Enter
+4. Verificar que responde el **"Agente de Producción"**
+
+**Pregunta 6 - Compras Insumos:**
+1. Clic en **"Nueva conversación"**
+2. Copiar y pegar:
+   ```
+   ¿Cuáles son las órdenes de compra pendientes?
+   ```
+3. Presionar Enter
+4. Verificar que responde el **"Agente de Compras Insumos"**
+
+**Pregunta 7 - Compras Productores:**
+1. Clic en **"Nueva conversación"**
+2. Copiar y pegar:
+   ```
+   ¿Cuánto arroz hemos comprado en 2025?
+   ```
+3. Presionar Enter
+4. Verificar que responde el **"Agente de Compras Productores"**
 
 ### 6.3 Qué verificar en cada respuesta
 
-- Que aparece una etiqueta azul con el nombre del agente (ej: "Agente de Ventas")
-- Que la respuesta tiene datos con números, tablas o resúmenes
-- Que la respuesta está en español
-- Que los datos demo se ven realistas (clientes venezolanos, montos en Bs., etc.)
+Después de cada pregunta, verificar estos 4 puntos:
+- Aparece una **etiqueta azul** con el nombre del agente correcto
+- La respuesta tiene **datos con números** (tablas, listas, resúmenes)
+- La respuesta está en **español**
+- Los datos se ven realistas (nombres venezolanos, montos en Bs.)
 
 ---
 
-## Paso 7: Probar Exportación
+## Paso 7: Probar Exportación (CSV, Excel, PDF)
 
-### 7.1 Generar una respuesta con tabla
+### 7.1 Primero, generar una respuesta que tenga tabla
 
-1. Escribir: `Dame un ranking de los 10 principales clientes`
-2. Esperar la respuesta
+1. Si no tienes una respuesta con tabla de los pasos anteriores, escribir:
+   ```
+   Dame un ranking de los 10 principales clientes
+   ```
+2. Esperar la respuesta. Debe incluir una tabla con datos.
 
-### 7.2 Exportar a CSV
+### 7.2 Encontrar los botones de exportación
 
-1. En la respuesta del bot, buscar los botones debajo del mensaje
-2. Clic en el botón **"CSV"**
-3. Se descarga un archivo `.csv`
-4. Abrirlo con Excel o Google Sheets
-5. Verificar que los datos de la tabla están completos
+1. Buscar la respuesta del bot que tiene tabla
+2. **Debajo de la respuesta**, verás tres botones pequeños: **CSV**, **Excel**, **PDF**
+3. Si no los ves, mover el mouse sobre la respuesta del bot (pueden aparecer al pasar el cursor)
 
-### 7.3 Exportar a Excel
+### 7.3 Probar CSV
+
+1. Clic en el botón **"CSV"**
+2. El navegador descarga un archivo (aparece abajo en Chrome, o en la carpeta Descargas)
+3. Buscar el archivo descargado (se llama algo como `export_123.csv`)
+4. Abrirlo haciendo **doble clic** → se abre en Excel o Google Sheets
+5. Verificar que la tabla tiene los mismos datos que la respuesta del bot
+
+### 7.4 Probar Excel
 
 1. Clic en el botón **"Excel"**
 2. Se descarga un archivo `.xlsx`
-3. Abrirlo con Excel
-4. Verificar: encabezado naranja "SantoniBot - Reporte", tabla con datos
+3. Abrirlo haciendo **doble clic** → se abre en Excel
+4. Verificar:
+   - Arriba dice **"SantoniBot - Reporte"** en naranja
+   - La tabla tiene encabezados naranjas
+   - Los datos coinciden con la respuesta del bot
 
-### 7.4 Exportar a PDF
+### 7.5 Probar PDF
 
 1. Clic en el botón **"PDF"**
 2. Se descarga un archivo `.pdf`
-3. Abrirlo con cualquier lector de PDF
-4. Verificar: logo SantoniBot, tabla formateada, colores naranja
+3. Abrirlo haciendo **doble clic** → se abre en el visor de PDF
+4. Verificar:
+   - Título **"SantoniBot - Reporte"** en naranja
+   - Tabla formateada con colores
+   - Nombre del agente y fecha
 
 ---
 
-## Paso 8: Probar Panel de Administración
+## Paso 8: Probar el Panel de Administración
 
-### 8.1 Acceder al panel
+### 8.1 Entrar al panel
 
-1. En la barra lateral izquierda, clic en **"Administración"**
-2. Se abre el panel de admin con 3 pestañas
+1. Mirar la **barra lateral izquierda** del chat
+2. Buscar el link que dice **"Administración"** (cerca del final, antes de "Cerrar sesión")
+3. **Clic en "Administración"**
+4. Se abre el panel de admin con tres pestañas arriba: **Estadísticas**, **Usuarios**, **Auditoría**
 
 ### 8.2 Pestaña "Estadísticas"
 
-- Verás tarjetas con: Total usuarios, Conversaciones, Mensajes
-- Un gráfico de uso por agente
-- Verificar que los números reflejan las pruebas que hiciste
+Ya debería estar seleccionada por defecto.
+
+1. Verás **tarjetas** con números:
+   - Total de usuarios (debería decir 1, porque solo existe el admin)
+   - Total de conversaciones (las que hiciste en el paso 6)
+   - Total de mensajes
+2. Abajo hay un **gráfico** de uso por agente
+3. Verificar que los números tienen sentido (si hiciste 7 preguntas, debería haber al menos 7 conversaciones)
 
 ### 8.3 Pestaña "Usuarios" - Crear un usuario de prueba
 
-1. Clic en la pestaña **"Usuarios"**
-2. Clic en el botón **"Nuevo Usuario"**
-3. Llenar el formulario:
-   - **Usuario:** `vendedor1`
-   - **Nombre completo:** `Carlos Prueba`
-   - **Email:** `carlos@test.com`
-   - **Contraseña:** `Test1234!`
-   - **Rol:** `usuario`
-   - **Departamento:** `ventas`
-4. Clic en **"Crear"**
-5. El usuario aparece en la tabla
+1. Clic en la pestaña **"Usuarios"** (arriba)
+2. Verás una tabla con el usuario `admin`
+3. Clic en el botón **"Nuevo Usuario"** (arriba a la derecha de la tabla)
+4. Se abre un formulario. Llenar así:
+   - **Usuario:** escribir `vendedor1`
+   - **Nombre completo:** escribir `Carlos Prueba`
+   - **Email:** escribir `carlos@test.com`
+   - **Contraseña:** escribir `Test1234!`
+   - **Rol:** seleccionar `usuario` del menú desplegable
+   - **Departamento:** seleccionar `ventas` del menú desplegable
+5. Clic en el botón **"Crear"** (o "Guardar")
+6. El usuario nuevo **aparece en la tabla** debajo de admin
 
-### 8.4 Probar login con el usuario nuevo
+### 8.4 Probar el login con el usuario nuevo
 
-1. Clic en **"Cerrar sesión"** (barra lateral, abajo)
-2. En la pantalla de login:
-   - Usuario: `vendedor1`
-   - Contraseña: `Test1234!`
-3. Clic en **"Ingresar"**
-4. Verificar:
-   - El chat funciona
-   - Las sugerencias son de Ventas (porque el usuario es de ventas)
-   - NO aparece el link "Administración" (porque no es admin)
-   - Si preguntas algo de RRHH, debe decir que no tiene acceso
+1. En la barra lateral izquierda, clic en **"Cerrar sesión"** (abajo del todo)
+2. Vuelves a la pantalla de login
+3. En el campo **"Usuario"**: escribir `vendedor1`
+4. En el campo **"Contraseña"**: escribir `Test1234!`
+5. Clic en **"Ingresar"**
+6. Entras al chat. Ahora verificar estas cosas:
+   - Las **sugerencias** son de Ventas (porque el usuario es del departamento de ventas)
+   - En la barra lateral izquierda **NO aparece** el link "Administración" (porque no es admin)
+   - Hacer una pregunta de ventas: debe funcionar normal
+   - Hacer una pregunta de otro departamento (ej: `¿Cuál es la nómina de RRHH?`): **debe decir que no tiene acceso**
 
 ### 8.5 Pestaña "Auditoría"
 
-1. Volver a loguearte como `admin`
-2. Ir a Administración → pestaña **"Auditoría"**
-3. Verificar que aparecen las acciones del usuario `vendedor1`
+1. Cerrar sesión del usuario `vendedor1`
+2. Login de nuevo como `admin` (con la contraseña del Paso 3.6)
+3. Ir a **"Administración"**
+4. Clic en la pestaña **"Auditoría"**
+5. Verás una tabla con todas las acciones: quién hizo qué y cuándo
+6. Debe aparecer el login y las consultas del usuario `vendedor1`
 
 ---
 
-## Paso 9: Copiar respuestas
+## Paso 9: Probar copiar respuestas
 
-1. Pasar el cursor sobre cualquier respuesta del bot
-2. Aparece un ícono de **copiar** en la esquina superior derecha del mensaje
-3. Clic en el ícono
-4. Se muestra un check verde confirmando que se copió
-5. Pegar (Ctrl+V) en cualquier lugar para verificar
+1. Ir al chat (clic en cualquier conversación en la barra lateral)
+2. Buscar una respuesta del bot
+3. **Pasar el mouse** por encima de la respuesta del bot (no hacer clic, solo pasar)
+4. Aparece un **ícono de copiar** (dos cuadraditos) en la esquina superior derecha del mensaje
+5. **Clic en el ícono de copiar**
+6. El ícono cambia a un **check verde** por 2 segundos (confirmando que se copió)
+7. Abrir cualquier programa (Word, Bloc de Notas, un email) y pegar con **Ctrl+V** (o Cmd+V)
+8. Verificar que se pegó el texto de la respuesta
 
 ---
 
@@ -487,97 +646,115 @@ Dame el balance general del primer trimestre 2025
 ### Problema: Docker Desktop dice "Docker Desktop is starting..." y no arranca
 
 **Windows:**
-1. Abrir "Servicios" (buscar "services.msc" en el menú Inicio)
-2. Buscar "Docker Desktop Service"
-3. Clic derecho → "Reiniciar"
+1. Clic en el botón de Inicio → escribir `services.msc` → Enter
+2. En la ventana de Servicios, buscar **"Docker Desktop Service"**
+3. Clic derecho sobre él → **"Reiniciar"**
 4. Esperar 1 minuto
-5. Si no funciona, reiniciar el PC
+5. Si no funciona: reiniciar el PC
 
 **macOS:**
-1. Cerrar Docker Desktop (clic derecho en ícono de ballena → "Quit")
-2. Abrirlo de nuevo desde Applications
+1. Clic derecho en el ícono de ballena en la barra superior → **"Quit Docker Desktop"**
+2. Esperar 10 segundos
+3. Abrir Docker de nuevo desde Aplicaciones
 
 ### Problema: Un contenedor tiene punto rojo en Docker Desktop
 
-1. Clic en el contenedor rojo
-2. Ir a pestaña **"Logs"**
-3. Leer el error
-4. Errores comunes:
+1. En Docker Desktop → **Containers** → clic en el contenedor rojo
+2. Leer los **Logs** que aparecen
+3. Buscar la línea con el error. Soluciones comunes:
 
-| Error en logs | Causa | Solución |
-|--------------|-------|----------|
-| `password authentication failed` | Password de DB no coincide | Ver "Reinicio limpio" abajo |
-| `port is already allocated` | Puerto ocupado | Cerrar otro programa que use el puerto, o cambiar puerto en docker-compose.yml |
-| `no such file .env` | Falta el archivo .env | Volver al Paso 2 |
-| `GROQ_API_KEY` vacío | No configuraste la key | Editar .env, agregar la key de Groq |
-| `Cannot connect to chromadb` | ChromaDB no arrancó | Normal al inicio. Esperar 30 seg y reiniciar backend |
+| Lo que dice | Qué hacer |
+|-------------|-----------|
+| `password authentication failed` | Hacer "Reinicio limpio" (más abajo) |
+| `port is already allocated` | Otro programa usa ese puerto. Cerrar Skype, Zoom, o cualquier servidor local que tengas abierto. O reiniciar el PC. |
+| `no such file .env` | No creaste el archivo .env. Volver al Paso 2. |
+| `GROQ_API_KEY` / `groq` error | Abrir el .env y verificar que la GROQ_API_KEY tiene un valor real (empieza con gsk_) |
+| `Cannot connect to chromadb` | Normal al inicio. Esperar 30 segundos. En Docker Desktop: clic en el contenedor backend → ícono de Restart (flechita circular) |
 
-### Problema: La página dice "Unable to connect" o no carga
+### Problema: "localhost:3000" dice "No se puede acceder a este sitio"
 
-1. Verificar que los contenedores están corriendo (Docker Desktop → Containers → todos verdes)
-2. Esperar 30 segundos después de levantar (el frontend tarda en compilar)
-3. Probar http://localhost:3000 (frontend directo) en vez de http://localhost (nginx)
+1. Verificar que Docker Desktop muestra los 5 contenedores en verde
+2. Esperar 1 minuto completo (el frontend tarda en compilar la primera vez)
+3. Presionar **F5** para refrescar la página
+4. Si sigue sin funcionar, probar: `localhost` (sin el :3000)
 
-### Problema: El bot no responde o da error
+### Problema: El bot no responde o da error después de escribir una pregunta
 
-1. Verificar la GROQ_API_KEY en el .env
-2. Ver los logs del backend:
-   - Docker Desktop → clic en contenedor "backend" → Logs
-   - O en terminal: `docker compose logs backend --tail 50`
-3. Si dice "rate limit", esperar 1 minuto (Groq tiene límites en el free tier)
+1. Abrir Docker Desktop → clic en el contenedor **"backend"** → leer los **Logs**
+2. Si dice algo sobre `groq` o `API key`: abrir .env y verificar la GROQ_API_KEY
+3. Si dice `rate limit exceeded`: esperar 1 minuto y reintentar (Groq tiene límites de uso)
 
 ### Problema: "Credenciales inválidas" al hacer login
 
-1. La contraseña admin se genera aleatoriamente la primera vez
-2. Buscarla en los logs del backend (Paso 3.5)
-3. Si ya no la ves en los logs, hacer reinicio limpio (siguiente sección)
+1. La contraseña admin se genera automáticamente la primera vez
+2. En Docker Desktop → clic en contenedor **"backend"** → Logs → buscar `Temporary password`
+3. Si no la encuentras: hacer **Reinicio limpio** (siguiente sección) y buscarla de nuevo
 
 ### Reinicio limpio (borra todo y empieza de nuevo)
 
-**Desde la terminal:**
-```
-docker compose down -v
-docker compose up -d --build
-```
+Usar cuando algo se rompió y quieres empezar desde cero:
 
-**Desde Docker Desktop:**
-1. Ir a **"Containers"**
-2. Buscar el grupo **"santoni-bot"**
-3. Clic en el ícono de **Stop** (cuadrado) del grupo completo
-4. Clic en el ícono de **Delete** (basura) del grupo completo
-5. Ir a **"Volumes"** en la barra lateral
-6. Seleccionar todos los volúmenes que digan "santoni-bot"
-7. Clic en **"Delete"** (esto borra la base de datos)
-8. Volver a la terminal y ejecutar: `docker compose up -d --build`
+**En Docker Desktop:**
+1. Ir a **"Containers"** en la barra lateral
+2. En la fila **"santoni-bot"**, clic en el botón **Stop** (ícono de cuadrado ⬛)
+3. Esperar a que todos los puntos se pongan grises
+4. Clic en el botón **Delete** (ícono de basura 🗑️) en la misma fila
+5. Confirmar con **"Delete"** en el popup
+6. Ahora ir a **"Volumes"** en la barra lateral izquierda (ícono de cilindro)
+7. Verás volúmenes que dicen `santoni-bot_postgres_data`, `santoni-bot_chroma_data`, etc.
+8. Marcar **todos** los que digan "santoni-bot" (checkbox a la izquierda)
+9. Clic en **"Delete"** (arriba)
+10. Confirmar
 
-> **Advertencia:** Esto borra TODOS los datos (usuarios, conversaciones, etc.) y empieza de cero.
+**Ahora volver a levantar:**
+1. Ir a la terminal (la misma que usaste en el Paso 3.2, dentro de la carpeta Santoni-Bot)
+2. Escribir y presionar Enter:
+   ```
+   docker compose up -d --build
+   ```
+3. Esperar a que termine (3-10 minutos)
+4. Ir a Docker Desktop → Containers → verificar 5 contenedores verdes
+5. Buscar la **nueva contraseña** de admin en los logs del backend (Paso 3.6)
+
+> **Advertencia:** El reinicio limpio borra TODOS los datos: usuarios creados, conversaciones, todo. Empiezas de cero.
 
 ---
 
-## Detener el Proyecto
+## Detener el Proyecto (cuando termines de probar)
 
-### Desde la terminal:
-```
-docker compose down
-```
+### Opción A - Desde Docker Desktop:
+1. Abrir Docker Desktop
+2. Ir a **"Containers"**
+3. En la fila **"santoni-bot"**, clic en el botón **Stop** (ícono de cuadrado ⬛)
+4. Todos los puntos se ponen grises. El proyecto está detenido.
 
-### Desde Docker Desktop:
-1. Ir a **"Containers"**
-2. Buscar el grupo **"santoni-bot"**
-3. Clic en el botón **Stop** (ícono de cuadrado)
+### Opción B - Desde la terminal:
+1. Abrir la terminal dentro de la carpeta Santoni-Bot
+2. Escribir:
+   ```
+   docker compose down
+   ```
+3. Presionar Enter
 
-### Para volver a levantarlo después:
-
-**Desde la terminal:**
-```
-cd Desktop/Santoni-Bot
-docker compose up -d
-```
+### Para volver a levantar otro día:
 
 **Desde Docker Desktop:**
-1. Ir a **"Containers"**
-2. Buscar el grupo **"santoni-bot"**
-3. Clic en el botón **Start** (ícono de play ▶)
+1. Abrir Docker Desktop
+2. Ir a **"Containers"**
+3. En la fila **"santoni-bot"**, clic en el botón **Start** (ícono de play ▶)
+4. Esperar 30 segundos
+5. Ir a `localhost:3000` en el navegador
+
+**Desde la terminal:**
+1. Abrir la terminal dentro de la carpeta Santoni-Bot
+2. Escribir:
+   ```
+   docker compose up -d
+   ```
+3. Esperar 30 segundos
+4. Ir a `localhost:3000` en el navegador
+
+> **Nota:** No necesitas hacer `--build` cuando vuelves a levantar. Solo usas `--build` la primera vez o después de un reinicio limpio.
 
 ---
 
