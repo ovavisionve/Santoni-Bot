@@ -1,0 +1,90 @@
+# ============================================
+# SantoniBot - Coolify Deployment
+# ============================================
+# This file is used by Coolify to deploy the stack.
+# In Coolify, set this as a "Docker Compose" resource.
+#
+# Required Coolify environment variables:
+#   POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD
+#   SECRET_KEY, GROQ_API_KEY
+#   IDEMPIERE_DB_HOST, IDEMPIERE_DB_PASSWORD
+#   DOMAIN (your domain, e.g., santonibot.example.com)
+# ============================================
+
+version: "3.8"
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-santonibot}
+      POSTGRES_USER: ${POSTGRES_USER:-santonibot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-santonibot}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  chromadb:
+    image: chromadb/chroma:latest
+    restart: unless-stopped
+    volumes:
+      - chroma_data:/chroma/chroma
+    environment:
+      ANONYMIZED_TELEMETRY: "false"
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      APP_ENV: production
+      DEBUG: "false"
+    depends_on:
+      db:
+        condition: service_healthy
+      chromadb:
+        condition: service_started
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
+    labels:
+      - "coolify.managed=true"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+    depends_on:
+      - backend
+    labels:
+      - "coolify.managed=true"
+
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - nginx_certs:/etc/letsencrypt
+    depends_on:
+      - frontend
+      - backend
+    labels:
+      - "coolify.managed=true"
+      - "coolify.proxy=true"
+
+volumes:
+  postgres_data:
+  chroma_data:
+  nginx_certs:

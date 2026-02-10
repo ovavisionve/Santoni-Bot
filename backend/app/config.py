@@ -24,8 +24,8 @@ class Settings(BaseSettings):
     # iDempiere Database (read-only)
     idempiere_db_host: str = "192.168.1.73"
     idempiere_db_port: int = 5432
-    idempiere_db_name: str = "idempiere"
-    idempiere_db_user: str = "readonly_user"
+    idempiere_db_name: str = "idempiere_produccion"
+    idempiere_db_user: str = "ova"
     idempiere_db_password: str = ""
 
     # AI Providers

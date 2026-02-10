@@ -1,0 +1,43 @@
+version: "3.8"
+
+# Production override for Docker Compose
+# Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+
+services:
+  db:
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    # No external port in production
+    ports: []
+
+  chromadb:
+    ports: []
+
+  backend:
+    volumes: []
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
+    environment:
+      APP_ENV: production
+      DEBUG: "false"
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: "4"
+
+  frontend:
+    volumes: []
+    environment:
+      NODE_ENV: production
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: "2"
+
+  nginx:
+    ports:
+      - "80:80"
+      - "443:443"
