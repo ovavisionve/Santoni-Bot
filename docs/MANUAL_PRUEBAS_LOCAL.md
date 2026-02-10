@@ -102,72 +102,89 @@ Debes ver: `backend`, `frontend`, `docker-compose.yml`, `nginx`, `docs`, `script
 
 ---
 
-## Paso 2: Configurar el Archivo .env
+## Paso 2: Crear el Archivo de Configuración (.env)
 
-### 2.1 Crear el archivo .env a partir del ejemplo
+El proyecto necesita un archivo llamado `.env` con la configuración. Vamos a crearlo.
 
-**macOS/Linux:**
+### 2.1 Crear el archivo
+
+1. Dentro de la carpeta `Santoni-Bot`, buscar el archivo llamado **`.env.example`**
+
+   > **Nota Windows:** Si no ves el archivo, es porque Windows oculta archivos que empiezan con punto. En el Explorador de Archivos: clic en **"Ver"** (arriba) → marcar **"Elementos ocultos"**
+
+2. **Copiar** ese archivo y **pegar** en la misma carpeta
+3. Se crea un archivo llamado `.env.example - copia` (Windows) o `.env.example copy` (Mac)
+4. **Renombrarlo** a `.env` (solo punto-env, sin nada más)
+   - Windows: Clic derecho → Cambiar nombre → escribir `.env` → Enter → Si pregunta "¿Está seguro?", clic en **Sí**
+   - Mac: Clic en el archivo → Enter → escribir `.env` → Enter → Clic en **"Usar ."**
+
+**Alternativa por terminal** (si prefieres):
 ```
 cp .env.example .env
 ```
 
-**Windows PowerShell:**
-```
-Copy-Item .env.example .env
-```
+### 2.2 Editar el archivo .env
 
-### 2.2 Abrir el archivo .env para editarlo
+1. **Abrir** el archivo `.env` que acabas de crear:
+   - **Clic derecho** sobre el archivo `.env`
+   - **"Abrir con"** → elegir **Visual Studio Code**, **Bloc de Notas** (Windows), o **TextEdit** (Mac)
+   - Si no ves "Abrir con", clic derecho → **"Abrir con"** → **"Elegir otra aplicación"** → Bloc de Notas
 
-**Opción A - Con Visual Studio Code (si lo tienes):**
-```
-code .env
-```
+2. **Borrar TODO** el contenido del archivo (Ctrl+A → Suprimir)
 
-**Opción B - Con el Bloc de Notas (Windows):**
-```
-notepad .env
-```
+3. **Copiar TODO** el siguiente bloque y **pegarlo** en el archivo vacío:
 
-**Opción C - Con TextEdit (macOS):**
 ```
-open -a TextEdit .env
-```
-
-### 2.3 Editar SOLO estas líneas
-
-Busca cada línea y cámbiala. Las demás déjalas como están:
-
-**Línea ~10 - DEBUG:** Cambiar a:
-```
+APP_NAME=SantoniBot
+APP_ENV=development
 DEBUG=true
-```
+DOMAIN=localhost
 
-**Línea ~18 - SECRET_KEY:** Cambiar a cualquier texto largo:
-```
 SECRET_KEY=mi-clave-secreta-para-pruebas-locales-2026
-```
+JWT_ALGORITHM=HS256
+JWT_EXPIRATION_MINUTES=480
 
-**Línea ~23 - POSTGRES_PASSWORD:** Poner un password:
-```
+POSTGRES_HOST=db
+POSTGRES_PORT=5432
+POSTGRES_DB=santonibot
+POSTGRES_USER=santonibot
 POSTGRES_PASSWORD=santoni-dev-2026
-```
 
-**Línea ~34 - GROQ_API_KEY:** Poner tu API key de Groq:
-```
-GROQ_API_KEY=gsk_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-```
-(Usa la key real que tenemos del proyecto. Sin ella los agentes no pueden generar respuestas.)
-
-**Línea ~31 - IDEMPIERE_DB_PASSWORD:** Dejar vacío (no necesitamos iDempiere para pruebas):
-```
+IDEMPIERE_DB_HOST=192.168.1.73
+IDEMPIERE_DB_PORT=5432
+IDEMPIERE_DB_NAME=idempiere_produccion
+IDEMPIERE_DB_USER=ova
 IDEMPIERE_DB_PASSWORD=
+
+GROQ_API_KEY=PEGAR-TU-API-KEY-DE-GROQ-AQUI
+GROQ_MODEL=llama-3.1-70b-versatile
+
+ANTHROPIC_API_KEY=
+ANTHROPIC_MODEL=claude-sonnet-4-5-20250929
+
+CHROMA_HOST=chromadb
+CHROMA_PORT=8001
+
+NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_APP_NAME=SantoniBot
 ```
 
-### 2.4 Guardar y cerrar el archivo
+4. **Ahora, cambia UNA sola cosa:** buscar la línea que dice:
+   ```
+   GROQ_API_KEY=PEGAR-TU-API-KEY-DE-GROQ-AQUI
+   ```
+   Y reemplazar `PEGAR-TU-API-KEY-DE-GROQ-AQUI` con la API key real de Groq que tenemos del proyecto (empieza con `gsk_`). Debe quedar algo así:
+   ```
+   GROQ_API_KEY=gsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+   ```
 
-- **VS Code:** Ctrl+S (Windows) o Cmd+S (Mac)
-- **Bloc de Notas:** Ctrl+S
-- **TextEdit:** Cmd+S
+5. **Guardar** el archivo:
+   - **Windows:** Ctrl + S
+   - **Mac:** Cmd + S
+
+6. **Cerrar** el editor
+
+> **Importante:** La GROQ_API_KEY es lo único que NECESITAS cambiar. Todo lo demás ya está listo para funcionar. Si no pones la key de Groq, la app levanta pero los agentes no pueden responder preguntas.
 
 ---
 
