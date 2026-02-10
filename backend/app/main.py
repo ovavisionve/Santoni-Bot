@@ -7,15 +7,17 @@ from app.config import get_settings
 from app.database import engine, Base
 from app.api.routes import auth, chat, users, admin
 from app.utils.seed import create_admin_user
+from app.utils.seed_demo import seed_demo_data
 
 settings = get_settings()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: create tables and seed admin
+    # Startup: create tables, seed admin, seed demo data
     Base.metadata.create_all(bind=engine)
     create_admin_user()
+    seed_demo_data()
     yield
     # Shutdown
 

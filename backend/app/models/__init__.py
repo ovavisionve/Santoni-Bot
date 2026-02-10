@@ -1,5 +1,50 @@
 from app.models.user import User
 from app.models.conversation import Conversation, Message
 from app.models.audit import AuditLog
+from app.models.demo_data import (
+    DemoCliente,
+    DemoFacturaVenta,
+    DemoLineaFacturaVenta,
+    DemoCobranza,
+    DemoMetaVenta,
+    DemoCuentaBancaria,
+    DemoMovimientoBancario,
+    DemoCuentaPorPagar,
+    DemoAsientoContable,
+    DemoBalanceGeneral,
+    DemoEmpleado,
+    DemoNomina,
+    DemoAsistencia,
+    DemoProduccionDiaria,
+    DemoOrdenProduccion,
+    DemoProveedorInsumo,
+    DemoOrdenCompraInsumo,
+    DemoProductor,
+    DemoCompraProductor,
+)
 
-__all__ = ["User", "Conversation", "Message", "AuditLog"]
+__all__ = [
+    "User",
+    "Conversation",
+    "Message",
+    "AuditLog",
+    "DemoCliente",
+    "DemoFacturaVenta",
+    "DemoLineaFacturaVenta",
+    "DemoCobranza",
+    "DemoMetaVenta",
+    "DemoCuentaBancaria",
+    "DemoMovimientoBancario",
+    "DemoCuentaPorPagar",
+    "DemoAsientoContable",
+    "DemoBalanceGeneral",
+    "DemoEmpleado",
+    "DemoNomina",
+    "DemoAsistencia",
+    "DemoProduccionDiaria",
+    "DemoOrdenProduccion",
+    "DemoProveedorInsumo",
+    "DemoOrdenCompraInsumo",
+    "DemoProductor",
+    "DemoCompraProductor",
+]

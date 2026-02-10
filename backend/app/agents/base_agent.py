@@ -1,9 +1,10 @@
 """
 Base class for all SantoniBot specialized agents.
 Each department agent inherits from this and implements its own
-system prompt, tools, and query processing logic.
+system prompt, data fetching, and query processing logic.
 """
 
+import json
 from abc import ABC, abstractmethod
 
 from langchain_groq import ChatGroq
@@ -60,6 +61,14 @@ class BaseAgent(ABC):
         """Return SQL schema context relevant to this agent."""
         ...
 
+    def fetch_data(self, message: str) -> str | None:
+        """
+        Fetch relevant data from the database based on the user's message.
+        Override in subclasses to provide department-specific data fetching.
+        Returns a formatted string with the data, or None if no data found.
+        """
+        return None
+
     async def process(
         self,
         message: str,
@@ -69,28 +78,43 @@ class BaseAgent(ABC):
         """
         Process a user message and return a response.
 
-        Args:
-            message: The user's query
-            history: List of (role, content) tuples for conversation context
-            user_departments: Departments the user has access to
-
-        Returns:
-            dict with 'response', 'agent_used', and optional 'metadata'
+        1. Fetch relevant data from the database
+        2. Build the prompt with data context
+        3. Send to LLM for natural language response
         """
         messages = [SystemMessage(content=self._system_prompt)]
 
-        # Add SQL context
-        sql_context = self.get_sql_context()
-        if sql_context:
+        # Fetch real data from the database
+        data_context = self.fetch_data(message)
+        if data_context:
             messages.append(
                 SystemMessage(
-                    content=f"Contexto de base de datos disponible:\n{sql_context}"
+                    content=(
+                        "DATOS REALES DE LA BASE DE DATOS:\n"
+                        "Usa estos datos para responder la consulta del usuario. "
+                        "Presenta la información de forma clara, con tablas markdown si corresponde.\n\n"
+                        f"{data_context}"
+                    )
                 )
             )
+        else:
+            # Add SQL schema context as fallback
+            sql_context = self.get_sql_context()
+            if sql_context:
+                messages.append(
+                    SystemMessage(
+                        content=(
+                            "No se encontraron datos específicos para esta consulta. "
+                            "Informa al usuario que el dato solicitado no está disponible "
+                            "o pide más detalles para refinar la búsqueda.\n\n"
+                            f"Esquema disponible:\n{sql_context}"
+                        )
+                    )
+                )
 
         # Add conversation history
         if history:
-            for role, content in history[-10:]:  # Last 10 messages for context
+            for role, content in history[-10:]:
                 if role == "user":
                     messages.append(HumanMessage(content=content))
                 elif role == "assistant":
@@ -103,5 +127,66 @@ class BaseAgent(ABC):
         return {
             "response": response.content,
             "agent_used": self.name,
-            "metadata": {"department": self.department},
+            "metadata": {
+                "department": self.department,
+                "has_data": data_context is not None,
+            },
         }
+
+    @staticmethod
+    def _format_table(data: list[dict], columns: list[str] | None = None) -> str:
+        """Format a list of dicts as a markdown table string for LLM context."""
+        if not data:
+            return "Sin datos disponibles."
+
+        cols = columns or list(data[0].keys())
+
+        # Header
+        header = "| " + " | ".join(str(c).replace("_", " ").title() for c in cols) + " |"
+        separator = "| " + " | ".join("---" for _ in cols) + " |"
+
+        # Rows
+        rows = []
+        for row in data[:50]:  # Limit to 50 rows for LLM context
+            values = []
+            for c in cols:
+                v = row.get(c, "")
+                if isinstance(v, float):
+                    values.append(f"{v:,.2f}")
+                else:
+                    values.append(str(v) if v is not None else "-")
+            rows.append("| " + " | ".join(values) + " |")
+
+        table = "\n".join([header, separator] + rows)
+        if len(data) > 50:
+            table += f"\n\n*(Mostrando 50 de {len(data)} registros)*"
+        return table
+
+    @staticmethod
+    def _format_summary(data: dict, title: str = "") -> str:
+        """Format a summary dict as readable text for LLM context."""
+        lines = []
+        if title:
+            lines.append(f"## {title}")
+
+        for key, value in data.items():
+            if isinstance(value, dict):
+                lines.append(f"\n### {key.replace('_', ' ').title()}")
+                for k, v in value.items():
+                    if isinstance(v, float):
+                        lines.append(f"- {k.replace('_', ' ').title()}: {v:,.2f}")
+                    else:
+                        lines.append(f"- {k.replace('_', ' ').title()}: {v}")
+            elif isinstance(value, list):
+                lines.append(f"\n### {key.replace('_', ' ').title()}")
+                if value and isinstance(value[0], dict):
+                    lines.append(BaseAgent._format_table(value))
+                else:
+                    for item in value[:20]:
+                        lines.append(f"- {item}")
+            elif isinstance(value, float):
+                lines.append(f"- {key.replace('_', ' ').title()}: {value:,.2f}")
+            else:
+                lines.append(f"- {key.replace('_', ' ').title()}: {value}")
+
+        return "\n".join(lines)
