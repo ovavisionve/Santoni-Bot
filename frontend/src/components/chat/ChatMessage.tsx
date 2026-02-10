@@ -12,6 +12,7 @@ import {
   Copy,
   Check,
 } from "lucide-react";
+import ChartRenderer, { type ChartData } from "./ChartRenderer";
 
 interface ChatMessageProps {
   message: Message;
@@ -70,6 +71,30 @@ function getRelativeTime(dateStr: string): string {
   });
 }
 
+/**
+ * Extracts ```chart JSON blocks from message content.
+ * Returns the charts and the remaining markdown text.
+ */
+function extractCharts(content: string): { text: string; charts: ChartData[] } {
+  const charts: ChartData[] = [];
+  const text = content.replace(
+    /```chart\s*\n([\s\S]*?)```/g,
+    (_match, jsonStr: string) => {
+      try {
+        const parsed = JSON.parse(jsonStr.trim());
+        if (parsed.type && parsed.xKey && parsed.yKey && Array.isArray(parsed.data)) {
+          charts.push(parsed as ChartData);
+        }
+      } catch {
+        // Invalid JSON — leave as text
+        return _match;
+      }
+      return "";
+    }
+  );
+  return { text: text.trim(), charts };
+}
+
 export default function ChatMessage({
   message,
   userName,
@@ -78,6 +103,11 @@ export default function ChatMessage({
   const [copied, setCopied] = useState(false);
   const isUser = message.role === "user";
   const hasTable = !isUser && message.content.includes("|");
+
+  // Parse charts from assistant messages
+  const { text: messageText, charts } = isUser
+    ? { text: message.content, charts: [] }
+    : extractCharts(message.content);
 
   const handleCopy = async () => {
     try {
@@ -153,38 +183,45 @@ export default function ChatMessage({
           {isUser ? (
             <p className="m-0">{message.content}</p>
           ) : (
-            <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
-              components={{
-                table: ({ children }) => (
-                  <div className="overflow-x-auto my-3 rounded-lg border border-gray-200">
-                    <table className="min-w-full text-xs border-collapse">
-                      {children}
-                    </table>
-                  </div>
-                ),
-                thead: ({ children }) => (
-                  <thead className="bg-santoni-50">{children}</thead>
-                ),
-                th: ({ children }) => (
-                  <th className="border-b border-gray-200 px-3 py-2 text-left font-semibold text-gray-700 text-xs whitespace-nowrap">
-                    {children}
-                  </th>
-                ),
-                td: ({ children }) => (
-                  <td className="border-b border-gray-100 px-3 py-1.5 text-xs">
-                    {children}
-                  </td>
-                ),
-                tr: ({ children, ...props }) => (
-                  <tr className="hover:bg-gray-50 transition-colors" {...props}>
-                    {children}
-                  </tr>
-                ),
-              }}
-            >
-              {message.content}
-            </ReactMarkdown>
+            <>
+              {messageText && (
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  components={{
+                    table: ({ children }) => (
+                      <div className="overflow-x-auto my-3 rounded-lg border border-gray-200">
+                        <table className="min-w-full text-xs border-collapse">
+                          {children}
+                        </table>
+                      </div>
+                    ),
+                    thead: ({ children }) => (
+                      <thead className="bg-santoni-50">{children}</thead>
+                    ),
+                    th: ({ children }) => (
+                      <th className="border-b border-gray-200 px-3 py-2 text-left font-semibold text-gray-700 text-xs whitespace-nowrap">
+                        {children}
+                      </th>
+                    ),
+                    td: ({ children }) => (
+                      <td className="border-b border-gray-100 px-3 py-1.5 text-xs">
+                        {children}
+                      </td>
+                    ),
+                    tr: ({ children, ...props }) => (
+                      <tr className="hover:bg-gray-50 transition-colors" {...props}>
+                        {children}
+                      </tr>
+                    ),
+                  }}
+                >
+                  {messageText}
+                </ReactMarkdown>
+              )}
+              {charts.map((chart, i) => (
+                <ChartRenderer key={i} chart={chart} />
+              ))}
+            </>
           )}
         </div>
 
