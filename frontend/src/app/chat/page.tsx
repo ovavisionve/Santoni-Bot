@@ -184,12 +184,16 @@ export default function ChatPage() {
 
       // Refresh sidebar to get any server-side updates
       loadConversations();
-    } catch (err) {
+    } catch (err: unknown) {
+      let detail = "Error desconocido";
+      if (err && typeof err === "object" && "message" in err) {
+        detail = (err as { message: string }).message;
+      }
       const errorMsg: Message = {
         id: Date.now() + 1,
         role: "assistant",
         content:
-          "Lo siento, ocurrio un error al procesar tu consulta. Por favor intenta de nuevo.",
+          `Lo siento, ocurrio un error al procesar tu consulta: ${detail}`,
         agent_used: null,
         created_at: new Date().toISOString(),
       };

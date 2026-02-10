@@ -267,7 +267,7 @@ IDEMPIERE_DB_USER=ova
 IDEMPIERE_DB_PASSWORD=ova2026*
 
 GROQ_API_KEY=<tu-groq-api-key-aqui>
-GROQ_MODEL=llama-3.1-70b-versatile
+GROQ_MODEL=llama-3.3-70b-versatile
 
 ANTHROPIC_API_KEY=
 ANTHROPIC_MODEL=claude-sonnet-4-5-20250929

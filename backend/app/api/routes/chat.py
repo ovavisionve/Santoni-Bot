@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
@@ -13,6 +15,8 @@ from app.schemas.chat import (
 )
 from app.services.audit import log_action
 from app.agents.orchestrator import Orchestrator
+
+logger = logging.getLogger("santonibot.chat")
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
 
@@ -65,11 +69,23 @@ async def send_message(
     )
 
     # Process through orchestrator
-    result = await orchestrator.process(
-        message=data.message,
-        user=current_user,
-        history=[(m.role.value, m.content) for m in history[:-1]],  # exclude last
-    )
+    try:
+        result = await orchestrator.process(
+            message=data.message,
+            user=current_user,
+            history=[(m.role.value, m.content) for m in history[:-1]],
+        )
+    except Exception as exc:
+        logger.error(
+            "Error processing chat message: %s: %s",
+            type(exc).__name__,
+            exc,
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=502,
+            detail=f"Error al consultar el modelo de IA: {type(exc).__name__}: {exc}",
+        )
 
     # Save assistant response
     assistant_msg = Message(

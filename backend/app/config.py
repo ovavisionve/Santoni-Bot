@@ -31,7 +31,7 @@ class Settings(BaseSettings):
 
     # AI Providers
     groq_api_key: str = ""
-    groq_model: str = "llama-3.1-70b-versatile"
+    groq_model: str = "llama-3.3-70b-versatile"
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-sonnet-4-5-20250929"
 
