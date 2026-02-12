@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import func, cast, Date
 
@@ -9,6 +9,7 @@ from app.middleware.auth import require_admin, require_supervisor_or_admin
 from app.models.user import User, Department
 from app.models.audit import AuditLog
 from app.models.conversation import Conversation, Message
+from app.services.audit import log_action
 
 router = APIRouter(prefix="/admin", tags=["Administración"])
 
@@ -188,4 +189,141 @@ def get_usage_metrics(
             for row in dept_stats
         ],
         "avg_messages_per_conversation": round(float(avg_msgs or 0), 1),
+    }
+
+
+# ─── Security Management (for IT at Santoni) ─────────────────
+
+
+@router.get("/security/locked-users")
+def get_locked_users(
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """List all currently locked user accounts. For IT team at Santoni."""
+    now = datetime.now(timezone.utc)
+    locked = (
+        db.query(User)
+        .filter(User.locked_until.isnot(None), User.locked_until > now)
+        .all()
+    )
+
+    return [
+        {
+            "id": u.id,
+            "username": u.username,
+            "full_name": u.full_name,
+            "department": u.department.value,
+            "failed_attempts": u.failed_login_attempts,
+            "locked_until": u.locked_until.isoformat() if u.locked_until else None,
+            "remaining_minutes": max(
+                0,
+                int((u.locked_until - now).total_seconds() / 60) + 1,
+            )
+            if u.locked_until
+            else 0,
+        }
+        for u in locked
+    ]
+
+
+@router.post("/security/unlock-user/{user_id}")
+def unlock_user(
+    user_id: int,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Unlock a locked user account. For IT team at Santoni."""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    user.failed_login_attempts = 0
+    user.locked_until = None
+    db.commit()
+
+    log_action(
+        db,
+        user_id=admin.id,
+        action="account_unlocked",
+        resource="security",
+        detail=f"Cuenta desbloqueada: {user.username} (por {admin.username})",
+    )
+
+    return {"message": f"Cuenta de {user.username} desbloqueada exitosamente"}
+
+
+@router.get("/security/overview")
+def security_overview(
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Security dashboard overview. For IT team at Santoni."""
+    now = datetime.now(timezone.utc)
+    last_24h = now - timedelta(hours=24)
+    last_7d = now - timedelta(days=7)
+
+    # Failed logins last 24h
+    failed_24h = (
+        db.query(func.count(AuditLog.id))
+        .filter(
+            AuditLog.action == "login_failed",
+            AuditLog.created_at >= last_24h,
+        )
+        .scalar()
+    )
+
+    # Account lockouts last 7 days
+    lockouts_7d = (
+        db.query(func.count(AuditLog.id))
+        .filter(
+            AuditLog.action == "account_locked",
+            AuditLog.created_at >= last_7d,
+        )
+        .scalar()
+    )
+
+    # Currently locked accounts
+    locked_now = (
+        db.query(func.count(User.id))
+        .filter(User.locked_until.isnot(None), User.locked_until > now)
+        .scalar()
+    )
+
+    # Users with 2FA enabled
+    totp_enabled = (
+        db.query(func.count(User.id))
+        .filter(User.totp_enabled == True, User.is_active == True)
+        .scalar()
+    )
+    total_active = (
+        db.query(func.count(User.id)).filter(User.is_active == True).scalar()
+    )
+
+    # Suspicious IPs (most failed logins)
+    suspicious_ips = (
+        db.query(AuditLog.ip_address, func.count(AuditLog.id).label("count"))
+        .filter(
+            AuditLog.action == "login_failed",
+            AuditLog.created_at >= last_7d,
+            AuditLog.ip_address.isnot(None),
+        )
+        .group_by(AuditLog.ip_address)
+        .order_by(func.count(AuditLog.id).desc())
+        .limit(10)
+        .all()
+    )
+
+    return {
+        "failed_logins_24h": failed_24h,
+        "account_lockouts_7d": lockouts_7d,
+        "currently_locked": locked_now,
+        "totp_enabled_users": totp_enabled,
+        "total_active_users": total_active,
+        "totp_coverage_pct": round(
+            (totp_enabled / total_active * 100) if total_active else 0, 1
+        ),
+        "suspicious_ips": [
+            {"ip": ip, "failed_attempts": count} for ip, count in suspicious_ips
+        ],
     }

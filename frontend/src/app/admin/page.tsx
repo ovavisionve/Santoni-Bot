@@ -19,6 +19,9 @@ import {
   QrCode,
   CheckCircle2,
   XCircle,
+  AlertTriangle,
+  Lock,
+  Unlock,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -545,6 +548,53 @@ function SecurityPanel({ user }: { user: User }) {
   const [pwError, setPwError] = useState("");
   const [loadingPw, setLoadingPw] = useState(false);
 
+  // Security overview & locked users (IT management)
+  const [secOverview, setSecOverview] = useState<{
+    failed_logins_24h: number;
+    account_lockouts_7d: number;
+    currently_locked: number;
+    totp_enabled_users: number;
+    total_active_users: number;
+    totp_coverage_pct: number;
+    suspicious_ips: Array<{ ip: string; failed_attempts: number }>;
+  } | null>(null);
+  const [lockedUsers, setLockedUsers] = useState<
+    Array<{
+      id: number;
+      username: string;
+      full_name: string;
+      department: string;
+      failed_attempts: number;
+      remaining_minutes: number;
+    }>
+  >([]);
+
+  useEffect(() => {
+    loadSecurityData();
+  }, []);
+
+  const loadSecurityData = async () => {
+    try {
+      const [overview, locked] = await Promise.all([
+        api.getSecurityOverview(),
+        api.getLockedUsers(),
+      ]);
+      setSecOverview(overview);
+      setLockedUsers(locked);
+    } catch {
+      // ignore if not admin
+    }
+  };
+
+  const handleUnlock = async (userId: number) => {
+    try {
+      await api.unlockUser(userId);
+      loadSecurityData();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Error al desbloquear");
+    }
+  };
+
   const handleSetupTotp = async () => {
     setTotpError("");
     setTotpMessage("");
@@ -626,6 +676,114 @@ function SecurityPanel({ user }: { user: User }) {
 
   return (
     <div className="space-y-6">
+      {/* Security Overview (IT Dashboard) */}
+      {secOverview && (
+        <div className="bg-white rounded-xl border border-gray-200 p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <Shield size={20} className="text-santoni-600" />
+            <h3 className="text-lg font-semibold">
+              Panel de Seguridad (TI)
+            </h3>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+            <div className="bg-red-50 rounded-lg p-3 text-center">
+              <div className="text-2xl font-bold text-red-600">
+                {secOverview.failed_logins_24h}
+              </div>
+              <div className="text-xs text-red-500">
+                Logins fallidos (24h)
+              </div>
+            </div>
+            <div className="bg-orange-50 rounded-lg p-3 text-center">
+              <div className="text-2xl font-bold text-orange-600">
+                {secOverview.account_lockouts_7d}
+              </div>
+              <div className="text-xs text-orange-500">
+                Bloqueos (7 dias)
+              </div>
+            </div>
+            <div className={`rounded-lg p-3 text-center ${secOverview.currently_locked > 0 ? "bg-red-50" : "bg-green-50"}`}>
+              <div className={`text-2xl font-bold ${secOverview.currently_locked > 0 ? "text-red-600" : "text-green-600"}`}>
+                {secOverview.currently_locked}
+              </div>
+              <div className={`text-xs ${secOverview.currently_locked > 0 ? "text-red-500" : "text-green-500"}`}>
+                Cuentas bloqueadas
+              </div>
+            </div>
+            <div className="bg-blue-50 rounded-lg p-3 text-center">
+              <div className="text-2xl font-bold text-blue-600">
+                {secOverview.totp_coverage_pct}%
+              </div>
+              <div className="text-xs text-blue-500">
+                Usuarios con 2FA ({secOverview.totp_enabled_users}/{secOverview.total_active_users})
+              </div>
+            </div>
+          </div>
+
+          {secOverview.suspicious_ips.length > 0 && (
+            <div className="mt-4">
+              <h4 className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+                <AlertTriangle size={14} className="text-orange-500" />
+                IPs sospechosas (ultimos 7 dias)
+              </h4>
+              <div className="flex flex-wrap gap-2">
+                {secOverview.suspicious_ips.map((item) => (
+                  <span
+                    key={item.ip}
+                    className="inline-flex items-center gap-1 bg-red-50 text-red-700 text-xs px-2 py-1 rounded font-mono"
+                  >
+                    {item.ip}
+                    <span className="bg-red-200 text-red-800 px-1 rounded">
+                      {item.failed_attempts}x
+                    </span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Locked Users Management */}
+      {lockedUsers.length > 0 && (
+        <div className="bg-white rounded-xl border border-red-200 p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <Lock size={20} className="text-red-500" />
+            <h3 className="text-lg font-semibold text-red-700">
+              Cuentas Bloqueadas ({lockedUsers.length})
+            </h3>
+          </div>
+          <div className="space-y-2">
+            {lockedUsers.map((lu) => (
+              <div
+                key={lu.id}
+                className="flex items-center justify-between bg-red-50 rounded-lg px-4 py-3"
+              >
+                <div>
+                  <span className="font-medium text-gray-900">
+                    {lu.full_name}
+                  </span>
+                  <span className="text-gray-500 text-sm ml-2">
+                    @{lu.username}
+                  </span>
+                  <span className="text-red-500 text-xs ml-2">
+                    ({lu.failed_attempts} intentos, {lu.remaining_minutes} min restantes)
+                  </span>
+                </div>
+                <button
+                  onClick={() => handleUnlock(lu.id)}
+                  className="flex items-center gap-1 bg-white border border-gray-200 text-gray-700 px-3 py-1.5 rounded-lg text-sm hover:bg-green-50 hover:border-green-300 hover:text-green-700 transition-colors"
+                >
+                  <Unlock size={14} />
+                  Desbloquear
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* 2FA Section */}
       <div className="bg-white rounded-xl border border-gray-200 p-6">
         <div className="flex items-center gap-3 mb-4">

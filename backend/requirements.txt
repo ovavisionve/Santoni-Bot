@@ -36,6 +36,9 @@ reportlab==4.2.5
 pyotp==2.9.0
 qrcode[pil]==8.0
 
+# Monitoring
+sentry-sdk[fastapi]==2.19.2
+
 # Utilities
 python-dateutil==2.9.0
 pytz==2024.2

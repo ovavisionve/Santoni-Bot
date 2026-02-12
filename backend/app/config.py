@@ -1,5 +1,10 @@
+import logging
+
 from pydantic_settings import BaseSettings
+from pydantic import model_validator
 from functools import lru_cache
+
+_config_logger = logging.getLogger("santonibot.config")
 
 
 class Settings(BaseSettings):
@@ -14,6 +19,10 @@ class Settings(BaseSettings):
     secret_key: str = "change-this-to-a-random-secret-key-min-32-chars"
     jwt_algorithm: str = "HS256"
     jwt_expiration_minutes: int = 30
+
+    # Sentry (optional - leave empty to disable)
+    sentry_dsn: str = ""
+    sentry_traces_sample_rate: float = 0.2
 
     # Internal Database
     postgres_host: str = "db"
@@ -40,6 +49,21 @@ class Settings(BaseSettings):
     # ChromaDB
     chroma_host: str = "chromadb"
     chroma_port: int = 8001
+
+    @model_validator(mode="after")
+    def _check_secret_key(self):
+        default = "change-this-to-a-random-secret-key-min-32-chars"
+        if self.secret_key == default and self.app_env == "production":
+            raise ValueError(
+                "SECRET_KEY no puede ser el valor por defecto en producción. "
+                'Genere una clave segura con: python -c "import secrets; print(secrets.token_urlsafe(64))"'
+            )
+        if len(self.secret_key) < 32:
+            _config_logger.warning(
+                "SECRET_KEY tiene menos de 32 caracteres. "
+                "Se recomienda mínimo 64 caracteres aleatorios para producción."
+            )
+        return self
 
     @property
     def database_url(self) -> str:

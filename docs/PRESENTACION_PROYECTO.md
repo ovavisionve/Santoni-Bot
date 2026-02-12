@@ -135,7 +135,7 @@ Cada respuesta del bot tiene un boton de copiar que permite copiar todo el texto
 
 ### 3.6 Panel de Administracion
 
-Los administradores del sistema tienen acceso a un panel completo de gestion con tres secciones:
+Los administradores del sistema tienen acceso a un panel completo de gestion con cuatro secciones:
 
 **Estadisticas:**
 - Total de usuarios, usuarios activos, total de conversaciones y mensajes
@@ -143,10 +143,16 @@ Los administradores del sistema tienen acceso a un panel completo de gestion con
 - Metricas de uso: mensajes y conversaciones por dia, top usuarios, actividad por departamento
 
 **Gestion de Usuarios:**
-- Crear nuevos usuarios con rol, departamento y contrasena
+- Crear nuevos usuarios con rol, departamento y contrasena (con validacion de politica de contrasenas)
 - Editar usuarios existentes (cambiar rol, departamento, activar/desactivar)
 - Eliminar usuarios (proteccion: no se puede eliminar a si mismo)
 - Asignar departamentos adicionales a supervisores
+
+**Seguridad (nuevo):**
+- Dashboard con metricas de seguridad en tiempo real: logins fallidos en las ultimas 24 horas, bloqueos de cuenta en los ultimos 7 dias, cuentas actualmente bloqueadas, porcentaje de cobertura 2FA, y deteccion de IPs sospechosas
+- Gestion de cuentas bloqueadas: lista de usuarios bloqueados con boton para desbloquear
+- Configuracion de autenticacion de dos factores (2FA) con Google Authenticator
+- Cambio de contrasena para usuarios desde el panel
 
 **Auditoria:**
 - Registro completo de todas las acciones del sistema
@@ -184,17 +190,46 @@ Estos datos permiten demostrar completamente todas las capacidades del sistema s
 
 ---
 
-## 5. SEGURIDAD: PROTECCION EMPRESARIAL COMPLETA
+## 5. SEGURIDAD: PROTECCION EMPRESARIAL DE NIVEL BANCARIO
 
-### 5.1 Autenticacion y Contrasenas
+SantoniBot implementa un sistema de seguridad multicapa que cubre autenticacion, control de acceso, proteccion contra ataques, monitoreo y respaldo de datos. Cada capa esta disenada para proteger la informacion sensible de Alimentos Santoni.
 
-**Proteccion de contrasenas:** Todas las contrasenas se almacenan cifradas con BCrypt, el estandar de la industria para hashing de contrasenas. Ni siquiera un administrador de base de datos puede ver las contrasenas reales.
+### 5.1 Autenticacion Reforzada
 
-**Tokens JWT:** Una vez autenticado, el usuario recibe un token JWT (JSON Web Token) firmado digitalmente con clave secreta de minimo 32 caracteres. Este token tiene una duracion configurable (por defecto 8 horas) y contiene la informacion del usuario de forma segura. Cada peticion al servidor se valida con este token.
+**Contrasenas seguras con politica estricta:** Todas las contrasenas se almacenan cifradas con BCrypt, el estandar de la industria para hashing de contrasenas. Ni siquiera un administrador de base de datos puede ver las contrasenas reales. Ademas, el sistema exige una politica de contrasenas robusta: minimo 8 caracteres, al menos 1 mayuscula, 1 minuscula, 1 numero y 1 caracter especial. Esta politica se aplica tanto al crear usuarios como al cambiar contrasenas.
+
+**Cambio de contrasena:** Los administradores pueden cambiar la contrasena de cualquier usuario desde la pestana de Seguridad del panel de administracion. El sistema valida que la nueva contrasena cumpla con la politica antes de aceptarla.
+
+**Tokens JWT de corta duracion:** Una vez autenticado, el usuario recibe un token JWT (JSON Web Token) firmado digitalmente con clave secreta de minimo 32 caracteres. Los tokens expiran a los 30 minutos, reduciendo significativamente la ventana de riesgo si un token es interceptado. Cada peticion al servidor se valida con este token.
+
+**Validacion de clave secreta:** En produccion, el sistema verifica que la SECRET_KEY no sea el valor por defecto (lo cual genera un error que impide arrancar) y advierte si tiene menos de 32 caracteres. Esto previene despliegues con configuraciones inseguras.
+
+**Auto-logout por inactividad:** Si un usuario pasa 30 minutos sin actividad, la sesion se cierra automaticamente. El sistema muestra un banner de advertencia 5 minutos antes del cierre, dando la oportunidad de continuar la sesion con un clic. Esto previene sesiones abandonadas en computadores compartidos.
 
 **Contrasena del administrador:** La contrasena del primer administrador se genera automaticamente de forma segura y se muestra una sola vez en los logs del sistema durante el primer arranque. No hay contrasenas por defecto.
 
-### 5.2 Control de Acceso por Roles (RBAC)
+### 5.2 Autenticacion de Dos Factores (2FA)
+
+SantoniBot soporta autenticacion de dos factores con TOTP (Time-based One-Time Password), compatible con Google Authenticator, Authy y cualquier aplicacion TOTP estandar.
+
+**Como funciona:**
+1. El administrador activa el 2FA para un usuario desde la pestana de Seguridad del panel de administracion
+2. El usuario escanea un codigo QR con su aplicacion de autenticacion
+3. A partir de ese momento, al iniciar sesion debe ingresar su contrasena mas el codigo de 6 digitos que genera la aplicacion
+4. Los codigos cambian cada 30 segundos, haciendo imposible reutilizarlos
+
+**Gestion completa:** Desde el panel de administracion se puede configurar, activar y desactivar el 2FA para cualquier usuario. El dashboard de seguridad muestra el porcentaje de cobertura 2FA (cuantos usuarios lo tienen activado vs. el total).
+
+### 5.3 Proteccion contra Ataques de Fuerza Bruta
+
+**Bloqueo automatico de cuentas:** Despues de 5 intentos fallidos de login, la cuenta se bloquea automaticamente por 15 minutos. Esto detiene ataques de fuerza bruta que intentan adivinar contrasenas. Los administradores de TI pueden desbloquear cuentas manualmente desde el panel de seguridad sin esperar los 15 minutos.
+
+**Limitacion de peticiones (Rate Limiting via Nginx):** El sistema protege contra ataques de fuerza bruta y denegacion de servicio con tres zonas de rate limiting configuradas en Nginx:
+- **API general:** 30 peticiones por minuto -- proteccion basica contra uso abusivo
+- **Login:** 5 intentos por minuto -- proteccion especifica contra fuerza bruta
+- **Exportacion:** 10 peticiones por minuto -- previene descarga masiva de datos
+
+### 5.4 Control de Acceso por Roles (RBAC)
 
 El sistema implementa un control de acceso basado en roles y departamentos con 3 niveles:
 
@@ -202,47 +237,91 @@ El sistema implementa un control de acceso basado en roles y departamentos con 3
 
 **Supervisor:** Puede consultar datos de su departamento principal mas departamentos adicionales que le asigne el administrador. Por ejemplo, un supervisor puede tener acceso a Ventas y Compras.
 
-**Administrador:** Acceso completo a todos los departamentos, mas el panel de administracion con gestion de usuarios y auditoria.
+**Administrador:** Acceso completo a todos los departamentos, mas el panel de administracion con gestion de usuarios, seguridad y auditoria.
 
 Este control se aplica a nivel del Orquestador de IA: antes de enrutar una pregunta a un agente, verifica que el usuario tenga permiso para acceder a ese departamento. Si no lo tiene, registra el intento y le informa amablemente al usuario.
 
-### 5.3 Proteccion contra Ataques
+### 5.5 Seguridad a Nivel de Red
 
-**Limitacion de peticiones (Rate Limiting):** El sistema protege contra ataques de fuerza bruta y denegacion de servicio con limites por endpoint:
-- API general: 30 peticiones por minuto
-- Login: 5 intentos por minuto (proteccion contra fuerza bruta)
-- Exportacion: 10 peticiones por minuto
+**Encabezados de seguridad HTTP:** Cada respuesta del servidor incluye un conjunto completo de encabezados de seguridad configurados en Nginx:
+- **X-Frame-Options (DENY):** Impide que la aplicacion sea embebida en iframes (proteccion contra clickjacking)
+- **X-Content-Type-Options (nosniff):** Evita que el navegador interprete archivos con tipo MIME incorrecto
+- **Content-Security-Policy (CSP):** Controla que recursos puede cargar la pagina, previniendo inyeccion de scripts maliciosos
+- **Referrer-Policy (strict-origin-when-cross-origin):** Limita la informacion de referencia enviada a sitios externos
+- **Permissions-Policy:** Bloquea acceso a camara, microfono, geolocalizacion y otras APIs sensibles del navegador
+- **X-DNS-Prefetch-Control (off):** Desactiva la resolucion anticipada de DNS para mayor privacidad
+- **X-Download-Options (noopen):** Previene la apertura automatica de archivos descargados en Internet Explorer
+- **server_tokens off:** Oculta la version de Nginx en las respuestas HTTP
 
-**Encabezados de seguridad HTTP:** Cada respuesta del servidor incluye encabezados de seguridad que protegen contra:
-- Clickjacking (X-Frame-Options)
-- Inyeccion de contenido (X-Content-Type-Options)
-- Cross-Site Scripting (X-XSS-Protection)
-- Fuga de referencia (Referrer-Policy)
-- Acceso a camara, microfono y geolocalizacion (Permissions-Policy)
-- Politica de seguridad de contenido (CSP)
+**HTTPS listo para produccion:** La configuracion de Nginx incluye SSL/TLS con Certbot integrado en docker-compose para certificados Let's Encrypt automaticos. Los encabezados HSTS (HTTP Strict Transport Security) estan preparados y se activan al configurar el certificado SSL, forzando todas las conexiones por HTTPS.
 
 **CORS restrictivo:** Solo se permiten peticiones desde los dominios configurados, con metodos y encabezados especificos.
 
-**Validacion de entrada:** Todos los datos que envian los usuarios se validan con schemas estrictos (Pydantic) antes de procesarse. Los mensajes de chat estan limitados a 2,000 caracteres.
-
 **API de documentacion oculta:** En produccion, las paginas de documentacion Swagger/Redoc del API estan deshabilitadas para no exponer la estructura interna del sistema.
 
-### 5.4 Auditoria Completa
+**Validacion de entrada:** Todos los datos que envian los usuarios se validan con schemas estrictos (Pydantic) antes de procesarse. Los mensajes de chat estan limitados a 2,000 caracteres.
 
-Cada accion relevante del sistema se registra en un log de auditoria con la siguiente informacion:
+### 5.6 Panel de Seguridad para TI
+
+El panel de administracion incluye una pestana dedicada de Seguridad que proporciona visibilidad completa del estado de seguridad del sistema:
+
+**Dashboard de metricas en tiempo real:**
+- Logins fallidos en las ultimas 24 horas
+- Bloqueos de cuenta en los ultimos 7 dias
+- Cuentas actualmente bloqueadas
+- Porcentaje de cobertura 2FA (usuarios con 2FA activo vs. total)
+- IPs sospechosas detectadas (multiples intentos fallidos desde una misma IP)
+
+**Gestion de cuentas bloqueadas:**
+- Lista de usuarios bloqueados con motivo y hora del bloqueo
+- Boton de desbloqueo inmediato para que TI pueda restaurar el acceso sin esperar el timeout de 15 minutos
+
+### 5.7 Auditoria Completa de Eventos de Seguridad
+
+Cada accion relevante del sistema se registra en un log de auditoria persistente con la siguiente informacion:
 
 - **Quien:** El usuario que realizo la accion (o "usuario desconocido" si fallo el login)
-- **Que:** El tipo de accion (login, consulta, acceso denegado, login fallido)
+- **Que:** El tipo de accion realizada
 - **Cuando:** Fecha y hora exacta con zona horaria
 - **Donde:** La direccion IP desde donde se realizo la accion
 - **Detalle:** Los primeros 200 caracteres de la consulta o el detalle del evento
-- **Agente:** Cual agente de IA proceso la consulta
+- **Agente:** Cual agente de IA proceso la consulta (cuando aplica)
 
-Los intentos de acceso denegado y los logins fallidos se registran especialmente y se resaltan en rojo en el panel de administracion, permitiendo detectar intentos de acceso no autorizado.
+**Eventos de seguridad registrados:**
+- `login` -- Inicio de sesion exitoso
+- `login_failed` -- Intento de login con credenciales incorrectas
+- `login_blocked` -- Intento de login en cuenta bloqueada
+- `account_locked` -- Cuenta bloqueada por intentos fallidos
+- `account_unlocked` -- Cuenta desbloqueada por administrador
+- `totp_setup` -- Configuracion inicial de 2FA
+- `totp_enabled` -- Activacion de 2FA
+- `totp_disabled` -- Desactivacion de 2FA
+- `password_changed` -- Cambio de contrasena
 
-### 5.5 Proteccion de Datos Sensibles
+Los intentos de acceso denegado, logins fallidos y bloqueos se resaltan en rojo en el panel de administracion, permitiendo detectar patrones de acceso no autorizado.
+
+### 5.8 Proteccion de Datos Sensibles
 
 Los datos de RRHH (nomina, salarios, asistencia) estan marcados como "altamente sensibles" dentro del sistema. Solo los usuarios con acceso al departamento de RRHH pueden consultar esta informacion. Ademas, los queries que se registran en el log de auditoria se truncan a 200 caracteres para no almacenar informacion sensible completa en los logs.
+
+### 5.9 Respaldo Automatico de Base de Datos
+
+El sistema incluye un servicio Docker dedicado para respaldos automaticos de la base de datos PostgreSQL:
+
+- **Frecuencia:** Respaldo completo diario a las 2:00 AM
+- **Retencion:** Los ultimos 30 dias de respaldos se conservan automaticamente; los mas antiguos se eliminan
+- **Ejecucion:** Cron configurado en el servidor: `0 2 * * * cd /opt/santonibot && docker compose run --rm backup`
+- **Almacenamiento:** Los respaldos se guardan en un volumen Docker dedicado
+
+Esto garantiza que ante cualquier eventualidad, los datos del sistema pueden restaurarse con un maximo de 24 horas de perdida.
+
+### 5.10 Monitoreo con Sentry
+
+SantoniBot integra Sentry para monitoreo de errores tanto en el backend (FastAPI SDK) como en el frontend (@sentry/nextjs). La integracion es completamente opcional: solo se activa si se configura la variable de entorno `SENTRY_DSN`. Cuando esta activa, Sentry captura errores automaticamente, con trazas completas, contexto del usuario y alertas en tiempo real, permitiendo detectar y resolver problemas antes de que afecten a los usuarios.
+
+### 5.11 Logs de Acceso Nginx
+
+Nginx esta configurado con un formato de log personalizado que registra los tiempos de respuesta de cada peticion. Los logs se almacenan en un volumen Docker persistente, permitiendo analisis post-incidente y monitoreo de rendimiento del sistema.
 
 ---
 
@@ -268,6 +347,8 @@ Los datos de RRHH (nomina, salarios, asistencia) estan marcados como "altamente 
 
 **Alembic** - Sistema de migraciones de base de datos que permite evolucionar el esquema de forma controlada y versionada.
 
+**Sentry SDK** - Monitoreo de errores en produccion con trazas completas y alertas automaticas (activacion opcional via variable de entorno).
+
 ### 6.3 Frontend
 
 **Next.js 14 + React 18** - El frontend esta construido con Next.js 14, el framework de React mas popular para aplicaciones web de produccion. Proporciona renderizado del lado del servidor, rutas automaticas, y optimizacion de rendimiento.
@@ -280,18 +361,21 @@ Los datos de RRHH (nomina, salarios, asistencia) estan marcados como "altamente 
 
 **ReactMarkdown + remark-gfm** - Renderizado de markdown con soporte para tablas de GitHub Flavored Markdown, lo que permite que las respuestas de la IA se muestren con tablas formateadas profesionalmente.
 
+**@sentry/nextjs** - Monitoreo de errores en el frontend con captura automatica de excepciones (activacion opcional).
+
 ### 6.4 Infraestructura
 
-**Docker + Docker Compose** - Toda la aplicacion esta containerizada en 5 servicios:
+**Docker + Docker Compose** - Toda la aplicacion esta containerizada en 6 servicios:
 1. Base de datos PostgreSQL 16
 2. ChromaDB (base de datos vectorial)
 3. Backend FastAPI (Python)
 4. Frontend Next.js (Node.js)
-5. Nginx (proxy reverso, seguridad, rate limiting)
+5. Nginx (proxy reverso, seguridad, SSL, rate limiting)
+6. Backup (respaldo automatico diario de la base de datos con 30 dias de retencion)
 
 Esto permite desplegar todo el sistema con un solo comando (`docker compose up -d`) y garantiza que funcione identicamente en cualquier servidor.
 
-**Nginx** - Proxy reverso que maneja la seguridad a nivel de red: rate limiting, encabezados de seguridad, SSL/TLS, y enrutamiento de peticiones al backend y frontend.
+**Nginx** - Proxy reverso que maneja la seguridad a nivel de red: 3 zonas de rate limiting, encabezados de seguridad completos, SSL/TLS con Certbot, logs con tiempos de respuesta, y enrutamiento de peticiones al backend y frontend.
 
 **GitHub Actions** - Pipeline de CI/CD que automaticamente ejecuta pruebas y validaciones cada vez que se sube codigo nuevo:
 - Backend: instala dependencias, ejecuta 150+ tests automatizados
@@ -304,6 +388,8 @@ El sistema esta disenado para desplegarse en la VM de Santoni (192.168.1.26):
 - Scripts automatizados: setup-vm.sh (configuracion inicial), deploy.sh (despliegue), backup.sh (respaldo)
 - Configuracion separada para desarrollo y produccion (docker-compose.prod.yml)
 - En produccion: 4 workers del backend, sin hot-reload, debug desactivado, limites de recursos configurados
+- Respaldos automaticos diarios de la base de datos con 30 dias de retencion
+- Monitoreo de errores con Sentry (opcional)
 
 ---
 
@@ -345,13 +431,13 @@ El sistema RAG es completamente opcional. Si ChromaDB no esta disponible o hay u
 
 La base de datos interna de PostgreSQL almacena:
 
-**Usuarios:** ID, email, nombre de usuario, nombre completo, contrasena cifrada, rol (usuario/supervisor/administrador), departamento principal, departamentos adicionales, estado activo, fechas de creacion y actualizacion.
+**Usuarios:** ID, email, nombre de usuario, nombre completo, contrasena cifrada, rol (usuario/supervisor/administrador), departamento principal, departamentos adicionales, estado activo, secreto TOTP para 2FA, estado de 2FA, contador de intentos fallidos, hora de bloqueo, fechas de creacion y actualizacion.
 
 **Conversaciones:** ID, usuario propietario, titulo automatico, fechas de creacion y actualizacion. Se eliminan en cascada si se elimina el usuario.
 
 **Mensajes:** ID, conversacion a la que pertenece, rol (usuario/asistente/sistema), contenido del mensaje, agente que respondio, metadatos en JSON, fecha de creacion. Se eliminan en cascada si se elimina la conversacion.
 
-**Logs de auditoria:** ID, usuario (puede ser nulo para logins fallidos), accion, recurso, detalle, agente usado, direccion IP, fecha de creacion.
+**Logs de auditoria:** ID, usuario (puede ser nulo para logins fallidos), accion (login, login_failed, login_blocked, account_locked, account_unlocked, totp_setup, totp_enabled, totp_disabled, password_changed, consulta, acceso denegado), recurso, detalle, agente usado, direccion IP, fecha de creacion.
 
 ### 8.2 Base de datos ERP (iDempiere)
 
@@ -370,10 +456,10 @@ Almacena los embeddings de documentos subidos al sistema de base de conocimiento
 El proyecto cuenta con **150+ pruebas automatizadas** organizadas en:
 
 **Backend (12 archivos de tests):**
-- Tests de autenticacion (login, JWT, permisos)
+- Tests de autenticacion (login, JWT, permisos, 2FA, bloqueo de cuentas, politica de contrasenas)
 - Tests de los 7 agentes de IA (clasificacion, respuestas)
 - Tests de RBAC (control de acceso por rol y departamento, aislamiento de datos)
-- Tests de endpoints API (chat, export, users, admin)
+- Tests de endpoints API (chat, export, users, admin, seguridad)
 - Tests del endpoint de metricas
 - Tests del orquestador (enrutamiento de consultas)
 - Tests del anonimizador de datos
@@ -421,7 +507,7 @@ La arquitectura esta disenada para soportar una futura integracion con WhatsApp 
 
 2. **Datos reales, no inventados.** Se conecta directamente al ERP de Santoni. Los numeros que muestra son los mismos que estan en el sistema, en tiempo real.
 
-3. **Seguridad empresarial seria.** Control de acceso por departamento, contrasenas cifradas, tokens JWT, rate limiting, encabezados de seguridad, auditoria completa. No es un prototipo, es una solucion de nivel empresarial.
+3. **Seguridad empresarial de nivel bancario.** Tokens JWT de 30 minutos, autenticacion de dos factores (2FA) con Google Authenticator, bloqueo automatico tras 5 intentos fallidos, auto-logout por inactividad, politica de contrasenas robusta, rate limiting por zonas, encabezados de seguridad completos, auditoria de 15 tipos de eventos, panel de seguridad para TI, respaldos diarios automaticos, y monitoreo con Sentry. No es un prototipo, es una solucion de nivel empresarial.
 
 4. **Exportacion profesional.** No solo muestra datos en pantalla: los exporta en Excel formateado con colores corporativos, PDF listo para imprimir, y CSV para analisis. Las graficas se descargan como imagenes PNG.
 
@@ -429,7 +515,7 @@ La arquitectura esta disenada para soportar una futura integracion con WhatsApp 
 
 6. **Multiplataforma.** Funciona en cualquier navegador (Chrome, Firefox, Edge) y se adapta automaticamente a celulares y tablets.
 
-7. **Desplegable con un comando.** Toda la infraestructura esta containerizada en Docker. Un solo `docker compose up -d` levanta los 5 servicios.
+7. **Desplegable con un comando.** Toda la infraestructura esta containerizada en Docker. Un solo `docker compose up -d` levanta los 6 servicios.
 
 8. **Preparado para crecer.** La arquitectura modular permite agregar nuevos agentes, nuevas integraciones (WhatsApp, Claude, documentos), y escalar sin reescribir.
 
@@ -449,8 +535,11 @@ La arquitectura esta disenada para soportar una futura integracion con WhatsApp 
 | Orquestacion IA | LangChain |
 | Graficas | Recharts |
 | Exportacion | CSV, Excel (openpyxl), PDF (ReportLab) |
-| Proxy y seguridad | Nginx |
-| Containerizacion | Docker + Docker Compose (5 servicios) |
+| Proxy y seguridad | Nginx (SSL, rate limiting, headers) |
+| Autenticacion | JWT 30min + TOTP 2FA (Google Authenticator) |
+| Monitoreo | Sentry (backend + frontend, opcional) |
+| Respaldos | Backup diario automatico, 30 dias de retencion |
+| Containerizacion | Docker + Docker Compose (6 servicios) |
 | CI/CD | GitHub Actions |
 | Tests | Pytest (backend, 150+), Jest (frontend) |
 
@@ -467,7 +556,7 @@ La arquitectura esta disenada para soportar una futura integracion con WhatsApp 
 | Tests automatizados | Terminado | 88% (falta E2E) |
 | CI/CD | Terminado | 100% |
 | Documentacion | Terminado | 100% |
-| Seguridad | Terminado | 100% |
+| Seguridad completa | Terminado | 100% |
 | Conexion iDempiere real | Pendiente | 0% (requiere VPN) |
 | WhatsApp | Fase 2 | 0% (post-lanzamiento) |
 

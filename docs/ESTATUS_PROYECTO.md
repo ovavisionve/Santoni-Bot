@@ -1,7 +1,7 @@
 # SantoniBot - Estatus del Proyecto
 
-**Fecha:** 10 de febrero 2026
-**Avance general:** 73 de 88 tareas completadas (~83%)
+**Fecha:** 12 de febrero 2026
+**Avance general:** 80 de 88 tareas completadas (~91%)
 
 ---
 
@@ -14,19 +14,29 @@
 | Backend - Datos demo | 7/7 | 0 | 100% |
 | Frontend - Core | 10/10 | 0 | 100% |
 | Docker / Deploy | 8/8 | 0 | 100% |
+| Seguridad | 7/7 | 0 | 100% |
 | Testing | 7/8 | 1 | 88% |
-| Migraciones DB | 2/3 | 1 | 67% |
+| Migraciones DB | 3/3 | 0 | 100% |
 | Conexion iDempiere real | 0/7 | 7 | 0% |
 | CI/CD | 4/4 | 0 | 100% |
-| Monitoreo / Logging | 3/4 | 1 | 75% |
+| Monitoreo / Logging | 4/4 | 0 | 100% |
 | WhatsApp | 0/5 | 5 | 0% (Fase 2) |
 | Documentacion | 6/6 | 0 | 100% |
-| **TOTAL** | **73/88** | **15** | **~83%** |
+| **TOTAL** | **80/88** | **8** | **~91%** |
 
-> **Nota:** Las 15 tareas pendientes son mayoritariamente de conexion iDempiere
-> (7 tareas, requieren VPN) y WhatsApp (5 tareas, Fase 2 post-lanzamiento).
-> Las 3 restantes son: tests E2E, script de migracion de datos y Sentry.
+> **Nota:** Las 8 tareas pendientes son: conexion iDempiere real (7 tareas,
+> requieren VPN al servidor de Santoni) y tests E2E (1 tarea).
+> WhatsApp (5 tareas) es Fase 2 post-lanzamiento.
 > El sistema esta **100% funcional** para pruebas locales con datos demo.
+
+### Cambios recientes (12 Feb 2026)
+- Seguridad completa: JWT 30min, 2FA TOTP, bloqueo de cuenta, politica de contraseñas
+- Panel de seguridad TI: desbloqueo de cuentas, dashboard de seguridad, IPs sospechosas
+- Sentry integrado (backend + frontend, activado con SENTRY_DSN)
+- Nginx: logs de acceso, compresion gzip, SSL/Certbot listo, headers de seguridad mejorados
+- Backups automaticos de PostgreSQL (Docker service, retencion 30 dias)
+- Graficas interactivas (Recharts, auto-generadas desde tablas markdown)
+- Validacion de SECRET_KEY en produccion
 
 ---
 

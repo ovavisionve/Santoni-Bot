@@ -55,15 +55,20 @@ class ApiClient {
     return response.json();
   }
 
-  // Auth
+  // Auth – handled separately to avoid the generic 401 redirect
   async login(username: string, password: string, totp_code?: string) {
-    const data = await this.request<{
-      access_token: string;
-      totp_required?: boolean;
-    }>("/api/auth/login", {
+    const response = await fetch(`${API_BASE}/api/auth/login`, {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ username, password, totp_code: totp_code || null }),
     });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.detail || "Error al iniciar sesion");
+    }
+
+    const data = await response.json();
     if (data.totp_required) {
       return { totp_required: true as const, access_token: "" };
     }
@@ -201,6 +206,40 @@ class ApiClient {
         created_at: string;
       }>;
     }>(`/api/admin/audit-logs?page=${page}&limit=${limit}`);
+  }
+
+  // Security management
+  async getSecurityOverview() {
+    return this.request<{
+      failed_logins_24h: number;
+      account_lockouts_7d: number;
+      currently_locked: number;
+      totp_enabled_users: number;
+      total_active_users: number;
+      totp_coverage_pct: number;
+      suspicious_ips: Array<{ ip: string; failed_attempts: number }>;
+    }>("/api/admin/security/overview");
+  }
+
+  async getLockedUsers() {
+    return this.request<
+      Array<{
+        id: number;
+        username: string;
+        full_name: string;
+        department: string;
+        failed_attempts: number;
+        locked_until: string | null;
+        remaining_minutes: number;
+      }>
+    >("/api/admin/security/locked-users");
+  }
+
+  async unlockUser(userId: number) {
+    return this.request<{ message: string }>(
+      `/api/admin/security/unlock-user/${userId}`,
+      { method: "POST" }
+    );
   }
 }
 

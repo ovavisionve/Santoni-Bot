@@ -1,3 +1,5 @@
+const { withSentryConfig } = require("@sentry/nextjs");
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: "standalone",
@@ -11,4 +13,10 @@ const nextConfig = {
   },
 };
 
-module.exports = nextConfig;
+// Only wrap with Sentry if DSN is configured
+module.exports = process.env.NEXT_PUBLIC_SENTRY_DSN
+  ? withSentryConfig(nextConfig, {
+      silent: true,
+      disableLogger: true,
+    })
+  : nextConfig;

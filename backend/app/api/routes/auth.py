@@ -1,4 +1,6 @@
 import pyotp
+from datetime import datetime, timedelta, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 
@@ -23,18 +25,69 @@ from app.models.user import User
 
 router = APIRouter(prefix="/auth", tags=["Autenticación"])
 
+# Account lockout settings
+MAX_FAILED_ATTEMPTS = 5
+LOCKOUT_MINUTES = 15
+
 
 @router.post("/login", response_model=Token)
 def login(data: UserLogin, request: Request, db: Session = Depends(get_db)):
+    client_ip = request.client.host if request.client else None
+
+    # First check if user exists and is locked (before password check)
+    user_check = db.query(User).filter(User.username == data.username).first()
+    if user_check and user_check.locked_until:
+        if datetime.now(timezone.utc) < user_check.locked_until:
+            remaining = int(
+                (user_check.locked_until - datetime.now(timezone.utc)).total_seconds() / 60
+            )
+            log_action(
+                db,
+                user_id=user_check.id,
+                action="login_blocked",
+                resource="auth",
+                detail=f"Cuenta bloqueada, {remaining + 1} min restantes",
+                ip_address=client_ip,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_423_LOCKED,
+                detail=f"Cuenta bloqueada por demasiados intentos fallidos. "
+                f"Intente en {remaining + 1} minutos o contacte al administrador.",
+            )
+        else:
+            # Lock expired, reset
+            user_check.locked_until = None
+            user_check.failed_login_attempts = 0
+            db.commit()
+
     user = authenticate_user(db, data.username, data.password)
     if not user:
+        # Increment failed attempts
+        if user_check and user_check.is_active:
+            user_check.failed_login_attempts = (
+                user_check.failed_login_attempts or 0
+            ) + 1
+            if user_check.failed_login_attempts >= MAX_FAILED_ATTEMPTS:
+                user_check.locked_until = datetime.now(timezone.utc) + timedelta(
+                    minutes=LOCKOUT_MINUTES
+                )
+                log_action(
+                    db,
+                    user_id=user_check.id,
+                    action="account_locked",
+                    resource="auth",
+                    detail=f"Cuenta bloqueada tras {MAX_FAILED_ATTEMPTS} intentos fallidos",
+                    ip_address=client_ip,
+                )
+            db.commit()
+
         log_action(
             db,
-            user_id=None,
+            user_id=user_check.id if user_check else None,
             action="login_failed",
             resource="auth",
             detail=f"Intento fallido para usuario: {data.username[:50]}",
-            ip_address=request.client.host if request.client else None,
+            ip_address=client_ip,
         )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -54,12 +107,16 @@ def login(data: UserLogin, request: Request, db: Session = Depends(get_db)):
                 action="totp_failed",
                 resource="auth",
                 detail="Código TOTP incorrecto",
-                ip_address=request.client.host if request.client else None,
+                ip_address=client_ip,
             )
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Código de verificación incorrecto",
             )
+
+    # Successful login - reset failed attempts
+    user.failed_login_attempts = 0
+    user.locked_until = None
 
     token = create_access_token(
         data={
@@ -76,9 +133,10 @@ def login(data: UserLogin, request: Request, db: Session = Depends(get_db)):
         action="login",
         resource="auth",
         detail="Inicio de sesión exitoso",
-        ip_address=request.client.host if request.client else None,
+        ip_address=client_ip,
     )
 
+    db.commit()
     return Token(access_token=token)
 
 
@@ -103,7 +161,6 @@ def totp_setup(
         )
 
     secret = pyotp.random_base32()
-    # Save the secret (not yet enabled until verified)
     current_user.totp_secret = secret
     db.commit()
 

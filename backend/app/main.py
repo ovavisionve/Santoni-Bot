@@ -1,6 +1,7 @@
 import time
 from contextlib import asynccontextmanager
 
+import sentry_sdk
 from fastapi import FastAPI, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
@@ -15,6 +16,17 @@ from app.utils.logger import setup_logging, get_logger
 
 settings = get_settings()
 logger = setup_logging()
+
+# ─── Sentry (optional, only if DSN is configured) ──────────────
+if settings.sentry_dsn:
+    sentry_sdk.init(
+        dsn=settings.sentry_dsn,
+        traces_sample_rate=settings.sentry_traces_sample_rate,
+        environment=settings.app_env,
+        release=f"santonibot@1.0.0",
+        send_default_pii=False,
+    )
+    logger.info("Sentry initialized (env=%s)", settings.app_env)
 
 
 @asynccontextmanager

@@ -19,7 +19,8 @@
     "remark-gfm": "^4.0.0",
     "lucide-react": "^0.468.0",
     "recharts": "^2.15.0",
-    "html-to-image": "^1.11.11"
+    "html-to-image": "^1.11.11",
+    "@sentry/nextjs": "^8.45.0"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.6.3",

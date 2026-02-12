@@ -74,11 +74,55 @@ services:
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - nginx_certs:/etc/letsencrypt
+      - nginx_logs:/var/log/nginx
+      - certbot_webroot:/var/www/certbot:ro
     depends_on:
       - frontend
       - backend
+
+  # ---- Certbot (SSL certificates - run manually) ----
+  # Usage:
+  #   docker compose run --rm certbot certonly --webroot -w /var/www/certbot -d yourdomain.com
+  #   docker compose run --rm certbot renew
+  certbot:
+    image: certbot/certbot:latest
+    profiles: ["ssl"]
+    volumes:
+      - nginx_certs:/etc/letsencrypt
+      - certbot_webroot:/var/www/certbot
+
+  # ---- Backup (PostgreSQL daily backup) ----
+  # Manual: docker compose run --rm backup
+  # Cron:   0 2 * * * cd /opt/santonibot && docker compose run --rm backup
+  backup:
+    image: postgres:16-alpine
+    profiles: ["backup"]
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB:-santonibot}
+      POSTGRES_USER: ${POSTGRES_USER:-santonibot}
+      PGPASSWORD: ${POSTGRES_PASSWORD:-changeme}
+    volumes:
+      - db_backups:/backups
+    depends_on:
+      db:
+        condition: service_healthy
+    entrypoint: >
+      sh -c '
+        TIMESTAMP=$$(date +%Y%m%d_%H%M%S)
+        echo "[$$TIMESTAMP] Iniciando backup..."
+        pg_dump -h $$POSTGRES_HOST -p $$POSTGRES_PORT -U $$POSTGRES_USER -d $$POSTGRES_DB --no-owner --no-privileges | gzip > /backups/santonibot_$$TIMESTAMP.sql.gz
+        SIZE=$$(du -h /backups/santonibot_$$TIMESTAMP.sql.gz | cut -f1)
+        echo "[$$TIMESTAMP] Backup completado: santonibot_$$TIMESTAMP.sql.gz ($$SIZE)"
+        find /backups -name "santonibot_*.sql.gz" -mtime +30 -delete
+        echo "Backups disponibles: $$(ls /backups/santonibot_*.sql.gz 2>/dev/null | wc -l)"
+      '
 
 volumes:
   postgres_data:
   chroma_data:
   nginx_certs:
+  nginx_logs:
+  certbot_webroot:
+  db_backups:
