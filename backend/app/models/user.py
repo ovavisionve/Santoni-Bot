@@ -11,7 +11,6 @@ class UserRole(str, enum.Enum):
     USUARIO = "usuario"
     SUPERVISOR = "supervisor"
     ADMINISTRADOR = "administrador"
-    SUPERADMINISTRADOR = "superadministrador"
 
 
 class Department(str, enum.Enum):
@@ -64,7 +63,7 @@ class User(Base):
     def allowed_departments(self) -> list[str]:
         """Return all departments this user can access."""
         deps = [self.department.value]
-        if self.role in (UserRole.ADMINISTRADOR, UserRole.SUPERADMINISTRADOR):
+        if self.role == UserRole.ADMINISTRADOR:
             return [d.value for d in Department]
         if self.extra_departments:
             deps.extend(

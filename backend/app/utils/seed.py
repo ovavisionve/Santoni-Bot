@@ -10,16 +10,14 @@ logger = logging.getLogger("santonibot.seed")
 
 
 def create_admin_user():
-    """Create default super-admin user if none exists.
+    """Create default admin user if none exists.
 
     Password is read from ADMIN_DEFAULT_PASSWORD env var.
     If not set, a random password is generated and logged ONCE.
     """
     db = SessionLocal()
     try:
-        existing = db.query(User).filter(
-            User.role == UserRole.SUPERADMINISTRADOR
-        ).first()
+        existing = db.query(User).filter(User.role == UserRole.ADMINISTRADOR).first()
         if existing:
             return
 
@@ -35,7 +33,7 @@ def create_admin_user():
             username="admin",
             full_name="Administrador SantoniBot",
             hashed_password=hash_password(password),
-            role=UserRole.SUPERADMINISTRADOR,
+            role=UserRole.ADMINISTRADOR,
             department=Department.FINANZAS,
             is_active=True,
         )

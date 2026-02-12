@@ -195,7 +195,7 @@ export default function Sidebar({
 
       {/* User Info & Actions */}
       <div className="border-t border-gray-700 p-3 space-y-2">
-        {(user.role === "administrador" || user.role === "superadministrador") && (
+        {user.role === "administrador" && (
           <Link
             href="/admin"
             className="flex items-center gap-2 px-3 py-2 rounded-lg text-gray-300 hover:bg-gray-800 transition-colors text-sm"
