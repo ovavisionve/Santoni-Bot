@@ -14,20 +14,21 @@ depends_on = None
 
 def upgrade() -> None:
     # Add the new enum value to PostgreSQL's userrole type
-    op.execute("ALTER TYPE userrole ADD VALUE IF NOT EXISTS 'superadministrador'")
+    # NOTE: DB enum uses uppercase names (USUARIO, SUPERVISOR, ADMINISTRADOR)
+    op.execute("ALTER TYPE userrole ADD VALUE IF NOT EXISTS 'SUPERADMINISTRADOR'")
 
     # Promote the existing seed admin user to superadministrador
     op.execute(
-        "UPDATE users SET role = 'superadministrador' "
-        "WHERE username = 'admin' AND role = 'administrador'"
+        "UPDATE users SET role = 'SUPERADMINISTRADOR' "
+        "WHERE username = 'admin' AND role = 'ADMINISTRADOR'"
     )
 
 
 def downgrade() -> None:
     # Demote superadmin back to admin
     op.execute(
-        "UPDATE users SET role = 'administrador' "
-        "WHERE role = 'superadministrador'"
+        "UPDATE users SET role = 'ADMINISTRADOR' "
+        "WHERE role = 'SUPERADMINISTRADOR'"
     )
     # Note: PostgreSQL does not support removing enum values directly.
     # The 'superadministrador' value will remain in the enum type but
