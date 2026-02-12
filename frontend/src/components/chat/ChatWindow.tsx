@@ -157,8 +157,8 @@ export default function ChatWindow({
         {messages.length === 0 && (
           <div className="flex-1 flex items-center justify-center h-full">
             <div className="text-center max-w-md">
-              <div className="w-16 h-16 bg-santoni-100 rounded-2xl flex items-center justify-center mx-auto mb-4 p-2">
-                <img src="/santoni-logo.png" alt="Santoni" className="h-full w-auto" />
+              <div className="w-24 h-24 bg-santoni-100 rounded-2xl flex items-center justify-center mx-auto mb-4 p-3">
+                <img src="/santoni-logo.png" alt="Santoni" className="max-h-full max-w-full object-contain" />
               </div>
               <h2 className="text-xl font-semibold text-gray-900 mb-2">
                 Bienvenido a SantoniBot
