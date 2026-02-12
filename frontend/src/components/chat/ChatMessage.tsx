@@ -11,6 +11,7 @@ import {
   FileSpreadsheet,
   Copy,
   Check,
+  BarChart3,
 } from "lucide-react";
 import ChartRenderer, { type ChartData } from "./ChartRenderer";
 
@@ -46,9 +47,6 @@ function downloadExport(messageId: number, format: string) {
     .catch((err) => alert(`Error al exportar: ${err.message}`));
 }
 
-/**
- * Returns a Spanish relative time string like "ahora", "hace 5 min", "hace 2h", "ayer"
- */
 function getRelativeTime(dateStr: string): string {
   const now = new Date();
   const date = new Date(dateStr);
@@ -65,25 +63,169 @@ function getRelativeTime(dateStr: string): string {
   if (diffHour < 24) return `hace ${diffHour}h`;
   if (diffDay === 1) return "ayer";
   if (diffDay < 7) return `hace ${diffDay} dias`;
-  return date.toLocaleDateString("es-VE", {
-    day: "2-digit",
-    month: "short",
-  });
+  return date.toLocaleDateString("es-VE", { day: "2-digit", month: "short" });
 }
 
 /**
- * Extracts ```chart JSON blocks from message content.
- * Returns the charts and the remaining markdown text.
+ * Parse a numeric string, stripping currency symbols, thousand separators, etc.
+ * "1,234.56" → 1234.56, "Bs. 50.000,00" → 50000, "85.3%" → 85.3
  */
-function extractCharts(content: string): { text: string; charts: ChartData[] } {
+function parseNumber(raw: string): number | null {
+  if (!raw) return null;
+  let s = raw.trim();
+  // Remove currency prefixes and % suffix
+  s = s.replace(/^(Bs\.?\s*|USD?\s*|\$\s*)/i, "").replace(/%$/, "");
+  // Detect format: if has both . and , check which is the decimal separator
+  // Venezuelan/European format: 1.234,56 → remove dots, replace comma with dot
+  // US format: 1,234.56 → remove commas
+  if (s.includes(",") && s.includes(".")) {
+    if (s.lastIndexOf(",") > s.lastIndexOf(".")) {
+      // Venezuelan: 1.234,56
+      s = s.replace(/\./g, "").replace(",", ".");
+    } else {
+      // US: 1,234.56
+      s = s.replace(/,/g, "");
+    }
+  } else if (s.includes(",")) {
+    // Could be thousand sep (1,234) or decimal (0,5)
+    const parts = s.split(",");
+    if (parts.length === 2 && parts[1].length <= 2) {
+      s = s.replace(",", "."); // decimal
+    } else {
+      s = s.replace(/,/g, ""); // thousand
+    }
+  }
+  const n = parseFloat(s);
+  return isNaN(n) ? null : n;
+}
+
+/**
+ * Extract the FIRST markdown table from content and convert to ChartData.
+ * Returns null if no suitable table found (needs 3+ data rows, at least 1 numeric column).
+ */
+function extractChartFromTable(content: string): ChartData | null {
+  const lines = content.split("\n");
+  let headerLine = -1;
+
+  // Find the first markdown table: a line with |, followed by a separator |---|
+  for (let i = 0; i < lines.length - 2; i++) {
+    const line = lines[i].trim();
+    const next = lines[i + 1]?.trim() || "";
+    if (
+      line.startsWith("|") &&
+      line.endsWith("|") &&
+      next.startsWith("|") &&
+      /^[\s|:-]+$/.test(next)
+    ) {
+      headerLine = i;
+      break;
+    }
+  }
+  if (headerLine === -1) return null;
+
+  // Parse headers
+  const headers = lines[headerLine]
+    .split("|")
+    .map((h) => h.trim())
+    .filter(Boolean);
+
+  if (headers.length < 2) return null;
+
+  // Parse data rows (skip separator at headerLine+1)
+  const rows: string[][] = [];
+  for (let i = headerLine + 2; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line.startsWith("|")) break;
+    const cells = line
+      .split("|")
+      .map((c) => c.trim())
+      .filter((_, idx, arr) => idx > 0 && idx < arr.length); // remove empty first/last from split
+    if (cells.length >= 2) rows.push(cells);
+  }
+
+  if (rows.length < 3) return null; // Need at least 3 rows for a useful chart
+
+  // Detect which columns are numeric (check all rows)
+  const numericCols: number[] = [];
+  for (let col = 0; col < headers.length; col++) {
+    const allNumeric = rows.every((row) => {
+      const val = row[col] || "";
+      // Skip columns that are ordinal (#, Pos, Posición, No.)
+      if (col === 0 && /^#|^pos|^no\.?$/i.test(headers[col])) return false;
+      return parseNumber(val) !== null;
+    });
+    if (allNumeric) numericCols.push(col);
+  }
+
+  if (numericCols.length === 0) return null; // No numeric columns
+
+  // The label column is the first non-numeric column (or col 0 if all are numeric)
+  let labelCol = 0;
+  for (let col = 0; col < headers.length; col++) {
+    if (!numericCols.includes(col)) {
+      labelCol = col;
+      break;
+    }
+  }
+
+  // Use at most 2 numeric columns for the chart (first two found)
+  const valueCols = numericCols.slice(0, 2);
+  const xKey = headers[labelCol];
+  const yKey =
+    valueCols.length === 1
+      ? headers[valueCols[0]]
+      : valueCols.map((c) => headers[c]);
+
+  // Build data array (limit to 15 rows)
+  const data = rows.slice(0, 15).map((row) => {
+    const item: Record<string, unknown> = { [xKey]: row[labelCol] || "" };
+    for (const vc of valueCols) {
+      item[headers[vc]] = parseNumber(row[vc] || "0") ?? 0;
+    }
+    return item;
+  });
+
+  // Determine chart type
+  let type: ChartData["type"] = "bar"; // default
+  const xValues = data.map((d) => String(d[xKey]));
+  const looksLikeTimeSeries = xValues.some((v) =>
+    /\d{4}|ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre|semana|lun|mar|mie|jue|vie/i.test(
+      v
+    )
+  );
+  if (looksLikeTimeSeries) type = "line";
+
+  // Find a title from the line before the table (## header or bold text)
+  let title = "";
+  for (let i = headerLine - 1; i >= Math.max(0, headerLine - 3); i--) {
+    const prev = lines[i].trim();
+    if (prev.startsWith("##")) {
+      title = prev.replace(/^#+\s*/, "");
+      break;
+    }
+    if (prev.startsWith("**") && prev.endsWith("**")) {
+      title = prev.replace(/\*\*/g, "");
+      break;
+    }
+    if (prev.length > 5 && prev.length < 80 && !prev.startsWith("|")) {
+      title = prev.replace(/[*#:]/g, "").trim();
+      break;
+    }
+  }
+
+  return { type, title, xKey, yKey, data };
+}
+
+/**
+ * Also try to extract ```chart JSON blocks from the LLM (bonus).
+ */
+function extractLLMCharts(content: string): { text: string; charts: ChartData[] } {
   const charts: ChartData[] = [];
-  // Match ```chart with optional whitespace/newline, then JSON, then closing ```
   const text = content.replace(
     /```chart\s*([\s\S]*?)```/g,
     (_match, jsonStr: string) => {
       try {
         const trimmed = jsonStr.trim();
-        // Find the JSON object boundaries
         const start = trimmed.indexOf("{");
         const end = trimmed.lastIndexOf("}");
         if (start === -1 || end === -1) return _match;
@@ -93,7 +235,7 @@ function extractCharts(content: string): { text: string; charts: ChartData[] } {
           return "";
         }
       } catch {
-        // Invalid JSON — leave as text
+        // Invalid JSON
       }
       return _match;
     }
@@ -107,13 +249,20 @@ export default function ChatMessage({
   agentLabel,
 }: ChatMessageProps) {
   const [copied, setCopied] = useState(false);
+  const [showChart, setShowChart] = useState(false);
   const isUser = message.role === "user";
   const hasTable = !isUser && message.content.includes("|");
 
-  // Parse charts from assistant messages
-  const { text: messageText, charts } = isUser
+  // Try LLM-generated charts first, then auto-parse from tables
+  const { text: messageText, charts: llmCharts } = isUser
     ? { text: message.content, charts: [] }
-    : extractCharts(message.content);
+    : extractLLMCharts(message.content);
+
+  const autoChart = !isUser && llmCharts.length === 0
+    ? extractChartFromTable(message.content)
+    : null;
+
+  const hasChartData = llmCharts.length > 0 || autoChart !== null;
 
   const handleCopy = async () => {
     try {
@@ -121,7 +270,6 @@ export default function ChatMessage({
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      // Fallback for older browsers
       const textarea = document.createElement("textarea");
       textarea.value = message.content;
       textarea.style.position = "fixed";
@@ -224,14 +372,21 @@ export default function ChatMessage({
                   {messageText}
                 </ReactMarkdown>
               )}
-              {charts.map((chart, i) => (
-                <ChartRenderer key={i} chart={chart} />
+
+              {/* LLM-generated charts (if any) */}
+              {llmCharts.map((chart, i) => (
+                <ChartRenderer key={`llm-${i}`} chart={chart} />
               ))}
+
+              {/* Auto-generated chart from parsed table */}
+              {autoChart && showChart && (
+                <ChartRenderer chart={autoChart} />
+              )}
             </>
           )}
         </div>
 
-        {/* Export buttons + Timestamp */}
+        {/* Export buttons + Chart toggle + Timestamp */}
         <div
           className={`flex items-center justify-between mt-2 ${
             isUser ? "text-santoni-200" : "text-gray-400"
@@ -241,9 +396,24 @@ export default function ChatMessage({
             {getRelativeTime(message.created_at)}
           </span>
 
-          {/* Export buttons for assistant messages with data */}
+          {/* Action buttons for assistant messages with data */}
           {!isUser && hasTable && (
             <div className="flex items-center gap-1">
+              {/* Chart toggle button */}
+              {autoChart && (
+                <button
+                  onClick={() => setShowChart(!showChart)}
+                  className={`text-xs transition-colors px-1.5 py-0.5 rounded ${
+                    showChart
+                      ? "text-santoni-600 bg-santoni-50"
+                      : "text-gray-400 hover:text-santoni-600"
+                  }`}
+                  title={showChart ? "Ocultar gráfica" : "Ver como gráfica"}
+                >
+                  <BarChart3 size={14} />
+                </button>
+              )}
+              <span className="text-xs text-gray-300 mx-0.5">|</span>
               <span className="text-xs text-gray-400 mr-1">
                 <Download size={12} />
               </span>
