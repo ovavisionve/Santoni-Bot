@@ -77,19 +77,25 @@ function getRelativeTime(dateStr: string): string {
  */
 function extractCharts(content: string): { text: string; charts: ChartData[] } {
   const charts: ChartData[] = [];
+  // Match ```chart with optional whitespace/newline, then JSON, then closing ```
   const text = content.replace(
-    /```chart\s*\n([\s\S]*?)```/g,
+    /```chart\s*([\s\S]*?)```/g,
     (_match, jsonStr: string) => {
       try {
-        const parsed = JSON.parse(jsonStr.trim());
+        const trimmed = jsonStr.trim();
+        // Find the JSON object boundaries
+        const start = trimmed.indexOf("{");
+        const end = trimmed.lastIndexOf("}");
+        if (start === -1 || end === -1) return _match;
+        const parsed = JSON.parse(trimmed.slice(start, end + 1));
         if (parsed.type && parsed.xKey && parsed.yKey && Array.isArray(parsed.data)) {
           charts.push(parsed as ChartData);
+          return "";
         }
       } catch {
         // Invalid JSON — leave as text
-        return _match;
       }
-      return "";
+      return _match;
     }
   );
   return { text: text.trim(), charts };

@@ -16,6 +16,26 @@ from app.services.llm_factory import create_llm
 settings = get_settings()
 logger = logging.getLogger("santonibot.agents")
 
+CHART_INSTRUCTIONS = """INSTRUCCIÓN OBLIGATORIA - GRÁFICAS:
+Cuando tu respuesta contenga una tabla con 3 o más filas de datos numéricos, DEBES incluir un bloque de gráfica al final de tu respuesta.
+
+El bloque DEBE tener EXACTAMENTE este formato (respeta las triples comillas invertidas):
+
+```chart
+{"type": "bar", "title": "Top 5 Clientes por Ventas", "xKey": "cliente", "yKey": "monto", "data": [{"cliente": "Distribuidora Norte", "monto": 185000}, {"cliente": "Abastos Sur", "monto": 142000}, {"cliente": "Supermercado Central", "monto": 98500}]}
+```
+
+Reglas estrictas:
+1. El bloque EMPIEZA con ```chart (en su propia línea) y TERMINA con ``` (en su propia línea)
+2. Entre las comillas invertidas va UN SOLO OBJETO JSON en UNA SOLA LÍNEA (no multilínea)
+3. "type" puede ser: "bar" (rankings/comparativas), "line" (tendencias), "pie" (distribución %), "area" (acumulados)
+4. "xKey" es el nombre del campo de categorías, "yKey" es el nombre del campo numérico
+5. "data" es un array de objetos con los campos de xKey y yKey
+6. Los valores de yKey DEBEN ser números (no strings con formato)
+7. Máximo 15 elementos en data
+8. Incluye la gráfica DESPUÉS del texto y la tabla
+9. Si los datos son un solo número o no tienen sentido visual, NO incluyas gráfica"""
+
 
 class BaseAgent(ABC):
     """Base agent for all department-specific agents."""
@@ -106,28 +126,13 @@ class BaseAgent(ABC):
                         "DATOS REALES DE LA BASE DE DATOS:\n"
                         "Usa estos datos para responder la consulta del usuario. "
                         "Presenta la información de forma clara, con tablas markdown si corresponde.\n\n"
-                        f"{data_context}\n\n"
-                        "VISUALIZACIÓN CON GRÁFICAS:\n"
-                        "Cuando los datos se presten para una representación visual (rankings, comparativas, "
-                        "tendencias, distribuciones), ADEMÁS de la tabla markdown, incluye un bloque "
-                        "```chart con JSON que describa la gráfica. El formato es:\n"
-                        "```chart\n"
-                        '{"type": "bar|line|pie|area", "title": "Título de la gráfica", '
-                        '"xKey": "campo_eje_x", "yKey": "campo_eje_y", '
-                        '"data": [{"campo_eje_x": "valor", "campo_eje_y": 123}, ...]}\n'
-                        "```\n"
-                        "Reglas para gráficas:\n"
-                        "- bar: rankings, comparativas, top N (ej: top clientes, ventas por zona)\n"
-                        "- line: tendencias en el tiempo (ej: ventas mensuales, producción diaria)\n"
-                        "- pie: distribución/composición (ej: % ventas por zona, distribución de gastos)\n"
-                        "- area: acumulados en el tiempo (ej: flujo de caja, producción acumulada)\n"
-                        "- yKey puede ser un string o array de strings para múltiples series: "
-                        '[\"ingresos\", \"egresos\"]\n'
-                        "- Los valores numéricos en data deben ser números, no strings\n"
-                        "- Máximo 15 items en data para que la gráfica sea legible\n"
-                        "- Incluye la gráfica DESPUÉS de la tabla o explicación textual\n"
-                        "- NO incluyas gráfica si los datos son un solo valor o no tienen sentido visual\n"
+                        f"{data_context}"
                     )
+                )
+            )
+            messages.append(
+                SystemMessage(
+                    content=CHART_INSTRUCTIONS
                 )
             )
         else:
