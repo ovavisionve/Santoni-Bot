@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
 from app.database import get_db
-from app.middleware.auth import get_current_user, require_admin
+from app.middleware.auth import get_current_user, require_superadmin
 from app.models.user import User
 from app.models.settings import AppSettings
 from app.services.audit import log_action
@@ -66,7 +66,7 @@ def get_branding(db: Session = Depends(get_db)):
 @router.put("/settings/branding")
 def update_branding(
     data: BrandingUpdate,
-    admin: User = Depends(require_admin),
+    admin: User = Depends(require_superadmin),
     db: Session = Depends(get_db),
 ):
     """Admin-only: update branding text settings."""
@@ -95,7 +95,7 @@ def update_branding(
 @router.post("/settings/branding/logo")
 async def upload_logo(
     file: UploadFile = File(...),
-    admin: User = Depends(require_admin),
+    admin: User = Depends(require_superadmin),
     db: Session = Depends(get_db),
 ):
     """Admin-only: upload company logo."""
@@ -105,7 +105,7 @@ async def upload_logo(
 @router.post("/settings/branding/login-logo")
 async def upload_login_logo(
     file: UploadFile = File(...),
-    admin: User = Depends(require_admin),
+    admin: User = Depends(require_superadmin),
     db: Session = Depends(get_db),
 ):
     """Admin-only: upload login page logo."""

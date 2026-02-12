@@ -3,7 +3,7 @@ export interface User {
   email: string;
   username: string;
   full_name: string;
-  role: "usuario" | "supervisor" | "administrador";
+  role: "usuario" | "supervisor" | "administrador" | "superadministrador";
   department: string;
   extra_departments: string | null;
   is_active: boolean;

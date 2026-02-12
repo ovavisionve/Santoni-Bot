@@ -42,6 +42,7 @@ const ROLE_LABELS: Record<string, string> = {
   usuario: "Usuario",
   supervisor: "Supervisor",
   administrador: "Administrador",
+  superadministrador: "Super Admin",
 };
 
 export default function AdminPage() {
@@ -74,17 +75,20 @@ export default function AdminPage() {
     }>
   >([]);
 
-  useEffect(() => {
-    if (!loading && (!user || user.role !== "administrador")) {
-      router.push("/chat");
-    }
-  }, [loading, user, router]);
+  const isAdmin = user?.role === "administrador" || user?.role === "superadministrador";
+  const isSuperAdmin = user?.role === "superadministrador";
 
   useEffect(() => {
-    if (user?.role === "administrador") {
+    if (!loading && (!user || !isAdmin)) {
+      router.push("/chat");
+    }
+  }, [loading, user, router, isAdmin]);
+
+  useEffect(() => {
+    if (isAdmin) {
       loadData();
     }
-  }, [user, tab]);
+  }, [user, tab, isAdmin]);
 
   const loadData = async () => {
     try {
@@ -165,7 +169,9 @@ export default function AdminPage() {
             { id: "users" as const, label: "Usuarios", icon: Users },
             { id: "logs" as const, label: "Auditoría", icon: Shield },
             { id: "security" as const, label: "Seguridad", icon: ShieldCheck },
-            { id: "appearance" as const, label: "Apariencia", icon: Palette },
+            ...(isSuperAdmin
+              ? [{ id: "appearance" as const, label: "Apariencia", icon: Palette }]
+              : []),
           ].map(({ id, label, icon: Icon }) => (
             <button
               key={id}
@@ -382,11 +388,13 @@ export default function AdminPage() {
                       <td className="px-4 py-3">
                         <span
                           className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${
-                            u.role === "administrador"
-                              ? "bg-purple-100 text-purple-700"
-                              : u.role === "supervisor"
-                                ? "bg-blue-100 text-blue-700"
-                                : "bg-gray-100 text-gray-700"
+                            u.role === "superadministrador"
+                              ? "bg-red-100 text-red-700"
+                              : u.role === "administrador"
+                                ? "bg-purple-100 text-purple-700"
+                                : u.role === "supervisor"
+                                  ? "bg-blue-100 text-blue-700"
+                                  : "bg-gray-100 text-gray-700"
                           }`}
                         >
                           {ROLE_LABELS[u.role] || u.role}
