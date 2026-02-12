@@ -68,7 +68,6 @@ class UserResponse(BaseModel):
     department: str
     extra_departments: str | None
     is_active: bool
-    avatar_url: str | None = None
     totp_enabled: bool = False
     created_at: datetime
 

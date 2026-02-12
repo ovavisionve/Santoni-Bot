@@ -46,7 +46,6 @@ services:
         condition: service_started
     volumes:
       - ./backend:/app
-      - uploads_data:/app/uploads
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
   # ---- Frontend (Next.js) ----
@@ -127,4 +126,3 @@ volumes:
   nginx_logs:
   certbot_webroot:
   db_backups:
-  uploads_data:

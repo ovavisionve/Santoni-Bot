@@ -40,7 +40,6 @@ class User(Base):
         String(500), nullable=True
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    avatar_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     totp_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
     totp_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     failed_login_attempts: Mapped[int] = mapped_column(Integer, default=0)

@@ -22,9 +22,6 @@ import {
   AlertTriangle,
   Lock,
   Unlock,
-  Palette,
-  Upload,
-  Image,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -47,7 +44,7 @@ const ROLE_LABELS: Record<string, string> = {
 export default function AdminPage() {
   const router = useRouter();
   const { user, loading } = useAuth();
-  const [tab, setTab] = useState<"stats" | "users" | "logs" | "security" | "appearance">("stats");
+  const [tab, setTab] = useState<"stats" | "users" | "logs" | "security">("stats");
   const [stats, setStats] = useState<SystemStats | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [showCreateUser, setShowCreateUser] = useState(false);
@@ -165,7 +162,6 @@ export default function AdminPage() {
             { id: "users" as const, label: "Usuarios", icon: Users },
             { id: "logs" as const, label: "Auditoría", icon: Shield },
             { id: "security" as const, label: "Seguridad", icon: ShieldCheck },
-            { id: "appearance" as const, label: "Apariencia", icon: Palette },
           ].map(({ id, label, icon: Icon }) => (
             <button
               key={id}
@@ -419,9 +415,6 @@ export default function AdminPage() {
         {tab === "security" && (
           <SecurityPanel user={user} />
         )}
-
-        {/* Appearance Tab */}
-        {tab === "appearance" && <AppearancePanel />}
 
         {/* Audit Logs Tab */}
         {tab === "logs" && (
@@ -924,70 +917,6 @@ function SecurityPanel({ user }: { user: User }) {
         )}
       </div>
 
-      {/* Avatar Section */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <div className="flex items-center gap-3 mb-4">
-          <Image size={20} className="text-santoni-600" />
-          <h3 className="text-lg font-semibold">Foto de Perfil</h3>
-        </div>
-        <div className="flex items-center gap-6">
-          {user.avatar_url ? (
-            <img
-              src={user.avatar_url}
-              alt="Avatar"
-              className="w-20 h-20 rounded-full object-cover border-2 border-gray-200"
-            />
-          ) : (
-            <div className="w-20 h-20 bg-santoni-100 rounded-full flex items-center justify-center text-2xl font-bold text-santoni-600">
-              {user.full_name.charAt(0).toUpperCase()}
-            </div>
-          )}
-          <div className="space-y-2">
-            <label className="cursor-pointer inline-flex items-center gap-2 btn-primary text-sm">
-              <Upload size={14} />
-              Cambiar foto
-              <input
-                type="file"
-                accept="image/png,image/jpeg,image/webp"
-                className="hidden"
-                onChange={async (e) => {
-                  const file = e.target.files?.[0];
-                  if (!file) return;
-                  try {
-                    await api.uploadAvatar(file);
-                    window.location.reload();
-                  } catch (err) {
-                    alert(
-                      err instanceof Error
-                        ? err.message
-                        : "Error al subir foto"
-                    );
-                  }
-                }}
-              />
-            </label>
-            {user.avatar_url && (
-              <button
-                onClick={async () => {
-                  try {
-                    await api.deleteAvatar();
-                    window.location.reload();
-                  } catch {
-                    // ignore
-                  }
-                }}
-                className="block text-xs text-red-500 hover:text-red-700"
-              >
-                Eliminar foto
-              </button>
-            )}
-            <p className="text-xs text-gray-400">
-              JPG, PNG o WebP (max 5MB)
-            </p>
-          </div>
-        </div>
-      </div>
-
       {/* Password Change Section */}
       <div className="bg-white rounded-xl border border-gray-200 p-6">
         <div className="flex items-center gap-3 mb-4">
@@ -1058,243 +987,6 @@ function SecurityPanel({ user }: { user: User }) {
             {loadingPw ? "Actualizando..." : "Cambiar Contraseña"}
           </button>
         </form>
-      </div>
-    </div>
-  );
-}
-
-function AppearancePanel() {
-  const [branding, setBranding] = useState({
-    company_name: "SantoniBot",
-    company_subtitle: "Sistema Inteligente de Análisis",
-    primary_color: "#e86c25",
-    logo_url: "",
-    login_logo_url: "",
-  });
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    api.getBranding().then(setBranding).catch(() => {});
-  }, []);
-
-  const handleSaveText = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSaving(true);
-    setMessage("");
-    setError("");
-    try {
-      await api.updateBranding({
-        company_name: branding.company_name,
-        company_subtitle: branding.company_subtitle,
-        primary_color: branding.primary_color,
-      });
-      setMessage("Configuración guardada exitosamente");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Error al guardar");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleLogoUpload = async (
-    e: React.ChangeEvent<HTMLInputElement>,
-    type: "logo" | "login"
-  ) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setError("");
-    try {
-      const result =
-        type === "logo"
-          ? await api.uploadLogo(file)
-          : await api.uploadLoginLogo(file);
-      setBranding((prev) => ({
-        ...prev,
-        [type === "logo" ? "logo_url" : "login_logo_url"]: result.url,
-      }));
-      setMessage("Logo actualizado");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Error al subir");
-    }
-  };
-
-  return (
-    <div className="space-y-6">
-      {/* Text settings */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <div className="flex items-center gap-3 mb-4">
-          <Palette size={20} className="text-santoni-600" />
-          <h3 className="text-lg font-semibold">Personalización de la Plataforma</h3>
-        </div>
-
-        <p className="text-sm text-gray-500 mb-4">
-          Configura el nombre, logo y colores de la plataforma.
-          Los cambios se aplican a todos los usuarios al recargar.
-        </p>
-
-        {message && (
-          <div className="bg-green-50 border border-green-200 text-green-700 text-sm p-3 rounded-lg mb-4">
-            {message}
-          </div>
-        )}
-        {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 text-sm p-3 rounded-lg mb-4">
-            {error}
-          </div>
-        )}
-
-        <form onSubmit={handleSaveText} className="space-y-4 max-w-lg">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Nombre de la plataforma
-            </label>
-            <input
-              type="text"
-              value={branding.company_name}
-              onChange={(e) =>
-                setBranding((p) => ({ ...p, company_name: e.target.value }))
-              }
-              className="input-field"
-              maxLength={50}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Subtítulo
-            </label>
-            <input
-              type="text"
-              value={branding.company_subtitle}
-              onChange={(e) =>
-                setBranding((p) => ({
-                  ...p,
-                  company_subtitle: e.target.value,
-                }))
-              }
-              className="input-field"
-              maxLength={100}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Color primario
-            </label>
-            <div className="flex items-center gap-3">
-              <input
-                type="color"
-                value={branding.primary_color}
-                onChange={(e) =>
-                  setBranding((p) => ({
-                    ...p,
-                    primary_color: e.target.value,
-                  }))
-                }
-                className="w-10 h-10 rounded cursor-pointer border border-gray-200"
-              />
-              <input
-                type="text"
-                value={branding.primary_color}
-                onChange={(e) =>
-                  setBranding((p) => ({
-                    ...p,
-                    primary_color: e.target.value,
-                  }))
-                }
-                className="input-field w-32 font-mono text-sm"
-                maxLength={7}
-              />
-              <div
-                className="w-20 h-10 rounded-lg"
-                style={{ backgroundColor: branding.primary_color }}
-              />
-            </div>
-          </div>
-          <button
-            type="submit"
-            disabled={saving}
-            className="btn-primary text-sm"
-          >
-            {saving ? "Guardando..." : "Guardar cambios"}
-          </button>
-        </form>
-      </div>
-
-      {/* Logo uploads */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <div className="flex items-center gap-3 mb-4">
-          <Image size={20} className="text-santoni-600" />
-          <h3 className="text-lg font-semibold">Logos</h3>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Main Logo */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Logo principal (sidebar y header)
-            </label>
-            <div className="border-2 border-dashed border-gray-200 rounded-lg p-4 text-center">
-              {branding.logo_url ? (
-                <img
-                  src={branding.logo_url}
-                  alt="Logo"
-                  className="max-h-16 mx-auto mb-2 object-contain"
-                />
-              ) : (
-                <div className="w-16 h-16 bg-gray-100 rounded-lg flex items-center justify-center mx-auto mb-2">
-                  <Upload size={24} className="text-gray-400" />
-                </div>
-              )}
-              <label className="cursor-pointer inline-flex items-center gap-1 text-sm text-santoni-600 hover:text-santoni-700 font-medium">
-                <Upload size={14} />
-                {branding.logo_url ? "Cambiar logo" : "Subir logo"}
-                <input
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp,image/svg+xml"
-                  className="hidden"
-                  onChange={(e) => handleLogoUpload(e, "logo")}
-                />
-              </label>
-              <p className="text-xs text-gray-400 mt-1">
-                PNG, JPG, WebP o SVG (max 5MB)
-              </p>
-            </div>
-          </div>
-
-          {/* Login Logo */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Logo de la pagina de login
-            </label>
-            <div className="border-2 border-dashed border-gray-200 rounded-lg p-4 text-center">
-              {branding.login_logo_url ? (
-                <img
-                  src={branding.login_logo_url}
-                  alt="Login Logo"
-                  className="max-h-16 mx-auto mb-2 object-contain"
-                />
-              ) : (
-                <div className="w-16 h-16 bg-gray-100 rounded-lg flex items-center justify-center mx-auto mb-2">
-                  <Upload size={24} className="text-gray-400" />
-                </div>
-              )}
-              <label className="cursor-pointer inline-flex items-center gap-1 text-sm text-santoni-600 hover:text-santoni-700 font-medium">
-                <Upload size={14} />
-                {branding.login_logo_url ? "Cambiar logo" : "Subir logo"}
-                <input
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp,image/svg+xml"
-                  className="hidden"
-                  onChange={(e) => handleLogoUpload(e, "login")}
-                />
-              </label>
-              <p className="text-xs text-gray-400 mt-1">
-                PNG, JPG, WebP o SVG (max 5MB)
-              </p>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   );

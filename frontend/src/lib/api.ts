@@ -241,59 +241,6 @@ class ApiClient {
       { method: "POST" }
     );
   }
-
-  // Branding
-  async getBranding() {
-    return this.request<import("@/types").Branding>("/api/settings/branding");
-  }
-
-  async updateBranding(data: {
-    company_name?: string;
-    company_subtitle?: string;
-    primary_color?: string;
-  }) {
-    return this.request<{ message: string; updated: Record<string, string> }>(
-      "/api/settings/branding",
-      { method: "PUT", body: JSON.stringify(data) }
-    );
-  }
-
-  async uploadLogo(file: File) {
-    return this._uploadFile("/api/settings/branding/logo", file);
-  }
-
-  async uploadLoginLogo(file: File) {
-    return this._uploadFile("/api/settings/branding/login-logo", file);
-  }
-
-  async uploadAvatar(file: File) {
-    return this._uploadFile("/api/auth/avatar", file);
-  }
-
-  async deleteAvatar() {
-    return this.request<{ message: string }>("/api/auth/avatar", {
-      method: "DELETE",
-    });
-  }
-
-  private async _uploadFile(path: string, file: File) {
-    const token = this.getToken();
-    const formData = new FormData();
-    formData.append("file", file);
-
-    const response = await fetch(`${API_BASE}${path}`, {
-      method: "POST",
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-      body: formData,
-    });
-
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      throw new Error(err.detail || `Error ${response.status}`);
-    }
-
-    return response.json() as Promise<{ url: string; message: string }>;
-  }
 }
 
 export const api = new ApiClient();
