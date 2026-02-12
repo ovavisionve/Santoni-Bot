@@ -16,27 +16,6 @@ from app.services.llm_factory import create_llm
 settings = get_settings()
 logger = logging.getLogger("santonibot.agents")
 
-CHART_INSTRUCTIONS = """INSTRUCCIÓN OBLIGATORIA - GRÁFICAS:
-Cuando tu respuesta contenga una tabla con 3 o más filas de datos numéricos, DEBES incluir un bloque de gráfica al final de tu respuesta.
-
-El bloque DEBE tener EXACTAMENTE este formato (respeta las triples comillas invertidas):
-
-```chart
-{"type": "bar", "title": "Top 5 Clientes por Ventas", "xKey": "cliente", "yKey": "monto", "data": [{"cliente": "Distribuidora Norte", "monto": 185000}, {"cliente": "Abastos Sur", "monto": 142000}, {"cliente": "Supermercado Central", "monto": 98500}]}
-```
-
-Reglas estrictas:
-1. El bloque EMPIEZA con ```chart (en su propia línea) y TERMINA con ``` (en su propia línea)
-2. Entre las comillas invertidas va UN SOLO OBJETO JSON en UNA SOLA LÍNEA (no multilínea)
-3. "type" puede ser: "bar" (rankings/comparativas), "line" (tendencias), "pie" (distribución %), "area" (acumulados)
-4. "xKey" es el nombre del campo de categorías, "yKey" es el nombre del campo numérico
-5. "data" es un array de objetos con los campos de xKey y yKey
-6. Los valores de yKey DEBEN ser números (no strings con formato)
-7. Máximo 15 elementos en data
-8. Incluye la gráfica DESPUÉS del texto y la tabla
-9. Si los datos son un solo número o no tienen sentido visual, NO incluyas gráfica"""
-
-
 class BaseAgent(ABC):
     """Base agent for all department-specific agents."""
 
@@ -128,11 +107,6 @@ class BaseAgent(ABC):
                         "Presenta la información de forma clara, con tablas markdown si corresponde.\n\n"
                         f"{data_context}"
                     )
-                )
-            )
-            messages.append(
-                SystemMessage(
-                    content=CHART_INSTRUCTIONS
                 )
             )
         else:
