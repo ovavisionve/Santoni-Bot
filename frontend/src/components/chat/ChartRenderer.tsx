@@ -29,7 +29,7 @@ export interface ChartData {
 }
 
 const COLORS = [
-  "#e87722", // santoni orange
+  "#042387", // santoni blue
   "#2563eb", // blue
   "#16a34a", // green
   "#dc2626", // red

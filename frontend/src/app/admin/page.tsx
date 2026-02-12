@@ -142,9 +142,7 @@ export default function AdminPage() {
           >
             <ArrowLeft size={20} />
           </Link>
-          <div className="w-8 h-8 bg-santoni-600 rounded-lg flex items-center justify-center">
-            <span className="text-white text-sm font-bold">S</span>
-          </div>
+          <img src="/santoni-logo.png" alt="Santoni" className="h-8 w-auto" />
           <div>
             <h1 className="text-lg font-semibold">
               Panel de Administración

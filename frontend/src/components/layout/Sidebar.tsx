@@ -80,13 +80,11 @@ export default function Sidebar({
     : conversations;
 
   return (
-    <div className="w-72 bg-gray-900 text-white flex flex-col h-full shrink-0">
+    <div className="w-72 bg-santoni-950 text-white flex flex-col h-full shrink-0">
       {/* Header */}
-      <div className="p-4 border-b border-gray-700 flex items-center justify-between">
+      <div className="p-4 border-b border-santoni-900 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-santoni-600 rounded-lg flex items-center justify-center">
-            <span className="text-sm font-bold">S</span>
-          </div>
+          <img src="/santoni-logo.png" alt="Santoni" className="h-8 w-auto" />
           <span className="font-semibold">SantoniBot</span>
         </div>
         <button
@@ -101,7 +99,7 @@ export default function Sidebar({
       <div className="p-3">
         <button
           onClick={onNewChat}
-          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-600 hover:bg-gray-800 transition-colors text-sm"
+          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-santoni-800 hover:bg-santoni-900 transition-colors text-sm"
         >
           <MessageSquarePlus size={16} />
           Nueva conversacion
@@ -120,7 +118,7 @@ export default function Sidebar({
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Buscar conversaciones..."
-            className="w-full bg-gray-800 border border-gray-700 rounded-lg pl-8 pr-8 py-1.5 text-xs text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-santoni-500 focus:border-santoni-500 transition-all"
+            className="w-full bg-santoni-900 border border-santoni-800 rounded-lg pl-8 pr-8 py-1.5 text-xs text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-santoni-500 focus:border-santoni-500 transition-all"
           />
           {searchQuery && (
             <button
@@ -150,8 +148,8 @@ export default function Sidebar({
             key={conv.id}
             className={`group flex items-start gap-2 px-3 py-2.5 rounded-lg cursor-pointer transition-colors text-sm ${
               activeId === conv.id
-                ? "bg-gray-700 text-white"
-                : "text-gray-300 hover:bg-gray-800"
+                ? "bg-santoni-800 text-white"
+                : "text-gray-300 hover:bg-santoni-900"
             }`}
             onClick={() => onSelectConversation(conv.id)}
           >
@@ -194,11 +192,11 @@ export default function Sidebar({
       </div>
 
       {/* User Info & Actions */}
-      <div className="border-t border-gray-700 p-3 space-y-2">
+      <div className="border-t border-santoni-900 p-3 space-y-2">
         {user.role === "administrador" && (
           <Link
             href="/admin"
-            className="flex items-center gap-2 px-3 py-2 rounded-lg text-gray-300 hover:bg-gray-800 transition-colors text-sm"
+            className="flex items-center gap-2 px-3 py-2 rounded-lg text-gray-300 hover:bg-santoni-900 transition-colors text-sm"
           >
             <Settings size={16} />
             Administracion

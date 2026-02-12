@@ -143,9 +143,7 @@ export default function ChatWindow({
         >
           <Menu size={20} />
         </button>
-        <div className="w-8 h-8 bg-santoni-600 rounded-lg flex items-center justify-center">
-          <span className="text-white text-sm font-bold">S</span>
-        </div>
+        <img src="/santoni-logo.png" alt="Santoni" className="h-8 w-auto" />
         <div>
           <h1 className="text-sm font-semibold text-gray-900">SantoniBot</h1>
           <p className="text-xs text-gray-500">
@@ -159,8 +157,8 @@ export default function ChatWindow({
         {messages.length === 0 && (
           <div className="flex-1 flex items-center justify-center h-full">
             <div className="text-center max-w-md">
-              <div className="w-16 h-16 bg-santoni-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                <span className="text-santoni-600 text-3xl font-bold">S</span>
+              <div className="w-16 h-16 bg-santoni-100 rounded-2xl flex items-center justify-center mx-auto mb-4 p-2">
+                <img src="/santoni-logo.png" alt="Santoni" className="h-full w-auto" />
               </div>
               <h2 className="text-xl font-semibold text-gray-900 mb-2">
                 Bienvenido a SantoniBot
@@ -203,8 +201,8 @@ export default function ChatWindow({
         {/* Typing indicator with bouncing dots */}
         {isBusy && (
           <div className="flex gap-3 message-animate">
-            <div className="w-8 h-8 bg-santoni-600 rounded-full flex items-center justify-center shrink-0">
-              <span className="text-white text-xs font-bold">S</span>
+            <div className="w-8 h-8 bg-santoni-600 rounded-full flex items-center justify-center shrink-0 p-1.5">
+              <img src="/santoni-logo.png" alt="Santoni" className="h-full w-auto brightness-0 invert" />
             </div>
             <div className="bg-white rounded-2xl rounded-tl-sm px-4 py-3 shadow-sm border border-gray-100">
               <div className="flex items-center gap-1.5">

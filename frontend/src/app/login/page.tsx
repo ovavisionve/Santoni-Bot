@@ -56,8 +56,8 @@ export default function LoginPage() {
         <div className="bg-white rounded-2xl shadow-xl p-8">
           {/* Logo / Header */}
           <div className="text-center mb-8">
-            <div className="w-16 h-16 bg-santoni-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
-              <span className="text-white text-2xl font-bold">S</span>
+            <div className="w-16 h-16 bg-santoni-600 rounded-2xl flex items-center justify-center mx-auto mb-4 p-2">
+              <img src="/santoni-logo.png" alt="Santoni" className="h-full w-auto brightness-0 invert" />
             </div>
             <h1 className="text-2xl font-bold text-gray-900">SantoniBot</h1>
             <p className="text-gray-500 mt-1">
