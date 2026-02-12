@@ -26,7 +26,7 @@ function generateAutoTitle(content: string): string {
 
 export default function ChatPage() {
   const router = useRouter();
-  const { user, loading, logout } = useAuth();
+  const { user, loading, logout, inactivityWarning, resetActivity } = useAuth();
   const [conversations, setConversations] = useState<ConversationListItem[]>(
     []
   );
@@ -231,7 +231,20 @@ export default function ChatPage() {
   if (!user) return null;
 
   return (
-    <div className="h-screen flex overflow-hidden bg-gray-50">
+    <div className="h-screen flex overflow-hidden bg-gray-50 relative">
+      {/* Inactivity warning banner */}
+      {inactivityWarning && (
+        <div className="absolute top-0 left-0 right-0 z-50 bg-yellow-500 text-white text-center py-2 px-4 text-sm font-medium shadow-lg animate-pulse">
+          Tu sesion se cerrara en 5 minutos por inactividad.{" "}
+          <button
+            onClick={resetActivity}
+            className="underline font-bold hover:text-yellow-100 ml-2"
+          >
+            Continuar sesion
+          </button>
+        </div>
+      )}
+
       {/* Sidebar */}
       <Sidebar
         user={user}

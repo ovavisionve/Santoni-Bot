@@ -123,7 +123,7 @@ def health_check_detailed(current_user=Depends(get_current_user)):
         "status": "configured" if settings.idempiere_db_password else "not_configured",
     }
 
-    overall = "ok" if checks["database"]["status"] == "ok" and checks["groq"]["status"] == "ok" else "degraded"
+    overall = "ok" if checks["database"]["status"] == "ok" else "degraded"
 
     return {
         "status": overall,

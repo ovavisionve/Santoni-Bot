@@ -32,6 +32,10 @@ httpx==0.28.1
 openpyxl==3.1.5
 reportlab==4.2.5
 
+# 2FA / TOTP
+pyotp==2.9.0
+qrcode[pil]==8.0
+
 # Utilities
 python-dateutil==2.9.0
 pytz==2024.2

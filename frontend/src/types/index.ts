@@ -7,6 +7,7 @@ export interface User {
   department: string;
   extra_departments: string | null;
   is_active: boolean;
+  totp_enabled: boolean;
   created_at: string;
 }
 
@@ -46,6 +47,12 @@ export interface ChatResponse {
 export interface AuthToken {
   access_token: string;
   token_type: string;
+  totp_required?: boolean;
+}
+
+export interface TOTPSetup {
+  secret: string;
+  qr_uri: string;
 }
 
 export interface SystemStats {

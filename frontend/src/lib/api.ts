@@ -56,13 +56,48 @@ class ApiClient {
   }
 
   // Auth
-  async login(username: string, password: string) {
-    const data = await this.request<{ access_token: string }>("/api/auth/login", {
+  async login(username: string, password: string, totp_code?: string) {
+    const data = await this.request<{
+      access_token: string;
+      totp_required?: boolean;
+    }>("/api/auth/login", {
       method: "POST",
-      body: JSON.stringify({ username, password }),
+      body: JSON.stringify({ username, password, totp_code: totp_code || null }),
     });
+    if (data.totp_required) {
+      return { totp_required: true as const, access_token: "" };
+    }
     this.setToken(data.access_token);
     return data;
+  }
+
+  // TOTP 2FA
+  async totpSetup() {
+    return this.request<import("@/types").TOTPSetup>("/api/auth/totp/setup", {
+      method: "POST",
+    });
+  }
+
+  async totpEnable(totp_code: string) {
+    return this.request<{ message: string }>("/api/auth/totp/enable", {
+      method: "POST",
+      body: JSON.stringify({ totp_code }),
+    });
+  }
+
+  async totpDisable(totp_code: string) {
+    return this.request<{ message: string }>("/api/auth/totp/disable", {
+      method: "POST",
+      body: JSON.stringify({ totp_code }),
+    });
+  }
+
+  // Password
+  async changePassword(current_password: string, new_password: string) {
+    return this.request<{ message: string }>("/api/auth/change-password", {
+      method: "POST",
+      body: JSON.stringify({ current_password, new_password }),
+    });
   }
 
   logout() {

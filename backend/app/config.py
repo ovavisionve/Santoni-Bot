@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     backend_port: int = 8000
     secret_key: str = "change-this-to-a-random-secret-key-min-32-chars"
     jwt_algorithm: str = "HS256"
-    jwt_expiration_minutes: int = 480
+    jwt_expiration_minutes: int = 30
 
     # Internal Database
     postgres_host: str = "db"
