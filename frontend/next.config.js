@@ -1,5 +1,3 @@
-const { withSentryConfig } = require("@sentry/nextjs");
-
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: "standalone",
@@ -13,10 +11,17 @@ const nextConfig = {
   },
 };
 
-// Only wrap with Sentry if DSN is configured
-module.exports = process.env.NEXT_PUBLIC_SENTRY_DSN
-  ? withSentryConfig(nextConfig, {
+// Only wrap with Sentry if DSN is configured and package is available
+let finalConfig = nextConfig;
+if (process.env.NEXT_PUBLIC_SENTRY_DSN) {
+  try {
+    const { withSentryConfig } = require("@sentry/nextjs");
+    finalConfig = withSentryConfig(nextConfig, {
       silent: true,
       disableLogger: true,
-    })
-  : nextConfig;
+    });
+  } catch {
+    // @sentry/nextjs not installed, skip
+  }
+}
+module.exports = finalConfig;
