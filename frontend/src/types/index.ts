@@ -7,8 +7,17 @@ export interface User {
   department: string;
   extra_departments: string | null;
   is_active: boolean;
+  avatar_url: string | null;
   totp_enabled: boolean;
   created_at: string;
+}
+
+export interface Branding {
+  company_name: string;
+  company_subtitle: string;
+  primary_color: string;
+  logo_url: string;
+  login_logo_url: string;
 }
 
 export interface Message {
