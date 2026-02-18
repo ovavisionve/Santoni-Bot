@@ -153,15 +153,11 @@ class Orchestrator:
         document: dict,
         history: list[tuple[str, str]] | None,
     ) -> dict:
-        """Analyze an attached document using Claude."""
+        """Analyze an attached document using Claude. Tries primary model, then fallback."""
+        import logging
         from langchain_core.messages import AIMessage
 
-        claude_llm = create_llm(
-            temperature=0.1,
-            max_tokens=4096,
-            purpose="document_analysis",
-            provider="anthropic",
-        )
+        log = logging.getLogger("santonibot.orchestrator")
 
         system_msg = SystemMessage(
             content=(
@@ -173,14 +169,14 @@ class Orchestrator:
             )
         )
 
-        messages = [system_msg]
+        msgs = [system_msg]
 
         if history:
             for role, content in history[-4:]:
                 if role == "user":
-                    messages.append(HumanMessage(content=content))
+                    msgs.append(HumanMessage(content=content))
                 elif role == "assistant":
-                    messages.append(AIMessage(content=content))
+                    msgs.append(AIMessage(content=content))
 
         # Build the user message with document content
         if document["type"] == "image":
@@ -194,11 +190,10 @@ class Orchestrator:
                 },
                 {"type": "text", "text": message or "Analiza esta imagen."},
             ]
-            messages.append(HumanMessage(content=user_content))
+            msgs.append(HumanMessage(content=user_content))
         else:
             # Text document: include content in the message
             doc_text = document["content"]
-            # Truncate very long documents
             if len(doc_text) > 30000:
                 doc_text = doc_text[:30000] + "\n\n... (documento truncado por tamaño)"
             user_text = (
@@ -206,35 +201,53 @@ class Orchestrator:
                 f"---\n{doc_text}\n---\n\n"
                 f"Consulta del usuario: {message or 'Analiza este documento.'}"
             )
-            messages.append(HumanMessage(content=user_text))
+            msgs.append(HumanMessage(content=user_text))
 
-        try:
-            response = await claude_llm.ainvoke(messages)
-        except Exception as e:
-            error_str = str(e)
-            if "403" in error_str or "forbidden" in error_str.lower():
+        # Try primary model, then fallback to haiku
+        primary_model = get_settings().anthropic_model
+        fallback_model = "claude-3-haiku-20240307"
+        models_to_try = [primary_model]
+        if primary_model != fallback_model:
+            models_to_try.append(fallback_model)
+
+        last_error = ""
+        for model_name in models_to_try:
+            try:
+                from langchain_anthropic import ChatAnthropic
+
+                claude_llm = ChatAnthropic(
+                    api_key=get_settings().anthropic_api_key,
+                    model=model_name,
+                    temperature=0.1,
+                    max_tokens=4096,
+                )
+                log.info("Trying Claude model: %s", model_name)
+                response = await claude_llm.ainvoke(msgs)
+                log.info("Claude model %s succeeded", model_name)
                 return {
-                    "response": (
-                        "Error de permisos con la API de Claude. "
-                        "Verifica que el modelo configurado (ANTHROPIC_MODEL) "
-                        "sea compatible con tu plan. "
-                        "Modelo recomendado: `claude-3-5-sonnet-20241022`. "
-                        "Después de cambiar el .env, reinicia el backend: "
-                        "`docker compose up -d backend`"
-                    ),
-                    "agent_used": "orchestrator",
-                    "metadata": {"classification": "document_error", "error": error_str},
+                    "response": response.content,
+                    "agent_used": "document_analysis",
+                    "metadata": {
+                        "classification": "document",
+                        "provider": "anthropic",
+                        "model": model_name,
+                        "filename": document.get("filename"),
+                    },
                 }
-            raise
+            except Exception as e:
+                last_error = str(e)
+                log.warning("Claude model %s failed: %s", model_name, last_error)
+                if "403" not in last_error and "forbidden" not in last_error.lower():
+                    raise  # Only retry on 403, re-raise other errors
 
         return {
-            "response": response.content,
-            "agent_used": "document_analysis",
-            "metadata": {
-                "classification": "document",
-                "provider": "anthropic",
-                "filename": document.get("filename"),
-            },
+            "response": (
+                "No se pudo acceder a la API de Claude. "
+                f"Se intentaron los modelos: {', '.join(models_to_try)}. "
+                "Verifica que tu API Key de Anthropic esté activa y tenga créditos."
+            ),
+            "agent_used": "orchestrator",
+            "metadata": {"classification": "document_error", "error": last_error},
         }
 
     async def _handle_general(
