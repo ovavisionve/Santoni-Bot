@@ -1,11 +1,16 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.database import get_db
+from app.database import get_db, IdempiereSession
 from app.middleware.auth import require_admin
 from app.models.user import User, UserRole, Department
 from app.schemas.user import UserCreate, UserUpdate, UserResponse
 from app.services.auth import hash_password
+
+logger = logging.getLogger("santonibot.users")
 
 router = APIRouter(prefix="/users", tags=["Usuarios"])
 
@@ -46,6 +51,7 @@ def create_user(
         role=UserRole(data.role),
         department=Department(data.department),
         extra_departments=data.extra_departments,
+        allowed_org_ids=data.allowed_org_ids,
     )
     db.add(user)
     db.commit()
@@ -94,6 +100,36 @@ def update_user(
     db.commit()
     db.refresh(user)
     return user
+
+
+@router.get("/organizations", tags=["Usuarios"])
+def list_organizations(
+    admin: User = Depends(require_admin),
+):
+    """List available organizations from iDempiere for user assignment."""
+    try:
+        db = IdempiereSession()
+        try:
+            result = db.execute(
+                text(
+                    "SELECT ad_org_id, value, name "
+                    "FROM adempiere.ad_org "
+                    "WHERE isactive = 'Y' AND ad_org_id > 0 "
+                    "ORDER BY name"
+                )
+            )
+            return [
+                {"id": r[0], "value": r[1], "name": r[2]}
+                for r in result.fetchall()
+            ]
+        finally:
+            db.close()
+    except Exception as e:
+        logger.error("Error querying iDempiere organizations: %s", e)
+        raise HTTPException(
+            status_code=503,
+            detail="No se pudo conectar a iDempiere para obtener las organizaciones",
+        )
 
 
 @router.delete("/{user_id}")

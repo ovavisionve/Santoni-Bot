@@ -61,11 +61,15 @@ class BaseAgent(ABC):
         """Return SQL schema context relevant to this agent."""
         ...
 
-    def fetch_data(self, message: str) -> str | None:
+    def fetch_data(self, message: str, org_ids: list[int] | None = None) -> str | None:
         """
         Fetch relevant data from the database based on the user's message.
         Override in subclasses to provide department-specific data fetching.
         Returns a formatted string with the data, or None if no data found.
+
+        Args:
+            message: User's query text
+            org_ids: iDempiere organization IDs to filter by (None = all orgs)
         """
         return None
 
@@ -74,6 +78,7 @@ class BaseAgent(ABC):
         message: str,
         history: list[tuple[str, str]] | None = None,
         user_departments: list[str] | None = None,
+        org_ids: list[int] | None = None,
     ) -> dict:
         """
         Process a user message and return a response.
@@ -96,8 +101,8 @@ class BaseAgent(ABC):
             # RAG is optional -- never block the agent if it fails
             logger.debug("RAG context unavailable for %s: %s", self.name, exc)
 
-        # Fetch real data from the database
-        data_context = self.fetch_data(message)
+        # Fetch real data from the database (filtered by user's org)
+        data_context = self.fetch_data(message, org_ids=org_ids)
         if data_context:
             messages.append(
                 SystemMessage(

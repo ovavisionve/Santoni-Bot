@@ -70,7 +70,7 @@ Tablas: demo_clientes, demo_facturas_venta, demo_lineas_factura_venta,
 demo_cobranzas, demo_metas_venta
 """
 
-    def fetch_data(self, message: str) -> str | None:
+    def fetch_data(self, message: str, org_ids: list[int] | None = None) -> str | None:
         msg = message.lower()
         sections = []
 
@@ -109,21 +109,21 @@ demo_cobranzas, demo_metas_venta
             limit_match = re.search(r'top\s*(\d+)', msg)
             if limit_match:
                 limit = int(limit_match.group(1))
-            data = build_top_clients(limit=limit, zona=zona, vendedor=vendedor, anio=anio)
+            data = build_top_clients(limit=limit, zona=zona, vendedor=vendedor, anio=anio, org_ids=org_ids)
             sections.append(f"## Top {limit} Clientes por Ventas ({label})")
             sections.append(self._format_table(data))
 
         if any(w in msg for w in ["cobran", "cobro", "recauda", "pago"]):
-            data = build_collection_summary(zona=zona, vendedor=vendedor, mes=mes, anio=anio)
+            data = build_collection_summary(zona=zona, vendedor=vendedor, mes=mes, anio=anio, org_ids=org_ids)
             sections.append(self._format_summary(data, f"Resumen de Cobranza - {label}"))
 
         if any(w in msg for w in ["atrasa", "vencid", "pendiente", "deuda", "mora"]):
-            data = build_overdue_receivables()
+            data = build_overdue_receivables(org_ids=org_ids)
             sections.append("## Cuentas por Cobrar Vencidas")
             sections.append(self._format_table(data))
 
         if any(w in msg for w in ["venta", "factur", "ingreso", "volumen"]) or not sections:
-            data = build_sales_summary(zona=zona, vendedor=vendedor, mes=mes, anio=anio)
+            data = build_sales_summary(zona=zona, vendedor=vendedor, mes=mes, anio=anio, org_ids=org_ids)
             sections.append(self._format_summary(data, f"Resumen de Ventas - {label}"))
 
         return "\n\n".join(sections) if sections else None

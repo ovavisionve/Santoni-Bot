@@ -200,11 +200,18 @@ class ApiClient {
     password: string;
     role: string;
     department: string;
+    allowed_org_ids?: string | null;
   }) {
     return this.request<import("@/types").User>("/api/users/", {
       method: "POST",
       body: JSON.stringify(data),
     });
+  }
+
+  async getOrganizations() {
+    return this.request<import("@/types").Organization[]>(
+      "/api/users/organizations"
+    );
   }
 
   async updateUser(

@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import { api } from "@/lib/api";
-import type { User, SystemStats } from "@/types";
+import type { User, SystemStats, Organization } from "@/types";
 import {
   Users,
   MessageSquare,
@@ -55,7 +55,9 @@ export default function AdminPage() {
     password: "",
     role: "usuario",
     department: "ventas",
+    allowed_org_ids: "" as string,
   });
+  const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [auditLogs, setAuditLogs] = useState<
     Array<{
       id: number;
@@ -89,8 +91,12 @@ export default function AdminPage() {
         const s = await api.getStats();
         setStats(s);
       } else if (tab === "users") {
-        const u = await api.getUsers();
+        const [u, orgs] = await Promise.all([
+          api.getUsers(),
+          api.getOrganizations().catch(() => [] as Organization[]),
+        ]);
         setUsers(u);
+        setOrganizations(orgs);
       } else if (tab === "logs") {
         const l = await api.getAuditLogs();
         setAuditLogs(l.data);
@@ -103,7 +109,11 @@ export default function AdminPage() {
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await api.createUser(newUser);
+      const payload = {
+        ...newUser,
+        allowed_org_ids: newUser.allowed_org_ids || null,
+      };
+      await api.createUser(payload);
       setShowCreateUser(false);
       setNewUser({
         email: "",
@@ -112,6 +122,7 @@ export default function AdminPage() {
         password: "",
         role: "usuario",
         department: "ventas",
+        allowed_org_ids: "",
       });
       loadData();
     } catch (err) {
@@ -328,6 +339,57 @@ export default function AdminPage() {
                     ))}
                   </select>
                 </div>
+                {organizations.length > 0 && (
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-gray-700">
+                      Empresas / Organizaciones (iDempiere)
+                    </label>
+                    <p className="text-xs text-gray-400">
+                      Sin selección = acceso a todas las empresas
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-40 overflow-y-auto border border-gray-200 rounded-lg p-3">
+                      {organizations.map((org) => {
+                        const selected = newUser.allowed_org_ids
+                          .split(",")
+                          .filter(Boolean)
+                          .includes(String(org.id));
+                        return (
+                          <label
+                            key={org.id}
+                            className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer text-sm transition-colors ${
+                              selected
+                                ? "bg-santoni-50 border border-santoni-200"
+                                : "hover:bg-gray-50"
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selected}
+                              onChange={() => {
+                                const ids = newUser.allowed_org_ids
+                                  .split(",")
+                                  .filter(Boolean);
+                                const idStr = String(org.id);
+                                const next = selected
+                                  ? ids.filter((x) => x !== idStr)
+                                  : [...ids, idStr];
+                                setNewUser({
+                                  ...newUser,
+                                  allowed_org_ids: next.join(","),
+                                });
+                              }}
+                              className="rounded border-gray-300 text-santoni-600 focus:ring-santoni-500"
+                            />
+                            <span className="text-gray-700">{org.name}</span>
+                            <span className="text-gray-400 text-xs">
+                              ({org.value})
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
                 <div className="flex gap-2">
                   <button type="submit" className="btn-primary text-sm">
                     Crear
@@ -360,6 +422,9 @@ export default function AdminPage() {
                       Rol
                     </th>
                     <th className="text-left px-4 py-3 font-medium text-gray-600">
+                      Empresas
+                    </th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-600">
                       Estado
                     </th>
                     <th className="px-4 py-3"></th>
@@ -385,6 +450,19 @@ export default function AdminPage() {
                         >
                           {ROLE_LABELS[u.role] || u.role}
                         </span>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-gray-500">
+                        {u.allowed_org_ids
+                          ? u.allowed_org_ids
+                              .split(",")
+                              .map((id) => {
+                                const org = organizations.find(
+                                  (o) => String(o.id) === id.trim()
+                                );
+                                return org ? org.name : id.trim();
+                              })
+                              .join(", ")
+                          : "Todas"}
                       </td>
                       <td className="px-4 py-3">
                         <span

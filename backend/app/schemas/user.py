@@ -33,6 +33,7 @@ class UserCreate(BaseModel):
     role: str = "usuario"
     department: str
     extra_departments: str | None = None
+    allowed_org_ids: str | None = None
 
     @field_validator("password")
     @classmethod
@@ -46,6 +47,7 @@ class UserUpdate(BaseModel):
     role: str | None = None
     department: str | None = None
     extra_departments: str | None = None
+    allowed_org_ids: str | None = None
     is_active: bool | None = None
 
 
@@ -67,6 +69,7 @@ class UserResponse(BaseModel):
     role: str
     department: str
     extra_departments: str | None
+    allowed_org_ids: str | None = None
     is_active: bool
     totp_enabled: bool = False
     created_at: datetime

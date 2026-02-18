@@ -144,11 +144,12 @@ def build_sales_summary(
     vendedor: str | None = None,
     mes: int | None = None,
     anio: int | None = None,
+    org_ids: list[int] | None = None,
 ) -> dict:
     """Sales summary - routes to demo or iDempiere."""
     if _is_production():
         from app.services.idempiere_queries import build_sales_summary as _prod
-        return _prod(zona=zona, vendedor=vendedor, mes=mes, anio=anio)
+        return _prod(zona=zona, vendedor=vendedor, mes=mes, anio=anio, org_ids=org_ids)
 
     db = SessionLocal()
     try:
@@ -232,11 +233,12 @@ def build_collection_summary(
     vendedor: str | None = None,
     mes: int | None = None,
     anio: int | None = None,
+    org_ids: list[int] | None = None,
 ) -> dict:
     """Collection summary - routes to demo or iDempiere."""
     if _is_production():
         from app.services.idempiere_queries import build_collection_summary as _prod
-        return _prod(zona=zona, vendedor=vendedor, mes=mes, anio=anio)
+        return _prod(zona=zona, vendedor=vendedor, mes=mes, anio=anio, org_ids=org_ids)
 
     db = SessionLocal()
     try:
@@ -304,11 +306,12 @@ def build_top_clients(
     zona: str | None = None,
     vendedor: str | None = None,
     anio: int | None = None,
+    org_ids: list[int] | None = None,
 ) -> list[dict]:
     """Top clients - routes to demo or iDempiere."""
     if _is_production():
         from app.services.idempiere_queries import build_top_clients as _prod
-        return _prod(limit=limit, zona=zona, vendedor=vendedor, anio=anio)
+        return _prod(limit=limit, zona=zona, vendedor=vendedor, anio=anio, org_ids=org_ids)
 
     db = SessionLocal()
     try:
@@ -355,11 +358,11 @@ def build_top_clients(
         db.close()
 
 
-def build_overdue_receivables() -> list[dict]:
+def build_overdue_receivables(org_ids: list[int] | None = None) -> list[dict]:
     """Overdue receivables - routes to demo or iDempiere."""
     if _is_production():
         from app.services.idempiere_queries import build_overdue_receivables as _prod
-        return _prod()
+        return _prod(org_ids=org_ids)
 
     db = SessionLocal()
     try:
@@ -394,11 +397,11 @@ def build_overdue_receivables() -> list[dict]:
 # Pre-built queries: PRODUCCION (Production)
 # ---------------------------------------------------------------------------
 
-def build_production_summary(mes: int | None = None, anio: int | None = None) -> dict:
+def build_production_summary(mes: int | None = None, anio: int | None = None, org_ids: list[int] | None = None) -> dict:
     """Production summary - routes to demo or iDempiere."""
     if _is_production():
         from app.services.idempiere_queries import build_production_summary as _prod
-        return _prod(mes=mes, anio=anio)
+        return _prod(mes=mes, anio=anio, org_ids=org_ids)
 
     db = SessionLocal()
     try:
@@ -476,12 +479,12 @@ def build_production_summary(mes: int | None = None, anio: int | None = None) ->
 # ---------------------------------------------------------------------------
 
 def build_producer_purchases(
-    producto: str | None = None, anio: int | None = None
+    producto: str | None = None, anio: int | None = None, org_ids: list[int] | None = None,
 ) -> dict:
     """Producer purchases - routes to demo or iDempiere."""
     if _is_production():
         from app.services.idempiere_queries import build_producer_purchases as _prod
-        return _prod(producto=producto, anio=anio)
+        return _prod(producto=producto, anio=anio, org_ids=org_ids)
 
     db = SessionLocal()
     try:
@@ -566,11 +569,11 @@ def build_producer_purchases(
 # Pre-built queries: FINANZAS (Finance)
 # ---------------------------------------------------------------------------
 
-def build_financial_summary(mes: int | None = None, anio: int | None = None) -> dict:
+def build_financial_summary(mes: int | None = None, anio: int | None = None, org_ids: list[int] | None = None) -> dict:
     """Financial summary - routes to demo or iDempiere."""
     if _is_production():
         from app.services.idempiere_queries import build_financial_summary as _prod
-        return _prod(mes=mes, anio=anio)
+        return _prod(mes=mes, anio=anio, org_ids=org_ids)
 
     db = SessionLocal()
     try:
@@ -666,11 +669,11 @@ def build_financial_summary(mes: int | None = None, anio: int | None = None) -> 
 # Pre-built queries: RRHH (Human Resources)
 # ---------------------------------------------------------------------------
 
-def build_employee_summary() -> dict:
+def build_employee_summary(org_ids: list[int] | None = None) -> dict:
     """Employee summary - routes to demo or iDempiere."""
     if _is_production():
         from app.services.idempiere_queries import build_employee_summary as _prod
-        return _prod()
+        return _prod(org_ids=org_ids)
 
     db = SessionLocal()
     try:
@@ -731,11 +734,11 @@ def build_employee_summary() -> dict:
 # Pre-built queries: COMPRAS INSUMOS (Supply Purchases)
 # ---------------------------------------------------------------------------
 
-def build_supply_purchases(mes: int | None = None, anio: int | None = None) -> dict:
+def build_supply_purchases(mes: int | None = None, anio: int | None = None, org_ids: list[int] | None = None) -> dict:
     """Supply purchases - routes to demo or iDempiere."""
     if _is_production():
         from app.services.idempiere_queries import build_supply_purchases as _prod
-        return _prod(mes=mes, anio=anio)
+        return _prod(mes=mes, anio=anio, org_ids=org_ids)
 
     # Demo fallback
     db = SessionLocal()
@@ -768,11 +771,11 @@ def build_supply_purchases(mes: int | None = None, anio: int | None = None) -> d
 # Pre-built queries: CONTABILIDAD (Accounting)
 # ---------------------------------------------------------------------------
 
-def build_accounting_summary(mes: int | None = None, anio: int | None = None) -> dict:
+def build_accounting_summary(mes: int | None = None, anio: int | None = None, org_ids: list[int] | None = None) -> dict:
     """Accounting summary - routes to demo or iDempiere."""
     if _is_production():
         from app.services.idempiere_queries import build_accounting_summary as _prod
-        return _prod(mes=mes, anio=anio)
+        return _prod(mes=mes, anio=anio, org_ids=org_ids)
 
     # Demo fallback
     db = SessionLocal()

@@ -54,11 +54,11 @@ IMPORTANTE SOBRE PERÍODOS:
 Tablas: demo_empleados, demo_nominas, demo_asistencias
 """
 
-    def fetch_data(self, message: str) -> str | None:
+    def fetch_data(self, message: str, org_ids: list[int] | None = None) -> str | None:
         msg = message.lower()
         sections = []
 
-        summary = build_employee_summary()
+        summary = build_employee_summary(org_ids=org_ids)
         sections.append(self._format_summary(summary, "Resumen de Personal"))
 
         if any(w in msg for w in ["empleado", "personal", "lista", "cuántos", "cuantos"]):

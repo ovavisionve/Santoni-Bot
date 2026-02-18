@@ -135,6 +135,7 @@ class Orchestrator:
             message=message,
             history=history,
             user_departments=allowed,
+            org_ids=user.org_ids,
         )
         return result
 

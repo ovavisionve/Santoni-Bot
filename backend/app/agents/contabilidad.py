@@ -59,7 +59,7 @@ IMPORTANTE SOBRE PERÍODOS:
 Datos contables provienen de fact_acct (hechos contables) y c_elementvalue (plan de cuentas) en iDempiere.
 """
 
-    def fetch_data(self, message: str) -> str | None:
+    def fetch_data(self, message: str, org_ids: list[int] | None = None) -> str | None:
         msg = message.lower()
         sections = []
 
@@ -80,7 +80,7 @@ Datos contables provienen de fact_acct (hechos contables) y c_elementvalue (plan
                 break
 
         label = f"Año {anio}" if anio else "Todos los años"
-        summary = build_accounting_summary(mes=mes, anio=anio)
+        summary = build_accounting_summary(mes=mes, anio=anio, org_ids=org_ids)
         sections.append(self._format_summary(summary, f"Resumen Contable - {label}"))
 
         return "\n\n".join(sections) if sections else None

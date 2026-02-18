@@ -39,6 +39,11 @@ class User(Base):
     extra_departments: Mapped[str | None] = mapped_column(
         String(500), nullable=True
     )
+    # iDempiere organization IDs (comma-separated, e.g. "1000000,1000001")
+    # NULL = all organizations (for admins), otherwise only listed orgs
+    allowed_org_ids: Mapped[str | None] = mapped_column(
+        String(500), nullable=True
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     totp_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
     totp_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -69,6 +74,16 @@ class User(Base):
                 d.strip() for d in self.extra_departments.split(",") if d.strip()
             )
         return deps
+
+    @property
+    def org_ids(self) -> list[int] | None:
+        """Return iDempiere org IDs this user can access, or None for all."""
+        if not self.allowed_org_ids:
+            return None
+        return [
+            int(x.strip()) for x in self.allowed_org_ids.split(",")
+            if x.strip().isdigit()
+        ]
 
 
 # Avoid circular import issues

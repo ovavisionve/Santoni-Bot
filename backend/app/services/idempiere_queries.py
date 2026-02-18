@@ -42,6 +42,21 @@ def _rows_to_dicts(rows, columns) -> list[dict]:
     ]
 
 
+def _add_org_filter(
+    conditions: list[str],
+    params: dict,
+    org_ids: list[int] | None,
+    table_alias: str,
+) -> None:
+    """Add ad_org_id IN (...) filter if org_ids is provided.
+    Modifies conditions and params in place."""
+    if org_ids:
+        placeholders = ", ".join(f":org_{i}" for i in range(len(org_ids)))
+        conditions.append(f"{table_alias}.ad_org_id IN ({placeholders})")
+        for i, org_id in enumerate(org_ids):
+            params[f"org_{i}"] = org_id
+
+
 def execute_idempiere_query(query: str, params: dict | None = None) -> list[dict]:
     """Execute a read-only query against iDempiere.
     The connection is enforced read-only at the database level."""
@@ -68,6 +83,7 @@ def build_sales_summary(
     vendedor: str | None = None,
     mes: int | None = None,
     anio: int | None = None,
+    org_ids: list[int] | None = None,
 ) -> dict:
     """Sales summary from iDempiere c_invoice (issotrx='Y')."""
     db = IdempiereSession()
@@ -78,6 +94,7 @@ def build_sales_summary(
             "i.isactive = 'Y'",
         ]
         params: dict = {}
+        _add_org_filter(conditions, params, org_ids, "i")
 
         if anio:
             conditions.append("EXTRACT(YEAR FROM i.dateinvoiced) = :anio")
@@ -181,6 +198,7 @@ def build_collection_summary(
     vendedor: str | None = None,
     mes: int | None = None,
     anio: int | None = None,
+    org_ids: list[int] | None = None,
 ) -> dict:
     """Collection summary from iDempiere c_payment (isreceipt='Y')."""
     db = IdempiereSession()
@@ -191,6 +209,7 @@ def build_collection_summary(
             "p.isactive = 'Y'",
         ]
         params: dict = {}
+        _add_org_filter(conditions, params, org_ids, "p")
 
         if anio:
             conditions.append("EXTRACT(YEAR FROM p.datetrx) = :anio")
@@ -263,6 +282,7 @@ def build_top_clients(
     zona: str | None = None,
     vendedor: str | None = None,
     anio: int | None = None,
+    org_ids: list[int] | None = None,
 ) -> list[dict]:
     """Top clients by invoiced amount from iDempiere."""
     db = IdempiereSession()
@@ -273,6 +293,7 @@ def build_top_clients(
             "i.isactive = 'Y'",
         ]
         params: dict = {"limit": limit}
+        _add_org_filter(conditions, params, org_ids, "i")
 
         if anio:
             conditions.append("EXTRACT(YEAR FROM i.dateinvoiced) = :anio")
@@ -314,10 +335,19 @@ def build_top_clients(
         db.close()
 
 
-def build_overdue_receivables() -> list[dict]:
+def build_overdue_receivables(org_ids: list[int] | None = None) -> list[dict]:
     """Overdue accounts receivable from iDempiere (unpaid sales invoices)."""
     db = IdempiereSession()
     try:
+        # Build org filter for overdue receivables
+        org_clause = ""
+        org_params: dict = {}
+        if org_ids:
+            placeholders = ", ".join(f":org_{i}" for i in range(len(org_ids)))
+            org_clause = f"AND i.ad_org_id IN ({placeholders}) "
+            for i, org_id in enumerate(org_ids):
+                org_params[f"org_{i}"] = org_id
+
         q = text(
             "SELECT i.documentno AS numero_factura, bp.name AS cliente, "
             "COALESCE(sr.name, '') AS vendedor, "
@@ -333,11 +363,12 @@ def build_overdue_receivables() -> list[dict]:
             "LEFT JOIN adempiere.c_paymentterm pterm ON i.c_paymentterm_id = pterm.c_paymentterm_id "
             "WHERE i.issotrx = 'Y' AND i.docstatus = 'CO' AND i.ispaid = 'N' "
             "AND i.isactive = 'Y' "
+            f"{org_clause}"
             "AND (i.dateinvoiced + COALESCE(pterm.netdays, 30)) < CURRENT_DATE "
             "ORDER BY dias_vencido DESC "
             "LIMIT 50"
         )
-        rows = db.execute(q).fetchall()
+        rows = db.execute(q, org_params).fetchall()
         return [
             {
                 "numero_factura": r[0],
@@ -359,23 +390,27 @@ def build_overdue_receivables() -> list[dict]:
 # FINANZAS (Finance)
 # ---------------------------------------------------------------------------
 
-def build_financial_summary(mes: int | None = None, anio: int | None = None) -> dict:
+def build_financial_summary(mes: int | None = None, anio: int | None = None, org_ids: list[int] | None = None) -> dict:
     """Financial summary from iDempiere: bank balances, receivables, payables."""
     db = IdempiereSession()
     try:
-        # Bank balances
+        # Bank balances (filtered by org if applicable)
+        bank_conditions = ["ba.isactive = 'Y'"]
+        bank_params: dict = {}
+        _add_org_filter(bank_conditions, bank_params, org_ids, "ba")
+        bank_where = " AND ".join(bank_conditions)
         bank_q = text(
-            "SELECT b.name AS banco, ba.accountno AS numero_cuenta, "
-            "CASE WHEN ba.bankaccounttype = 'C' THEN 'Corriente' "
-            "     WHEN ba.bankaccounttype = 'S' THEN 'Ahorro' "
-            "     ELSE ba.bankaccounttype END AS tipo, "
-            "COALESCE(c.iso_code, 'VES') AS moneda, "
-            "ba.currentbalance AS saldo "
-            "FROM adempiere.c_bankaccount ba "
-            "JOIN adempiere.c_bank b ON ba.c_bank_id = b.c_bank_id "
-            "LEFT JOIN adempiere.c_currency c ON ba.c_currency_id = c.c_currency_id "
-            "WHERE ba.isactive = 'Y' "
-            "ORDER BY b.name"
+            f"SELECT b.name AS banco, ba.accountno AS numero_cuenta, "
+            f"CASE WHEN ba.bankaccounttype = 'C' THEN 'Corriente' "
+            f"     WHEN ba.bankaccounttype = 'S' THEN 'Ahorro' "
+            f"     ELSE ba.bankaccounttype END AS tipo, "
+            f"COALESCE(c.iso_code, 'VES') AS moneda, "
+            f"ba.currentbalance AS saldo "
+            f"FROM adempiere.c_bankaccount ba "
+            f"JOIN adempiere.c_bank b ON ba.c_bank_id = b.c_bank_id "
+            f"LEFT JOIN adempiere.c_currency c ON ba.c_currency_id = c.c_currency_id "
+            f"WHERE {bank_where} "
+            f"ORDER BY b.name"
         )
         banks = [
             {
@@ -386,7 +421,7 @@ def build_financial_summary(mes: int | None = None, anio: int | None = None) -> 
                 "saldo": float(r[4]) if r[4] else 0.0,
                 "fecha_saldo": None,
             }
-            for r in db.execute(bank_q).fetchall()
+            for r in db.execute(bank_q, bank_params).fetchall()
         ]
         total_saldo_bancario = sum(b["saldo"] for b in banks)
 
@@ -398,6 +433,7 @@ def build_financial_summary(mes: int | None = None, anio: int | None = None) -> 
             "i.isactive = 'Y'",
         ]
         ar_params: dict = {}
+        _add_org_filter(ar_conditions, ar_params, org_ids, "i")
         if anio:
             ar_conditions.append("EXTRACT(YEAR FROM i.dateinvoiced) = :anio")
             ar_params["anio"] = anio
@@ -418,16 +454,24 @@ def build_financial_summary(mes: int | None = None, anio: int | None = None) -> 
         }
 
         # Overdue receivables
+        overdue_conds = [
+            "i.issotrx = 'Y'",
+            "i.docstatus = 'CO'",
+            "i.ispaid = 'N'",
+            "i.isactive = 'Y'",
+            "(i.dateinvoiced + COALESCE(pt.netdays, 30)) < CURRENT_DATE",
+        ]
+        overdue_params: dict = {}
+        _add_org_filter(overdue_conds, overdue_params, org_ids, "i")
+        overdue_where = " AND ".join(overdue_conds)
         overdue_q = text(
-            "SELECT COUNT(*) AS facturas_vencidas, "
-            "COALESCE(SUM(i.grandtotal), 0) AS total_vencido "
-            "FROM adempiere.c_invoice i "
-            "LEFT JOIN adempiere.c_paymentterm pt ON i.c_paymentterm_id = pt.c_paymentterm_id "
-            "WHERE i.issotrx = 'Y' AND i.docstatus = 'CO' AND i.ispaid = 'N' "
-            "AND i.isactive = 'Y' "
-            "AND (i.dateinvoiced + COALESCE(pt.netdays, 30)) < CURRENT_DATE"
+            f"SELECT COUNT(*) AS facturas_vencidas, "
+            f"COALESCE(SUM(i.grandtotal), 0) AS total_vencido "
+            f"FROM adempiere.c_invoice i "
+            f"LEFT JOIN adempiere.c_paymentterm pt ON i.c_paymentterm_id = pt.c_paymentterm_id "
+            f"WHERE {overdue_where}"
         )
-        overdue_row = db.execute(overdue_q).fetchone()
+        overdue_row = db.execute(overdue_q, overdue_params).fetchone()
         receivables["facturas_vencidas"] = overdue_row[0] if overdue_row else 0
         receivables["total_vencido"] = float(overdue_row[1]) if overdue_row else 0.0
 
@@ -439,6 +483,7 @@ def build_financial_summary(mes: int | None = None, anio: int | None = None) -> 
             "i.isactive = 'Y'",
         ]
         ap_params: dict = {}
+        _add_org_filter(ap_conditions, ap_params, org_ids, "i")
         if mes:
             ap_conditions.append("EXTRACT(MONTH FROM i.dateinvoiced) = :mes")
             ap_params["mes"] = mes
@@ -456,16 +501,24 @@ def build_financial_summary(mes: int | None = None, anio: int | None = None) -> 
         }
 
         # Overdue payables
+        overdue_ap_conds = [
+            "i.issotrx = 'N'",
+            "i.docstatus = 'CO'",
+            "i.ispaid = 'N'",
+            "i.isactive = 'Y'",
+            "(i.dateinvoiced + COALESCE(pt.netdays, 30)) < CURRENT_DATE",
+        ]
+        overdue_ap_params: dict = {}
+        _add_org_filter(overdue_ap_conds, overdue_ap_params, org_ids, "i")
+        overdue_ap_where = " AND ".join(overdue_ap_conds)
         overdue_ap_q = text(
-            "SELECT COUNT(*) AS facturas_vencidas, "
-            "COALESCE(SUM(i.grandtotal), 0) AS total_vencido "
-            "FROM adempiere.c_invoice i "
-            "LEFT JOIN adempiere.c_paymentterm pt ON i.c_paymentterm_id = pt.c_paymentterm_id "
-            "WHERE i.issotrx = 'N' AND i.docstatus = 'CO' AND i.ispaid = 'N' "
-            "AND i.isactive = 'Y' "
-            "AND (i.dateinvoiced + COALESCE(pt.netdays, 30)) < CURRENT_DATE"
+            f"SELECT COUNT(*) AS facturas_vencidas, "
+            f"COALESCE(SUM(i.grandtotal), 0) AS total_vencido "
+            f"FROM adempiere.c_invoice i "
+            f"LEFT JOIN adempiere.c_paymentterm pt ON i.c_paymentterm_id = pt.c_paymentterm_id "
+            f"WHERE {overdue_ap_where}"
         )
-        overdue_ap_row = db.execute(overdue_ap_q).fetchone()
+        overdue_ap_row = db.execute(overdue_ap_q, overdue_ap_params).fetchone()
         payables["facturas_vencidas"] = overdue_ap_row[0] if overdue_ap_row else 0
         payables["total_vencido"] = float(overdue_ap_row[1]) if overdue_ap_row else 0.0
 
@@ -485,19 +538,23 @@ def build_financial_summary(mes: int | None = None, anio: int | None = None) -> 
 # RRHH (Human Resources)
 # ---------------------------------------------------------------------------
 
-def build_employee_summary() -> dict:
+def build_employee_summary(org_ids: list[int] | None = None) -> dict:
     """Employee summary from iDempiere c_bpartner (isemployee='Y').
     NOTE: Full HR module (hr_*) availability needs to be verified."""
     db = IdempiereSession()
     try:
         # Overall counts
+        emp_conditions = ["bp.isemployee = 'Y'"]
+        emp_params: dict = {}
+        _add_org_filter(emp_conditions, emp_params, org_ids, "bp")
+        emp_where = " AND ".join(emp_conditions)
         totals_q = text(
-            "SELECT COUNT(*) AS total, "
-            "SUM(CASE WHEN bp.isactive = 'Y' THEN 1 ELSE 0 END) AS activos, "
-            "SUM(CASE WHEN bp.isactive = 'N' THEN 1 ELSE 0 END) AS inactivos "
-            "FROM adempiere.c_bpartner bp WHERE bp.isemployee = 'Y'"
+            f"SELECT COUNT(*) AS total, "
+            f"SUM(CASE WHEN bp.isactive = 'Y' THEN 1 ELSE 0 END) AS activos, "
+            f"SUM(CASE WHEN bp.isactive = 'N' THEN 1 ELSE 0 END) AS inactivos "
+            f"FROM adempiere.c_bpartner bp WHERE {emp_where}"
         )
-        row = db.execute(totals_q).fetchone()
+        row = db.execute(totals_q, emp_params).fetchone()
         totals = {
             "total": row[0] if row else 0,
             "activos": row[1] if row else 0,
@@ -505,19 +562,18 @@ def build_employee_summary() -> dict:
         }
 
         # By department (using c_bpartner groups or org)
-        # TODO: Verify how Santoni organizes departments - may use ad_org, c_bpartner_group, or hr_department
         by_dept_q = text(
-            "SELECT COALESCE(o.name, 'Sin Departamento') AS departamento, "
-            "COUNT(*) AS total, "
-            "SUM(CASE WHEN bp.isactive = 'Y' THEN 1 ELSE 0 END) AS activos "
-            "FROM adempiere.c_bpartner bp "
-            "LEFT JOIN adempiere.ad_org o ON bp.ad_org_id = o.ad_org_id "
-            "WHERE bp.isemployee = 'Y' "
-            "GROUP BY o.name ORDER BY total DESC"
+            f"SELECT COALESCE(o.name, 'Sin Departamento') AS departamento, "
+            f"COUNT(*) AS total, "
+            f"SUM(CASE WHEN bp.isactive = 'Y' THEN 1 ELSE 0 END) AS activos "
+            f"FROM adempiere.c_bpartner bp "
+            f"LEFT JOIN adempiere.ad_org o ON bp.ad_org_id = o.ad_org_id "
+            f"WHERE {emp_where} "
+            f"GROUP BY o.name ORDER BY total DESC"
         )
         by_dept = [
             {"departamento": r[0], "total": r[1], "activos": r[2]}
-            for r in db.execute(by_dept_q).fetchall()
+            for r in db.execute(by_dept_q, emp_params).fetchall()
         ]
 
         return {
@@ -534,12 +590,13 @@ def build_employee_summary() -> dict:
 # PRODUCCION (Production)
 # ---------------------------------------------------------------------------
 
-def build_production_summary(mes: int | None = None, anio: int | None = None) -> dict:
+def build_production_summary(mes: int | None = None, anio: int | None = None, org_ids: list[int] | None = None) -> dict:
     """Production summary from iDempiere m_production / pp_order."""
     db = IdempiereSession()
     try:
         conditions = ["mp.isactive = 'Y'"]
         params: dict = {}
+        _add_org_filter(conditions, params, org_ids, "mp")
 
         if anio:
             conditions.append("EXTRACT(YEAR FROM mp.movementdate) = :anio")
@@ -600,12 +657,9 @@ def build_production_summary(mes: int | None = None, anio: int | None = None) ->
 # ---------------------------------------------------------------------------
 
 def build_producer_purchases(
-    producto: str | None = None, anio: int | None = None
+    producto: str | None = None, anio: int | None = None, org_ids: list[int] | None = None,
 ) -> dict:
-    """Producer purchases from iDempiere.
-    NOTE: Santoni may have custom tables for agricultural purchases (arroz, maíz).
-    This query uses standard c_order/c_invoice as fallback.
-    TODO: After iDempiere exploration, check for custom tables (xx_*, guia_*, productor_*)."""
+    """Producer purchases from iDempiere."""
     db = IdempiereSession()
     try:
         conditions = [
@@ -614,6 +668,7 @@ def build_producer_purchases(
             "o.isactive = 'Y'",
         ]
         params: dict = {}
+        _add_org_filter(conditions, params, org_ids, "o")
 
         if anio:
             conditions.append("EXTRACT(YEAR FROM o.dateordered) = :anio")
@@ -710,9 +765,8 @@ def build_producer_purchases(
 # COMPRAS INSUMOS (Supply Purchases)
 # ---------------------------------------------------------------------------
 
-def build_supply_purchases(mes: int | None = None, anio: int | None = None) -> dict:
-    """Supply purchases from iDempiere: purchase invoices (issotrx='N')
-    excluding agricultural products (arroz, maíz) which go to compras_productores."""
+def build_supply_purchases(mes: int | None = None, anio: int | None = None, org_ids: list[int] | None = None) -> dict:
+    """Supply purchases from iDempiere: purchase invoices (issotrx='N')."""
     db = IdempiereSession()
     try:
         conditions = [
@@ -721,6 +775,7 @@ def build_supply_purchases(mes: int | None = None, anio: int | None = None) -> d
             "i.isactive = 'Y'",
         ]
         params: dict = {}
+        _add_org_filter(conditions, params, org_ids, "i")
 
         if anio:
             conditions.append("EXTRACT(YEAR FROM i.dateinvoiced) = :anio")
@@ -803,7 +858,7 @@ def build_supply_purchases(mes: int | None = None, anio: int | None = None) -> d
 # CONTABILIDAD (Accounting)
 # ---------------------------------------------------------------------------
 
-def build_accounting_summary(mes: int | None = None, anio: int | None = None) -> dict:
+def build_accounting_summary(mes: int | None = None, anio: int | None = None, org_ids: list[int] | None = None) -> dict:
     """Accounting summary from iDempiere fact_acct (posted accounting facts)."""
     db = IdempiereSession()
     try:
@@ -811,6 +866,7 @@ def build_accounting_summary(mes: int | None = None, anio: int | None = None) ->
             "fa.isactive = 'Y'",
         ]
         params: dict = {}
+        _add_org_filter(conditions, params, org_ids, "fa")
 
         if anio:
             conditions.append("EXTRACT(YEAR FROM fa.dateacct) = :anio")
@@ -864,6 +920,7 @@ def build_accounting_summary(mes: int | None = None, anio: int | None = None) ->
             "fa.isactive = 'Y'",
         ]
         balance_params: dict = {}
+        _add_org_filter(balance_conds, balance_params, org_ids, "fa")
         if anio:
             balance_conds.append("EXTRACT(YEAR FROM fa.dateacct) <= :anio")
             balance_params["anio"] = anio

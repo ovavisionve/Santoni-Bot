@@ -58,7 +58,7 @@ IMPORTANTE SOBRE PERÍODOS:
 Tablas: demo_productores, demo_compras_productores
 """
 
-    def fetch_data(self, message: str) -> str | None:
+    def fetch_data(self, message: str, org_ids: list[int] | None = None) -> str | None:
         msg = message.lower()
         sections = []
 
@@ -74,7 +74,7 @@ Tablas: demo_productores, demo_compras_productores
             producto = "Maíz"
 
         label = f"Año {anio}" if anio else "Todos los años"
-        summary = build_producer_purchases(producto=producto, anio=anio)
+        summary = build_producer_purchases(producto=producto, anio=anio, org_ids=org_ids)
         sections.append(self._format_summary(summary, f"Compras a Productores - {label}"))
 
         if any(w in msg for w in ["productor", "registrad", "cuántos", "cuantos"]):

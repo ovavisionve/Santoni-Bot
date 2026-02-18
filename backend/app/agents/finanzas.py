@@ -62,7 +62,7 @@ IMPORTANTE SOBRE PERÍODOS:
 Tablas: demo_cuentas_bancarias, demo_movimientos_bancarios, demo_cuentas_por_pagar
 """
 
-    def fetch_data(self, message: str) -> str | None:
+    def fetch_data(self, message: str, org_ids: list[int] | None = None) -> str | None:
         msg = message.lower()
         sections = []
 
@@ -83,11 +83,11 @@ Tablas: demo_cuentas_bancarias, demo_movimientos_bancarios, demo_cuentas_por_pag
                 break
 
         label = f"Año {anio}" if anio else "Todos los años"
-        summary = build_financial_summary(mes=mes, anio=anio)
+        summary = build_financial_summary(mes=mes, anio=anio, org_ids=org_ids)
         sections.append(self._format_summary(summary, f"Resumen Financiero - {label}"))
 
         if any(w in msg for w in ["cobrar", "morosidad", "vencid", "atras"]):
-            data = build_overdue_receivables()
+            data = build_overdue_receivables(org_ids=org_ids)
             sections.append("## Cuentas por Cobrar Vencidas")
             sections.append(self._format_table(data))
 

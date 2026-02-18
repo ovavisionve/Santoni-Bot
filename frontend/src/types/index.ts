@@ -6,9 +6,16 @@ export interface User {
   role: "usuario" | "supervisor" | "administrador";
   department: string;
   extra_departments: string | null;
+  allowed_org_ids: string | null;
   is_active: boolean;
   totp_enabled: boolean;
   created_at: string;
+}
+
+export interface Organization {
+  id: number;
+  value: string;
+  name: string;
 }
 
 export interface Message {

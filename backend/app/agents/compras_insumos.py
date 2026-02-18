@@ -54,7 +54,7 @@ IMPORTANTE SOBRE PERÍODOS:
 Datos de compras provienen de facturas de compra en iDempiere (c_invoice issotrx='N').
 """
 
-    def fetch_data(self, message: str) -> str | None:
+    def fetch_data(self, message: str, org_ids: list[int] | None = None) -> str | None:
         msg = message.lower()
         sections = []
 
@@ -75,7 +75,7 @@ Datos de compras provienen de facturas de compra en iDempiere (c_invoice issotrx
                 break
 
         label = f"Año {anio}" if anio else "Todos los años"
-        summary = build_supply_purchases(mes=mes, anio=anio)
+        summary = build_supply_purchases(mes=mes, anio=anio, org_ids=org_ids)
         sections.append(self._format_summary(summary, f"Resumen de Compras de Insumos - {label}"))
 
         return "\n\n".join(sections) if sections else None

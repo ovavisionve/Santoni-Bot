@@ -57,7 +57,7 @@ IMPORTANTE SOBRE PERÍODOS:
 Tablas: demo_produccion_diaria, demo_ordenes_produccion
 """
 
-    def fetch_data(self, message: str) -> str | None:
+    def fetch_data(self, message: str, org_ids: list[int] | None = None) -> str | None:
         msg = message.lower()
         sections = []
 
@@ -77,7 +77,7 @@ Tablas: demo_produccion_diaria, demo_ordenes_produccion
                 break
 
         label = f"Año {anio}" if anio else "Todos los años"
-        summary = build_production_summary(mes=mes, anio=anio)
+        summary = build_production_summary(mes=mes, anio=anio, org_ids=org_ids)
         sections.append(self._format_summary(summary, f"Resumen de Producción - {label}"))
 
         if any(w in msg for w in ["orden", "pedido", "planific"]):
