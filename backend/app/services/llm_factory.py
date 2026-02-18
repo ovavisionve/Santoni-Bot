@@ -1,9 +1,10 @@
 """
 LLM Factory: Creates the correct LLM instance based on configuration.
 
-Hybrid mode (default):
-- AI_PROVIDER=groq  → all regular queries use Groq (free)
-- ANTHROPIC_API_KEY  → Claude available on-demand for document analysis
+Supported providers:
+- AI_PROVIDER=groq       → Groq (free tier, 100K tokens/day limit)
+- AI_PROVIDER=openrouter  → OpenRouter (many models, pay-as-you-go, recommended)
+- AI_PROVIDER=anthropic   → Claude (premium, best for documents)
 
 Use create_llm() for regular queries (uses AI_PROVIDER setting).
 Use create_llm(provider="anthropic") to force Claude for document tasks.
@@ -31,7 +32,7 @@ def create_llm(
         temperature: LLM temperature (0 = deterministic, 1 = creative)
         max_tokens: Maximum tokens in response
         purpose: "classifier" for orchestrator (fast, low tokens) or "agent" for responses
-        provider: Force a specific provider ("groq" or "anthropic").
+        provider: Force a specific provider ("groq", "openrouter", or "anthropic").
                   If None, uses the AI_PROVIDER setting from .env.
     """
     settings = get_settings()
@@ -39,10 +40,16 @@ def create_llm(
     # Determine which provider to use
     chosen = (provider or settings.ai_provider).lower()
 
-    # If anthropic is requested but no key, fall back to groq
+    # Fallback chain: if chosen provider has no key, try alternatives
     if chosen == "anthropic" and not settings.anthropic_api_key:
         logger.warning(
-            "Anthropic requested but ANTHROPIC_API_KEY is empty. Falling back to Groq."
+            "Anthropic requested but ANTHROPIC_API_KEY is empty. Falling back."
+        )
+        chosen = "openrouter" if settings.openrouter_api_key else "groq"
+
+    if chosen == "openrouter" and not settings.openrouter_api_key:
+        logger.warning(
+            "OpenRouter requested but OPENROUTER_API_KEY is empty. Falling back to Groq."
         )
         chosen = "groq"
 
@@ -64,6 +71,19 @@ def create_llm(
         else:
             logger.info("Using Anthropic Claude (%s) for %s", settings.anthropic_model, purpose)
         return ChatAnthropic(**kwargs)
+
+    elif chosen == "openrouter":
+        from langchain_openai import ChatOpenAI
+
+        logger.info("Using OpenRouter (%s) for %s", settings.openrouter_model, purpose)
+        return ChatOpenAI(
+            api_key=settings.openrouter_api_key,
+            base_url="https://openrouter.ai/api/v1",
+            model=settings.openrouter_model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+
     else:
         from langchain_groq import ChatGroq
 

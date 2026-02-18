@@ -131,6 +131,7 @@ def health_check_detailed(current_user=Depends(get_current_user)):
     checks["ai_provider"] = {
         "active": settings.ai_provider,
         "groq": "ok" if settings.groq_api_key else "not_configured",
+        "openrouter": "ok" if settings.openrouter_api_key else "not_configured",
         "anthropic": "ok" if settings.anthropic_api_key else "not_configured",
     }
 
