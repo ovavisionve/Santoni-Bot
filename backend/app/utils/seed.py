@@ -1,5 +1,4 @@
 import os
-import secrets
 import logging
 
 from app.database import SessionLocal
@@ -13,7 +12,7 @@ def create_admin_user():
     """Create default admin user if none exists.
 
     Password is read from ADMIN_DEFAULT_PASSWORD env var.
-    If not set, a random password is generated and logged ONCE.
+    If not set, defaults to 'SantoniAdmin2026!'.
     """
     db = SessionLocal()
     try:
@@ -21,11 +20,10 @@ def create_admin_user():
         if existing:
             return
 
-        password = os.environ.get("ADMIN_DEFAULT_PASSWORD", "")
+        password = os.environ.get("ADMIN_DEFAULT_PASSWORD", "SantoniAdmin2026!")
         generated = False
 
-        if not password:
-            password = secrets.token_urlsafe(16)
+        if password == "SantoniAdmin2026!":
             generated = True
 
         admin = User(
@@ -42,10 +40,9 @@ def create_admin_user():
 
         if generated:
             logger.warning(
-                "Admin user created with generated password. "
-                "Set ADMIN_DEFAULT_PASSWORD env var or change via API. "
-                "Temporary password: %s",
-                password,
+                "Admin user created with default password 'SantoniAdmin2026!'. "
+                "Set ADMIN_DEFAULT_PASSWORD env var to override. "
+                "Change this password after first login.",
             )
         else:
             logger.info("Admin user created from ADMIN_DEFAULT_PASSWORD env var.")
