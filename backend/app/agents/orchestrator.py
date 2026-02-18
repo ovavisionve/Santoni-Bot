@@ -91,19 +91,10 @@ class Orchestrator:
     ) -> dict:
         """Process a user message through the appropriate agent."""
 
-        # If a document is attached and Claude is available, use document analysis
-        if document and is_claude_available():
+        # If a document is attached, route to document handler
+        # (handles Claude → Groq fallback internally)
+        if document:
             return await self._handle_document(message, document, history)
-
-        if document and not is_claude_available():
-            return {
-                "response": (
-                    "Se adjuntó un documento pero el análisis de documentos requiere "
-                    "la API de Claude (Anthropic). Contacta al administrador para configurarla."
-                ),
-                "agent_used": "orchestrator",
-                "metadata": {"classification": "document_no_claude"},
-            }
 
         allowed = user.allowed_departments
 
@@ -153,7 +144,7 @@ class Orchestrator:
         document: dict,
         history: list[tuple[str, str]] | None,
     ) -> dict:
-        """Analyze an attached document using Claude. Tries primary model, then fallback."""
+        """Analyze an attached document. Tries Claude first, falls back to Groq."""
         import logging
         from langchain_core.messages import AIMessage
 
@@ -169,6 +160,10 @@ class Orchestrator:
             )
         )
 
+        # Images require Claude (multimodal). Text docs can use either provider.
+        is_image = document["type"] == "image"
+
+        # Build text-based messages (works with both Claude and Groq)
         msgs = [system_msg]
 
         if history:
@@ -178,9 +173,8 @@ class Orchestrator:
                 elif role == "assistant":
                     msgs.append(AIMessage(content=content))
 
-        # Build the user message with document content
-        if document["type"] == "image":
-            # Multimodal: image + text
+        if is_image:
+            # Multimodal content for Claude only
             user_content = [
                 {
                     "type": "image_url",
@@ -192,7 +186,6 @@ class Orchestrator:
             ]
             msgs.append(HumanMessage(content=user_content))
         else:
-            # Text document: include content in the message
             doc_text = document["content"]
             if len(doc_text) > 30000:
                 doc_text = doc_text[:30000] + "\n\n... (documento truncado por tamaño)"
@@ -203,51 +196,68 @@ class Orchestrator:
             )
             msgs.append(HumanMessage(content=user_text))
 
-        # Try primary model, then fallback to haiku
-        primary_model = get_settings().anthropic_model
-        fallback_model = "claude-3-haiku-20240307"
-        models_to_try = [primary_model]
-        if primary_model != fallback_model:
-            models_to_try.append(fallback_model)
-
-        last_error = ""
-        for model_name in models_to_try:
+        # Try Claude first if available
+        if is_claude_available():
             try:
                 from langchain_anthropic import ChatAnthropic
 
                 claude_llm = ChatAnthropic(
                     api_key=get_settings().anthropic_api_key,
-                    model=model_name,
+                    model=get_settings().anthropic_model,
                     temperature=0.1,
                     max_tokens=4096,
                 )
-                log.info("Trying Claude model: %s", model_name)
+                log.info("Trying Claude (%s) for document analysis", get_settings().anthropic_model)
                 response = await claude_llm.ainvoke(msgs)
-                log.info("Claude model %s succeeded", model_name)
+                log.info("Claude document analysis succeeded")
                 return {
                     "response": response.content,
                     "agent_used": "document_analysis",
                     "metadata": {
                         "classification": "document",
                         "provider": "anthropic",
-                        "model": model_name,
                         "filename": document.get("filename"),
                     },
                 }
             except Exception as e:
-                last_error = str(e)
-                log.warning("Claude model %s failed: %s", model_name, last_error)
-                if "403" not in last_error and "forbidden" not in last_error.lower():
-                    raise  # Only retry on 403, re-raise other errors
+                log.warning("Claude failed for document analysis: %s", str(e))
+                if is_image:
+                    return {
+                        "response": (
+                            "No se pudo analizar la imagen. El análisis de imágenes "
+                            "requiere Claude API. Verifica que tu API Key esté activa. "
+                            "Para documentos de texto (PDF, Excel, Word), puedes seguir "
+                            "adjuntándolos y serán analizados con Groq."
+                        ),
+                        "agent_used": "orchestrator",
+                        "metadata": {"classification": "document_error"},
+                    }
+                log.info("Falling back to Groq for document analysis")
+
+        # Fallback: use Groq for text documents
+        if is_image and not is_claude_available():
+            return {
+                "response": (
+                    "El análisis de imágenes requiere la API de Claude (Anthropic). "
+                    "Puedes adjuntar documentos de texto (PDF, Excel, Word, CSV) "
+                    "que serán analizados con el modelo actual."
+                ),
+                "agent_used": "orchestrator",
+                "metadata": {"classification": "document_no_image_support"},
+            }
+
+        groq_llm = create_llm(temperature=0.1, max_tokens=4096, purpose="document_analysis")
+        log.info("Using Groq for document analysis (fallback)")
+        response = await groq_llm.ainvoke(msgs)
 
         return {
-            "response": (
-                "No se pudo acceder a la API de Claude. "
-                f"Se intentaron los modelos: {', '.join(models_to_try)}. "
-                "Verifica que tu API Key de Anthropic esté activa y tenga créditos."
-            ),
-            "agent_used": "orchestrator",
-            "metadata": {"classification": "document_error", "error": last_error},
+            "response": response.content,
+            "agent_used": "document_analysis",
+            "metadata": {
+                "classification": "document",
+                "provider": "groq",
+                "filename": document.get("filename"),
+            },
         }
 
     async def _handle_general(
