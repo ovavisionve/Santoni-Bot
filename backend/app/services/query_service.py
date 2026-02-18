@@ -1,19 +1,31 @@
 """
-Query service for AI agents to access demo database (or iDempiere when available).
-All queries are READ-ONLY. Results are returned as JSON-serializable Python dicts/lists.
+Query service for AI agents - routes queries to the correct data source.
+
+- APP_ENV=development → demo tables (internal PostgreSQL, fake data for QA)
+- APP_ENV=production  → iDempiere tables (192.168.1.73, real data)
+
+Agents import from this module and are unaware of the data source.
 """
 
+import logging
 from datetime import date
 from decimal import Decimal
 
 from sqlalchemy import text
 
-from app.database import SessionLocal
+from app.database import SessionLocal, IdempiereSession
 from app.config import get_settings
+
+logger = logging.getLogger("santonibot.query_service")
+
+
+def _is_production() -> bool:
+    """Check if we should use iDempiere (production) or demo tables."""
+    return get_settings().app_env == "production"
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Helpers (shared)
 # ---------------------------------------------------------------------------
 
 def _convert_value(val):
@@ -34,16 +46,20 @@ def _rows_to_dicts(rows, columns) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# Core query functions
+# Core query function (generic SQL execution)
 # ---------------------------------------------------------------------------
 
 def execute_demo_query(query: str, params: dict | None = None) -> list[dict]:
-    """Execute a read-only query against the demo database.
-    Returns results as list of dicts."""
+    """Execute a read-only SELECT query against the active data source.
+    In development: queries demo_* tables in internal DB.
+    In production: queries adempiere.* tables in iDempiere."""
     q = query.strip().rstrip(";")
-    # Safety: only allow SELECT statements
     if not q.upper().startswith("SELECT"):
         raise ValueError("Only SELECT queries are allowed.")
+
+    if _is_production():
+        from app.services.idempiere_queries import execute_idempiere_query
+        return execute_idempiere_query(query, params)
 
     db = SessionLocal()
     try:
@@ -56,17 +72,26 @@ def execute_demo_query(query: str, params: dict | None = None) -> list[dict]:
 
 
 def get_table_schema(table_name: str) -> list[dict]:
-    """Get column info for a demo table. Returns list of {column, type, nullable}."""
-    db = SessionLocal()
+    """Get column info for a table."""
+    session_class = IdempiereSession if _is_production() else SessionLocal
+    schema = "adempiere" if _is_production() else None
+
+    db = session_class()
     try:
+        conditions = "table_name = :table_name"
+        params = {"table_name": table_name}
+        if schema:
+            conditions += " AND table_schema = :schema"
+            params["schema"] = schema
+
         result = db.execute(
             text(
-                "SELECT column_name, data_type, is_nullable "
-                "FROM information_schema.columns "
-                "WHERE table_name = :table_name "
-                "ORDER BY ordinal_position"
+                f"SELECT column_name, data_type, is_nullable "
+                f"FROM information_schema.columns "
+                f"WHERE {conditions} "
+                f"ORDER BY ordinal_position"
             ),
-            {"table_name": table_name},
+            params,
         )
         return [
             {
@@ -81,7 +106,21 @@ def get_table_schema(table_name: str) -> list[dict]:
 
 
 def get_available_tables() -> list[str]:
-    """Return list of all demo_* table names."""
+    """Return list of available table names."""
+    if _is_production():
+        db = IdempiereSession()
+        try:
+            result = db.execute(
+                text(
+                    "SELECT table_name FROM information_schema.tables "
+                    "WHERE table_schema = 'adempiere' "
+                    "ORDER BY table_name"
+                )
+            )
+            return [row[0] for row in result.fetchall()]
+        finally:
+            db.close()
+
     db = SessionLocal()
     try:
         result = db.execute(
@@ -106,7 +145,11 @@ def build_sales_summary(
     mes: int | None = None,
     anio: int = 2025,
 ) -> dict:
-    """Pre-built query: sales summary with totals, by zone/vendor/month."""
+    """Sales summary - routes to demo or iDempiere."""
+    if _is_production():
+        from app.services.idempiere_queries import build_sales_summary as _prod
+        return _prod(zona=zona, vendedor=vendedor, mes=mes, anio=anio)
+
     db = SessionLocal()
     try:
         conditions = ["EXTRACT(YEAR FROM f.fecha) = :anio", "f.estado != 'anulada'"]
@@ -124,7 +167,6 @@ def build_sales_summary(
 
         where = " AND ".join(conditions)
 
-        # Totals
         totals_q = text(
             f"SELECT COUNT(*) AS total_facturas, "
             f"COALESCE(SUM(f.monto_total), 0) AS total_facturado, "
@@ -140,7 +182,6 @@ def build_sales_summary(
             "total_iva": float(row[3]) if row else 0.0,
         }
 
-        # By zone
         by_zone_q = text(
             f"SELECT f.zona, COUNT(*) AS facturas, "
             f"COALESCE(SUM(f.monto_total), 0) AS total "
@@ -152,7 +193,6 @@ def build_sales_summary(
             for r in db.execute(by_zone_q, params).fetchall()
         ]
 
-        # By vendor
         by_vendor_q = text(
             f"SELECT f.vendedor, COUNT(*) AS facturas, "
             f"COALESCE(SUM(f.monto_total), 0) AS total "
@@ -164,7 +204,6 @@ def build_sales_summary(
             for r in db.execute(by_vendor_q, params).fetchall()
         ]
 
-        # By month
         by_month_q = text(
             f"SELECT EXTRACT(MONTH FROM f.fecha)::int AS mes, COUNT(*) AS facturas, "
             f"COALESCE(SUM(f.monto_total), 0) AS total "
@@ -194,7 +233,11 @@ def build_collection_summary(
     mes: int | None = None,
     anio: int = 2025,
 ) -> dict:
-    """Pre-built query: collection summary."""
+    """Collection summary - routes to demo or iDempiere."""
+    if _is_production():
+        from app.services.idempiere_queries import build_collection_summary as _prod
+        return _prod(zona=zona, vendedor=vendedor, mes=mes, anio=anio)
+
     db = SessionLocal()
     try:
         conditions = ["EXTRACT(YEAR FROM c.fecha) = :anio"]
@@ -212,7 +255,6 @@ def build_collection_summary(
 
         where = " AND ".join(conditions)
 
-        # Totals
         totals_q = text(
             f"SELECT COUNT(*) AS total_recibos, "
             f"COALESCE(SUM(c.monto), 0) AS total_cobrado "
@@ -224,7 +266,6 @@ def build_collection_summary(
             "total_cobrado": float(row[1]) if row else 0.0,
         }
 
-        # By payment method
         by_method_q = text(
             f"SELECT c.metodo_pago, COUNT(*) AS recibos, "
             f"COALESCE(SUM(c.monto), 0) AS total "
@@ -236,7 +277,6 @@ def build_collection_summary(
             for r in db.execute(by_method_q, params).fetchall()
         ]
 
-        # By vendor
         by_vendor_q = text(
             f"SELECT c.vendedor, COUNT(*) AS recibos, "
             f"COALESCE(SUM(c.monto), 0) AS total "
@@ -265,7 +305,11 @@ def build_top_clients(
     vendedor: str | None = None,
     anio: int = 2025,
 ) -> list[dict]:
-    """Pre-built: top clients by total invoiced amount."""
+    """Top clients - routes to demo or iDempiere."""
+    if _is_production():
+        from app.services.idempiere_queries import build_top_clients as _prod
+        return _prod(limit=limit, zona=zona, vendedor=vendedor, anio=anio)
+
     db = SessionLocal()
     try:
         conditions = [
@@ -312,7 +356,11 @@ def build_top_clients(
 
 
 def build_overdue_receivables() -> list[dict]:
-    """Pre-built: overdue accounts receivable sorted by days overdue."""
+    """Overdue receivables - routes to demo or iDempiere."""
+    if _is_production():
+        from app.services.idempiere_queries import build_overdue_receivables as _prod
+        return _prod()
+
     db = SessionLocal()
     try:
         q = text(
@@ -347,7 +395,11 @@ def build_overdue_receivables() -> list[dict]:
 # ---------------------------------------------------------------------------
 
 def build_production_summary(mes: int | None = None, anio: int = 2025) -> dict:
-    """Pre-built: production summary by plant/line."""
+    """Production summary - routes to demo or iDempiere."""
+    if _is_production():
+        from app.services.idempiere_queries import build_production_summary as _prod
+        return _prod(mes=mes, anio=anio)
+
     db = SessionLocal()
     try:
         conditions = ["EXTRACT(YEAR FROM p.fecha) = :anio"]
@@ -359,7 +411,6 @@ def build_production_summary(mes: int | None = None, anio: int = 2025) -> dict:
 
         where = " AND ".join(conditions)
 
-        # Overall totals
         totals_q = text(
             f"SELECT COALESCE(SUM(p.cantidad_kg), 0) AS total_producido_kg, "
             f"COALESCE(SUM(p.desperdicio_kg), 0) AS total_desperdicio_kg, "
@@ -380,7 +431,6 @@ def build_production_summary(mes: int | None = None, anio: int = 2025) -> dict:
             "total_horas_parada": float(row[3]) if row else 0.0,
         }
 
-        # By plant
         by_plant_q = text(
             f"SELECT p.planta, COALESCE(SUM(p.cantidad_kg), 0) AS producido, "
             f"COALESCE(SUM(p.desperdicio_kg), 0) AS desperdicio, "
@@ -400,7 +450,6 @@ def build_production_summary(mes: int | None = None, anio: int = 2025) -> dict:
             for r in db.execute(by_plant_q, params).fetchall()
         ]
 
-        # By product
         by_product_q = text(
             f"SELECT p.producto, COALESCE(SUM(p.cantidad_kg), 0) AS producido "
             f"FROM demo_produccion_diaria p WHERE {where} "
@@ -429,7 +478,11 @@ def build_production_summary(mes: int | None = None, anio: int = 2025) -> dict:
 def build_producer_purchases(
     producto: str | None = None, anio: int = 2025
 ) -> dict:
-    """Pre-built: producer purchase summary (arroz paddy / maiz)."""
+    """Producer purchases - routes to demo or iDempiere."""
+    if _is_production():
+        from app.services.idempiere_queries import build_producer_purchases as _prod
+        return _prod(producto=producto, anio=anio)
+
     db = SessionLocal()
     try:
         conditions = ["EXTRACT(YEAR FROM cp.fecha) = :anio"]
@@ -441,7 +494,6 @@ def build_producer_purchases(
 
         where = " AND ".join(conditions)
 
-        # Totals
         totals_q = text(
             f"SELECT COUNT(*) AS total_guias, "
             f"COALESCE(SUM(cp.peso_neto_kg), 0) AS total_peso_neto_kg, "
@@ -455,7 +507,6 @@ def build_producer_purchases(
             "total_monto": float(row[2]) if row else 0.0,
         }
 
-        # By product type
         by_product_q = text(
             f"SELECT cp.producto, COUNT(*) AS guias, "
             f"COALESCE(SUM(cp.peso_neto_kg), 0) AS peso_neto_kg, "
@@ -477,7 +528,6 @@ def build_producer_purchases(
             for r in db.execute(by_product_q, params).fetchall()
         ]
 
-        # By producer (top 20)
         by_producer_q = text(
             f"SELECT pr.nombre, pr.estado, pr.municipio, "
             f"COUNT(*) AS guias, "
@@ -517,10 +567,13 @@ def build_producer_purchases(
 # ---------------------------------------------------------------------------
 
 def build_financial_summary(mes: int | None = None, anio: int = 2025) -> dict:
-    """Pre-built: bank balances, payables, receivables totals."""
+    """Financial summary - routes to demo or iDempiere."""
+    if _is_production():
+        from app.services.idempiere_queries import build_financial_summary as _prod
+        return _prod(mes=mes, anio=anio)
+
     db = SessionLocal()
     try:
-        # Bank balances (latest)
         bank_q = text(
             "SELECT banco, numero_cuenta, tipo, moneda, saldo, fecha_saldo "
             "FROM demo_cuentas_bancarias ORDER BY banco"
@@ -538,7 +591,6 @@ def build_financial_summary(mes: int | None = None, anio: int = 2025) -> dict:
         ]
         total_saldo_bancario = sum(b["saldo"] for b in banks)
 
-        # Accounts receivable (pending invoices)
         ar_conditions = [
             "f.estado = 'pendiente'",
             "EXTRACT(YEAR FROM f.fecha) = :anio",
@@ -560,7 +612,6 @@ def build_financial_summary(mes: int | None = None, anio: int = 2025) -> dict:
             "total_por_cobrar": float(ar_row[1]) if ar_row else 0.0,
         }
 
-        # Overdue receivables
         overdue_q = text(
             "SELECT COUNT(*) AS facturas_vencidas, "
             "COALESCE(SUM(f.monto_total), 0) AS total_vencido "
@@ -571,7 +622,6 @@ def build_financial_summary(mes: int | None = None, anio: int = 2025) -> dict:
         receivables["facturas_vencidas"] = overdue_row[0] if overdue_row else 0
         receivables["total_vencido"] = float(overdue_row[1]) if overdue_row else 0.0
 
-        # Accounts payable
         ap_conditions = ["cpp.estado != 'pagada'"]
         ap_params: dict = {}
         if mes:
@@ -590,7 +640,6 @@ def build_financial_summary(mes: int | None = None, anio: int = 2025) -> dict:
             "total_por_pagar": float(ap_row[1]) if ap_row else 0.0,
         }
 
-        # Overdue payables
         overdue_ap_q = text(
             "SELECT COUNT(*) AS facturas_vencidas, "
             "COALESCE(SUM(cpp.monto_pendiente), 0) AS total_vencido "
@@ -618,10 +667,13 @@ def build_financial_summary(mes: int | None = None, anio: int = 2025) -> dict:
 # ---------------------------------------------------------------------------
 
 def build_employee_summary() -> dict:
-    """Pre-built: employee counts by department, location, active status."""
+    """Employee summary - routes to demo or iDempiere."""
+    if _is_production():
+        from app.services.idempiere_queries import build_employee_summary as _prod
+        return _prod()
+
     db = SessionLocal()
     try:
-        # Overall counts
         totals_q = text(
             "SELECT COUNT(*) AS total, "
             "SUM(CASE WHEN activo THEN 1 ELSE 0 END) AS activos, "
@@ -635,7 +687,6 @@ def build_employee_summary() -> dict:
             "inactivos": row[2] if row else 0,
         }
 
-        # By department
         by_dept_q = text(
             "SELECT departamento, COUNT(*) AS total, "
             "SUM(CASE WHEN activo THEN 1 ELSE 0 END) AS activos "
@@ -646,7 +697,6 @@ def build_employee_summary() -> dict:
             for r in db.execute(by_dept_q).fetchall()
         ]
 
-        # By location
         by_location_q = text(
             "SELECT ubicacion, COUNT(*) AS total, "
             "SUM(CASE WHEN activo THEN 1 ELSE 0 END) AS activos "
@@ -657,7 +707,6 @@ def build_employee_summary() -> dict:
             for r in db.execute(by_location_q).fetchall()
         ]
 
-        # By shift type
         by_shift_q = text(
             "SELECT turno, COUNT(*) AS total "
             "FROM demo_empleados WHERE activo = true "

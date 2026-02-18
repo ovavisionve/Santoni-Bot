@@ -55,11 +55,15 @@ _cors_origins = [
     "http://localhost",
     "https://localhost",
 ]
-if settings.app_env == "production" and hasattr(settings, "domain"):
+if settings.app_env == "production":
     _cors_origins = [
         f"https://{settings.domain}",
         f"http://{settings.domain}",
     ]
+    # Also allow direct port access in internal network
+    if settings.domain not in ("localhost", "127.0.0.1"):
+        _cors_origins.append(f"http://{settings.domain}:3000")
+        _cors_origins.append(f"http://{settings.domain}:80")
 
 app.add_middleware(
     CORSMiddleware,

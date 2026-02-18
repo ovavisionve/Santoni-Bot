@@ -40,17 +40,26 @@ if [ -d ".git" ]; then
     git pull origin main 2>/dev/null || echo "Git pull skipped (not on main or no remote)."
 fi
 
+# ---- Detect environment ----
+COMPOSE_FILES="-f docker-compose.yml"
+if [ "${APP_ENV:-}" = "production" ] || grep -q "APP_ENV=production" .env 2>/dev/null; then
+    echo "  Detected: PRODUCTION environment"
+    COMPOSE_FILES="-f docker-compose.yml -f docker-compose.prod.yml"
+else
+    echo "  Detected: DEVELOPMENT environment"
+fi
+
 # ---- Build containers ----
 echo "[3/6] Building containers..."
-docker compose build --no-cache
+docker compose $COMPOSE_FILES build --no-cache
 
 # ---- Stop old containers ----
 echo "[4/6] Stopping existing containers..."
-docker compose down --remove-orphans 2>/dev/null || true
+docker compose $COMPOSE_FILES down --remove-orphans 2>/dev/null || true
 
 # ---- Start services ----
 echo "[5/6] Starting services..."
-docker compose up -d
+docker compose $COMPOSE_FILES up -d
 
 # ---- Health check ----
 echo "[6/6] Waiting for services to start..."
@@ -58,7 +67,7 @@ sleep 10
 
 echo ""
 echo "Service status:"
-docker compose ps
+docker compose $COMPOSE_FILES ps
 
 echo ""
 echo "Checking API health..."
@@ -80,11 +89,17 @@ echo ""
 echo "=========================================="
 echo "  Deployment Complete!"
 echo "=========================================="
+# Read DOMAIN from .env for display
+DOMAIN=$(grep "^DOMAIN=" .env 2>/dev/null | cut -d= -f2 || echo "localhost")
+IS_PROD=$(grep -q "APP_ENV=production" .env 2>/dev/null && echo "yes" || echo "no")
+
 echo ""
 echo "Access points:"
-echo "  Frontend:  http://192.168.1.26"
-echo "  API:       http://192.168.1.26:8000"
-echo "  API Docs:  http://192.168.1.26:8000/docs"
+echo "  Frontend:  http://${DOMAIN}"
+echo "  API:       http://${DOMAIN}:8000"
+if [ "$IS_PROD" = "no" ]; then
+    echo "  API Docs:  http://${DOMAIN}:8000/api/docs  (solo en desarrollo)"
+fi
 echo ""
 echo "Default admin login:"
 echo "  User: admin"
