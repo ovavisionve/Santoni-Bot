@@ -3,6 +3,8 @@ Agente de Recursos Humanos - Alimentos Santoni
 Especializado en: nómina, vacaciones, asistencia, datos de empleados.
 """
 
+from datetime import datetime
+
 from app.agents.base_agent import BaseAgent
 from app.services.query_service import build_employee_summary, execute_demo_query
 
@@ -68,9 +70,12 @@ Tablas: demo_empleados, demo_nominas, demo_asistencias
         if any(w in msg for w in ["nómina", "nomina", "salario", "sueldo", "pago"]):
             try:
                 periodo = None
+                anio = datetime.now().year
                 meses_map = {
-                    "enero": "2025-01", "febrero": "2025-02", "marzo": "2025-03",
-                    "abril": "2025-04", "mayo": "2025-05", "junio": "2025-06",
+                    "enero": f"{anio}-01", "febrero": f"{anio}-02", "marzo": f"{anio}-03",
+                    "abril": f"{anio}-04", "mayo": f"{anio}-05", "junio": f"{anio}-06",
+                    "julio": f"{anio}-07", "agosto": f"{anio}-08", "septiembre": f"{anio}-09",
+                    "octubre": f"{anio}-10", "noviembre": f"{anio}-11", "diciembre": f"{anio}-12",
                 }
                 for nombre, per in meses_map.items():
                     if nombre in msg:

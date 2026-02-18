@@ -5,6 +5,7 @@ volúmenes, precios por kilo/tonelada, pagos pendientes, productores registrados
 """
 
 import re
+from datetime import datetime
 
 from app.agents.base_agent import BaseAgent
 from app.services.query_service import build_producer_purchases, execute_demo_query
@@ -55,7 +56,7 @@ Tablas: demo_productores, demo_compras_productores
         msg = message.lower()
         sections = []
 
-        anio = 2025
+        anio = datetime.now().year
         year_match = re.search(r'20\d{2}', message)
         if year_match:
             anio = int(year_match.group())

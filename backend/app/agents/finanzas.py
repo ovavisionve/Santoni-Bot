@@ -5,6 +5,7 @@ presupuestos, indicadores financieros, rentabilidad.
 """
 
 import re
+from datetime import datetime
 
 from app.agents.base_agent import BaseAgent
 from app.services.query_service import (
@@ -60,7 +61,7 @@ Tablas: demo_cuentas_bancarias, demo_movimientos_bancarios, demo_cuentas_por_pag
         msg = message.lower()
         sections = []
 
-        anio = 2025
+        anio = datetime.now().year
         year_match = re.search(r'20\d{2}', message)
         if year_match:
             anio = int(year_match.group())

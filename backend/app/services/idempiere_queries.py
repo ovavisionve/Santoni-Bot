@@ -685,3 +685,198 @@ def build_producer_purchases(
         }
     finally:
         db.close()
+
+
+# ---------------------------------------------------------------------------
+# COMPRAS INSUMOS (Supply Purchases)
+# ---------------------------------------------------------------------------
+
+def build_supply_purchases(mes: int | None = None, anio: int = 2026) -> dict:
+    """Supply purchases from iDempiere: purchase invoices (issotrx='N')
+    excluding agricultural products (arroz, maíz) which go to compras_productores."""
+    db = IdempiereSession()
+    try:
+        conditions = [
+            "EXTRACT(YEAR FROM i.dateinvoiced) = :anio",
+            "i.issotrx = 'N'",
+            "i.docstatus = 'CO'",
+            "i.isactive = 'Y'",
+        ]
+        params: dict = {"anio": anio}
+
+        if mes:
+            conditions.append("EXTRACT(MONTH FROM i.dateinvoiced) = :mes")
+            params["mes"] = mes
+
+        where = " AND ".join(conditions)
+
+        # Totals
+        totals_q = text(
+            f"SELECT COUNT(DISTINCT i.c_invoice_id) AS total_ordenes, "
+            f"COALESCE(SUM(i.grandtotal), 0) AS total_monto "
+            f"FROM adempiere.c_invoice i WHERE {where}"
+        )
+        row = db.execute(totals_q, params).fetchone()
+        totals = {
+            "total_ordenes": row[0] if row else 0,
+            "total_monto": float(row[1]) if row else 0.0,
+        }
+
+        # By supplier (top 20)
+        by_supplier_q = text(
+            f"SELECT bp.name AS proveedor, "
+            f"COUNT(DISTINCT i.c_invoice_id) AS facturas, "
+            f"COALESCE(SUM(i.grandtotal), 0) AS total "
+            f"FROM adempiere.c_invoice i "
+            f"JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id "
+            f"WHERE {where} "
+            f"GROUP BY bp.name ORDER BY total DESC LIMIT 20"
+        )
+        by_supplier = [
+            {"proveedor": r[0], "facturas": r[1], "total": float(r[2])}
+            for r in db.execute(by_supplier_q, params).fetchall()
+        ]
+
+        # By month
+        by_month_q = text(
+            f"SELECT EXTRACT(MONTH FROM i.dateinvoiced)::int AS mes, "
+            f"COUNT(DISTINCT i.c_invoice_id) AS facturas, "
+            f"COALESCE(SUM(i.grandtotal), 0) AS total "
+            f"FROM adempiere.c_invoice i WHERE {where} "
+            f"GROUP BY EXTRACT(MONTH FROM i.dateinvoiced) ORDER BY mes"
+        )
+        by_month = [
+            {"mes": r[0], "facturas": r[1], "total": float(r[2])}
+            for r in db.execute(by_month_q, params).fetchall()
+        ]
+
+        # By product category (top items purchased)
+        by_product_q = text(
+            f"SELECT p.name AS producto, "
+            f"COALESCE(SUM(il.linenetamt), 0) AS total "
+            f"FROM adempiere.c_invoice i "
+            f"JOIN adempiere.c_invoiceline il ON i.c_invoice_id = il.c_invoice_id "
+            f"JOIN adempiere.m_product p ON il.m_product_id = p.m_product_id "
+            f"WHERE {where} "
+            f"GROUP BY p.name ORDER BY total DESC LIMIT 20"
+        )
+        by_product = [
+            {"producto": r[0], "total": float(r[1])}
+            for r in db.execute(by_product_q, params).fetchall()
+        ]
+
+        return {
+            "anio": anio,
+            "mes": mes,
+            "totales": totals,
+            "por_proveedor": by_supplier,
+            "por_mes": by_month,
+            "por_producto": by_product,
+        }
+    finally:
+        db.close()
+
+
+# ---------------------------------------------------------------------------
+# CONTABILIDAD (Accounting)
+# ---------------------------------------------------------------------------
+
+def build_accounting_summary(mes: int | None = None, anio: int = 2026) -> dict:
+    """Accounting summary from iDempiere fact_acct (posted accounting facts)."""
+    db = IdempiereSession()
+    try:
+        conditions = [
+            "EXTRACT(YEAR FROM fa.dateacct) = :anio",
+            "fa.isactive = 'Y'",
+        ]
+        params: dict = {"anio": anio}
+
+        if mes:
+            conditions.append("EXTRACT(MONTH FROM fa.dateacct) = :mes")
+            params["mes"] = mes
+
+        where = " AND ".join(conditions)
+
+        # Totals
+        totals_q = text(
+            f"SELECT COUNT(*) AS total_asientos, "
+            f"COALESCE(SUM(fa.amtacctdr), 0) AS total_debe, "
+            f"COALESCE(SUM(fa.amtacctcr), 0) AS total_haber "
+            f"FROM adempiere.fact_acct fa WHERE {where}"
+        )
+        row = db.execute(totals_q, params).fetchone()
+        totals = {
+            "total_asientos": row[0] if row else 0,
+            "total_debe": float(row[1]) if row else 0.0,
+            "total_haber": float(row[2]) if row else 0.0,
+        }
+
+        # By account type (using element value)
+        by_account_q = text(
+            f"SELECT CASE "
+            f"  WHEN ev.accounttype = 'A' THEN 'Activo' "
+            f"  WHEN ev.accounttype = 'L' THEN 'Pasivo' "
+            f"  WHEN ev.accounttype = 'O' THEN 'Patrimonio' "
+            f"  WHEN ev.accounttype = 'R' THEN 'Ingreso' "
+            f"  WHEN ev.accounttype = 'E' THEN 'Gasto' "
+            f"  ELSE ev.accounttype END AS tipo_cuenta, "
+            f"COALESCE(SUM(fa.amtacctdr), 0) AS debe, "
+            f"COALESCE(SUM(fa.amtacctcr), 0) AS haber, "
+            f"COALESCE(SUM(fa.amtacctdr), 0) - COALESCE(SUM(fa.amtacctcr), 0) AS saldo "
+            f"FROM adempiere.fact_acct fa "
+            f"JOIN adempiere.c_elementvalue ev ON fa.account_id = ev.c_elementvalue_id "
+            f"WHERE {where} "
+            f"GROUP BY ev.accounttype ORDER BY ev.accounttype"
+        )
+        by_account_type = [
+            {"tipo_cuenta": r[0], "debe": float(r[1]), "haber": float(r[2]), "saldo": float(r[3])}
+            for r in db.execute(by_account_q, params).fetchall()
+        ]
+
+        # Balance: Assets, Liabilities, Equity
+        balance_q = text(
+            f"SELECT CASE "
+            f"  WHEN ev.accounttype = 'A' THEN 'Activo' "
+            f"  WHEN ev.accounttype = 'L' THEN 'Pasivo' "
+            f"  WHEN ev.accounttype = 'O' THEN 'Patrimonio' "
+            f"  END AS tipo, "
+            f"COALESCE(SUM(fa.amtacctdr - fa.amtacctcr), 0) AS saldo "
+            f"FROM adempiere.fact_acct fa "
+            f"JOIN adempiere.c_elementvalue ev ON fa.account_id = ev.c_elementvalue_id "
+            f"WHERE ev.accounttype IN ('A', 'L', 'O') "
+            f"AND EXTRACT(YEAR FROM fa.dateacct) <= :anio "
+            f"AND fa.isactive = 'Y' "
+            f"GROUP BY ev.accounttype ORDER BY ev.accounttype"
+        )
+        balance = [
+            {"tipo": r[0], "saldo": float(r[1])}
+            for r in db.execute(balance_q, params).fetchall()
+        ]
+
+        # Top accounts by movement (current period)
+        top_accounts_q = text(
+            f"SELECT ev.value AS codigo, ev.name AS cuenta, "
+            f"COALESCE(SUM(fa.amtacctdr), 0) AS debe, "
+            f"COALESCE(SUM(fa.amtacctcr), 0) AS haber "
+            f"FROM adempiere.fact_acct fa "
+            f"JOIN adempiere.c_elementvalue ev ON fa.account_id = ev.c_elementvalue_id "
+            f"WHERE {where} "
+            f"GROUP BY ev.value, ev.name "
+            f"ORDER BY (COALESCE(SUM(fa.amtacctdr), 0) + COALESCE(SUM(fa.amtacctcr), 0)) DESC "
+            f"LIMIT 20"
+        )
+        top_accounts = [
+            {"codigo": r[0], "cuenta": r[1], "debe": float(r[2]), "haber": float(r[3])}
+            for r in db.execute(top_accounts_q, params).fetchall()
+        ]
+
+        return {
+            "anio": anio,
+            "mes": mes,
+            "totales": totals,
+            "por_tipo_cuenta": by_account_type,
+            "balance": balance,
+            "cuentas_con_mayor_movimiento": top_accounts,
+        }
+    finally:
+        db.close()

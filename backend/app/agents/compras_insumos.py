@@ -4,8 +4,11 @@ Especializado en: órdenes de compra, proveedores, inventarios de materiales,
 precios históricos, tiempos de entrega.
 """
 
+import re
+from datetime import datetime
+
 from app.agents.base_agent import BaseAgent
-from app.services.query_service import execute_demo_query
+from app.services.query_service import build_supply_purchases
 
 
 class ComprasInsumosAgent(BaseAgent):
@@ -42,67 +45,30 @@ CONTEXTO:
 
     def get_sql_context(self) -> str:
         return """
-Tablas: demo_proveedores_insumos, demo_ordenes_compra_insumos
+Datos de compras provienen de facturas de compra en iDempiere (c_invoice issotrx='N').
 """
 
     def fetch_data(self, message: str) -> str | None:
         msg = message.lower()
         sections = []
 
-        if any(w in msg for w in ["proveedor", "supplier"]):
-            try:
-                data = execute_demo_query(
-                    "SELECT nombre, rif, tipo_insumo, calificacion, contacto "
-                    "FROM demo_proveedores_insumos ORDER BY calificacion DESC"
-                )
-                sections.append(f"## Proveedores de Insumos ({len(data)} registrados)")
-                sections.append(self._format_table(data))
-            except Exception:
-                pass
+        anio = datetime.now().year
+        year_match = re.search(r'20\d{2}', message)
+        if year_match:
+            anio = int(year_match.group())
 
-        if any(w in msg for w in ["orden", "compra", "pedido", "pendiente"]):
-            try:
-                data = execute_demo_query(
-                    "SELECT o.numero_orden, p.nombre as proveedor, o.insumo, o.fecha, "
-                    "o.fecha_entrega_estimada, o.cantidad, o.unidad, o.monto_total, o.estado "
-                    "FROM demo_ordenes_compra_insumos o "
-                    "JOIN demo_proveedores_insumos p ON o.proveedor_id = p.id "
-                    "ORDER BY o.fecha DESC"
-                )
-                sections.append(f"## Órdenes de Compra ({len(data)} total)")
-                sections.append(self._format_table(data))
+        mes = None
+        meses_map = {
+            "enero": 1, "febrero": 2, "marzo": 3, "abril": 4,
+            "mayo": 5, "junio": 6, "julio": 7, "agosto": 8,
+            "septiembre": 9, "octubre": 10, "noviembre": 11, "diciembre": 12,
+        }
+        for nombre, num in meses_map.items():
+            if nombre in msg:
+                mes = num
+                break
 
-                by_status = execute_demo_query(
-                    "SELECT estado, COUNT(*) as cantidad, SUM(monto_total) as monto_total "
-                    "FROM demo_ordenes_compra_insumos GROUP BY estado"
-                )
-                sections.append("## Resumen por Estado")
-                sections.append(self._format_table(by_status))
-            except Exception:
-                pass
-
-        if not sections:
-            try:
-                summary = execute_demo_query(
-                    "SELECT p.tipo_insumo, COUNT(o.id) as ordenes, "
-                    "SUM(o.monto_total) as gasto_total "
-                    "FROM demo_ordenes_compra_insumos o "
-                    "JOIN demo_proveedores_insumos p ON o.proveedor_id = p.id "
-                    "GROUP BY p.tipo_insumo ORDER BY gasto_total DESC"
-                )
-                sections.append("## Resumen de Compras de Insumos por Tipo")
-                sections.append(self._format_table(summary))
-
-                pending = execute_demo_query(
-                    "SELECT COUNT(*) as pendientes, SUM(monto_total) as monto_pendiente "
-                    "FROM demo_ordenes_compra_insumos WHERE estado = 'pendiente'"
-                )
-                if pending and pending[0]["pendientes"]:
-                    sections.append(
-                        f"\nÓrdenes pendientes: {pending[0]['pendientes']} "
-                        f"por un total de Bs. {pending[0]['monto_pendiente']:,.2f}"
-                    )
-            except Exception:
-                pass
+        summary = build_supply_purchases(mes=mes, anio=anio)
+        sections.append(self._format_summary(summary, f"Resumen de Compras de Insumos {anio}"))
 
         return "\n\n".join(sections) if sections else None

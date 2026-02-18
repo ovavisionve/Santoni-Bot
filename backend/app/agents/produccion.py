@@ -5,6 +5,7 @@ desperdicios, mantenimientos.
 """
 
 import re
+from datetime import datetime
 
 from app.agents.base_agent import BaseAgent
 from app.services.query_service import build_production_summary, execute_demo_query
@@ -54,7 +55,7 @@ Tablas: demo_produccion_diaria, demo_ordenes_produccion
         msg = message.lower()
         sections = []
 
-        anio = 2025
+        anio = datetime.now().year
         mes = None
         meses_map = {
             "enero": 1, "febrero": 2, "marzo": 3, "abril": 4,

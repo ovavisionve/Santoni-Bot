@@ -725,3 +725,76 @@ def build_employee_summary() -> dict:
         }
     finally:
         db.close()
+
+
+# ---------------------------------------------------------------------------
+# Pre-built queries: COMPRAS INSUMOS (Supply Purchases)
+# ---------------------------------------------------------------------------
+
+def build_supply_purchases(mes: int | None = None, anio: int = 2026) -> dict:
+    """Supply purchases - routes to demo or iDempiere."""
+    if _is_production():
+        from app.services.idempiere_queries import build_supply_purchases as _prod
+        return _prod(mes=mes, anio=anio)
+
+    # Demo fallback
+    db = SessionLocal()
+    try:
+        conditions = ["1=1"]
+        params: dict = {"anio": anio}
+
+        totals_q = text(
+            "SELECT COUNT(*) AS total_ordenes, "
+            "COALESCE(SUM(o.monto_total), 0) AS total_monto "
+            "FROM demo_ordenes_compra_insumos o"
+        )
+        row = db.execute(totals_q, params).fetchone()
+        return {
+            "anio": anio,
+            "mes": mes,
+            "totales": {
+                "total_ordenes": row[0] if row else 0,
+                "total_monto": float(row[1]) if row else 0.0,
+            },
+            "por_proveedor": [],
+            "por_mes": [],
+            "por_producto": [],
+        }
+    finally:
+        db.close()
+
+
+# ---------------------------------------------------------------------------
+# Pre-built queries: CONTABILIDAD (Accounting)
+# ---------------------------------------------------------------------------
+
+def build_accounting_summary(mes: int | None = None, anio: int = 2026) -> dict:
+    """Accounting summary - routes to demo or iDempiere."""
+    if _is_production():
+        from app.services.idempiere_queries import build_accounting_summary as _prod
+        return _prod(mes=mes, anio=anio)
+
+    # Demo fallback
+    db = SessionLocal()
+    try:
+        p = f"{anio}-{mes:02d}" if mes else f"{anio}-06"
+        data = db.execute(
+            text(
+                "SELECT tipo_cuenta, SUM(saldo) as total "
+                "FROM demo_balance_general WHERE periodo = :periodo "
+                "GROUP BY tipo_cuenta ORDER BY tipo_cuenta"
+            ),
+            {"periodo": p},
+        ).fetchall()
+        return {
+            "anio": anio,
+            "mes": mes,
+            "totales": {"total_asientos": 0, "total_debe": 0.0, "total_haber": 0.0},
+            "por_tipo_cuenta": [
+                {"tipo_cuenta": r[0], "saldo": float(r[1])} for r in data
+            ],
+            "balance": [],
+            "cuentas_con_mayor_movimiento": [],
+        }
+    finally:
+        db.close()

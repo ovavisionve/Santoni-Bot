@@ -5,9 +5,10 @@ impuestos, activos fijos.
 """
 
 import re
+from datetime import datetime
 
 from app.agents.base_agent import BaseAgent
-from app.services.query_service import execute_demo_query
+from app.services.query_service import build_accounting_summary
 
 
 class ContabilidadAgent(BaseAgent):
@@ -49,76 +50,30 @@ REGLAS:
 
     def get_sql_context(self) -> str:
         return """
-Tablas: demo_asientos_contables, demo_balance_general
+Datos contables provienen de fact_acct (hechos contables) y c_elementvalue (plan de cuentas) en iDempiere.
 """
 
     def fetch_data(self, message: str) -> str | None:
         msg = message.lower()
         sections = []
 
-        periodo = None
+        anio = datetime.now().year
+        year_match = re.search(r'20\d{2}', message)
+        if year_match:
+            anio = int(year_match.group())
+
+        mes = None
         meses_map = {
-            "enero": "01", "febrero": "02", "marzo": "03", "abril": "04",
-            "mayo": "05", "junio": "06", "julio": "07", "agosto": "08",
-            "septiembre": "09", "octubre": "10", "noviembre": "11", "diciembre": "12",
+            "enero": 1, "febrero": 2, "marzo": 3, "abril": 4,
+            "mayo": 5, "junio": 6, "julio": 7, "agosto": 8,
+            "septiembre": 9, "octubre": 10, "noviembre": 11, "diciembre": 12,
         }
         for nombre, num in meses_map.items():
             if nombre in msg:
-                periodo = f"2025-{num}"
+                mes = num
                 break
 
-        if any(w in msg for w in ["balance", "patrimon", "activo", "pasivo"]):
-            try:
-                p = periodo or "2025-06"
-                data = execute_demo_query(
-                    "SELECT tipo_cuenta, grupo, cuenta, saldo "
-                    "FROM demo_balance_general WHERE periodo = :periodo "
-                    "ORDER BY tipo_cuenta, grupo, cuenta",
-                    {"periodo": p},
-                )
-                sections.append(f"## Balance General - Período {p}")
-                for tipo in ["activo", "pasivo", "patrimonio"]:
-                    items = [d for d in data if d["tipo_cuenta"] == tipo]
-                    if items:
-                        total = sum(d["saldo"] for d in items)
-                        sections.append(f"\n### {tipo.upper()} (Total: Bs. {total:,.2f})")
-                        sections.append(self._format_table(items, ["grupo", "cuenta", "saldo"]))
-            except Exception:
-                pass
-
-        if any(w in msg for w in ["diario", "asiento", "mayor", "balanza"]):
-            try:
-                if periodo:
-                    data = execute_demo_query(
-                        "SELECT numero_asiento, fecha, cuenta_contable, nombre_cuenta, "
-                        "descripcion, debe, haber FROM demo_asientos_contables "
-                        "WHERE periodo = :periodo ORDER BY fecha, numero_asiento",
-                        {"periodo": periodo},
-                    )
-                else:
-                    data = execute_demo_query(
-                        "SELECT numero_asiento, fecha, cuenta_contable, nombre_cuenta, "
-                        "descripcion, debe, haber FROM demo_asientos_contables "
-                        "ORDER BY fecha DESC LIMIT 50"
-                    )
-                total_debe = sum(d["debe"] for d in data)
-                total_haber = sum(d["haber"] for d in data)
-                sections.append(f"## Asientos Contables ({len(data)} registros)")
-                sections.append(f"Total Debe: Bs. {total_debe:,.2f} | Total Haber: Bs. {total_haber:,.2f}")
-                sections.append(self._format_table(data))
-            except Exception:
-                pass
-
-        if not sections:
-            try:
-                data = execute_demo_query(
-                    "SELECT tipo_cuenta, SUM(saldo) as total "
-                    "FROM demo_balance_general WHERE periodo = '2025-06' "
-                    "GROUP BY tipo_cuenta ORDER BY tipo_cuenta"
-                )
-                sections.append("## Resumen Balance General - Junio 2025")
-                sections.append(self._format_table(data))
-            except Exception:
-                pass
+        summary = build_accounting_summary(mes=mes, anio=anio)
+        sections.append(self._format_summary(summary, f"Resumen Contable {anio}"))
 
         return "\n\n".join(sections) if sections else None
