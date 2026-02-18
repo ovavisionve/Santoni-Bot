@@ -859,6 +859,16 @@ def build_accounting_summary(mes: int | None = None, anio: int | None = None) ->
         ]
 
         # Balance: Assets, Liabilities, Equity
+        balance_conds = [
+            "ev.accounttype IN ('A', 'L', 'O')",
+            "fa.isactive = 'Y'",
+        ]
+        balance_params: dict = {}
+        if anio:
+            balance_conds.append("EXTRACT(YEAR FROM fa.dateacct) <= :anio")
+            balance_params["anio"] = anio
+
+        balance_where = " AND ".join(balance_conds)
         balance_q = text(
             f"SELECT CASE "
             f"  WHEN ev.accounttype = 'A' THEN 'Activo' "
@@ -868,14 +878,12 @@ def build_accounting_summary(mes: int | None = None, anio: int | None = None) ->
             f"COALESCE(SUM(fa.amtacctdr - fa.amtacctcr), 0) AS saldo "
             f"FROM adempiere.fact_acct fa "
             f"JOIN adempiere.c_elementvalue ev ON fa.account_id = ev.c_elementvalue_id "
-            f"WHERE ev.accounttype IN ('A', 'L', 'O') "
-            f"AND EXTRACT(YEAR FROM fa.dateacct) <= :anio "
-            f"AND fa.isactive = 'Y' "
+            f"WHERE {balance_where} "
             f"GROUP BY ev.accounttype ORDER BY ev.accounttype"
         )
         balance = [
             {"tipo": r[0], "saldo": float(r[1])}
-            for r in db.execute(balance_q, params).fetchall()
+            for r in db.execute(balance_q, balance_params).fetchall()
         ]
 
         # Top accounts by movement (current period)

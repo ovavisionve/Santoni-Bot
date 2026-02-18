@@ -5,6 +5,7 @@ impuestos, activos fijos.
 """
 
 import re
+from datetime import datetime
 
 from app.agents.base_agent import BaseAgent
 from app.services.query_service import build_accounting_summary
@@ -45,7 +46,13 @@ REGLAS:
 - Responde siempre en español, de forma profesional y técnica
 - Usa terminología contable venezolana estándar
 - Indica el período contable de referencia
-- Los datos que recibes son REALES de la base de datos de Santoni"""
+- Los datos que recibes son REALES de la base de datos de Santoni
+
+IMPORTANTE SOBRE PERÍODOS:
+- Los datos que recibes corresponden al año actual por defecto, a menos que el usuario especifique otro año
+- SIEMPRE indica claramente el período contable de los datos que estás presentando
+- Si el usuario hace una pregunta amplia sin especificar período, presenta los datos del año actual y al final sugiere: "Si necesitas datos de otro período contable, indícame el año o mes que deseas consultar."
+- Si el usuario menciona un año específico, los datos ya vendrán filtrados para ese año"""
 
     def get_sql_context(self) -> str:
         return """
@@ -56,7 +63,7 @@ Datos contables provienen de fact_acct (hechos contables) y c_elementvalue (plan
         msg = message.lower()
         sections = []
 
-        anio = None
+        anio = datetime.now().year
         year_match = re.search(r'20\d{2}', message)
         if year_match:
             anio = int(year_match.group())

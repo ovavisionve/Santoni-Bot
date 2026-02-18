@@ -5,6 +5,7 @@ volúmenes, precios por kilo/tonelada, pagos pendientes, productores registrados
 """
 
 import re
+from datetime import datetime
 
 from app.agents.base_agent import BaseAgent
 from app.services.query_service import build_producer_purchases, execute_demo_query
@@ -44,7 +45,13 @@ REGLAS:
 CONTEXTO:
 - Responsable: Marlenis Figueredo
 - Productos: Arroz Paddy Húmedo, Maíz
-- Zonas productoras: Portuguesa, Barinas, Apure, Lara, Cojedes"""
+- Zonas productoras: Portuguesa, Barinas, Apure, Lara, Cojedes
+
+IMPORTANTE SOBRE PERÍODOS:
+- Los datos que recibes corresponden al año actual por defecto, a menos que el usuario especifique otro año
+- SIEMPRE indica claramente el período de los datos que estás presentando
+- Si el usuario hace una pregunta amplia sin especificar período, presenta los datos del año actual y al final sugiere: "Si necesitas datos de otro período, indícame el año o mes que deseas consultar."
+- Si el usuario menciona un año específico, los datos ya vendrán filtrados para ese año"""
 
     def get_sql_context(self) -> str:
         return """
@@ -55,7 +62,7 @@ Tablas: demo_productores, demo_compras_productores
         msg = message.lower()
         sections = []
 
-        anio = None
+        anio = datetime.now().year
         year_match = re.search(r'20\d{2}', message)
         if year_match:
             anio = int(year_match.group())

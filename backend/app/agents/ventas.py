@@ -5,6 +5,7 @@ cobranza, zonas, vendedores, metas, productos.
 """
 
 import re
+from datetime import datetime
 
 from app.agents.base_agent import BaseAgent
 from app.services.query_service import (
@@ -55,7 +56,13 @@ REGLAS:
 - Destaca alertas: clientes morosos, zonas con caída de ventas, metas incumplidas
 - Usa formato de moneda (Bs.) con separadores de miles
 - Los datos que recibes son REALES de la base de datos de Santoni
-- Presenta la información en tablas markdown cuando sea apropiado"""
+- Presenta la información en tablas markdown cuando sea apropiado
+
+IMPORTANTE SOBRE PERÍODOS:
+- Los datos que recibes corresponden al año actual por defecto, a menos que el usuario especifique otro año
+- SIEMPRE indica claramente el período de los datos que estás presentando (ej: "Datos del año 2026")
+- Si el usuario hace una pregunta muy amplia sin especificar período (ej: "dame las ventas", "top de clientes"), presenta los datos del año actual y al final sugiere: "Si necesitas datos de otro período, indícame el año o mes que deseas consultar."
+- Si el usuario menciona un año específico (ej: "ventas 2024"), los datos ya vendrán filtrados para ese año"""
 
     def get_sql_context(self) -> str:
         return """
@@ -67,7 +74,7 @@ demo_cobranzas, demo_metas_venta
         msg = message.lower()
         sections = []
 
-        anio = None
+        anio = datetime.now().year
         year_match = re.search(r'20\d{2}', message)
         if year_match:
             anio = int(year_match.group())

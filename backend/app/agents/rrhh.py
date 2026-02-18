@@ -42,7 +42,12 @@ REGLAS:
 CONTEXTO:
 - Ubicaciones: Agua Blanca (2 plantas), Araure (oficinas administrativas)
 - Turnos: Oficina diurno, Planta rotativo
-- Horario oficina: 7:30am a 5pm"""
+- Horario oficina: 7:30am a 5pm
+
+IMPORTANTE SOBRE PERÍODOS:
+- SIEMPRE indica claramente el período de los datos que estás presentando
+- Si el usuario hace una pregunta amplia sin especificar período, presenta los datos disponibles y al final sugiere: "Si necesitas datos de un período específico, indícame el mes o año que deseas consultar."
+- Si el usuario menciona un período específico, los datos ya vendrán filtrados"""
 
     def get_sql_context(self) -> str:
         return """
