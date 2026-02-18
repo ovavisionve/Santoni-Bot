@@ -29,8 +29,6 @@ services:
 
   frontend:
     volumes: []
-    environment:
-      NODE_ENV: production
     deploy:
       resources:
         limits:
