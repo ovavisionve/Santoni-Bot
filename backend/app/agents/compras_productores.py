@@ -5,7 +5,6 @@ volúmenes, precios por kilo/tonelada, pagos pendientes, productores registrados
 """
 
 import re
-from datetime import datetime
 
 from app.agents.base_agent import BaseAgent
 from app.services.query_service import build_producer_purchases, execute_demo_query
@@ -56,7 +55,7 @@ Tablas: demo_productores, demo_compras_productores
         msg = message.lower()
         sections = []
 
-        anio = datetime.now().year
+        anio = None
         year_match = re.search(r'20\d{2}', message)
         if year_match:
             anio = int(year_match.group())
@@ -67,8 +66,9 @@ Tablas: demo_productores, demo_compras_productores
         elif "maíz" in msg or "maiz" in msg:
             producto = "Maíz"
 
+        label = f"Año {anio}" if anio else "Todos los años"
         summary = build_producer_purchases(producto=producto, anio=anio)
-        sections.append(self._format_summary(summary, f"Compras a Productores {anio}"))
+        sections.append(self._format_summary(summary, f"Compras a Productores - {label}"))
 
         if any(w in msg for w in ["productor", "registrad", "cuántos", "cuantos"]):
             try:

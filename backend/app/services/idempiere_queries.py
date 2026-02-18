@@ -67,18 +67,21 @@ def build_sales_summary(
     zona: str | None = None,
     vendedor: str | None = None,
     mes: int | None = None,
-    anio: int = 2025,
+    anio: int | None = None,
 ) -> dict:
     """Sales summary from iDempiere c_invoice (issotrx='Y')."""
     db = IdempiereSession()
     try:
         conditions = [
-            "EXTRACT(YEAR FROM i.dateinvoiced) = :anio",
             "i.issotrx = 'Y'",
             "i.docstatus = 'CO'",
             "i.isactive = 'Y'",
         ]
-        params: dict = {"anio": anio}
+        params: dict = {}
+
+        if anio:
+            conditions.append("EXTRACT(YEAR FROM i.dateinvoiced) = :anio")
+            params["anio"] = anio
 
         if mes:
             conditions.append("EXTRACT(MONTH FROM i.dateinvoiced) = :mes")
@@ -177,18 +180,21 @@ def build_collection_summary(
     zona: str | None = None,
     vendedor: str | None = None,
     mes: int | None = None,
-    anio: int = 2025,
+    anio: int | None = None,
 ) -> dict:
     """Collection summary from iDempiere c_payment (isreceipt='Y')."""
     db = IdempiereSession()
     try:
         conditions = [
-            "EXTRACT(YEAR FROM p.datetrx) = :anio",
             "p.isreceipt = 'Y'",
             "p.docstatus = 'CO'",
             "p.isactive = 'Y'",
         ]
-        params: dict = {"anio": anio}
+        params: dict = {}
+
+        if anio:
+            conditions.append("EXTRACT(YEAR FROM p.datetrx) = :anio")
+            params["anio"] = anio
 
         if mes:
             conditions.append("EXTRACT(MONTH FROM p.datetrx) = :mes")
@@ -256,18 +262,21 @@ def build_top_clients(
     limit: int = 20,
     zona: str | None = None,
     vendedor: str | None = None,
-    anio: int = 2025,
+    anio: int | None = None,
 ) -> list[dict]:
     """Top clients by invoiced amount from iDempiere."""
     db = IdempiereSession()
     try:
         conditions = [
-            "EXTRACT(YEAR FROM i.dateinvoiced) = :anio",
             "i.issotrx = 'Y'",
             "i.docstatus = 'CO'",
             "i.isactive = 'Y'",
         ]
-        params: dict = {"anio": anio, "limit": limit}
+        params: dict = {"limit": limit}
+
+        if anio:
+            conditions.append("EXTRACT(YEAR FROM i.dateinvoiced) = :anio")
+            params["anio"] = anio
 
         where = " AND ".join(conditions)
 
@@ -350,7 +359,7 @@ def build_overdue_receivables() -> list[dict]:
 # FINANZAS (Finance)
 # ---------------------------------------------------------------------------
 
-def build_financial_summary(mes: int | None = None, anio: int = 2025) -> dict:
+def build_financial_summary(mes: int | None = None, anio: int | None = None) -> dict:
     """Financial summary from iDempiere: bank balances, receivables, payables."""
     db = IdempiereSession()
     try:
@@ -388,7 +397,10 @@ def build_financial_summary(mes: int | None = None, anio: int = 2025) -> dict:
             "i.ispaid = 'N'",
             "i.isactive = 'Y'",
         ]
-        ar_params: dict = {"anio": anio}
+        ar_params: dict = {}
+        if anio:
+            ar_conditions.append("EXTRACT(YEAR FROM i.dateinvoiced) = :anio")
+            ar_params["anio"] = anio
         if mes:
             ar_conditions.append("EXTRACT(MONTH FROM i.dateinvoiced) = :mes")
             ar_params["mes"] = mes
@@ -522,12 +534,16 @@ def build_employee_summary() -> dict:
 # PRODUCCION (Production)
 # ---------------------------------------------------------------------------
 
-def build_production_summary(mes: int | None = None, anio: int = 2025) -> dict:
+def build_production_summary(mes: int | None = None, anio: int | None = None) -> dict:
     """Production summary from iDempiere m_production / pp_order."""
     db = IdempiereSession()
     try:
-        conditions = ["EXTRACT(YEAR FROM mp.movementdate) = :anio"]
-        params: dict = {"anio": anio}
+        conditions = ["mp.isactive = 'Y'"]
+        params: dict = {}
+
+        if anio:
+            conditions.append("EXTRACT(YEAR FROM mp.movementdate) = :anio")
+            params["anio"] = anio
 
         if mes:
             conditions.append("EXTRACT(MONTH FROM mp.movementdate) = :mes")
@@ -584,7 +600,7 @@ def build_production_summary(mes: int | None = None, anio: int = 2025) -> dict:
 # ---------------------------------------------------------------------------
 
 def build_producer_purchases(
-    producto: str | None = None, anio: int = 2025
+    producto: str | None = None, anio: int | None = None
 ) -> dict:
     """Producer purchases from iDempiere.
     NOTE: Santoni may have custom tables for agricultural purchases (arroz, maíz).
@@ -593,12 +609,15 @@ def build_producer_purchases(
     db = IdempiereSession()
     try:
         conditions = [
-            "EXTRACT(YEAR FROM o.dateordered) = :anio",
             "o.issotrx = 'N'",
             "o.docstatus = 'CO'",
             "o.isactive = 'Y'",
         ]
-        params: dict = {"anio": anio}
+        params: dict = {}
+
+        if anio:
+            conditions.append("EXTRACT(YEAR FROM o.dateordered) = :anio")
+            params["anio"] = anio
 
         if producto:
             conditions.append("LOWER(p.name) LIKE :producto")
@@ -691,18 +710,21 @@ def build_producer_purchases(
 # COMPRAS INSUMOS (Supply Purchases)
 # ---------------------------------------------------------------------------
 
-def build_supply_purchases(mes: int | None = None, anio: int = 2026) -> dict:
+def build_supply_purchases(mes: int | None = None, anio: int | None = None) -> dict:
     """Supply purchases from iDempiere: purchase invoices (issotrx='N')
     excluding agricultural products (arroz, maíz) which go to compras_productores."""
     db = IdempiereSession()
     try:
         conditions = [
-            "EXTRACT(YEAR FROM i.dateinvoiced) = :anio",
             "i.issotrx = 'N'",
             "i.docstatus = 'CO'",
             "i.isactive = 'Y'",
         ]
-        params: dict = {"anio": anio}
+        params: dict = {}
+
+        if anio:
+            conditions.append("EXTRACT(YEAR FROM i.dateinvoiced) = :anio")
+            params["anio"] = anio
 
         if mes:
             conditions.append("EXTRACT(MONTH FROM i.dateinvoiced) = :mes")
@@ -781,15 +803,18 @@ def build_supply_purchases(mes: int | None = None, anio: int = 2026) -> dict:
 # CONTABILIDAD (Accounting)
 # ---------------------------------------------------------------------------
 
-def build_accounting_summary(mes: int | None = None, anio: int = 2026) -> dict:
+def build_accounting_summary(mes: int | None = None, anio: int | None = None) -> dict:
     """Accounting summary from iDempiere fact_acct (posted accounting facts)."""
     db = IdempiereSession()
     try:
         conditions = [
-            "EXTRACT(YEAR FROM fa.dateacct) = :anio",
             "fa.isactive = 'Y'",
         ]
-        params: dict = {"anio": anio}
+        params: dict = {}
+
+        if anio:
+            conditions.append("EXTRACT(YEAR FROM fa.dateacct) = :anio")
+            params["anio"] = anio
 
         if mes:
             conditions.append("EXTRACT(MONTH FROM fa.dateacct) = :mes")

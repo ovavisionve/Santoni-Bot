@@ -5,7 +5,6 @@ precios históricos, tiempos de entrega.
 """
 
 import re
-from datetime import datetime
 
 from app.agents.base_agent import BaseAgent
 from app.services.query_service import build_supply_purchases
@@ -52,7 +51,7 @@ Datos de compras provienen de facturas de compra en iDempiere (c_invoice issotrx
         msg = message.lower()
         sections = []
 
-        anio = datetime.now().year
+        anio = None
         year_match = re.search(r'20\d{2}', message)
         if year_match:
             anio = int(year_match.group())
@@ -68,7 +67,8 @@ Datos de compras provienen de facturas de compra en iDempiere (c_invoice issotrx
                 mes = num
                 break
 
+        label = f"Año {anio}" if anio else "Todos los años"
         summary = build_supply_purchases(mes=mes, anio=anio)
-        sections.append(self._format_summary(summary, f"Resumen de Compras de Insumos {anio}"))
+        sections.append(self._format_summary(summary, f"Resumen de Compras de Insumos - {label}"))
 
         return "\n\n".join(sections) if sections else None

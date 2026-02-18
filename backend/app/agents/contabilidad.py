@@ -5,7 +5,6 @@ impuestos, activos fijos.
 """
 
 import re
-from datetime import datetime
 
 from app.agents.base_agent import BaseAgent
 from app.services.query_service import build_accounting_summary
@@ -57,7 +56,7 @@ Datos contables provienen de fact_acct (hechos contables) y c_elementvalue (plan
         msg = message.lower()
         sections = []
 
-        anio = datetime.now().year
+        anio = None
         year_match = re.search(r'20\d{2}', message)
         if year_match:
             anio = int(year_match.group())
@@ -73,7 +72,8 @@ Datos contables provienen de fact_acct (hechos contables) y c_elementvalue (plan
                 mes = num
                 break
 
+        label = f"Año {anio}" if anio else "Todos los años"
         summary = build_accounting_summary(mes=mes, anio=anio)
-        sections.append(self._format_summary(summary, f"Resumen Contable {anio}"))
+        sections.append(self._format_summary(summary, f"Resumen Contable - {label}"))
 
         return "\n\n".join(sections) if sections else None

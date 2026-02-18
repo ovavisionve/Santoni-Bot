@@ -5,7 +5,6 @@ cobranza, zonas, vendedores, metas, productos.
 """
 
 import re
-from datetime import datetime
 
 from app.agents.base_agent import BaseAgent
 from app.services.query_service import (
@@ -13,7 +12,6 @@ from app.services.query_service import (
     build_collection_summary,
     build_top_clients,
     build_overdue_receivables,
-    execute_demo_query,
 )
 
 
@@ -69,7 +67,7 @@ demo_cobranzas, demo_metas_venta
         msg = message.lower()
         sections = []
 
-        anio = datetime.now().year
+        anio = None
         year_match = re.search(r'20\d{2}', message)
         if year_match:
             anio = int(year_match.group())
@@ -97,49 +95,28 @@ demo_cobranzas, demo_metas_venta
                 zona = z.title()
                 break
 
+        label = f"Año {anio}" if anio else "Todos los años"
+
         if any(w in msg for w in ["top", "mejor", "ranking", "pareto", "principales"]):
             limit = 20
             limit_match = re.search(r'top\s*(\d+)', msg)
             if limit_match:
                 limit = int(limit_match.group(1))
             data = build_top_clients(limit=limit, zona=zona, vendedor=vendedor, anio=anio)
-            sections.append(f"## Top {limit} Clientes por Ventas (Año {anio})")
+            sections.append(f"## Top {limit} Clientes por Ventas ({label})")
             sections.append(self._format_table(data))
 
         if any(w in msg for w in ["cobran", "cobro", "recauda", "pago"]):
             data = build_collection_summary(zona=zona, vendedor=vendedor, mes=mes, anio=anio)
-            sections.append(self._format_summary(data, f"Resumen de Cobranza {anio}"))
+            sections.append(self._format_summary(data, f"Resumen de Cobranza - {label}"))
 
         if any(w in msg for w in ["atrasa", "vencid", "pendiente", "deuda", "mora"]):
             data = build_overdue_receivables()
             sections.append("## Cuentas por Cobrar Vencidas")
             sections.append(self._format_table(data))
 
-        if any(w in msg for w in ["meta", "objetivo", "cumplimien", "comparati"]):
-            try:
-                metas = execute_demo_query(
-                    "SELECT vendedor, SUM(meta_venta) as meta_total, SUM(meta_cobranza) as meta_cobranza "
-                    "FROM demo_metas_venta WHERE anio = :anio GROUP BY vendedor ORDER BY meta_total DESC",
-                    {"anio": anio},
-                )
-                ventas = execute_demo_query(
-                    "SELECT vendedor, SUM(monto_total) as venta_real "
-                    "FROM demo_facturas_venta WHERE EXTRACT(YEAR FROM fecha) = :anio AND estado != 'anulada' "
-                    "GROUP BY vendedor ORDER BY venta_real DESC",
-                    {"anio": anio},
-                )
-                ventas_dict = {r["vendedor"]: r["venta_real"] for r in ventas}
-                for m in metas:
-                    venta = ventas_dict.get(m["vendedor"], 0)
-                    m["venta_real"] = venta
-                    m["cumplimiento_%"] = round((venta / m["meta_total"] * 100) if m["meta_total"] else 0, 1)
-                sections.append("## Metas vs Ventas Reales")
-                sections.append(self._format_table(metas))
-            except Exception:
-                pass
-
         if any(w in msg for w in ["venta", "factur", "ingreso", "volumen"]) or not sections:
             data = build_sales_summary(zona=zona, vendedor=vendedor, mes=mes, anio=anio)
-            sections.append(self._format_summary(data, f"Resumen de Ventas {anio}"))
+            sections.append(self._format_summary(data, f"Resumen de Ventas - {label}"))
 
         return "\n\n".join(sections) if sections else None

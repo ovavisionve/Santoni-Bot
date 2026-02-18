@@ -5,7 +5,6 @@ desperdicios, mantenimientos.
 """
 
 import re
-from datetime import datetime
 
 from app.agents.base_agent import BaseAgent
 from app.services.query_service import build_production_summary, execute_demo_query
@@ -55,7 +54,10 @@ Tablas: demo_produccion_diaria, demo_ordenes_produccion
         msg = message.lower()
         sections = []
 
-        anio = datetime.now().year
+        anio = None
+        year_match = re.search(r'20\d{2}', message)
+        if year_match:
+            anio = int(year_match.group())
         mes = None
         meses_map = {
             "enero": 1, "febrero": 2, "marzo": 3, "abril": 4,
@@ -67,8 +69,9 @@ Tablas: demo_produccion_diaria, demo_ordenes_produccion
                 mes = num
                 break
 
+        label = f"Año {anio}" if anio else "Todos los años"
         summary = build_production_summary(mes=mes, anio=anio)
-        sections.append(self._format_summary(summary, f"Resumen de Producción {anio}"))
+        sections.append(self._format_summary(summary, f"Resumen de Producción - {label}"))
 
         if any(w in msg for w in ["orden", "pedido", "planific"]):
             try:

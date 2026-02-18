@@ -143,7 +143,7 @@ def build_sales_summary(
     zona: str | None = None,
     vendedor: str | None = None,
     mes: int | None = None,
-    anio: int = 2025,
+    anio: int | None = None,
 ) -> dict:
     """Sales summary - routes to demo or iDempiere."""
     if _is_production():
@@ -231,7 +231,7 @@ def build_collection_summary(
     zona: str | None = None,
     vendedor: str | None = None,
     mes: int | None = None,
-    anio: int = 2025,
+    anio: int | None = None,
 ) -> dict:
     """Collection summary - routes to demo or iDempiere."""
     if _is_production():
@@ -303,7 +303,7 @@ def build_top_clients(
     limit: int = 20,
     zona: str | None = None,
     vendedor: str | None = None,
-    anio: int = 2025,
+    anio: int | None = None,
 ) -> list[dict]:
     """Top clients - routes to demo or iDempiere."""
     if _is_production():
@@ -394,7 +394,7 @@ def build_overdue_receivables() -> list[dict]:
 # Pre-built queries: PRODUCCION (Production)
 # ---------------------------------------------------------------------------
 
-def build_production_summary(mes: int | None = None, anio: int = 2025) -> dict:
+def build_production_summary(mes: int | None = None, anio: int | None = None) -> dict:
     """Production summary - routes to demo or iDempiere."""
     if _is_production():
         from app.services.idempiere_queries import build_production_summary as _prod
@@ -476,7 +476,7 @@ def build_production_summary(mes: int | None = None, anio: int = 2025) -> dict:
 # ---------------------------------------------------------------------------
 
 def build_producer_purchases(
-    producto: str | None = None, anio: int = 2025
+    producto: str | None = None, anio: int | None = None
 ) -> dict:
     """Producer purchases - routes to demo or iDempiere."""
     if _is_production():
@@ -566,7 +566,7 @@ def build_producer_purchases(
 # Pre-built queries: FINANZAS (Finance)
 # ---------------------------------------------------------------------------
 
-def build_financial_summary(mes: int | None = None, anio: int = 2025) -> dict:
+def build_financial_summary(mes: int | None = None, anio: int | None = None) -> dict:
     """Financial summary - routes to demo or iDempiere."""
     if _is_production():
         from app.services.idempiere_queries import build_financial_summary as _prod
@@ -731,7 +731,7 @@ def build_employee_summary() -> dict:
 # Pre-built queries: COMPRAS INSUMOS (Supply Purchases)
 # ---------------------------------------------------------------------------
 
-def build_supply_purchases(mes: int | None = None, anio: int = 2026) -> dict:
+def build_supply_purchases(mes: int | None = None, anio: int | None = None) -> dict:
     """Supply purchases - routes to demo or iDempiere."""
     if _is_production():
         from app.services.idempiere_queries import build_supply_purchases as _prod
@@ -768,7 +768,7 @@ def build_supply_purchases(mes: int | None = None, anio: int = 2026) -> dict:
 # Pre-built queries: CONTABILIDAD (Accounting)
 # ---------------------------------------------------------------------------
 
-def build_accounting_summary(mes: int | None = None, anio: int = 2026) -> dict:
+def build_accounting_summary(mes: int | None = None, anio: int | None = None) -> dict:
     """Accounting summary - routes to demo or iDempiere."""
     if _is_production():
         from app.services.idempiere_queries import build_accounting_summary as _prod

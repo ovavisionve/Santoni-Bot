@@ -5,13 +5,11 @@ presupuestos, indicadores financieros, rentabilidad.
 """
 
 import re
-from datetime import datetime
 
 from app.agents.base_agent import BaseAgent
 from app.services.query_service import (
     build_financial_summary,
     build_overdue_receivables,
-    execute_demo_query,
 )
 
 
@@ -61,7 +59,7 @@ Tablas: demo_cuentas_bancarias, demo_movimientos_bancarios, demo_cuentas_por_pag
         msg = message.lower()
         sections = []
 
-        anio = datetime.now().year
+        anio = None
         year_match = re.search(r'20\d{2}', message)
         if year_match:
             anio = int(year_match.group())
@@ -77,32 +75,9 @@ Tablas: demo_cuentas_bancarias, demo_movimientos_bancarios, demo_cuentas_por_pag
                 mes = num
                 break
 
+        label = f"Año {anio}" if anio else "Todos los años"
         summary = build_financial_summary(mes=mes, anio=anio)
-        sections.append(self._format_summary(summary, f"Resumen Financiero {anio}"))
-
-        if any(w in msg for w in ["banco", "cuenta", "saldo", "bancari"]):
-            try:
-                banks = execute_demo_query(
-                    "SELECT banco, numero_cuenta, tipo, moneda, saldo, fecha_saldo "
-                    "FROM demo_cuentas_bancarias ORDER BY saldo DESC"
-                )
-                sections.append("## Cuentas Bancarias")
-                sections.append(self._format_table(banks))
-            except Exception:
-                pass
-
-        if any(w in msg for w in ["pagar", "proveedor", "deuda", "pasivo"]):
-            try:
-                payables = execute_demo_query(
-                    "SELECT proveedor, numero_factura, fecha_vencimiento, "
-                    "monto_original, monto_pendiente, estado "
-                    "FROM demo_cuentas_por_pagar WHERE monto_pendiente > 0 "
-                    "ORDER BY fecha_vencimiento"
-                )
-                sections.append("## Cuentas por Pagar Pendientes")
-                sections.append(self._format_table(payables))
-            except Exception:
-                pass
+        sections.append(self._format_summary(summary, f"Resumen Financiero - {label}"))
 
         if any(w in msg for w in ["cobrar", "morosidad", "vencid", "atras"]):
             data = build_overdue_receivables()
