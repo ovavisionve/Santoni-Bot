@@ -224,8 +224,8 @@ export default function ChatWindow({
         {/* Typing indicator with bouncing dots */}
         {isBusy && (
           <div className="flex gap-3 message-animate">
-            <div className="w-8 h-8 bg-santoni-600 rounded-full flex items-center justify-center shrink-0 p-1.5">
-              <img src="/santoni-logo.png" alt="Santoni" className="h-full w-auto brightness-0 invert" />
+            <div className="w-8 h-8 bg-santoni-600 rounded-full flex items-center justify-center shrink-0 text-xs font-bold text-white">
+              S
             </div>
             <div className="bg-white rounded-2xl rounded-tl-sm px-4 py-3 shadow-sm border border-gray-100">
               <div className="flex items-center gap-1.5">
