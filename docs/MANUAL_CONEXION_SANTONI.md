@@ -904,40 +904,28 @@ IDEMPIERE_DB_PASSWORD=ova2026*
 
 > **Recordatorio:** Estos valores solo funcionan cuando la VPN esta activa. En desarrollo local sin VPN, los agentes usan las tablas demo internas y no necesitan conectarse a iDempiere.
 
-### 5.2 Actualizar query_service.py para usar tablas reales
+### 5.2 El codigo ya esta preparado para dual-mode
 
-El archivo `backend/app/services/query_service.py` actualmente consulta tablas demo internas (`demo_facturas_venta`, `demo_clientes`, `demo_empleados`, etc.). Cuando tengas el mapeo de tablas de iDempiere completo (Fase 4), necesitas:
+**NO necesitas modificar archivos manualmente.** El sistema ya detecta automaticamente el entorno:
 
-1. Crear una nueva conexion a la base de datos de iDempiere (ya definida en `app/config.py` con las variables `IDEMPIERE_DB_*`)
-2. Crear funciones equivalentes que consulten las tablas de `adempiere.*` en vez de `demo_*`
-3. Agregar un switch basado en `APP_ENV` para que en desarrollo use datos demo y en produccion use iDempiere
+- `APP_ENV=development` → usa tablas demo (`demo_facturas_venta`, `demo_clientes`, etc.)
+- `APP_ENV=production` → usa tablas iDempiere (`adempiere.c_invoice`, `adempiere.c_bpartner`, etc.)
 
-**Ejemplo de como se veria la transicion para top clientes:**
+Los archivos clave ya estan listos:
 
-```python
-# ANTES (datos demo):
-# SELECT cl.nombre, SUM(f.monto_total)
-# FROM demo_facturas_venta f
-# JOIN demo_clientes cl ON cl.id = f.cliente_id
-# ...
+| Archivo | Estado |
+|---------|--------|
+| `backend/app/services/query_service.py` | Ya rutea automaticamente segun `APP_ENV` |
+| `backend/app/services/idempiere_queries.py` | Ya tiene queries para los 7 agentes (basadas en schema estandar iDempiere) |
+| `backend/app/config.py` | Ya tiene `idempiere_database_url` |
+| `backend/app/database.py` | Ya tiene `IdempiereSession` con read-only enforced |
+| `backend/app/agents/*.py` | No necesitan cambios (importan de query_service, que rutea solo) |
 
-# DESPUES (datos reales de iDempiere):
-# SELECT bp.name AS nombre, SUM(i.grandtotal) AS total_facturado
-# FROM adempiere.c_invoice i
-# JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id
-# WHERE i.issotrx = 'Y' AND i.docstatus = 'CO' AND i.isactive = 'Y'
-# GROUP BY bp.name
-# ORDER BY total_facturado DESC
-# LIMIT :limit
-```
+**Lo unico que necesitas hacer despues de la Fase 4 (mapeo):**
 
-**Archivos a modificar:**
-| Archivo | Que cambiar |
-|---------|-------------|
-| `backend/app/services/query_service.py` | Agregar funciones que consulten iDempiere en vez de tablas demo |
-| `backend/app/config.py` | Verificar que la configuracion de conexion a iDempiere esta definida |
-| `backend/app/database.py` | Agregar un segundo `SessionLocal` para la conexion a iDempiere (si no existe) |
-| `backend/app/agents/*.py` | Actualizar las llamadas a query_service para usar las funciones de iDempiere |
+1. Si encuentras tablas personalizadas de Santoni (ej: tablas de productores con nombres distintos), actualizar las queries en `idempiere_queries.py`
+2. Si alguna columna tiene un nombre diferente al estandar, ajustar en `idempiere_queries.py`
+3. Las queries de `idempiere_queries.py` tienen comentarios `# TODO` marcando lo que necesita validacion
 
 ### 5.3 Probar cada agente con datos reales
 
@@ -1168,7 +1156,8 @@ GROQ_MODEL=llama-3.3-70b-versatile
 
 # Claude API (activar cuando este listo - ver Fase 7)
 ANTHROPIC_API_KEY=
-ANTHROPIC_MODEL=claude-sonnet-4-5-20250929
+ANTHROPIC_MODEL=claude-3-5-sonnet-20241022
+ANTHROPIC_BASE_URL=
 
 # ---- ChromaDB (Vector Database, en Docker) ----
 CHROMA_HOST=chromadb
@@ -1180,6 +1169,11 @@ NEXT_PUBLIC_APP_NAME=SantoniBot
 
 # ---- Nginx / Domain ----
 DOMAIN=192.168.1.26
+
+# ---- Sentry (opcional, monitoreo de errores) ----
+SENTRY_DSN=
+SENTRY_TRACES_SAMPLE_RATE=0.1
+NEXT_PUBLIC_SENTRY_DSN=
 ```
 
 Guardar con **Ctrl+O**, Enter, **Ctrl+X**.
@@ -1206,10 +1200,11 @@ bash scripts/deploy.sh
 1. Verifica que Docker y Docker Compose estan instalados
 2. Verifica que el archivo `.env` existe
 3. Hace `git pull origin main` para traer los ultimos cambios
-4. Construye las imagenes Docker (`docker compose build --no-cache`)
-5. Detiene los contenedores existentes (`docker compose down`)
-6. Levanta los nuevos contenedores (`docker compose up -d`)
-7. Espera 10 segundos y verifica la salud de la API
+4. **Detecta automaticamente el entorno:** si `APP_ENV=production` en `.env`, usa `docker-compose.prod.yml` (sin bind mounts, 4 workers, limites de memoria)
+5. Construye las imagenes Docker (`docker compose build --no-cache`)
+6. Detiene los contenedores existentes (`docker compose down`)
+7. Levanta los nuevos contenedores (`docker compose up -d`)
+8. Espera 10 segundos y verifica la salud de la API
 
 **Resultado esperado al final del deploy:**
 ```
@@ -1220,12 +1215,13 @@ bash scripts/deploy.sh
 Access points:
   Frontend:  http://192.168.1.26
   API:       http://192.168.1.26:8000
-  API Docs:  http://192.168.1.26:8000/docs
 
 Default admin login:
   User: admin
   Pass: SantoniAdmin2026!
 ```
+
+> **Nota:** En produccion (`DEBUG=false`), la documentacion interactiva de la API (`/api/docs`) esta deshabilitada por seguridad. Solo esta disponible en desarrollo.
 
 **Verificar que todo esta corriendo:**
 ```bash
@@ -1548,7 +1544,8 @@ GROQ_MODEL=llama-3.3-70b-versatile
 
 # ---- Claude API (activar cuando este listo) ----
 ANTHROPIC_API_KEY=
-ANTHROPIC_MODEL=claude-sonnet-4-5-20250929
+ANTHROPIC_MODEL=claude-3-5-sonnet-20241022
+ANTHROPIC_BASE_URL=
 
 # ---- ChromaDB ----
 CHROMA_HOST=chromadb
@@ -1560,6 +1557,11 @@ NEXT_PUBLIC_APP_NAME=SantoniBot
 
 # ---- Nginx / Domain ----
 DOMAIN=192.168.1.26
+
+# ---- Sentry (opcional) ----
+SENTRY_DSN=
+SENTRY_TRACES_SAMPLE_RATE=0.1
+NEXT_PUBLIC_SENTRY_DSN=
 ```
 
 ---
@@ -1602,7 +1604,9 @@ Marca cada item cuando lo hayas completado:
 
 ### Fase 5: Configuracion
 - [ ] .env actualizado con credenciales de iDempiere
-- [ ] query_service.py actualizado para usar tablas reales
+- [x] query_service.py con dual-mode (demo/iDempiere) - ya implementado
+- [x] idempiere_queries.py con queries para los 7 agentes - ya implementado
+- [ ] Queries de iDempiere validadas contra tablas reales (pueden necesitar ajustes)
 - [ ] Cada agente probado con datos reales
 
 ### Fase 6: Despliegue
@@ -1647,4 +1651,5 @@ Marca cada item cuando lo hayas completado:
 
 | Fecha | Cambio |
 |-------|--------|
+| 2026-02-18 | Fase 5.2 actualizada: query_service.py ya tiene dual-mode implementado (no requiere cambios manuales). Templates .env corregidos: ANTHROPIC_MODEL fijo a claude-3-5-sonnet-20241022, agregadas ANTHROPIC_BASE_URL y SENTRY_*. Fase 6.4: deploy.sh ahora auto-detecta produccion y usa docker-compose.prod.yml. Quitada referencia a /api/docs en produccion. |
 | 2026-02-10 | Reescritura completa con detalle de 7 fases, queries de exploracion por departamento, troubleshooting, y template .env |
