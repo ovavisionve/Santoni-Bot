@@ -198,14 +198,14 @@ def export_to_pdf(content: str, agent_used: str | None = None) -> bytes:
         "SantoniTitle",
         parent=styles["Title"],
         fontSize=18,
-        textColor=colors.HexColor("#E06400"),
+        textColor=colors.HexColor("#042387"),
         spaceAfter=6,
     )
     subtitle_style = ParagraphStyle(
         "SantoniSubtitle",
         parent=styles["Heading2"],
         fontSize=12,
-        textColor=colors.HexColor("#E06400"),
+        textColor=colors.HexColor("#042387"),
         spaceAfter=6,
     )
     normal_style = ParagraphStyle(
@@ -243,14 +243,14 @@ def export_to_pdf(content: str, agent_used: str | None = None) -> bytes:
             t.setStyle(
                 TableStyle(
                     [
-                        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#E06400")),
+                        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#042387")),
                         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
                         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
                         ("FONTSIZE", (0, 0), (-1, 0), 9),
                         ("FONTSIZE", (0, 1), (-1, -1), 8),
                         ("ALIGN", (0, 0), (-1, 0), "CENTER"),
                         ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-                        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#FFF5EB")]),
+                        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#EEF2FF")]),
                         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                         ("TOPPADDING", (0, 0), (-1, -1), 4),
                         ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
@@ -269,4 +269,75 @@ def export_to_pdf(content: str, agent_used: str | None = None) -> bytes:
                 elements.append(Paragraph(clean, normal_style))
 
     doc.build(elements)
+    return output.getvalue()
+
+
+def export_to_docx(content: str, agent_used: str | None = None) -> bytes:
+    """Export chat response content to Word (.docx)."""
+    from docx import Document
+    from docx.shared import Pt, Inches, RGBColor
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.enum.table import WD_TABLE_ALIGNMENT
+
+    doc = Document()
+
+    # Styles
+    brand_color = RGBColor(0x04, 0x23, 0x87)
+
+    # Title
+    title = doc.add_heading("SantoniBot - Reporte", level=1)
+    for run in title.runs:
+        run.font.color.rgb = brand_color
+
+    # Subtitle
+    sub = doc.add_paragraph()
+    sub.add_run(f"Agente: {agent_used or 'General'}").bold = True
+    sub.add_run(f"  |  Fecha: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+    doc.add_paragraph()
+
+    tables = _extract_tables_from_markdown(content)
+
+    if tables:
+        for table_data in tables:
+            if table_data["title"]:
+                h = doc.add_heading(table_data["title"], level=2)
+                for run in h.runs:
+                    run.font.color.rgb = brand_color
+
+            # Create table
+            rows = [table_data["headers"]] + table_data["rows"]
+            tbl = doc.add_table(rows=len(rows), cols=len(table_data["headers"]))
+            tbl.style = "Light Grid Accent 1"
+            tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
+
+            for i, row in enumerate(rows):
+                for j, cell_val in enumerate(row):
+                    cell = tbl.cell(i, j)
+                    cell.text = cell_val
+                    for paragraph in cell.paragraphs:
+                        paragraph.paragraph_format.space_after = Pt(2)
+                        for run in paragraph.runs:
+                            run.font.size = Pt(9)
+                            if i == 0:
+                                run.bold = True
+
+            doc.add_paragraph()
+    else:
+        for line in content.split("\n"):
+            clean = line.strip()
+            if clean.startswith("##"):
+                h = doc.add_heading(clean.lstrip("#").strip(), level=2)
+                for run in h.runs:
+                    run.font.color.rgb = brand_color
+            elif clean.startswith("#"):
+                h = doc.add_heading(clean.lstrip("#").strip(), level=1)
+                for run in h.runs:
+                    run.font.color.rgb = brand_color
+            elif clean.startswith("- ") or clean.startswith("* "):
+                doc.add_paragraph(clean[2:], style="List Bullet")
+            elif clean:
+                doc.add_paragraph(clean)
+
+    output = io.BytesIO()
+    doc.save(output)
     return output.getvalue()

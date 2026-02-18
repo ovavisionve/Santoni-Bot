@@ -3,13 +3,13 @@
 import { useState, useRef, useEffect } from "react";
 import type { Message, User } from "@/types";
 import ChatMessage from "./ChatMessage";
-import { Send, Menu, Keyboard } from "lucide-react";
+import { Send, Menu, Keyboard, Paperclip, X, FileText } from "lucide-react";
 
 interface ChatWindowProps {
   messages: Message[];
   user: User;
   isLoading: boolean;
-  onSendMessage: (content: string) => Promise<void>;
+  onSendMessage: (content: string, file?: File) => Promise<void>;
   onToggleSidebar: () => void;
 }
 
@@ -88,8 +88,10 @@ export default function ChatWindow({
 }: ChatWindowProps) {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  const [attachedFile, setAttachedFile] = useState<File | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Auto-scroll to bottom when new messages arrive or loading state changes
   useEffect(() => {
@@ -101,14 +103,35 @@ export default function ChatWindow({
     const trimmed = input.trim();
     if (!trimmed || sending || isLoading) return;
 
+    const fileToSend = attachedFile;
     setInput("");
+    setAttachedFile(null);
     setSending(true);
     try {
-      await onSendMessage(trimmed);
+      await onSendMessage(trimmed, fileToSend || undefined);
     } finally {
       setSending(false);
       inputRef.current?.focus();
     }
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    // 10MB limit
+    if (file.size > 10 * 1024 * 1024) {
+      alert("El archivo es muy grande. Máximo 10MB.");
+      return;
+    }
+    setAttachedFile(file);
+    // Reset input so same file can be re-selected
+    e.target.value = "";
+  };
+
+  const formatFileSize = (bytes: number): string => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -222,17 +245,57 @@ export default function ChatWindow({
 
       {/* Input */}
       <div className="border-t border-gray-200 bg-white p-4">
+        {/* File attachment preview */}
+        {attachedFile && (
+          <div className="max-w-4xl mx-auto mb-2">
+            <div className="inline-flex items-center gap-2 bg-santoni-50 border border-santoni-200 rounded-lg px-3 py-1.5 text-sm">
+              <FileText size={14} className="text-santoni-600" />
+              <span className="text-gray-700 truncate max-w-[200px]">
+                {attachedFile.name}
+              </span>
+              <span className="text-gray-400 text-xs">
+                ({formatFileSize(attachedFile.size)})
+              </span>
+              <button
+                onClick={() => setAttachedFile(null)}
+                className="text-gray-400 hover:text-red-500 transition-colors ml-1"
+                title="Quitar archivo"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          </div>
+        )}
+
         <form
           onSubmit={handleSubmit}
           className="flex items-end gap-2 max-w-4xl mx-auto"
         >
+          {/* Attach file button */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            className="hidden"
+            accept=".pdf,.xlsx,.xls,.csv,.txt,.doc,.docx,.png,.jpg,.jpeg,.gif,.webp"
+            onChange={handleFileSelect}
+          />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isBusy}
+            className="p-3 rounded-xl text-gray-400 hover:text-santoni-600 hover:bg-santoni-50 transition-colors disabled:opacity-50"
+            title="Adjuntar documento"
+          >
+            <Paperclip size={18} />
+          </button>
+
           <div className="flex-1 relative">
             <textarea
               ref={inputRef}
               value={input}
               onChange={handleInputChange}
               onKeyDown={handleKeyDown}
-              placeholder="Escribe tu consulta..."
+              placeholder={attachedFile ? "Escribe tu consulta sobre el documento..." : "Escribe tu consulta..."}
               rows={1}
               className="input-field resize-none pr-4 max-h-32"
               style={{ minHeight: "44px" }}

@@ -19,6 +19,7 @@ from app.database import get_db
 from app.middleware.auth import get_current_user
 from app.models.user import User
 from app.config import get_settings
+from app.services.llm_factory import is_claude_available
 
 logger = logging.getLogger("santonibot.documents")
 
@@ -84,8 +85,8 @@ async def upload_document(
         current_user.username,
     )
 
-    # Determine capabilities based on provider
-    can_analyze = settings.ai_provider == "anthropic" and settings.anthropic_api_key
+    # Determine capabilities based on Claude availability (hybrid mode)
+    can_analyze = is_claude_available()
 
     return {
         "file_id": safe_name,
@@ -112,8 +113,8 @@ def get_document_capabilities(
     return {
         "provider": settings.ai_provider,
         "can_upload": True,
-        "can_analyze_documents": settings.ai_provider == "anthropic",
-        "can_analyze_images": settings.ai_provider == "anthropic",
+        "can_analyze_documents": is_claude_available(),
+        "can_analyze_images": is_claude_available(),
         "supported_formats": sorted(ALLOWED_EXTENSIONS),
         "max_file_size_mb": MAX_FILE_SIZE / 1024 / 1024,
     }

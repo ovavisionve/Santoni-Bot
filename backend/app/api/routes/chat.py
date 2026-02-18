@@ -68,12 +68,21 @@ async def send_message(
         .all()
     )
 
+    # Read attached document if present
+    document = None
+    if data.file_id:
+        from app.services.document_service import read_document
+        document = read_document(data.file_id)
+        if document:
+            logger.info("Document attached: %s (%s)", document.get("filename"), document["type"])
+
     # Process through orchestrator
     try:
         result = await orchestrator.process(
             message=data.message,
             user=current_user,
             history=[(m.role.value, m.content) for m in history[:-1]],
+            document=document,
         )
     except Exception as exc:
         logger.error(

@@ -113,13 +113,49 @@ class ApiClient {
     return this.request<import("@/types").User>("/api/auth/me");
   }
 
+  // Documents
+  async uploadDocument(file: File): Promise<{
+    file_id: string;
+    filename: string;
+    size: number;
+    extension: string;
+    can_analyze_full: boolean;
+    message: string;
+  }> {
+    const token = this.getToken();
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const response = await fetch(`${API_BASE}/api/documents/upload`, {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: formData,
+    });
+
+    if (response.status === 401) {
+      this.setToken(null);
+      if (typeof window !== "undefined") {
+        window.location.href = "/login";
+      }
+      throw new Error("No autorizado");
+    }
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.detail || `Error ${response.status}`);
+    }
+
+    return response.json();
+  }
+
   // Chat
-  async sendMessage(message: string, conversationId?: number) {
+  async sendMessage(message: string, conversationId?: number, fileId?: string) {
     return this.request<import("@/types").ChatResponse>("/api/chat/", {
       method: "POST",
       body: JSON.stringify({
         message,
         conversation_id: conversationId || null,
+        file_id: fileId || null,
       }),
     });
   }

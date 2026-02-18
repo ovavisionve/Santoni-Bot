@@ -9,6 +9,7 @@ import {
   FileText,
   Table2,
   FileSpreadsheet,
+  FileType,
   Copy,
   Check,
   BarChart3,
@@ -37,7 +38,7 @@ function downloadExport(messageId: number, format: string) {
       return res.blob();
     })
     .then((blob) => {
-      const ext = format === "excel" ? "xlsx" : format;
+      const ext = format === "excel" ? "xlsx" : format === "docx" ? "docx" : format;
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
       a.download = `santonibot_reporte.${ext}`;
@@ -441,6 +442,13 @@ export default function ChatMessage({
                 title="Exportar PDF"
               >
                 <FileText size={14} />
+              </button>
+              <button
+                onClick={() => downloadExport(message.id, "docx")}
+                className="text-xs text-gray-400 hover:text-blue-600 transition-colors px-1"
+                title="Exportar Word"
+              >
+                <FileType size={14} />
               </button>
             </div>
           )}

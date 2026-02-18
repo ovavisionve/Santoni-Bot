@@ -6,7 +6,7 @@ This is the central brain of SantoniBot that decides which specialist handles ea
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.config import get_settings
-from app.services.llm_factory import create_llm
+from app.services.llm_factory import create_llm, is_claude_available
 from app.models.user import User
 from app.agents.finanzas import FinanzasAgent
 from app.agents.contabilidad import ContabilidadAgent
@@ -87,8 +87,24 @@ class Orchestrator:
         message: str,
         user: User,
         history: list[tuple[str, str]] | None = None,
+        document: dict | None = None,
     ) -> dict:
         """Process a user message through the appropriate agent."""
+
+        # If a document is attached and Claude is available, use document analysis
+        if document and is_claude_available():
+            return await self._handle_document(message, document, history)
+
+        if document and not is_claude_available():
+            return {
+                "response": (
+                    "Se adjuntó un documento pero el análisis de documentos requiere "
+                    "la API de Claude (Anthropic). Contacta al administrador para configurarla."
+                ),
+                "agent_used": "orchestrator",
+                "metadata": {"classification": "document_no_claude"},
+            }
+
         allowed = user.allowed_departments
 
         # Classify the query
@@ -130,6 +146,79 @@ class Orchestrator:
             user_departments=allowed,
         )
         return result
+
+    async def _handle_document(
+        self,
+        message: str,
+        document: dict,
+        history: list[tuple[str, str]] | None,
+    ) -> dict:
+        """Analyze an attached document using Claude."""
+        from langchain_core.messages import AIMessage
+
+        claude_llm = create_llm(
+            temperature=0.1,
+            max_tokens=4096,
+            purpose="document_analysis",
+            provider="anthropic",
+        )
+
+        system_msg = SystemMessage(
+            content=(
+                "Eres SantoniBot, el asistente inteligente de Alimentos Santoni, C.A. "
+                "El usuario te ha adjuntado un documento para análisis. "
+                "Analiza el contenido detalladamente y responde la consulta del usuario. "
+                "Si hay tablas o datos numéricos, preséntalos en formato de tabla markdown. "
+                "Responde siempre en español."
+            )
+        )
+
+        messages = [system_msg]
+
+        if history:
+            for role, content in history[-4:]:
+                if role == "user":
+                    messages.append(HumanMessage(content=content))
+                elif role == "assistant":
+                    messages.append(AIMessage(content=content))
+
+        # Build the user message with document content
+        if document["type"] == "image":
+            # Multimodal: image + text
+            user_content = [
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:{document['mime_type']};base64,{document['content']}"
+                    },
+                },
+                {"type": "text", "text": message or "Analiza esta imagen."},
+            ]
+            messages.append(HumanMessage(content=user_content))
+        else:
+            # Text document: include content in the message
+            doc_text = document["content"]
+            # Truncate very long documents
+            if len(doc_text) > 30000:
+                doc_text = doc_text[:30000] + "\n\n... (documento truncado por tamaño)"
+            user_text = (
+                f"DOCUMENTO ADJUNTO ({document.get('filename', 'archivo')}):\n"
+                f"---\n{doc_text}\n---\n\n"
+                f"Consulta del usuario: {message or 'Analiza este documento.'}"
+            )
+            messages.append(HumanMessage(content=user_text))
+
+        response = await claude_llm.ainvoke(messages)
+
+        return {
+            "response": response.content,
+            "agent_used": "document_analysis",
+            "metadata": {
+                "classification": "document",
+                "provider": "anthropic",
+                "filename": document.get("filename"),
+            },
+        }
 
     async def _handle_general(
         self, message: str, history: list[tuple[str, str]] | None

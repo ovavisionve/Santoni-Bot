@@ -6,7 +6,7 @@ from app.database import get_db
 from app.middleware.auth import get_current_user
 from app.models.user import User
 from app.models.conversation import Message
-from app.services.export_service import export_to_csv, export_to_excel, export_to_pdf
+from app.services.export_service import export_to_csv, export_to_excel, export_to_pdf, export_to_docx
 
 router = APIRouter(prefix="/export", tags=["Exportación"])
 
@@ -14,7 +14,7 @@ router = APIRouter(prefix="/export", tags=["Exportación"])
 @router.get("/message/{message_id}")
 def export_message(
     message_id: int,
-    format: str = Query(..., regex="^(csv|excel|pdf)$"),
+    format: str = Query(..., regex="^(csv|excel|pdf|docx)$"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -69,5 +69,14 @@ def export_message(
             media_type="application/pdf",
             headers={
                 "Content-Disposition": f'attachment; filename="santonibot_reporte.pdf"'
+            },
+        )
+    elif format == "docx":
+        data = export_to_docx(content, agent)
+        return Response(
+            content=data,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={
+                "Content-Disposition": f'attachment; filename="santonibot_reporte.docx"'
             },
         )

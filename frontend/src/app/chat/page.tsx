@@ -82,18 +82,21 @@ export default function ChatPage() {
     firstUserMessageRef.current = null;
   };
 
-  const handleSendMessage = async (content: string) => {
+  const handleSendMessage = async (content: string, file?: File) => {
     // Track if this is the first message for auto-title
     const isFirstMessage = isNewConversationRef.current && messages.length === 0;
     if (isFirstMessage) {
       firstUserMessageRef.current = content;
     }
 
-    // Optimistically add user message
+    // Optimistically add user message (show file name if attached)
+    const displayContent = file
+      ? `${content}\n\n📎 ${file.name}`
+      : content;
     const userMsg: Message = {
       id: Date.now(),
       role: "user",
-      content,
+      content: displayContent,
       agent_used: null,
       created_at: new Date().toISOString(),
     };
@@ -101,9 +104,34 @@ export default function ChatPage() {
     setIsLoading(true);
 
     try {
+      // Upload file first if attached
+      let fileId: string | undefined;
+      if (file) {
+        try {
+          const uploadResult = await api.uploadDocument(file);
+          fileId = uploadResult.file_id;
+        } catch (err: unknown) {
+          let detail = "Error al subir archivo";
+          if (err && typeof err === "object" && "message" in err) {
+            detail = (err as { message: string }).message;
+          }
+          const errorMsg: Message = {
+            id: Date.now() + 1,
+            role: "assistant",
+            content: `Error al adjuntar documento: ${detail}`,
+            agent_used: null,
+            created_at: new Date().toISOString(),
+          };
+          setMessages((prev) => [...prev, errorMsg]);
+          setIsLoading(false);
+          return;
+        }
+      }
+
       const response = await api.sendMessage(
         content,
-        activeConversationId ?? undefined
+        activeConversationId ?? undefined,
+        fileId
       );
 
       // Update conversation ID if new
