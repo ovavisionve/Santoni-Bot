@@ -44,7 +44,7 @@ class Settings(BaseSettings):
     groq_api_key: str = ""
     groq_model: str = "llama-3.3-70b-versatile"
     anthropic_api_key: str = ""
-    anthropic_model: str = "claude-sonnet-4-5-20250929"
+    anthropic_model: str = "claude-3-5-sonnet-20241022"
 
     # ChromaDB
     chroma_host: str = "chromadb"

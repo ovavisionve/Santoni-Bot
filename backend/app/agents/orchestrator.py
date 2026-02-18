@@ -208,7 +208,24 @@ class Orchestrator:
             )
             messages.append(HumanMessage(content=user_text))
 
-        response = await claude_llm.ainvoke(messages)
+        try:
+            response = await claude_llm.ainvoke(messages)
+        except Exception as e:
+            error_str = str(e)
+            if "403" in error_str or "forbidden" in error_str.lower():
+                return {
+                    "response": (
+                        "Error de permisos con la API de Claude. "
+                        "Verifica que el modelo configurado (ANTHROPIC_MODEL) "
+                        "sea compatible con tu plan. "
+                        "Modelo recomendado: `claude-3-5-sonnet-20241022`. "
+                        "Después de cambiar el .env, reinicia el backend: "
+                        "`docker compose up -d backend`"
+                    ),
+                    "agent_used": "orchestrator",
+                    "metadata": {"classification": "document_error", "error": error_str},
+                }
+            raise
 
         return {
             "response": response.content,
