@@ -201,12 +201,15 @@ class Orchestrator:
             try:
                 from langchain_anthropic import ChatAnthropic
 
-                claude_llm = ChatAnthropic(
-                    api_key=get_settings().anthropic_api_key,
-                    model=get_settings().anthropic_model,
-                    temperature=0.1,
-                    max_tokens=4096,
-                )
+                claude_kwargs: dict = {
+                    "api_key": get_settings().anthropic_api_key,
+                    "model": get_settings().anthropic_model,
+                    "temperature": 0.1,
+                    "max_tokens": 4096,
+                }
+                if get_settings().anthropic_base_url:
+                    claude_kwargs["anthropic_api_url"] = get_settings().anthropic_base_url
+                claude_llm = ChatAnthropic(**claude_kwargs)
                 log.info("Trying Claude (%s) for document analysis", get_settings().anthropic_model)
                 response = await claude_llm.ainvoke(msgs)
                 log.info("Claude document analysis succeeded")

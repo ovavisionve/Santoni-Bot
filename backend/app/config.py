@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     groq_model: str = "llama-3.3-70b-versatile"
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-3-5-sonnet-20241022"
+    anthropic_base_url: str = ""  # Proxy URL for Claude API (e.g., Cloudflare Worker)
 
     # ChromaDB
     chroma_host: str = "chromadb"

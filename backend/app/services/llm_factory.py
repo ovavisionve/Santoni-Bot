@@ -49,13 +49,21 @@ def create_llm(
     if chosen == "anthropic":
         from langchain_anthropic import ChatAnthropic
 
-        logger.info("Using Anthropic Claude (%s) for %s", settings.anthropic_model, purpose)
-        return ChatAnthropic(
-            api_key=settings.anthropic_api_key,
-            model=settings.anthropic_model,
-            temperature=temperature,
-            max_tokens=max_tokens,
-        )
+        kwargs: dict = {
+            "api_key": settings.anthropic_api_key,
+            "model": settings.anthropic_model,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+        if settings.anthropic_base_url:
+            kwargs["anthropic_api_url"] = settings.anthropic_base_url
+            logger.info(
+                "Using Anthropic Claude (%s) via proxy %s for %s",
+                settings.anthropic_model, settings.anthropic_base_url, purpose,
+            )
+        else:
+            logger.info("Using Anthropic Claude (%s) for %s", settings.anthropic_model, purpose)
+        return ChatAnthropic(**kwargs)
     else:
         from langchain_groq import ChatGroq
 
