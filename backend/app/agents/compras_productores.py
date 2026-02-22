@@ -65,7 +65,7 @@ IMPORTANTE SOBRE PERÍODOS:
 Tablas: demo_productores, demo_compras_productores
 """
 
-    def fetch_data(self, message: str, org_ids: list[int] | None = None) -> str | None:
+    def fetch_data(self, message: str, org_ids: list[int] | None = None, salesrep_id: int | None = None) -> str | None:
         msg = message.lower()
         sections = []
 

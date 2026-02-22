@@ -62,7 +62,7 @@ IMPORTANTE SOBRE PERÍODOS:
 Tablas: demo_cuentas_bancarias, demo_movimientos_bancarios, demo_cuentas_por_pagar
 """
 
-    def fetch_data(self, message: str, org_ids: list[int] | None = None) -> str | None:
+    def fetch_data(self, message: str, org_ids: list[int] | None = None, salesrep_id: int | None = None) -> str | None:
         msg = message.lower()
         sections = []
 

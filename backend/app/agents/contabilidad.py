@@ -59,7 +59,7 @@ IMPORTANTE SOBRE PERÍODOS:
 Datos contables provienen de fact_acct (hechos contables) y c_elementvalue (plan de cuentas) en iDempiere.
 """
 
-    def fetch_data(self, message: str, org_ids: list[int] | None = None) -> str | None:
+    def fetch_data(self, message: str, org_ids: list[int] | None = None, salesrep_id: int | None = None) -> str | None:
         msg = message.lower()
         sections = []
 
