@@ -11,6 +11,7 @@ class UserRole(str, enum.Enum):
     USUARIO = "usuario"
     SUPERVISOR = "supervisor"
     ADMINISTRADOR = "administrador"
+    VENDEDOR = "vendedor"
 
 
 class Department(str, enum.Enum):
@@ -44,6 +45,11 @@ class User(Base):
     allowed_org_ids: Mapped[str | None] = mapped_column(
         String(500), nullable=True
     )
+    # iDempiere salesrep ID (c_bpartner_id of the salesperson)
+    # Used for VENDEDOR role to filter sales data to their own
+    idempiere_salesrep_id: Mapped[int | None] = mapped_column(
+        Integer, nullable=True
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     totp_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
     totp_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -66,9 +72,11 @@ class User(Base):
     @property
     def allowed_departments(self) -> list[str]:
         """Return all departments this user can access."""
-        deps = [self.department.value]
         if self.role == UserRole.ADMINISTRADOR:
             return [d.value for d in Department]
+        if self.role == UserRole.VENDEDOR:
+            return ["ventas"]
+        deps = [self.department.value]
         if self.extra_departments:
             deps.extend(
                 d.strip() for d in self.extra_departments.split(",") if d.strip()

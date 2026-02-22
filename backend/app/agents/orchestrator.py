@@ -136,6 +136,7 @@ class Orchestrator:
             history=history,
             user_departments=allowed,
             org_ids=user.org_ids,
+            salesrep_id=user.idempiere_salesrep_id,
         )
         return result
 

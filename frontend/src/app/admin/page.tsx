@@ -39,6 +39,7 @@ const ROLE_LABELS: Record<string, string> = {
   usuario: "Usuario",
   supervisor: "Supervisor",
   administrador: "Administrador",
+  vendedor: "Vendedor",
 };
 
 export default function AdminPage() {
@@ -56,8 +57,10 @@ export default function AdminPage() {
     role: "usuario",
     department: "ventas",
     allowed_org_ids: "" as string,
+    idempiere_salesrep_id: null as number | null,
   });
   const [organizations, setOrganizations] = useState<Organization[]>([]);
+  const [salesreps, setSalesreps] = useState<{ id: number; name: string }[]>([]);
   const [auditLogs, setAuditLogs] = useState<
     Array<{
       id: number;
@@ -91,12 +94,14 @@ export default function AdminPage() {
         const s = await api.getStats();
         setStats(s);
       } else if (tab === "users") {
-        const [u, orgs] = await Promise.all([
+        const [u, orgs, reps] = await Promise.all([
           api.getUsers(),
           api.getOrganizations().catch(() => [] as Organization[]),
+          api.getSalesreps().catch(() => [] as { id: number; name: string }[]),
         ]);
         setUsers(u);
         setOrganizations(orgs);
+        setSalesreps(reps);
       } else if (tab === "logs") {
         const l = await api.getAuditLogs();
         setAuditLogs(l.data);
@@ -112,6 +117,7 @@ export default function AdminPage() {
       const payload = {
         ...newUser,
         allowed_org_ids: newUser.allowed_org_ids || null,
+        idempiere_salesrep_id: newUser.idempiere_salesrep_id || null,
       };
       await api.createUser(payload);
       setShowCreateUser(false);
@@ -123,6 +129,7 @@ export default function AdminPage() {
         role: "usuario",
         department: "ventas",
         allowed_org_ids: "",
+        idempiere_salesrep_id: null,
       });
       loadData();
     } catch (err) {
@@ -388,6 +395,35 @@ export default function AdminPage() {
                         );
                       })}
                     </div>
+                  </div>
+                )}
+                {newUser.role === "vendedor" && salesreps.length > 0 && (
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-gray-700">
+                      Vendedor en iDempiere
+                    </label>
+                    <p className="text-xs text-gray-400">
+                      Selecciona el vendedor de iDempiere que corresponde a este usuario. Solo verá SUS ventas.
+                    </p>
+                    <select
+                      value={newUser.idempiere_salesrep_id ?? ""}
+                      onChange={(e) =>
+                        setNewUser({
+                          ...newUser,
+                          idempiere_salesrep_id: e.target.value
+                            ? Number(e.target.value)
+                            : null,
+                        })
+                      }
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-santoni-500 focus:border-santoni-500"
+                    >
+                      <option value="">-- Seleccionar vendedor --</option>
+                      {salesreps.map((rep) => (
+                        <option key={rep.id} value={rep.id}>
+                          {rep.name}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 )}
                 <div className="flex gap-2">

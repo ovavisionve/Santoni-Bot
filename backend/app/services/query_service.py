@@ -145,11 +145,12 @@ def build_sales_summary(
     mes: int | None = None,
     anio: int | None = None,
     org_ids: list[int] | None = None,
+    salesrep_id: int | None = None,
 ) -> dict:
     """Sales summary - routes to demo or iDempiere."""
     if _is_production():
         from app.services.idempiere_queries import build_sales_summary as _prod
-        return _prod(zona=zona, vendedor=vendedor, mes=mes, anio=anio, org_ids=org_ids)
+        return _prod(zona=zona, vendedor=vendedor, mes=mes, anio=anio, org_ids=org_ids, salesrep_id=salesrep_id)
 
     db = SessionLocal()
     try:
@@ -234,11 +235,12 @@ def build_collection_summary(
     mes: int | None = None,
     anio: int | None = None,
     org_ids: list[int] | None = None,
+    salesrep_id: int | None = None,
 ) -> dict:
     """Collection summary - routes to demo or iDempiere."""
     if _is_production():
         from app.services.idempiere_queries import build_collection_summary as _prod
-        return _prod(zona=zona, vendedor=vendedor, mes=mes, anio=anio, org_ids=org_ids)
+        return _prod(zona=zona, vendedor=vendedor, mes=mes, anio=anio, org_ids=org_ids, salesrep_id=salesrep_id)
 
     db = SessionLocal()
     try:
@@ -307,11 +309,12 @@ def build_top_clients(
     vendedor: str | None = None,
     anio: int | None = None,
     org_ids: list[int] | None = None,
+    salesrep_id: int | None = None,
 ) -> list[dict]:
     """Top clients - routes to demo or iDempiere."""
     if _is_production():
         from app.services.idempiere_queries import build_top_clients as _prod
-        return _prod(limit=limit, zona=zona, vendedor=vendedor, anio=anio, org_ids=org_ids)
+        return _prod(limit=limit, zona=zona, vendedor=vendedor, anio=anio, org_ids=org_ids, salesrep_id=salesrep_id)
 
     db = SessionLocal()
     try:
@@ -358,11 +361,11 @@ def build_top_clients(
         db.close()
 
 
-def build_overdue_receivables(org_ids: list[int] | None = None) -> list[dict]:
+def build_overdue_receivables(org_ids: list[int] | None = None, salesrep_id: int | None = None) -> list[dict]:
     """Overdue receivables - routes to demo or iDempiere."""
     if _is_production():
         from app.services.idempiere_queries import build_overdue_receivables as _prod
-        return _prod(org_ids=org_ids)
+        return _prod(org_ids=org_ids, salesrep_id=salesrep_id)
 
     db = SessionLocal()
     try:

@@ -3,10 +3,11 @@ export interface User {
   email: string;
   username: string;
   full_name: string;
-  role: "usuario" | "supervisor" | "administrador";
+  role: "usuario" | "supervisor" | "administrador" | "vendedor";
   department: string;
   extra_departments: string | null;
   allowed_org_ids: string | null;
+  idempiere_salesrep_id: number | null;
   is_active: boolean;
   totp_enabled: boolean;
   created_at: string;

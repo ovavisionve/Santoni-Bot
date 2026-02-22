@@ -201,6 +201,7 @@ class ApiClient {
     role: string;
     department: string;
     allowed_org_ids?: string | null;
+    idempiere_salesrep_id?: number | null;
   }) {
     return this.request<import("@/types").User>("/api/users/", {
       method: "POST",
@@ -211,6 +212,12 @@ class ApiClient {
   async getOrganizations() {
     return this.request<import("@/types").Organization[]>(
       "/api/users/organizations"
+    );
+  }
+
+  async getSalesreps() {
+    return this.request<{ id: number; name: string }[]>(
+      "/api/users/salesreps"
     );
   }
 

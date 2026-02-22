@@ -78,12 +78,20 @@ def execute_idempiere_query(query: str, params: dict | None = None) -> list[dict
 # VENTAS (Sales)
 # ---------------------------------------------------------------------------
 
+def _add_salesrep_filter(conditions: list, params: dict, salesrep_id: int | None, alias: str = "i"):
+    """Add salesrep_id filter to conditions if provided."""
+    if salesrep_id:
+        conditions.append(f"{alias}.salesrep_id = :salesrep_id")
+        params["salesrep_id"] = salesrep_id
+
+
 def build_sales_summary(
     zona: str | None = None,
     vendedor: str | None = None,
     mes: int | None = None,
     anio: int | None = None,
     org_ids: list[int] | None = None,
+    salesrep_id: int | None = None,
 ) -> dict:
     """Sales summary from iDempiere c_invoice (issotrx='Y')."""
     db = IdempiereSession()
@@ -95,6 +103,7 @@ def build_sales_summary(
         ]
         params: dict = {}
         _add_org_filter(conditions, params, org_ids, "i")
+        _add_salesrep_filter(conditions, params, salesrep_id, "i")
 
         if anio:
             conditions.append("EXTRACT(YEAR FROM i.dateinvoiced) = :anio")
@@ -199,6 +208,7 @@ def build_collection_summary(
     mes: int | None = None,
     anio: int | None = None,
     org_ids: list[int] | None = None,
+    salesrep_id: int | None = None,
 ) -> dict:
     """Collection summary from iDempiere c_payment (isreceipt='Y')."""
     db = IdempiereSession()
@@ -210,6 +220,14 @@ def build_collection_summary(
         ]
         params: dict = {}
         _add_org_filter(conditions, params, org_ids, "p")
+        # Payments don't have salesrep_id directly; filter via linked invoice
+        if salesrep_id:
+            conditions.append(
+                "EXISTS (SELECT 1 FROM adempiere.c_allocationline al "
+                "JOIN adempiere.c_invoice inv ON al.c_invoice_id = inv.c_invoice_id "
+                "WHERE al.c_payment_id = p.c_payment_id AND inv.salesrep_id = :salesrep_id)"
+            )
+            params["salesrep_id"] = salesrep_id
 
         if anio:
             conditions.append("EXTRACT(YEAR FROM p.datetrx) = :anio")
@@ -283,6 +301,7 @@ def build_top_clients(
     vendedor: str | None = None,
     anio: int | None = None,
     org_ids: list[int] | None = None,
+    salesrep_id: int | None = None,
 ) -> list[dict]:
     """Top clients by invoiced amount from iDempiere."""
     db = IdempiereSession()
@@ -294,6 +313,7 @@ def build_top_clients(
         ]
         params: dict = {"limit": limit}
         _add_org_filter(conditions, params, org_ids, "i")
+        _add_salesrep_filter(conditions, params, salesrep_id, "i")
 
         if anio:
             conditions.append("EXTRACT(YEAR FROM i.dateinvoiced) = :anio")
@@ -335,7 +355,10 @@ def build_top_clients(
         db.close()
 
 
-def build_overdue_receivables(org_ids: list[int] | None = None) -> list[dict]:
+def build_overdue_receivables(
+    org_ids: list[int] | None = None,
+    salesrep_id: int | None = None,
+) -> list[dict]:
     """Overdue accounts receivable from iDempiere (unpaid sales invoices)."""
     db = IdempiereSession()
     try:
@@ -347,6 +370,10 @@ def build_overdue_receivables(org_ids: list[int] | None = None) -> list[dict]:
             org_clause = f"AND i.ad_org_id IN ({placeholders}) "
             for i, org_id in enumerate(org_ids):
                 org_params[f"org_{i}"] = org_id
+        salesrep_clause = ""
+        if salesrep_id:
+            salesrep_clause = "AND i.salesrep_id = :salesrep_id "
+            org_params["salesrep_id"] = salesrep_id
 
         q = text(
             "SELECT i.documentno AS numero_factura, bp.name AS cliente, "
@@ -364,6 +391,7 @@ def build_overdue_receivables(org_ids: list[int] | None = None) -> list[dict]:
             "WHERE i.issotrx = 'Y' AND i.docstatus = 'CO' AND i.ispaid = 'N' "
             "AND i.isactive = 'Y' "
             f"{org_clause}"
+            f"{salesrep_clause}"
             "AND (i.dateinvoiced + COALESCE(pterm.netdays, 30)) < CURRENT_DATE "
             "ORDER BY dias_vencido DESC "
             "LIMIT 50"

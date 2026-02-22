@@ -43,20 +43,57 @@ def create_user(
     if db.query(User).filter(User.username == data.username).first():
         raise HTTPException(status_code=400, detail="Username ya registrado")
 
+    # Vendedor role is locked to ventas department
+    dept = "ventas" if data.role == "vendedor" else data.department
+
     user = User(
         email=data.email,
         username=data.username,
         full_name=data.full_name,
         hashed_password=hash_password(data.password),
         role=UserRole(data.role),
-        department=Department(data.department),
+        department=Department(dept),
         extra_departments=data.extra_departments,
         allowed_org_ids=data.allowed_org_ids,
+        idempiere_salesrep_id=data.idempiere_salesrep_id,
     )
     db.add(user)
     db.commit()
     db.refresh(user)
     return user
+
+
+@router.get("/salesreps", tags=["Usuarios"])
+def list_salesreps(
+    admin: User = Depends(require_admin),
+):
+    """List salespeople from iDempiere for vendedor role assignment."""
+    try:
+        db = IdempiereSession()
+        try:
+            result = db.execute(
+                text(
+                    "SELECT DISTINCT i.salesrep_id AS id, bp.name "
+                    "FROM adempiere.c_invoice i "
+                    "JOIN adempiere.c_bpartner bp ON i.salesrep_id = bp.c_bpartner_id "
+                    "WHERE i.issotrx = 'Y' AND i.docstatus = 'CO' "
+                    "AND i.salesrep_id IS NOT NULL "
+                    "AND bp.isactive = 'Y' "
+                    "ORDER BY bp.name"
+                )
+            )
+            return [
+                {"id": r[0], "name": r[1]}
+                for r in result.fetchall()
+            ]
+        finally:
+            db.close()
+    except Exception as e:
+        logger.error("Error querying iDempiere salesreps: %s", e)
+        raise HTTPException(
+            status_code=503,
+            detail="No se pudo conectar a iDempiere para obtener los vendedores",
+        )
 
 
 @router.get("/organizations", tags=["Usuarios"])

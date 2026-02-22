@@ -34,6 +34,7 @@ class UserCreate(BaseModel):
     department: str
     extra_departments: str | None = None
     allowed_org_ids: str | None = None
+    idempiere_salesrep_id: int | None = None
 
     @field_validator("password")
     @classmethod
@@ -48,6 +49,7 @@ class UserUpdate(BaseModel):
     department: str | None = None
     extra_departments: str | None = None
     allowed_org_ids: str | None = None
+    idempiere_salesrep_id: int | None = None
     is_active: bool | None = None
 
 
@@ -70,6 +72,7 @@ class UserResponse(BaseModel):
     department: str
     extra_departments: str | None
     allowed_org_ids: str | None = None
+    idempiere_salesrep_id: int | None = None
     is_active: bool
     totp_enabled: bool = False
     created_at: datetime
