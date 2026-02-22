@@ -128,90 +128,88 @@ export default function ChatPage() {
         }
       }
 
-      const response = await api.sendMessage(
-        content,
-        activeConversationId ?? undefined,
-        fileId
-      );
+      // Use streaming for text queries, regular for file uploads
+      if (!fileId) {
+        // ── STREAMING MODE ──
+        const placeholderId = Date.now() + 1;
+        let streamedAgent: string | null = null;
 
-      // Update conversation ID if new
-      if (!activeConversationId) {
-        setActiveConversationId(response.conversation_id);
-      }
+        // Add placeholder assistant message
+        setMessages((prev) => [...prev, {
+          id: placeholderId,
+          role: "assistant" as const,
+          content: "",
+          agent_used: null,
+          created_at: new Date().toISOString(),
+        }]);
+        setIsLoading(false); // Hide spinner – tokens are visible now
 
-      // Add assistant message (use real DB ID for export)
-      const assistantMsg: Message = {
-        id: response.message_id,
-        role: "assistant",
-        content: response.message,
-        agent_used: response.agent_used,
-        created_at: new Date().toISOString(),
-      };
-      setMessages((prev) => [...prev, assistantMsg]);
-
-      // Auto-generate title for new conversations after first bot response
-      if (isFirstMessage && firstUserMessageRef.current) {
-        const autoTitle = generateAutoTitle(firstUserMessageRef.current);
-        // Try to update the title on the server
-        try {
-          await api.updateConversationTitle(
-            response.conversation_id,
-            autoTitle
-          );
-        } catch {
-          // If server update fails, we still update locally
-        }
-        // Update the conversation title in the sidebar list locally
-        setConversations((prev) => {
-          const existing = prev.find(
-            (c) => c.id === response.conversation_id
-          );
-          if (existing) {
-            return prev.map((c) =>
-              c.id === response.conversation_id
-                ? {
-                    ...c,
-                    title: autoTitle,
-                    last_message_preview: response.message.slice(0, 80),
-                    updated_at: new Date().toISOString(),
-                  }
-                : c
-            );
-          }
-          // New conversation - add it to the top
-          return [
-            {
-              id: response.conversation_id,
-              title: autoTitle,
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-              message_count: 2,
-              last_message_preview: response.message.slice(0, 80),
+        const result = await api.streamMessage(
+          content,
+          {
+            onToken: (token) => {
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === placeholderId
+                    ? { ...m, content: m.content + token }
+                    : m
+                )
+              );
             },
-            ...prev,
-          ];
-        });
+            onMeta: (meta) => {
+              if (!activeConversationId) {
+                setActiveConversationId(meta.conversation_id);
+              }
+              streamedAgent = meta.agent;
+            },
+            onError: (error) => {
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === placeholderId
+                    ? { ...m, content: m.content + `\n\nError: ${error}` }
+                    : m
+                )
+              );
+            },
+          },
+          activeConversationId ?? undefined,
+        );
 
-        isNewConversationRef.current = false;
-        firstUserMessageRef.current = null;
-      } else {
-        // Update the last message preview for existing conversations
-        setConversations((prev) =>
-          prev.map((c) =>
-            c.id === (activeConversationId || response.conversation_id)
-              ? {
-                  ...c,
-                  last_message_preview: response.message.slice(0, 80),
-                  updated_at: new Date().toISOString(),
-                  message_count: c.message_count + 2,
-                }
-              : c
+        // Update message with real DB id + agent
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === placeholderId
+              ? { ...m, id: result.message_id, agent_used: streamedAgent }
+              : m
           )
         );
-      }
 
-      // Refresh sidebar to get any server-side updates
-      loadConversations();
+        // Auto-title + sidebar update
+        await _updateSidebar(isFirstMessage, result.conversation_id, streamedAgent);
+
+      } else {
+        // ── REGULAR MODE (file upload) ──
+        const response = await api.sendMessage(
+          content,
+          activeConversationId ?? undefined,
+          fileId
+        );
+
+        if (!activeConversationId) {
+          setActiveConversationId(response.conversation_id);
+        }
+
+        const assistantMsg: Message = {
+          id: response.message_id,
+          role: "assistant",
+          content: response.message,
+          agent_used: response.agent_used,
+          created_at: new Date().toISOString(),
+        };
+        setMessages((prev) => [...prev, assistantMsg]);
+
+        await _updateSidebar(isFirstMessage, response.conversation_id, response.agent_used);
+      }
     } catch (err: unknown) {
       let detail = "Error desconocido";
       if (err && typeof err === "object" && "message" in err) {
@@ -229,6 +227,29 @@ export default function ChatPage() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  /** Helper: update sidebar after a bot response */
+  const _updateSidebar = async (isFirstMessage: boolean, convId: number, _agent: string | null) => {
+    if (isFirstMessage && firstUserMessageRef.current) {
+      const autoTitle = generateAutoTitle(firstUserMessageRef.current);
+      try { await api.updateConversationTitle(convId, autoTitle); } catch {}
+      setConversations((prev) => {
+        const existing = prev.find((c) => c.id === convId);
+        if (existing) {
+          return prev.map((c) =>
+            c.id === convId ? { ...c, title: autoTitle, updated_at: new Date().toISOString() } : c
+          );
+        }
+        return [
+          { id: convId, title: autoTitle, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), message_count: 2 },
+          ...prev,
+        ];
+      });
+      isNewConversationRef.current = false;
+      firstUserMessageRef.current = null;
+    }
+    loadConversations();
   };
 
   const handleDeleteConversation = async (id: number) => {

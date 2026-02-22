@@ -2,11 +2,13 @@
 Base class for all SantoniBot specialized agents.
 Each department agent inherits from this and implements its own
 system prompt, data fetching, and query processing logic.
+
+Supports both full-response (process) and streaming (stream) modes.
 """
 
-import json
 import logging
 from abc import ABC, abstractmethod
+from collections.abc import AsyncIterator
 
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 
@@ -16,13 +18,19 @@ from app.services.llm_factory import create_llm
 settings = get_settings()
 logger = logging.getLogger("santonibot.agents")
 
+# Performance limits
+_MAX_TABLE_ROWS = 25
+_MAX_HISTORY_MESSAGES = 4
+_MAX_TOKENS = 2048
+
+
 class BaseAgent(ABC):
     """Base agent for all department-specific agents."""
 
     def __init__(self):
         self.llm = create_llm(
             temperature=0.1,
-            max_tokens=4096,
+            max_tokens=_MAX_TOKENS,
             purpose="agent",
         )
         self._system_prompt = self.get_system_prompt()
@@ -70,14 +78,65 @@ class BaseAgent(ABC):
         """
         Fetch relevant data from the database based on the user's message.
         Override in subclasses to provide department-specific data fetching.
-        Returns a formatted string with the data, or None if no data found.
-
-        Args:
-            message: User's query text
-            org_ids: iDempiere organization IDs to filter by (None = all orgs)
-            salesrep_id: iDempiere salesrep ID for vendedor filtering (None = all)
         """
         return None
+
+    def _build_messages(
+        self,
+        message: str,
+        history: list[tuple[str, str]] | None = None,
+        org_ids: list[int] | None = None,
+        salesrep_id: int | None = None,
+    ) -> tuple[list, bool]:
+        """Build the LLM message list. Returns (messages, has_data)."""
+        messages = [SystemMessage(content=self._system_prompt)]
+
+        # RAG: retrieve relevant knowledge-base context (optional)
+        try:
+            from app.services.rag_service import get_rag_service
+            rag = get_rag_service()
+            rag_context = rag.get_context_for_agent(self.department, message)
+            if rag_context:
+                messages.append(SystemMessage(content=rag_context))
+        except Exception as exc:
+            logger.debug("RAG context unavailable for %s: %s", self.name, exc)
+
+        # Fetch real data from the database
+        data_context = self.fetch_data(message, org_ids=org_ids, salesrep_id=salesrep_id)
+        if data_context:
+            messages.append(
+                SystemMessage(
+                    content=(
+                        "DATOS REALES DE LA BASE DE DATOS:\n"
+                        "Usa estos datos para responder. Sé conciso y directo.\n\n"
+                        f"{data_context}"
+                    )
+                )
+            )
+        else:
+            sql_context = self.get_sql_context()
+            if sql_context:
+                messages.append(
+                    SystemMessage(
+                        content=(
+                            "No se encontraron datos para esta consulta. "
+                            "Informa al usuario que el dato no está disponible "
+                            "o pide más detalles.\n\n"
+                            f"Esquema disponible:\n{sql_context}"
+                        )
+                    )
+                )
+
+        # Add conversation history (limited)
+        if history:
+            for role, content in history[-_MAX_HISTORY_MESSAGES:]:
+                if role == "user":
+                    messages.append(HumanMessage(content=content))
+                elif role == "assistant":
+                    messages.append(AIMessage(content=content))
+
+        messages.append(HumanMessage(content=message))
+        return messages, data_context is not None
 
     async def process(
         self,
@@ -87,65 +146,8 @@ class BaseAgent(ABC):
         org_ids: list[int] | None = None,
         salesrep_id: int | None = None,
     ) -> dict:
-        """
-        Process a user message and return a response.
-
-        1. Fetch relevant data from the database
-        2. Build the prompt with data context
-        3. Send to LLM for natural language response
-        """
-        messages = [SystemMessage(content=self._system_prompt)]
-
-        # RAG: retrieve relevant knowledge-base context (optional)
-        try:
-            from app.services.rag_service import get_rag_service
-
-            rag = get_rag_service()
-            rag_context = rag.get_context_for_agent(self.department, message)
-            if rag_context:
-                messages.append(SystemMessage(content=rag_context))
-        except Exception as exc:
-            # RAG is optional -- never block the agent if it fails
-            logger.debug("RAG context unavailable for %s: %s", self.name, exc)
-
-        # Fetch real data from the database (filtered by user's org and salesrep)
-        data_context = self.fetch_data(message, org_ids=org_ids, salesrep_id=salesrep_id)
-        if data_context:
-            messages.append(
-                SystemMessage(
-                    content=(
-                        "DATOS REALES DE LA BASE DE DATOS:\n"
-                        "Usa estos datos para responder la consulta del usuario. "
-                        "Presenta la información de forma clara, con tablas markdown si corresponde.\n\n"
-                        f"{data_context}"
-                    )
-                )
-            )
-        else:
-            # Add SQL schema context as fallback
-            sql_context = self.get_sql_context()
-            if sql_context:
-                messages.append(
-                    SystemMessage(
-                        content=(
-                            "No se encontraron datos específicos para esta consulta. "
-                            "Informa al usuario que el dato solicitado no está disponible "
-                            "o pide más detalles para refinar la búsqueda.\n\n"
-                            f"Esquema disponible:\n{sql_context}"
-                        )
-                    )
-                )
-
-        # Add conversation history
-        if history:
-            for role, content in history[-10:]:
-                if role == "user":
-                    messages.append(HumanMessage(content=content))
-                elif role == "assistant":
-                    messages.append(AIMessage(content=content))
-
-        messages.append(HumanMessage(content=message))
-
+        """Process a user message and return a complete response."""
+        messages, has_data = self._build_messages(message, history, org_ids, salesrep_id)
         response = await self.llm.ainvoke(messages)
 
         return {
@@ -153,9 +155,23 @@ class BaseAgent(ABC):
             "agent_used": self.name,
             "metadata": {
                 "department": self.department,
-                "has_data": data_context is not None,
+                "has_data": has_data,
             },
         }
+
+    async def stream(
+        self,
+        message: str,
+        history: list[tuple[str, str]] | None = None,
+        user_departments: list[str] | None = None,
+        org_ids: list[int] | None = None,
+        salesrep_id: int | None = None,
+    ) -> AsyncIterator[str]:
+        """Stream response tokens for real-time display."""
+        messages, _ = self._build_messages(message, history, org_ids, salesrep_id)
+        async for chunk in self.llm.astream(messages):
+            if chunk.content:
+                yield chunk.content
 
     @staticmethod
     def _format_table(data: list[dict], columns: list[str] | None = None) -> str:
@@ -164,14 +180,11 @@ class BaseAgent(ABC):
             return "Sin datos disponibles."
 
         cols = columns or list(data[0].keys())
-
-        # Header
         header = "| " + " | ".join(str(c).replace("_", " ").title() for c in cols) + " |"
         separator = "| " + " | ".join("---" for _ in cols) + " |"
 
-        # Rows
         rows = []
-        for row in data[:50]:  # Limit to 50 rows for LLM context
+        for row in data[:_MAX_TABLE_ROWS]:
             values = []
             for c in cols:
                 v = row.get(c, "")
@@ -182,8 +195,8 @@ class BaseAgent(ABC):
             rows.append("| " + " | ".join(values) + " |")
 
         table = "\n".join([header, separator] + rows)
-        if len(data) > 50:
-            table += f"\n\n*(Mostrando 50 de {len(data)} registros)*"
+        if len(data) > _MAX_TABLE_ROWS:
+            table += f"\n\n*(Mostrando {_MAX_TABLE_ROWS} de {len(data)} registros)*"
         return table
 
     @staticmethod

@@ -1,9 +1,11 @@
+import json
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from app.database import get_db
+from app.database import get_db, SessionLocal
 from app.middleware.auth import get_current_user
 from app.models.user import User
 from app.models.conversation import Conversation, Message, MessageRole
@@ -23,33 +25,60 @@ router = APIRouter(prefix="/chat", tags=["Chat"])
 orchestrator = Orchestrator()
 
 
-@router.post("/", response_model=ChatResponse)
-async def send_message(
+def _get_or_create_conversation(
+    db: Session, user_id: int, conversation_id: int | None, title: str
+) -> Conversation:
+    """Get existing conversation or create a new one."""
+    if conversation_id:
+        conv = (
+            db.query(Conversation)
+            .filter(Conversation.id == conversation_id, Conversation.user_id == user_id)
+            .first()
+        )
+        if not conv:
+            raise HTTPException(status_code=404, detail="Conversación no encontrada")
+        return conv
+    conv = Conversation(user_id=user_id, title=title[:80])
+    db.add(conv)
+    db.commit()
+    db.refresh(conv)
+    return conv
+
+
+def _get_history(db: Session, conversation_id: int, limit: int = 8) -> list[tuple[str, str]]:
+    """Get recent conversation history as (role, content) tuples."""
+    messages = (
+        db.query(Message)
+        .filter(Message.conversation_id == conversation_id)
+        .order_by(Message.created_at.desc())
+        .limit(limit + 1)  # +1 for the user message we just saved
+        .all()
+    )
+    # Reverse to chronological, skip the last user message
+    messages.reverse()
+    return [(m.role.value, m.content) for m in messages[:-1]] if len(messages) > 1 else []
+
+
+# ──────────────────────────────────────────────────────────────
+# Streaming endpoint (SSE) — primary, fast
+# ──────────────────────────────────────────────────────────────
+
+@router.post("/stream")
+async def stream_message(
     data: ChatRequest,
     request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    # Get or create conversation
-    if data.conversation_id:
-        conversation = (
-            db.query(Conversation)
-            .filter(
-                Conversation.id == data.conversation_id,
-                Conversation.user_id == current_user.id,
-            )
-            .first()
-        )
-        if not conversation:
-            raise HTTPException(status_code=404, detail="Conversación no encontrada")
-    else:
-        conversation = Conversation(
-            user_id=current_user.id,
-            title=data.message[:80],
-        )
-        db.add(conversation)
-        db.commit()
-        db.refresh(conversation)
+    """Stream response tokens via Server-Sent Events (SSE)."""
+
+    # Cannot stream document analysis (needs special handling)
+    if data.file_id:
+        return await send_message(data, request, current_user, db)
+
+    conversation = _get_or_create_conversation(
+        db, current_user.id, data.conversation_id, data.message
+    )
 
     # Save user message
     user_msg = Message(
@@ -60,13 +89,105 @@ async def send_message(
     db.add(user_msg)
     db.commit()
 
-    # Get conversation history for context
-    history = (
-        db.query(Message)
-        .filter(Message.conversation_id == conversation.id)
-        .order_by(Message.created_at)
-        .all()
+    history = _get_history(db, conversation.id)
+    agent_name = await orchestrator.get_stream_agent_name(data.message, current_user)
+
+    # Send initial metadata
+    conv_id = conversation.id
+    user_id = current_user.id
+    message_text = data.message
+    ip_addr = request.client.host if request.client else None
+
+    async def event_generator():
+        full_response = []
+
+        # First event: metadata (conversation_id so frontend can track it)
+        yield f"data: {json.dumps({'type': 'meta', 'conversation_id': conv_id, 'agent': agent_name})}\n\n"
+
+        try:
+            async for token in orchestrator.stream(
+                message=message_text,
+                user=current_user,
+                history=history,
+            ):
+                full_response.append(token)
+                yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
+        except Exception as exc:
+            logger.error("Streaming error: %s: %s", type(exc).__name__, exc, exc_info=True)
+            error_msg = f"Error al consultar el modelo de IA: {type(exc).__name__}"
+            yield f"data: {json.dumps({'type': 'error', 'content': error_msg})}\n\n"
+            full_response.append(error_msg)
+
+        # Save complete response to DB
+        complete_text = "".join(full_response)
+        try:
+            save_db = SessionLocal()
+            try:
+                assistant_msg = Message(
+                    conversation_id=conv_id,
+                    role=MessageRole.ASSISTANT,
+                    content=complete_text,
+                    agent_used=agent_name,
+                )
+                save_db.add(assistant_msg)
+                save_db.commit()
+                save_db.refresh(assistant_msg)
+                msg_id = assistant_msg.id
+
+                log_action(
+                    save_db,
+                    user_id=user_id,
+                    action="chat_query",
+                    resource="chat",
+                    detail=f"Consulta: {message_text[:200]}",
+                    agent_used=agent_name,
+                    ip_address=ip_addr,
+                )
+            finally:
+                save_db.close()
+        except Exception as save_exc:
+            logger.error("Error saving streamed response: %s", save_exc)
+            msg_id = 0
+
+        # Final event: done signal with message_id
+        yield f"data: {json.dumps({'type': 'done', 'message_id': msg_id, 'conversation_id': conv_id})}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # Disable Nginx buffering
+        },
     )
+
+
+# ──────────────────────────────────────────────────────────────
+# Non-streaming endpoint (fallback, document analysis)
+# ──────────────────────────────────────────────────────────────
+
+@router.post("/", response_model=ChatResponse)
+async def send_message(
+    data: ChatRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    conversation = _get_or_create_conversation(
+        db, current_user.id, data.conversation_id, data.message
+    )
+
+    # Save user message
+    user_msg = Message(
+        conversation_id=conversation.id,
+        role=MessageRole.USER,
+        content=data.message,
+    )
+    db.add(user_msg)
+    db.commit()
+
+    history = _get_history(db, conversation.id)
 
     # Read attached document if present
     document = None
@@ -76,20 +197,17 @@ async def send_message(
         if document:
             logger.info("Document attached: %s (%s)", document.get("filename"), document["type"])
 
-    # Process through orchestrator
     try:
         result = await orchestrator.process(
             message=data.message,
             user=current_user,
-            history=[(m.role.value, m.content) for m in history[:-1]],
+            history=history,
             document=document,
         )
     except Exception as exc:
         logger.error(
             "Error processing chat message: %s: %s",
-            type(exc).__name__,
-            exc,
-            exc_info=True,
+            type(exc).__name__, exc, exc_info=True,
         )
         raise HTTPException(
             status_code=502,
@@ -107,28 +225,17 @@ async def send_message(
     db.commit()
     db.refresh(assistant_msg)
 
-    # Audit log - differentiate access_denied from normal queries
     metadata = result.get("metadata") or {}
-    if metadata.get("classification") == "no_access" or metadata.get("access_denied"):
-        log_action(
-            db,
-            user_id=current_user.id,
-            action="access_denied",
-            resource="chat",
-            detail=f"ACCESO DENEGADO - Consulta: {data.message[:200]}",
-            agent_used=result.get("agent_used"),
-            ip_address=request.client.host if request.client else None,
-        )
-    else:
-        log_action(
-            db,
-            user_id=current_user.id,
-            action="chat_query",
-            resource="chat",
-            detail=f"Consulta: {data.message[:200]}",
-            agent_used=result.get("agent_used"),
-            ip_address=request.client.host if request.client else None,
-        )
+    action = "access_denied" if (metadata.get("classification") == "no_access" or metadata.get("access_denied")) else "chat_query"
+    log_action(
+        db,
+        user_id=current_user.id,
+        action=action,
+        resource="chat",
+        detail=f"{'ACCESO DENEGADO - ' if action == 'access_denied' else ''}Consulta: {data.message[:200]}",
+        agent_used=result.get("agent_used"),
+        ip_address=request.client.host if request.client else None,
+    )
 
     return ChatResponse(
         message=result["response"],

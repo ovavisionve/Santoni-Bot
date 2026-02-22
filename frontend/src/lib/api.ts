@@ -160,6 +160,84 @@ class ApiClient {
     });
   }
 
+  /**
+   * Stream a chat response via SSE. Calls onToken for each token,
+   * onMeta when metadata arrives, and returns the final done event.
+   */
+  async streamMessage(
+    message: string,
+    callbacks: {
+      onToken: (token: string) => void;
+      onMeta?: (data: { conversation_id: number; agent: string }) => void;
+      onError?: (error: string) => void;
+    },
+    conversationId?: number,
+  ): Promise<{ message_id: number; conversation_id: number }> {
+    const token = this.getToken();
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+
+    const response = await fetch(`${API_BASE}/api/chat/stream`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        message,
+        conversation_id: conversationId || null,
+        file_id: null,
+      }),
+    });
+
+    if (response.status === 401) {
+      this.setToken(null);
+      if (typeof window !== "undefined") window.location.href = "/login";
+      throw new Error("No autorizado");
+    }
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.detail || `Error ${response.status}`);
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error("Stream not available");
+
+    const decoder = new TextDecoder();
+    let result = { message_id: 0, conversation_id: conversationId || 0 };
+    let buffer = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        try {
+          const data = JSON.parse(line.slice(6));
+          if (data.type === "token") {
+            callbacks.onToken(data.content);
+          } else if (data.type === "meta") {
+            result.conversation_id = data.conversation_id;
+            callbacks.onMeta?.(data);
+          } else if (data.type === "error") {
+            callbacks.onError?.(data.content);
+          } else if (data.type === "done") {
+            result = { message_id: data.message_id, conversation_id: data.conversation_id };
+          }
+        } catch {
+          // skip malformed SSE lines
+        }
+      }
+    }
+
+    return result;
+  }
+
   async getConversations() {
     return this.request<import("@/types").ConversationListItem[]>(
       "/api/chat/conversations"
