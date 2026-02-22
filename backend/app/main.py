@@ -10,6 +10,7 @@ from app.config import get_settings
 from app.database import engine, Base, SessionLocal
 from app.api.routes import auth, chat, users, admin, export, knowledge, documents
 from app.middleware.auth import get_current_user
+from app.utils.migrate import run_startup_migrations
 from app.utils.seed import create_admin_user
 from app.utils.seed_demo import seed_demo_data
 from app.utils.logger import setup_logging, get_logger
@@ -32,6 +33,7 @@ if settings.sentry_dsn:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("SantoniBot starting up...")
+    run_startup_migrations()
     Base.metadata.create_all(bind=engine)
     create_admin_user()
     seed_demo_data()
