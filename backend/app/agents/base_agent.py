@@ -19,9 +19,9 @@ settings = get_settings()
 logger = logging.getLogger("santonibot.agents")
 
 # Performance limits
-_MAX_TABLE_ROWS = 25
-_MAX_HISTORY_MESSAGES = 4
-_MAX_TOKENS = 2048
+_MAX_TABLE_ROWS = 50
+_MAX_HISTORY_MESSAGES = 10
+_MAX_TOKENS = 4096
 
 
 class BaseAgent(ABC):

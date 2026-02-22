@@ -44,7 +44,7 @@ class Settings(BaseSettings):
     groq_api_key: str = ""
     groq_model: str = "llama-3.3-70b-versatile"
     openrouter_api_key: str = ""
-    openrouter_model: str = "deepseek/deepseek-chat-v3-0324"
+    openrouter_model: str = "google/gemini-2.0-flash-001"
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-3-5-sonnet-20241022"
     anthropic_base_url: str = ""  # Proxy URL for Claude API (e.g., Cloudflare Worker)
