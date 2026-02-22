@@ -176,10 +176,10 @@ error en el codigo o configuracion. Ve al Paso 8 para ver los logs del error.
 ## PASO 6: Abrir SantoniBot en el navegador
 
 1. Abre tu navegador (Chrome, Firefox, Edge, etc.)
-2. En la barra de direcciones escribe: `http://192.168.1.26`
+2. En la barra de direcciones escribe: `http://192.168.1.73`
 3. Presiona **Enter**
 4. Deberia cargarse la pagina de login de SantoniBot
-5. Para el panel de administracion: `http://192.168.1.26/admin`
+5. Para el panel de administracion: `http://192.168.1.73/admin`
 
 **Si no carga:**
 - Verifica que la VPN este conectada (si estas fuera de Santoni)
@@ -238,7 +238,7 @@ veras algo como:
 ### 7.3 - Verificar que funciona
 
 1. Ejecuta `docker compose ps` y verifica que todos digan "Up"
-2. Abre el navegador y entra a `http://192.168.1.26`
+2. Abre el navegador y entra a `http://192.168.1.73`
 3. Presiona **Ctrl + Shift + R** para forzar recarga sin cache
 4. Prueba enviar un mensaje al bot para confirmar que responde
 
