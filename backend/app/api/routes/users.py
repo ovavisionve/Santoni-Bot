@@ -59,6 +59,36 @@ def create_user(
     return user
 
 
+@router.get("/organizations", tags=["Usuarios"])
+def list_organizations(
+    admin: User = Depends(require_admin),
+):
+    """List available organizations from iDempiere for user assignment."""
+    try:
+        db = IdempiereSession()
+        try:
+            result = db.execute(
+                text(
+                    "SELECT ad_org_id, value, name "
+                    "FROM adempiere.ad_org "
+                    "WHERE isactive = 'Y' AND ad_org_id > 0 "
+                    "ORDER BY name"
+                )
+            )
+            return [
+                {"id": r[0], "value": r[1], "name": r[2]}
+                for r in result.fetchall()
+            ]
+        finally:
+            db.close()
+    except Exception as e:
+        logger.error("Error querying iDempiere organizations: %s", e)
+        raise HTTPException(
+            status_code=503,
+            detail="No se pudo conectar a iDempiere para obtener las organizaciones",
+        )
+
+
 @router.get("/{user_id}", response_model=UserResponse)
 def get_user(
     user_id: int,
@@ -100,36 +130,6 @@ def update_user(
     db.commit()
     db.refresh(user)
     return user
-
-
-@router.get("/organizations", tags=["Usuarios"])
-def list_organizations(
-    admin: User = Depends(require_admin),
-):
-    """List available organizations from iDempiere for user assignment."""
-    try:
-        db = IdempiereSession()
-        try:
-            result = db.execute(
-                text(
-                    "SELECT ad_org_id, value, name "
-                    "FROM adempiere.ad_org "
-                    "WHERE isactive = 'Y' AND ad_org_id > 0 "
-                    "ORDER BY name"
-                )
-            )
-            return [
-                {"id": r[0], "value": r[1], "name": r[2]}
-                for r in result.fetchall()
-            ]
-        finally:
-            db.close()
-    except Exception as e:
-        logger.error("Error querying iDempiere organizations: %s", e)
-        raise HTTPException(
-            status_code=503,
-            detail="No se pudo conectar a iDempiere para obtener las organizaciones",
-        )
 
 
 @router.delete("/{user_id}")
