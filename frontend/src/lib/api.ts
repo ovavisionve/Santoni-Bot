@@ -200,6 +200,7 @@ class ApiClient {
     password: string;
     role: string;
     department: string;
+    extra_departments?: string | null;
     allowed_org_ids?: string | null;
     idempiere_salesrep_id?: number | null;
   }) {

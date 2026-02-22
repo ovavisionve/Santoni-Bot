@@ -56,6 +56,7 @@ export default function AdminPage() {
     password: "",
     role: "usuario",
     department: "ventas",
+    extra_departments: "" as string,
     allowed_org_ids: "" as string,
     idempiere_salesrep_id: null as number | null,
   });
@@ -116,6 +117,7 @@ export default function AdminPage() {
     try {
       const payload = {
         ...newUser,
+        extra_departments: newUser.extra_departments || null,
         allowed_org_ids: newUser.allowed_org_ids || null,
         idempiere_salesrep_id: newUser.idempiere_salesrep_id || null,
       };
@@ -128,6 +130,7 @@ export default function AdminPage() {
         password: "",
         role: "usuario",
         department: "ventas",
+        extra_departments: "",
         allowed_org_ids: "",
         idempiere_salesrep_id: null,
       });
@@ -324,9 +327,19 @@ export default function AdminPage() {
                   <select
                     className="input-field"
                     value={newUser.role}
-                    onChange={(e) =>
-                      setNewUser({ ...newUser, role: e.target.value })
-                    }
+                    onChange={(e) => {
+                      const role = e.target.value;
+                      const updates: Partial<typeof newUser> = { role, extra_departments: "" };
+                      if (role === "vendedor") {
+                        updates.department = "ventas";
+                      } else if (role === "administrador") {
+                        updates.department = "finanzas";
+                      }
+                      if (role !== "vendedor") {
+                        updates.idempiere_salesrep_id = null;
+                      }
+                      setNewUser({ ...newUser, ...updates });
+                    }}
                   >
                     {Object.entries(ROLE_LABELS).map(([key, label]) => (
                       <option key={key} value={key}>
@@ -334,20 +347,78 @@ export default function AdminPage() {
                       </option>
                     ))}
                   </select>
-                  <select
-                    className="input-field"
-                    value={newUser.department}
-                    onChange={(e) =>
-                      setNewUser({ ...newUser, department: e.target.value })
-                    }
-                  >
-                    {Object.entries(DEPARTMENT_LABELS).map(([key, label]) => (
-                      <option key={key} value={key}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
+                  {/* Vendedor: fixed to Ventas, Administrador: all depts */}
+                  {newUser.role === "vendedor" ? (
+                    <div className="input-field bg-gray-50 text-gray-500 flex items-center">
+                      Ventas (fijo para vendedores)
+                    </div>
+                  ) : newUser.role === "administrador" ? (
+                    <div className="input-field bg-gray-50 text-gray-500 flex items-center">
+                      Todas las áreas
+                    </div>
+                  ) : (
+                    <select
+                      className="input-field"
+                      value={newUser.department}
+                      onChange={(e) =>
+                        setNewUser({ ...newUser, department: e.target.value })
+                      }
+                    >
+                      {Object.entries(DEPARTMENT_LABELS).map(([key, label]) => (
+                        <option key={key} value={key}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
+                {/* Supervisor: additional departments checkboxes */}
+                {newUser.role === "supervisor" && (
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-gray-700">
+                      Departamentos adicionales
+                    </label>
+                    <p className="text-xs text-gray-400">
+                      El supervisor ya tiene acceso a su departamento principal. Selecciona áreas adicionales si corresponde.
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 border border-gray-200 rounded-lg p-3">
+                      {Object.entries(DEPARTMENT_LABELS)
+                        .filter(([key]) => key !== newUser.department)
+                        .map(([key, label]) => {
+                          const extras = newUser.extra_departments
+                            .split(",")
+                            .filter(Boolean);
+                          const selected = extras.includes(key);
+                          return (
+                            <label
+                              key={key}
+                              className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer text-sm transition-colors ${
+                                selected
+                                  ? "bg-santoni-50 border border-santoni-200"
+                                  : "hover:bg-gray-50"
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={selected}
+                                onChange={() => {
+                                  const next = selected
+                                    ? extras.filter((x) => x !== key)
+                                    : [...extras, key];
+                                  setNewUser({
+                                    ...newUser,
+                                    extra_departments: next.join(","),
+                                  });
+                                }}
+                                className="rounded border-gray-300 text-santoni-600 focus:ring-santoni-500"
+                              />
+                              <span className="text-gray-700">{label}</span>
+                            </label>
+                          );
+                        })}
+                    </div>
+                  </div>
+                )}
                 {organizations.length > 0 && (
                   <div className="space-y-2">
                     <label className="block text-sm font-medium text-gray-700">
@@ -474,7 +545,16 @@ export default function AdminPage() {
                       <td className="px-4 py-3">{u.full_name}</td>
                       <td className="px-4 py-3 text-gray-500">{u.username}</td>
                       <td className="px-4 py-3">
-                        {DEPARTMENT_LABELS[u.department] || u.department}
+                        <div>
+                          {u.role === "administrador"
+                            ? "Todas las áreas"
+                            : DEPARTMENT_LABELS[u.department] || u.department}
+                          {u.extra_departments && (
+                            <div className="text-xs text-gray-400 mt-0.5">
+                              + {u.extra_departments.split(",").map(d => DEPARTMENT_LABELS[d.trim()] || d.trim()).join(", ")}
+                            </div>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-3">
                         <span
@@ -483,7 +563,9 @@ export default function AdminPage() {
                               ? "bg-purple-100 text-purple-700"
                               : u.role === "supervisor"
                                 ? "bg-blue-100 text-blue-700"
-                                : "bg-gray-100 text-gray-700"
+                                : u.role === "vendedor"
+                                  ? "bg-green-100 text-green-700"
+                                  : "bg-gray-100 text-gray-700"
                           }`}
                         >
                           {ROLE_LABELS[u.role] || u.role}
