@@ -328,9 +328,11 @@ export default function AdminPage() {
                       setNewUser({ ...newUser, role: e.target.value })
                     }
                   >
-                    <option value="usuario">Usuario</option>
-                    <option value="supervisor">Supervisor</option>
-                    <option value="administrador">Administrador</option>
+                    {Object.entries(ROLE_LABELS).map(([key, label]) => (
+                      <option key={key} value={key}>
+                        {label}
+                      </option>
+                    ))}
                   </select>
                   <select
                     className="input-field"
