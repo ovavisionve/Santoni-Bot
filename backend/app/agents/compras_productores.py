@@ -8,7 +8,12 @@ import re
 from datetime import datetime
 
 from app.agents.base_agent import BaseAgent
-from app.services.query_service import build_producer_purchases, execute_demo_query
+from app.services.query_service import (
+    build_producer_purchases,
+    build_registered_producers,
+    build_producer_pending_payments,
+    build_producer_price_analysis,
+)
 
 
 class ComprasProductoresAgent(BaseAgent):
@@ -44,7 +49,9 @@ REGLAS:
 
 CONTEXTO:
 - Responsable: Marlenis Figueredo
-- Productos: Arroz Paddy Húmedo, Maíz
+- Productos principales: Arroz Paddy Acondicionado, Maíz Blanco de Consumo
+- El usuario puede referirse al arroz como "arroz paddy", "arroz húmedo", etc.
+- El usuario puede referirse al maíz como "maíz blanco", "maíz", etc.
 - Zonas productoras: Portuguesa, Barinas, Apure, Lara, Cojedes
 
 IMPORTANTE SOBRE PERÍODOS:
@@ -69,9 +76,9 @@ Tablas: demo_productores, demo_compras_productores
 
         producto = None
         if "arroz" in msg:
-            producto = "Arroz Paddy Húmedo"
+            producto = "arroz paddy"
         elif "maíz" in msg or "maiz" in msg:
-            producto = "Maíz"
+            producto = "maiz"
 
         label = f"Año {anio}" if anio else "Todos los años"
         summary = build_producer_purchases(producto=producto, anio=anio, org_ids=org_ids)
@@ -79,52 +86,31 @@ Tablas: demo_productores, demo_compras_productores
 
         if any(w in msg for w in ["productor", "registrad", "cuántos", "cuantos"]):
             try:
-                by_state = execute_demo_query(
-                    "SELECT estado, tipo_producto, COUNT(*) as cantidad "
-                    "FROM demo_productores WHERE activo = true "
-                    "GROUP BY estado, tipo_producto ORDER BY cantidad DESC"
-                )
-                sections.append("## Productores Registrados por Estado")
-                sections.append(self._format_table(by_state))
-
-                total = execute_demo_query(
-                    "SELECT tipo_producto, COUNT(*) as total "
-                    "FROM demo_productores WHERE activo = true GROUP BY tipo_producto"
-                )
-                sections.append("## Total por Tipo de Producto")
-                sections.append(self._format_table(total))
+                producers = build_registered_producers(org_ids=org_ids)
+                if producers:
+                    sections.append("## Productores (Proveedores) Registrados")
+                    sections.append(self._format_table(producers))
             except Exception:
                 pass
 
         if any(w in msg for w in ["pago", "pendiente", "deuda", "deb"]):
             try:
-                data = execute_demo_query(
-                    "SELECT p.nombre as productor, p.estado as ubicacion, "
-                    "c.producto, c.peso_neto_kg, c.monto_total, c.fecha "
-                    "FROM demo_compras_productores c "
-                    "JOIN demo_productores p ON c.productor_id = p.id "
-                    "WHERE c.estado_pago = 'pendiente' ORDER BY c.monto_total DESC"
-                )
-                total_pendiente = sum(d["monto_total"] for d in data)
-                sections.append(
-                    f"## Pagos Pendientes ({len(data)} guías - Total: Bs. {total_pendiente:,.2f})"
-                )
-                sections.append(self._format_table(data))
+                pending = build_producer_pending_payments(producto=producto, org_ids=org_ids)
+                if pending:
+                    total_pendiente = sum(d.get("monto_pendiente", 0) for d in pending)
+                    sections.append(
+                        f"## Pagos Pendientes ({len(pending)} órdenes - Total: Bs. {total_pendiente:,.2f})"
+                    )
+                    sections.append(self._format_table(pending))
             except Exception:
                 pass
 
         if any(w in msg for w in ["precio", "costo", "valor"]):
             try:
-                data = execute_demo_query(
-                    "SELECT producto, "
-                    "MIN(precio_kg) as precio_min, AVG(precio_kg) as precio_promedio, "
-                    "MAX(precio_kg) as precio_max, COUNT(*) as compras "
-                    "FROM demo_compras_productores "
-                    "WHERE EXTRACT(YEAR FROM fecha) = :anio GROUP BY producto",
-                    {"anio": anio},
-                )
-                sections.append(f"## Análisis de Precios {anio} (Bs./kg)")
-                sections.append(self._format_table(data))
+                prices = build_producer_price_analysis(anio=anio, org_ids=org_ids)
+                if prices:
+                    sections.append(f"## Análisis de Precios {anio} (Bs./kg)")
+                    sections.append(self._format_table(prices))
             except Exception:
                 pass
 

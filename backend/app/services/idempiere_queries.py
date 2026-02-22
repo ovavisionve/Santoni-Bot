@@ -761,6 +761,128 @@ def build_producer_purchases(
         db.close()
 
 
+def build_registered_producers(org_ids: list[int] | None = None) -> list[dict]:
+    """Registered producers (vendors) from iDempiere c_bpartner."""
+    db = IdempiereSession()
+    try:
+        conditions = [
+            "bp.isactive = 'Y'",
+            "bp.isvendor = 'Y'",
+        ]
+        params: dict = {}
+
+        q = text(
+            f"SELECT bp.name AS productor, bp.value AS codigo, "
+            f"COALESCE(bpl.city, '') AS ciudad "
+            f"FROM adempiere.c_bpartner bp "
+            f"LEFT JOIN adempiere.c_bpartner_location bpl "
+            f"  ON bp.c_bpartner_id = bpl.c_bpartner_id AND bpl.isactive = 'Y' "
+            f"WHERE {' AND '.join(conditions)} "
+            f"ORDER BY bp.name LIMIT 50"
+        )
+        return [
+            {"productor": r[0], "codigo": r[1], "ciudad": r[2]}
+            for r in db.execute(q, params).fetchall()
+        ]
+    finally:
+        db.close()
+
+
+def build_producer_pending_payments(
+    producto: str | None = None, org_ids: list[int] | None = None,
+) -> list[dict]:
+    """Pending purchase orders (not fully paid) from iDempiere."""
+    db = IdempiereSession()
+    try:
+        conditions = [
+            "o.issotrx = 'N'",
+            "o.docstatus = 'CO'",
+            "o.isactive = 'Y'",
+            "o.grandtotal > o.totalpaid",
+        ]
+        params: dict = {}
+        _add_org_filter(conditions, params, org_ids, "o")
+
+        if producto:
+            conditions.append("LOWER(p.name) LIKE :producto")
+            params["producto"] = f"%{producto.lower()}%"
+
+        where = " AND ".join(conditions)
+
+        q = text(
+            f"SELECT bp.name AS productor, o.documentno AS documento, "
+            f"o.dateordered::date AS fecha, "
+            f"o.grandtotal AS monto_total, "
+            f"COALESCE(o.totalpaid, 0) AS pagado, "
+            f"(o.grandtotal - COALESCE(o.totalpaid, 0)) AS monto_pendiente "
+            f"FROM adempiere.c_order o "
+            f"JOIN adempiere.c_bpartner bp ON o.c_bpartner_id = bp.c_bpartner_id "
+            f"{'JOIN adempiere.c_orderline ol ON o.c_order_id = ol.c_order_id ' if producto else ''}"
+            f"{'JOIN adempiere.m_product p ON ol.m_product_id = p.m_product_id ' if producto else ''}"
+            f"WHERE {where} "
+            f"ORDER BY monto_pendiente DESC LIMIT 30"
+        )
+        return [
+            {
+                "productor": r[0],
+                "documento": r[1],
+                "fecha": str(r[2]) if r[2] else "",
+                "monto_total": float(r[3]) if r[3] else 0.0,
+                "pagado": float(r[4]) if r[4] else 0.0,
+                "monto_pendiente": float(r[5]) if r[5] else 0.0,
+            }
+            for r in db.execute(q, params).fetchall()
+        ]
+    finally:
+        db.close()
+
+
+def build_producer_price_analysis(
+    anio: int | None = None, org_ids: list[int] | None = None,
+) -> list[dict]:
+    """Price analysis per product for producer purchases from iDempiere."""
+    db = IdempiereSession()
+    try:
+        conditions = [
+            "o.issotrx = 'N'",
+            "o.docstatus = 'CO'",
+            "o.isactive = 'Y'",
+        ]
+        params: dict = {}
+        _add_org_filter(conditions, params, org_ids, "o")
+
+        if anio:
+            conditions.append("EXTRACT(YEAR FROM o.dateordered) = :anio")
+            params["anio"] = anio
+
+        where = " AND ".join(conditions)
+
+        q = text(
+            f"SELECT p.name AS producto, "
+            f"MIN(ol.priceactual) AS precio_min, "
+            f"AVG(ol.priceactual) AS precio_promedio, "
+            f"MAX(ol.priceactual) AS precio_max, "
+            f"COUNT(DISTINCT o.c_order_id) AS compras "
+            f"FROM adempiere.c_order o "
+            f"JOIN adempiere.c_orderline ol ON o.c_order_id = ol.c_order_id "
+            f"JOIN adempiere.m_product p ON ol.m_product_id = p.m_product_id "
+            f"WHERE {where} "
+            f"GROUP BY p.name ORDER BY compras DESC LIMIT 20"
+        )
+        return [
+            {
+                "producto": r[0],
+                "precio_min": float(r[1]) if r[1] else 0.0,
+                "precio_promedio": float(r[2]) if r[2] else 0.0,
+                "precio_max": float(r[3]) if r[3] else 0.0,
+                "compras": r[4],
+            }
+            for r in db.execute(q, params).fetchall()
+        ]
+    finally:
+        db.close()
+
+
 # ---------------------------------------------------------------------------
 # COMPRAS INSUMOS (Supply Purchases)
 # ---------------------------------------------------------------------------

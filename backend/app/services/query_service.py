@@ -565,6 +565,85 @@ def build_producer_purchases(
         db.close()
 
 
+def build_registered_producers(org_ids: list[int] | None = None) -> list[dict]:
+    """Registered producers/vendors - routes to demo or iDempiere."""
+    if _is_production():
+        from app.services.idempiere_queries import build_registered_producers as _prod
+        return _prod(org_ids=org_ids)
+
+    db = SessionLocal()
+    try:
+        q = text(
+            "SELECT nombre AS productor, cedula AS codigo, estado AS ciudad "
+            "FROM demo_productores WHERE activo = true ORDER BY nombre LIMIT 50"
+        )
+        return [
+            {"productor": r[0], "codigo": r[1], "ciudad": r[2]}
+            for r in db.execute(q).fetchall()
+        ]
+    finally:
+        db.close()
+
+
+def build_producer_pending_payments(
+    producto: str | None = None, org_ids: list[int] | None = None,
+) -> list[dict]:
+    """Pending producer payments - routes to demo or iDempiere."""
+    if _is_production():
+        from app.services.idempiere_queries import build_producer_pending_payments as _prod
+        return _prod(producto=producto, org_ids=org_ids)
+
+    db = SessionLocal()
+    try:
+        q = text(
+            "SELECT p.nombre AS productor, c.id::text AS documento, "
+            "c.fecha::text AS fecha, c.monto_total, 0.0 AS pagado, "
+            "c.monto_total AS monto_pendiente "
+            "FROM demo_compras_productores c "
+            "JOIN demo_productores p ON c.productor_id = p.id "
+            "WHERE c.estado_pago = 'pendiente' ORDER BY c.monto_total DESC"
+        )
+        return [
+            {
+                "productor": r[0], "documento": r[1], "fecha": str(r[2]),
+                "monto_total": float(r[3]), "pagado": float(r[4]),
+                "monto_pendiente": float(r[5]),
+            }
+            for r in db.execute(q).fetchall()
+        ]
+    finally:
+        db.close()
+
+
+def build_producer_price_analysis(
+    anio: int | None = None, org_ids: list[int] | None = None,
+) -> list[dict]:
+    """Price analysis for producer purchases - routes to demo or iDempiere."""
+    if _is_production():
+        from app.services.idempiere_queries import build_producer_price_analysis as _prod
+        return _prod(anio=anio, org_ids=org_ids)
+
+    db = SessionLocal()
+    try:
+        q = text(
+            "SELECT producto, "
+            "MIN(precio_kg) AS precio_min, AVG(precio_kg) AS precio_promedio, "
+            "MAX(precio_kg) AS precio_max, COUNT(*) AS compras "
+            "FROM demo_compras_productores "
+            "WHERE EXTRACT(YEAR FROM fecha) = :anio GROUP BY producto"
+        )
+        return [
+            {
+                "producto": r[0], "precio_min": float(r[1]),
+                "precio_promedio": float(r[2]), "precio_max": float(r[3]),
+                "compras": r[4],
+            }
+            for r in db.execute(q, {"anio": anio}).fetchall()
+        ]
+    finally:
+        db.close()
+
+
 # ---------------------------------------------------------------------------
 # Pre-built queries: FINANZAS (Finance)
 # ---------------------------------------------------------------------------
