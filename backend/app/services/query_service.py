@@ -149,6 +149,7 @@ def build_sales_summary(
     date_from: str | None = None,
     date_to: str | None = None,
     currency_ids: list[int] | None = None,
+    org_name: str | None = None,
 ) -> dict:
     """Sales summary - routes to demo or iDempiere."""
     if _is_production():
@@ -157,7 +158,7 @@ def build_sales_summary(
             zona=zona, vendedor=vendedor, mes=mes, anio=anio,
             org_ids=org_ids, salesrep_id=salesrep_id,
             date_from=date_from, date_to=date_to,
-            currency_ids=currency_ids,
+            currency_ids=currency_ids, org_name=org_name,
         )
 
     db = SessionLocal()
@@ -247,6 +248,7 @@ def build_collection_summary(
     date_from: str | None = None,
     date_to: str | None = None,
     currency_ids: list[int] | None = None,
+    org_name: str | None = None,
 ) -> dict:
     """Collection summary - routes to demo or iDempiere."""
     if _is_production():
@@ -255,7 +257,7 @@ def build_collection_summary(
             zona=zona, vendedor=vendedor, mes=mes, anio=anio,
             org_ids=org_ids, salesrep_id=salesrep_id,
             date_from=date_from, date_to=date_to,
-            currency_ids=currency_ids,
+            currency_ids=currency_ids, org_name=org_name,
         )
 
     db = SessionLocal()
@@ -330,6 +332,7 @@ def build_top_clients(
     date_from: str | None = None,
     date_to: str | None = None,
     currency_ids: list[int] | None = None,
+    org_name: str | None = None,
 ) -> list[dict]:
     """Top clients - routes to demo or iDempiere."""
     if _is_production():
@@ -338,7 +341,7 @@ def build_top_clients(
             limit=limit, zona=zona, vendedor=vendedor, mes=mes, anio=anio,
             org_ids=org_ids, salesrep_id=salesrep_id,
             date_from=date_from, date_to=date_to,
-            currency_ids=currency_ids,
+            currency_ids=currency_ids, org_name=org_name,
         )
 
     db = SessionLocal()

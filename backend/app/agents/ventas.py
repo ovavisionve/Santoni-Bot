@@ -132,9 +132,30 @@ Datos de ventas de iDempiere:
                 break
 
         zona = None
-        for z in ["portuguesa", "barinas", "lara", "carabobo", "aragua", "zulia"]:
+        for z in ["portuguesa", "barinas", "lara", "carabobo", "aragua", "zulia",
+                   "maracaibo", "falcon", "margarita", "trujillo", "merida", "mérida",
+                   "tachira", "táchira", "guanare", "cabimas", "valencia", "caracas",
+                   "oriente", "santa barbara"]:
             if z in msg:
                 zona = z.title()
+                break
+
+        # Extract organization name from message
+        org_name = None
+        for org_keyword, org_value in [
+            ("inpromaiz", "InproMaiz"),
+            ("inpro maiz", "InproMaiz"),
+            ("inproa santoni", "INPROA SANTONI"),
+            ("inproa", "INPROA SANTONI"),
+            ("santoni service", "Santoni Service"),
+            ("agropecuaria", "AGROPECUARIA"),
+            ("aga agricola", "AGA AGRICOLA"),
+            ("aga agrícola", "AGA AGRICOLA"),
+            ("agroinproa", "AGROINPROA"),
+            ("inversiones aga", "INVERSIONES AGA"),
+        ]:
+            if org_keyword in msg:
+                org_name = org_value
                 break
 
         label = build_period_label(date_from, date_to, mes, anio)
@@ -144,13 +165,14 @@ Datos de ventas de iDempiere:
             limit_match = re.search(r'top\s*(\d+)', msg)
             if limit_match:
                 limit = int(limit_match.group(1))
+            org_label = f" - {org_name}" if org_name else ""
             data = build_top_clients(
                 limit=limit, zona=zona, vendedor=vendedor, mes=mes, anio=anio,
                 org_ids=org_ids, salesrep_id=salesrep_id,
                 date_from=date_from, date_to=date_to,
-                currency_ids=currency_ids,
+                currency_ids=currency_ids, org_name=org_name,
             )
-            sections.append(f"## Top {limit} Clientes por Ventas ({label})")
+            sections.append(f"## Top {limit} Clientes por Ventas ({label}{org_label})")
             sections.append(self._format_table(data))
 
         if any(w in msg for w in ["cobran", "cobro", "recauda", "pago"]):
@@ -158,7 +180,7 @@ Datos de ventas de iDempiere:
                 zona=zona, vendedor=vendedor, mes=mes, anio=anio,
                 org_ids=org_ids, salesrep_id=salesrep_id,
                 date_from=date_from, date_to=date_to,
-                currency_ids=currency_ids,
+                currency_ids=currency_ids, org_name=org_name,
             )
             sections.append(self._format_summary(data, f"Resumen de Cobranza - {label}"))
 
@@ -172,7 +194,7 @@ Datos de ventas de iDempiere:
                 zona=zona, vendedor=vendedor, mes=mes, anio=anio,
                 org_ids=org_ids, salesrep_id=salesrep_id,
                 date_from=date_from, date_to=date_to,
-                currency_ids=currency_ids,
+                currency_ids=currency_ids, org_name=org_name,
             )
             sections.append(self._format_summary(data, f"Resumen de Ventas - {label}"))
 

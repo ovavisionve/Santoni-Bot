@@ -57,6 +57,23 @@ def _add_org_filter(
             params[f"org_{i}"] = org_id
 
 
+def _add_org_name_filter(
+    conditions: list[str],
+    params: dict,
+    org_name: str | None,
+    table_alias: str,
+) -> None:
+    """Add org name ILIKE filter via a subquery on ad_org.
+    E.g. org_name='inpromaiz' → i.ad_org_id IN (SELECT ad_org_id FROM ad_org WHERE name ILIKE '%inpromaiz%')"""
+    if org_name:
+        conditions.append(
+            f"{table_alias}.ad_org_id IN ("
+            f"SELECT o.ad_org_id FROM adempiere.ad_org o "
+            f"WHERE o.name ILIKE :org_name_filter)"
+        )
+        params["org_name_filter"] = f"%{org_name}%"
+
+
 def _add_currency_filter(
     conditions: list[str],
     params: dict,
@@ -135,6 +152,7 @@ def build_sales_summary(
     date_from: str | None = None,
     date_to: str | None = None,
     currency_ids: list[int] | None = None,
+    org_name: str | None = None,
 ) -> dict:
     """Sales summary from iDempiere c_invoice (issotrx='Y')."""
     db = IdempiereSession()
@@ -146,6 +164,7 @@ def build_sales_summary(
         ]
         params: dict = {}
         _add_org_filter(conditions, params, org_ids, "i")
+        _add_org_name_filter(conditions, params, org_name, "i")
         _add_salesrep_filter(conditions, params, salesrep_id, "i")
         _add_currency_filter(conditions, params, currency_ids, "i")
         _add_date_filter(conditions, params, date_from, date_to, mes, anio, "i.dateinvoiced")
@@ -264,6 +283,7 @@ def build_collection_summary(
     date_from: str | None = None,
     date_to: str | None = None,
     currency_ids: list[int] | None = None,
+    org_name: str | None = None,
 ) -> dict:
     """Collection summary from iDempiere c_payment (isreceipt='Y')."""
     db = IdempiereSession()
@@ -275,6 +295,7 @@ def build_collection_summary(
         ]
         params: dict = {}
         _add_org_filter(conditions, params, org_ids, "p")
+        _add_org_name_filter(conditions, params, org_name, "p")
         _add_currency_filter(conditions, params, currency_ids, "p")
         # Payments don't have salesrep_id directly; filter via linked invoice
         if salesrep_id:
@@ -355,6 +376,7 @@ def build_top_clients(
     date_from: str | None = None,
     date_to: str | None = None,
     currency_ids: list[int] | None = None,
+    org_name: str | None = None,
 ) -> list[dict]:
     """Top clients by invoiced amount from iDempiere.
 
@@ -370,6 +392,7 @@ def build_top_clients(
         ]
         params: dict = {"limit": limit}
         _add_org_filter(conditions, params, org_ids, "i")
+        _add_org_name_filter(conditions, params, org_name, "i")
         _add_salesrep_filter(conditions, params, salesrep_id, "i")
         _add_currency_filter(conditions, params, currency_ids, "i")
         _add_date_filter(conditions, params, date_from, date_to, mes, anio, "i.dateinvoiced")
