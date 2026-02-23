@@ -25,6 +25,7 @@ export interface Message {
   content: string;
   agent_used: string | null;
   created_at: string;
+  data_timestamp?: string | null;
 }
 
 export interface Conversation {

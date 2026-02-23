@@ -53,6 +53,12 @@ class Settings(BaseSettings):
     chroma_host: str = "chromadb"
     chroma_port: int = 8001
 
+    # Access control
+    enforce_business_hours: bool = False  # Set True to restrict to business hours
+    business_hours_start: int = 6   # 6 AM Venezuela
+    business_hours_end: int = 21    # 9 PM Venezuela
+    allowed_networks: str = ""      # Comma-separated CIDRs, e.g. "192.168.1.0/24,10.0.0.0/8"
+
     @model_validator(mode="after")
     def _check_secret_key(self):
         default = "change-this-to-a-random-secret-key-min-32-chars"

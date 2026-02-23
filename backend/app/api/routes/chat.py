@@ -16,6 +16,12 @@ from app.schemas.chat import (
     ConversationListItem,
 )
 from app.services.audit import log_action
+from app.services.cache import (
+    get_cached_response,
+    set_cached_response,
+    get_data_timestamp,
+)
+from app.middleware.access_control import enforce_access_controls
 from app.agents.orchestrator import Orchestrator
 
 logger = logging.getLogger("santonibot.chat")
@@ -72,6 +78,9 @@ async def stream_message(
 ):
     """Stream response tokens via Server-Sent Events (SSE)."""
 
+    # Access control: business hours + network
+    enforce_access_controls(request, current_user.role.value)
+
     # Cannot stream document analysis (needs special handling)
     if data.file_id:
         return await send_message(data, request, current_user, db)
@@ -98,28 +107,41 @@ async def stream_message(
     message_text = data.message
     ip_addr = request.client.host if request.client else None
 
+    # Check cache before streaming
+    cached = get_cached_response(message_text, agent_name)
+    data_ts = get_data_timestamp()
+
     async def event_generator():
         full_response = []
 
-        # First event: metadata (conversation_id so frontend can track it)
-        yield f"data: {json.dumps({'type': 'meta', 'conversation_id': conv_id, 'agent': agent_name})}\n\n"
+        # First event: metadata (conversation_id, agent, timestamp)
+        yield f"data: {json.dumps({'type': 'meta', 'conversation_id': conv_id, 'agent': agent_name, 'timestamp': data_ts})}\n\n"
 
-        try:
-            async for token in orchestrator.stream(
-                message=message_text,
-                user=current_user,
-                history=history,
-            ):
-                full_response.append(token)
-                yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
-        except Exception as exc:
-            logger.error("Streaming error: %s: %s", type(exc).__name__, exc, exc_info=True)
-            error_msg = f"Error al consultar el modelo de IA: {type(exc).__name__}"
-            yield f"data: {json.dumps({'type': 'error', 'content': error_msg})}\n\n"
-            full_response.append(error_msg)
+        # If cached, send the full response as a single token
+        if cached:
+            full_response.append(cached["response"])
+            yield f"data: {json.dumps({'type': 'token', 'content': cached['response']})}\n\n"
+        else:
+            try:
+                async for token in orchestrator.stream(
+                    message=message_text,
+                    user=current_user,
+                    history=history,
+                ):
+                    full_response.append(token)
+                    yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
+            except Exception as exc:
+                logger.error("Streaming error: %s: %s", type(exc).__name__, exc, exc_info=True)
+                error_msg = f"Error al consultar el modelo de IA: {type(exc).__name__}"
+                yield f"data: {json.dumps({'type': 'error', 'content': error_msg})}\n\n"
+                full_response.append(error_msg)
+
+        # Save to cache (only non-cached, non-error responses)
+        complete_text = "".join(full_response)
+        if not cached and "Error al consultar" not in complete_text:
+            set_cached_response(message_text, agent_name, complete_text, agent_name)
 
         # Save complete response to DB
-        complete_text = "".join(full_response)
         try:
             save_db = SessionLocal()
             try:

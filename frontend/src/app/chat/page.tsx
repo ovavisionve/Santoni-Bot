@@ -133,6 +133,7 @@ export default function ChatPage() {
         // ── STREAMING MODE ──
         const placeholderId = Date.now() + 1;
         let streamedAgent: string | null = null;
+        let dataTimestamp: string | null = null;
 
         // Add placeholder assistant message
         setMessages((prev) => [...prev, {
@@ -161,6 +162,7 @@ export default function ChatPage() {
                 setActiveConversationId(meta.conversation_id);
               }
               streamedAgent = meta.agent;
+              dataTimestamp = meta.timestamp || null;
             },
             onError: (error) => {
               setMessages((prev) =>
@@ -175,11 +177,11 @@ export default function ChatPage() {
           activeConversationId ?? undefined,
         );
 
-        // Update message with real DB id + agent
+        // Update message with real DB id + agent + timestamp
         setMessages((prev) =>
           prev.map((m) =>
             m.id === placeholderId
-              ? { ...m, id: result.message_id, agent_used: streamedAgent }
+              ? { ...m, id: result.message_id, agent_used: streamedAgent, data_timestamp: dataTimestamp }
               : m
           )
         );

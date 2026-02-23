@@ -8,7 +8,7 @@ from sqlalchemy import text
 
 from app.config import get_settings
 from app.database import engine, Base, SessionLocal
-from app.api.routes import auth, chat, users, admin, export, knowledge, documents
+from app.api.routes import auth, chat, users, admin, export, knowledge, documents, dashboard
 from app.middleware.auth import get_current_user
 from app.utils.migrate import run_startup_migrations
 from app.utils.seed import create_admin_user
@@ -104,6 +104,7 @@ app.include_router(admin.router, prefix="/api")
 app.include_router(export.router, prefix="/api")
 app.include_router(knowledge.router, prefix="/api")
 app.include_router(documents.router, prefix="/api")
+app.include_router(dashboard.router, prefix="/api")
 
 
 @app.get("/api/health")

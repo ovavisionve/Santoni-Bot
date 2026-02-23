@@ -168,7 +168,7 @@ class ApiClient {
     message: string,
     callbacks: {
       onToken: (token: string) => void;
-      onMeta?: (data: { conversation_id: number; agent: string }) => void;
+      onMeta?: (data: { conversation_id: number; agent: string; timestamp?: string }) => void;
       onError?: (error: string) => void;
     },
     conversationId?: number,
@@ -369,6 +369,42 @@ class ApiClient {
       `/api/admin/security/unlock-user/${userId}`,
       { method: "POST" }
     );
+  }
+
+  // Dashboard & KPIs
+  async getDashboardKPIs() {
+    return this.request<{
+      user: { name: string; department: string; departments: string[]; role: string };
+      activity: { conversations: number; messages_7d: number };
+      kpis: Record<string, unknown>;
+      timestamp: string;
+    }>("/api/dashboard/kpis");
+  }
+
+  async getDashboardAlerts() {
+    return this.request<{
+      alerts: Array<{
+        type: string;
+        department: string;
+        title: string;
+        message: string;
+        metric: string;
+        value: number;
+      }>;
+      count: number;
+    }>("/api/dashboard/alerts");
+  }
+
+  // Usage metrics (admin/supervisor)
+  async getUsageMetrics(days = 7) {
+    return this.request<{
+      period_days: number;
+      daily_messages: Array<{ date: string; count: number }>;
+      daily_conversations: Array<{ date: string; count: number }>;
+      top_users: Array<{ username: string; full_name: string; department: string; message_count: number }>;
+      department_breakdown: Array<{ department: string; active_users: number; messages: number }>;
+      avg_messages_per_conversation: number;
+    }>(`/api/admin/metrics?days=${days}`);
   }
 }
 

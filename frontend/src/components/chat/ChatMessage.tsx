@@ -393,9 +393,16 @@ export default function ChatMessage({
             isUser ? "text-santoni-200" : "text-gray-400"
           }`}
         >
-          <span className="text-xs" title={new Date(message.created_at).toLocaleString("es-VE")}>
-            {getRelativeTime(message.created_at)}
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs" title={new Date(message.created_at).toLocaleString("es-VE")}>
+              {getRelativeTime(message.created_at)}
+            </span>
+            {!isUser && message.data_timestamp && (
+              <span className="text-xs text-gray-300" title="Datos actualizados al momento de la consulta">
+                &middot; Datos al {message.data_timestamp}
+              </span>
+            )}
+          </div>
 
           {/* Action buttons for assistant messages with data */}
           {!isUser && hasTable && (

@@ -89,7 +89,17 @@ class BaseAgent(ABC):
         salesrep_id: int | None = None,
     ) -> tuple[list, bool]:
         """Build the LLM message list. Returns (messages, has_data)."""
-        messages = [SystemMessage(content=self._system_prompt)]
+        # Enhance system prompt with comparison/context instructions
+        enhanced_prompt = (
+            self._system_prompt + "\n\n"
+            "INSTRUCCIONES ADICIONALES:\n"
+            "- Si el usuario hace una referencia contextual (ej: 'y por zona?', "
+            "'dame mas detalle', 'y del mes pasado?'), usa el historial para entender el contexto.\n"
+            "- Si pide COMPARACION entre periodos, presenta tabla comparativa "
+            "con columnas: Concepto | Periodo 1 | Periodo 2 | Variacion | %.\n"
+            "- Formato venezolano: punto=miles, coma=decimal (ej: 1.234.567,89).\n"
+        )
+        messages = [SystemMessage(content=enhanced_prompt)]
 
         # RAG: retrieve relevant knowledge-base context (optional)
         try:

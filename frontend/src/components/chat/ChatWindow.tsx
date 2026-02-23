@@ -3,7 +3,8 @@
 import { useState, useRef, useEffect } from "react";
 import type { Message, User } from "@/types";
 import ChatMessage from "./ChatMessage";
-import { Send, Menu, Keyboard, Paperclip, X, FileText } from "lucide-react";
+import { Send, Menu, Keyboard, Paperclip, X, FileText, LayoutDashboard, Settings } from "lucide-react";
+import Link from "next/link";
 
 interface ChatWindowProps {
   messages: Message[];
@@ -167,11 +168,29 @@ export default function ChatWindow({
           <Menu size={20} />
         </button>
         <img src="/santoni-logo.png" alt="Santoni" className="h-8 w-auto" />
-        <div>
+        <div className="flex-1">
           <h1 className="text-sm font-semibold text-gray-900">SantoniBot</h1>
           <p className="text-xs text-gray-500">
             Asistente inteligente de Alimentos Santoni
           </p>
+        </div>
+        <div className="flex items-center gap-1">
+          <Link
+            href="/dashboard"
+            className="p-2 rounded-lg text-gray-400 hover:text-santoni-600 hover:bg-santoni-50 transition-colors"
+            title="Dashboard"
+          >
+            <LayoutDashboard size={18} />
+          </Link>
+          {user.role === "administrador" && (
+            <Link
+              href="/admin"
+              className="p-2 rounded-lg text-gray-400 hover:text-santoni-600 hover:bg-santoni-50 transition-colors"
+              title="Administración"
+            >
+              <Settings size={18} />
+            </Link>
+          )}
         </div>
       </div>
 

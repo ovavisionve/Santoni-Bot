@@ -215,17 +215,37 @@ def export_to_pdf(content: str, agent_used: str | None = None) -> bytes:
         spaceAfter=4,
     )
 
+    # Footer style
+    footer_style = ParagraphStyle(
+        "SantoniFooter",
+        parent=styles["Normal"],
+        fontSize=7,
+        textColor=colors.HexColor("#999999"),
+        alignment=1,  # center
+    )
+
     elements = []
 
-    # Header
-    elements.append(Paragraph("SantoniBot - Reporte", title_style))
+    # Header with company info
+    elements.append(Paragraph("ALIMENTOS SANTONI, C.A.", title_style))
     elements.append(
         Paragraph(
-            f"Agente: {agent_used or 'General'} | "
-            f"Fecha: {datetime.now().strftime('%d/%m/%Y %H:%M')}",
+            f"<b>Reporte:</b> {agent_used or 'General'} &nbsp;|&nbsp; "
+            f"<b>Fecha:</b> {datetime.now().strftime('%d/%m/%Y %H:%M')} &nbsp;|&nbsp; "
+            f"<b>Generado por:</b> SantoniBot",
             normal_style,
         )
     )
+    elements.append(Spacer(1, 6))
+    # Separator line
+    line_table = Table([[""]],
+        colWidths=[7 * inch],
+        rowHeights=[1],
+    )
+    line_table.setStyle(TableStyle([
+        ("LINEBELOW", (0, 0), (-1, 0), 1, colors.HexColor("#042387")),
+    ]))
+    elements.append(line_table)
     elements.append(Spacer(1, 12))
 
     tables = _extract_tables_from_markdown(content)
@@ -267,6 +287,13 @@ def export_to_pdf(content: str, agent_used: str | None = None) -> bytes:
                 elements.append(Paragraph(clean.lstrip("#").strip(), subtitle_style))
             elif clean:
                 elements.append(Paragraph(clean, normal_style))
+
+    # Footer
+    elements.append(Spacer(1, 20))
+    elements.append(Paragraph(
+        "Generado automaticamente por SantoniBot - Alimentos Santoni, C.A. | Confidencial",
+        footer_style,
+    ))
 
     doc.build(elements)
     return output.getvalue()
