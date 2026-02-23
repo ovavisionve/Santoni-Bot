@@ -101,7 +101,7 @@ Datos de producción/inventario en iDempiere:
 - Tipos: V+=Recepción MP, C-=Despacho PT, M+/M-=Mov. Internos, P+/P-=Producción
 """
 
-    def fetch_data(self, message: str, org_ids: list[int] | None = None, salesrep_id: int | None = None) -> str | None:
+    def fetch_data(self, message: str, org_ids: list[int] | None = None, salesrep_id: int | None = None, history: list[tuple[str, str]] | None = None) -> str | None:
         msg = message.lower()
         sections = []
 

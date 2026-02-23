@@ -99,7 +99,7 @@ Datos de compras a productores en iDempiere:
 - m_product: Productos agrícolas (arroz, maíz)
 """
 
-    def fetch_data(self, message: str, org_ids: list[int] | None = None, salesrep_id: int | None = None) -> str | None:
+    def fetch_data(self, message: str, org_ids: list[int] | None = None, salesrep_id: int | None = None, history: list[tuple[str, str]] | None = None) -> str | None:
         msg = message.lower()
         sections = []
 

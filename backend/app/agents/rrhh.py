@@ -173,7 +173,19 @@ Datos de RRHH en iDempiere:
         result = rest.strip()
         return result if result else None
 
-    def fetch_data(self, message: str, org_ids: list[int] | None = None, salesrep_id: int | None = None) -> str | None:
+    def _extract_cargo_from_history(self, history: list[tuple[str, str]]) -> str | None:
+        """Try to extract a cargo search term from recent user messages in history."""
+        if not history:
+            return None
+        # Scan history in reverse (most recent first) for a cargo keyword
+        for role, content in reversed(history):
+            if role == "user":
+                cargo = self._extract_cargo_search(content)
+                if cargo:
+                    return cargo
+        return None
+
+    def fetch_data(self, message: str, org_ids: list[int] | None = None, salesrep_id: int | None = None, history: list[tuple[str, str]] | None = None) -> str | None:
         msg = message.lower()
         sections = []
 
@@ -185,8 +197,11 @@ Datos de RRHH en iDempiere:
 
         label = build_period_label(date_from, date_to, mes, anio)
 
-        # Detect cargo/job search
+        # Detect cargo/job search (current message, then history fallback)
         cargo_search = self._extract_cargo_search(message)
+        if not cargo_search and (date_from or mes) and history:
+            # Follow-up with dates but no cargo keyword → check history
+            cargo_search = self._extract_cargo_from_history(history)
 
         # Employee summary (always included)
         summary = build_employee_summary(org_ids=org_ids)

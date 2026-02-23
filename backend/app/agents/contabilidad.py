@@ -138,7 +138,7 @@ Se pueden consultar cuentas específicas por código (ej: 2.01.01.10) con rango 
         ]
         return "\n".join(lines)
 
-    def fetch_data(self, message: str, org_ids: list[int] | None = None, salesrep_id: int | None = None) -> str | None:
+    def fetch_data(self, message: str, org_ids: list[int] | None = None, salesrep_id: int | None = None, history: list[tuple[str, str]] | None = None) -> str | None:
         sections = []
 
         # Detect currency from message

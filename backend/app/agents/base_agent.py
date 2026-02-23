@@ -74,10 +74,12 @@ class BaseAgent(ABC):
         message: str,
         org_ids: list[int] | None = None,
         salesrep_id: int | None = None,
+        history: list[tuple[str, str]] | None = None,
     ) -> str | None:
         """
         Fetch relevant data from the database based on the user's message.
         Override in subclasses to provide department-specific data fetching.
+        history contains recent conversation tuples: (role, content).
         """
         return None
 
@@ -112,7 +114,7 @@ class BaseAgent(ABC):
             logger.debug("RAG context unavailable for %s: %s", self.name, exc)
 
         # Fetch real data from the database
-        data_context = self.fetch_data(message, org_ids=org_ids, salesrep_id=salesrep_id)
+        data_context = self.fetch_data(message, org_ids=org_ids, salesrep_id=salesrep_id, history=history)
         if data_context:
             messages.append(
                 SystemMessage(
