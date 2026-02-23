@@ -431,6 +431,47 @@ class ApiClient {
     return `${API_BASE}/api/admin/users/${userId}/conversations/export?format=${format}`;
   }
 
+  // User conversation export (own conversations)
+  exportConversationUrl(conversationId: number, format: "txt" | "pdf" = "txt"): string {
+    return `${API_BASE}/api/chat/conversations/${conversationId}/export?format=${format}`;
+  }
+
+  exportAllConversationsUrl(format: "txt" | "pdf" = "txt"): string {
+    return `${API_BASE}/api/chat/conversations/export-all?format=${format}`;
+  }
+
+  /**
+   * Download a file from a URL that requires auth token.
+   * Fetches the blob and triggers a download programmatically.
+   */
+  async downloadFile(url: string, fallbackFilename: string): Promise<void> {
+    const token = this.getToken();
+    const headers: Record<string, string> = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+
+    const response = await fetch(url, { headers });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.detail || `Error ${response.status}`);
+    }
+
+    const blob = await response.blob();
+    const disposition = response.headers.get("Content-Disposition");
+    let filename = fallbackFilename;
+    if (disposition) {
+      const match = disposition.match(/filename="?([^";\n]+)"?/);
+      if (match) filename = match[1];
+    }
+
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(a.href);
+  }
+
   // Usage metrics (admin/supervisor)
   async getUsageMetrics(days = 7) {
     return this.request<{

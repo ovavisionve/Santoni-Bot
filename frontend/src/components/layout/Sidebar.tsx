@@ -11,6 +11,7 @@ import {
   ChevronLeft,
   Search,
   X,
+  Download,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -23,6 +24,8 @@ interface SidebarProps {
   onNewChat: () => void;
   onSelectConversation: (id: number) => void;
   onDeleteConversation: (id: number) => void;
+  onDownloadConversation: (id: number, format: "txt" | "pdf") => void;
+  onDownloadAll: (format: "txt" | "pdf") => void;
   onLogout: () => void;
 }
 
@@ -67,6 +70,8 @@ export default function Sidebar({
   onNewChat,
   onSelectConversation,
   onDeleteConversation,
+  onDownloadConversation,
+  onDownloadAll,
   onLogout,
 }: SidebarProps) {
   const [searchQuery, setSearchQuery] = useState("");
@@ -178,21 +183,55 @@ export default function Sidebar({
                 </p>
               )}
             </div>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onDeleteConversation(conv.id);
-              }}
-              className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-400 transition-all shrink-0 mt-0.5"
-            >
-              <Trash2 size={14} />
-            </button>
+            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-all shrink-0 mt-0.5">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDownloadConversation(conv.id, "txt");
+                }}
+                className="text-gray-400 hover:text-blue-400 transition-colors"
+                title="Descargar TXT"
+              >
+                <Download size={13} />
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDeleteConversation(conv.id);
+                }}
+                className="text-gray-400 hover:text-red-400 transition-colors"
+                title="Eliminar"
+              >
+                <Trash2 size={13} />
+              </button>
+            </div>
           </div>
         ))}
       </div>
 
       {/* User Info & Actions */}
       <div className="border-t border-santoni-900 p-3 space-y-2">
+        {/* Download all conversations */}
+        {conversations.length > 0 && (
+          <div className="flex gap-1">
+            <button
+              onClick={() => onDownloadAll("txt")}
+              className="flex-1 flex items-center justify-center gap-2 px-3 py-1.5 rounded-lg text-gray-400 hover:text-blue-400 hover:bg-santoni-900 transition-colors text-xs border border-santoni-800"
+              title="Descargar todas las conversaciones en TXT"
+            >
+              <Download size={13} />
+              Descargar todas (TXT)
+            </button>
+            <button
+              onClick={() => onDownloadAll("pdf")}
+              className="flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-gray-400 hover:text-red-400 hover:bg-santoni-900 transition-colors text-xs border border-santoni-800"
+              title="Descargar todas las conversaciones en PDF"
+            >
+              PDF
+            </button>
+          </div>
+        )}
+
         {user.role === "administrador" && (
           <Link
             href="/admin"

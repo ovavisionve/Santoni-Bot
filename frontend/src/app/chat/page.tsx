@@ -266,6 +266,24 @@ export default function ChatPage() {
     }
   };
 
+  const handleDownloadConversation = async (id: number, format: "txt" | "pdf") => {
+    try {
+      const url = api.exportConversationUrl(id, format);
+      await api.downloadFile(url, `conversacion_${id}.${format}`);
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleDownloadAll = async (format: "txt" | "pdf") => {
+    try {
+      const url = api.exportAllConversationsUrl(format);
+      await api.downloadFile(url, `conversaciones.${format}`);
+    } catch {
+      // ignore
+    }
+  };
+
   const handleLogout = () => {
     logout();
     router.push("/login");
@@ -306,6 +324,8 @@ export default function ChatPage() {
         onNewChat={handleNewChat}
         onSelectConversation={loadConversation}
         onDeleteConversation={handleDeleteConversation}
+        onDownloadConversation={handleDownloadConversation}
+        onDownloadAll={handleDownloadAll}
         onLogout={handleLogout}
       />
 
