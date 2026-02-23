@@ -518,6 +518,7 @@ def build_financial_summary(
             f"SELECT b.name AS banco, ba.accountno AS numero_cuenta, "
             f"CASE WHEN ba.bankaccounttype = 'C' THEN 'Corriente' "
             f"     WHEN ba.bankaccounttype = 'S' THEN 'Ahorro' "
+            f"     WHEN ba.bankaccounttype = 'I' THEN 'Inversión' "
             f"     ELSE ba.bankaccounttype END AS tipo, "
             f"COALESCE(c.iso_code, 'VES') AS moneda, "
             f"ba.currentbalance AS saldo "
