@@ -908,6 +908,35 @@ def build_payroll_summary(
     }
 
 
+def build_attendance_summary(
+    mes: int | None = None,
+    anio: int | None = None,
+    org_ids: list[int] | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> dict:
+    """Attendance/absence summary - routes to demo or iDempiere."""
+    if _is_production():
+        from app.services.idempiere_queries import build_attendance_summary as _prod
+        return _prod(
+            mes=mes, anio=anio, org_ids=org_ids,
+            date_from=date_from, date_to=date_to,
+        )
+
+    # Demo fallback
+    return {
+        "totales": {
+            "empleados_activos": 0,
+            "empleados_con_ausencias": 0,
+            "tasa_ausentismo_pct": 0.0,
+            "conceptos_encontrados": 0,
+            "nota": "Datos de ausentismo no disponibles en modo demo.",
+        },
+        "por_concepto": [],
+        "por_organizacion": [],
+    }
+
+
 # ---------------------------------------------------------------------------
 # Pre-built queries: COMPRAS INSUMOS (Supply Purchases)
 # ---------------------------------------------------------------------------

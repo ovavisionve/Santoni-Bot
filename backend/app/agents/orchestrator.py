@@ -98,7 +98,7 @@ _KEYWORD_RULES: list[tuple[str, list[str]]] = [
         "nomina", "nómina", "empleado", "empleados", "personal",
         "trabajador", "trabajadores", "plantilla",
         "vacacion", "vacaciones", "asistencia", "inasistencia",
-        "ausentismo", "ausencia", "ausencias", "falta", "faltas",
+        "ausentismo", "ausentimos", "ausencia", "ausencias", "falta", "faltas",
         "evaluacion", "evaluación", "cumpleaño", "cumpleaños",
         "salario", "sueldo", "sueldos", "salarios",
         "recurso humano", "recursos humanos",

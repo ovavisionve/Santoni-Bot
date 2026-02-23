@@ -16,6 +16,7 @@ from app.services.query_service import (
     build_employee_summary,
     build_employee_list,
     build_payroll_summary,
+    build_attendance_summary,
 )
 
 
@@ -48,6 +49,7 @@ CAPACIDADES:
 - Consultas de nómina por período (quincenas, mensuales)
 - Conceptos de nómina: salario base, bonos, deducciones, neto a pagar
 - Historial de procesos de nómina
+- Indicadores de ausentismo: conceptos de ausencia en nómina (inasistencia, falta, permiso, reposo, incapacidad, licencia)
 
 CONTEXTO iDEMPIERE:
 - Empleados: hr_employee (vinculado a c_bpartner via c_bpartner_id, con hr_department_id y hr_job_id)
@@ -125,5 +127,18 @@ Datos de RRHH en iDempiere:
                 date_from=date_from, date_to=date_to,
             )
             sections.append(self._format_summary(data, f"Resumen de Nómina - {label}"))
+
+        if any(w in msg for w in [
+            "ausentismo", "ausentimos", "ausencia", "inasistencia",
+            "falta", "faltas", "permiso", "reposo", "incapacidad",
+            "licencia", "asistencia",
+        ]):
+            data = build_attendance_summary(
+                mes=mes, anio=anio, org_ids=org_ids,
+                date_from=date_from, date_to=date_to,
+            )
+            sections.append(self._format_summary(
+                data, f"Indicadores de Ausentismo - {label}",
+            ))
 
         return "\n\n".join(sections) if sections else None
