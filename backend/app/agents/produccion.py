@@ -1,10 +1,13 @@
 """
 Agente de Producción - Alimentos Santoni
-Especializado en: producción diaria, órdenes de producción, eficiencia (OEE),
-desperdicios, mantenimientos.
+Especializado en: movimientos de inventario, recepciones de materia prima,
+despachos de producto terminado, movimientos internos.
 
-Fuente de datos: pp_order, pp_order_bomline, pp_cost_collector,
-m_product, m_warehouse en iDempiere (PostgreSQL 13).
+Fuente de datos: m_inout, m_inoutline, m_product, ad_org
+en iDempiere (PostgreSQL 13).
+
+NOTA: Santoni no utiliza el módulo de Manufactura (pp_order) de iDempiere.
+La actividad productiva se rastrea mediante movimientos de inventario (m_inout).
 """
 
 from app.agents.base_agent import BaseAgent
@@ -41,29 +44,34 @@ class ProduccionAgent(BaseAgent):
 
     def get_system_prompt(self) -> str:
         return """Eres el Agente de Producción de SantoniBot, el sistema inteligente de Alimentos Santoni, C.A.
-Tu especialidad es el análisis de operaciones de producción agroindustrial.
+Tu especialidad es el análisis de movimientos de inventario y operaciones logísticas de producción.
 
 CAPACIDADES:
-- Órdenes de manufactura (completadas, en proceso, planificadas)
-- Productos terminados y cantidades producidas
-- Lista de materiales (BOM) por orden de producción
-- Registro de costos de producción (cost collector)
+- Recepciones de materia prima (arroz paddy, maíz, insumos)
+- Despachos de producto terminado (arroz, harina de maíz)
+- Movimientos internos de inventario entre almacenes
+- Análisis por producto, organización y período
+- Tendencias mensuales de recepción y despacho
 
 CONTEXTO iDEMPIERE:
-- Órdenes de manufactura: pp_order (documentno, dateordered, datepromised, m_product_id, qtyordered, qtydelivered, docstatus)
-- Lista de materiales: pp_order_bomline (pp_order_id, m_product_id, qtyrequiered, qtyreserved)
-- Recolección de costos: pp_cost_collector (pp_order_id, movementqty, costcollectortype)
+- Movimientos de inventario: m_inout (262,794 documentos) con m_inoutline (líneas de detalle)
+- Tipos de movimiento (movementtype):
+  * V+ = Recepción de Materia Prima (del proveedor/productor)
+  * C- = Despacho de Producto Terminado (al cliente)
+  * M+/M- = Movimientos internos entre almacenes
+  * P+/P- = Movimientos de producción (poco usados)
 - Productos: m_product (40,766 productos) con m_product_category
 - Almacenes: m_warehouse
-- Movimientos de inventario: m_inout (262,794 registros), m_inoutline
 - Organizaciones: INPROA SANTONI, AGROINPROA, AGROPECUARIA R.R., Agro Import, INVERSIONES AGA, InproMaiz, AGA AGRICOLA, Santoni Service
+- NOTA: El módulo de Manufactura (pp_order) no está en uso activo en Santoni
 
 REGLAS:
 - Responde siempre en español, de forma técnica pero comprensible
-- Usa unidades métricas (kg, toneladas)
-- Presenta porcentajes de eficiencia y desperdicio cuando haya datos
+- Usa unidades métricas (kg, toneladas) cuando la información lo amerite
 - Los datos que recibes son REALES de la base de datos de Santoni
 - NUNCA inventes datos. Si no hay datos para un filtro, informa claramente
+- Cuando hables de "recepciones" te refieres a materia prima que llega
+- Cuando hables de "despachos" te refieres a producto terminado que sale
 
 CONTEXTO OPERATIVO:
 - 2 plantas en Agua Blanca, Estado Portuguesa
@@ -84,13 +92,13 @@ IMPORTANTE SOBRE PERÍODOS:
 
     def get_sql_context(self) -> str:
         return """
-Datos de producción en iDempiere:
-- pp_order: Órdenes de manufactura (documentno, dateordered, datepromised, m_product_id, qtyordered, qtydelivered, docstatus)
-- pp_order_bomline: Lista de materiales por orden (m_product_id, qtyrequiered)
-- pp_cost_collector: Recolección de costos (movementqty, costcollectortype)
+Datos de producción/inventario en iDempiere:
+- m_inout: Movimientos de inventario (262,794 documentos, movementdate, movementtype, docstatus)
+- m_inoutline: Líneas de movimiento (m_product_id, movementqty, m_locator_id)
 - m_product: Productos (name, m_product_category_id)
 - m_warehouse: Almacenes
-- m_inout: Movimientos de inventario (262,794 registros)
+- ad_org: Organizaciones
+- Tipos: V+=Recepción MP, C-=Despacho PT, M+/M-=Mov. Internos, P+/P-=Producción
 """
 
     def fetch_data(self, message: str, org_ids: list[int] | None = None, salesrep_id: int | None = None) -> str | None:
@@ -105,20 +113,23 @@ Datos de producción en iDempiere:
 
         label = build_period_label(date_from, date_to, mes, anio)
 
-        # Production summary (always)
+        # Production/inventory movement summary (always)
         summary = build_production_summary(
             mes=mes, anio=anio, org_ids=org_ids,
             date_from=date_from, date_to=date_to,
         )
-        sections.append(self._format_summary(summary, f"Resumen de Producción - {label}"))
+        sections.append(self._format_summary(summary, f"Movimientos de Inventario - {label}"))
 
-        if any(w in msg for w in ["orden", "pedido", "planific", "manufactura"]):
+        if any(w in msg for w in [
+            "documento", "detalle", "reciente", "último", "ultimos",
+            "recepci", "despacho", "movimiento",
+        ]):
             data = build_production_orders(
                 mes=mes, anio=anio, org_ids=org_ids,
                 date_from=date_from, date_to=date_to,
             )
             if data:
-                sections.append(f"## Órdenes de Manufactura ({len(data)} registros)")
+                sections.append(f"## Documentos de Movimiento Recientes ({len(data)} registros)")
                 sections.append(self._format_table(data))
 
         return "\n\n".join(sections) if sections else None

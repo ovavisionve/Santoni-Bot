@@ -658,8 +658,7 @@ def build_producer_pending_payments(
     try:
         q = text(
             "SELECT p.nombre AS productor, c.id::text AS documento, "
-            "c.fecha::text AS fecha, c.monto_total, 0.0 AS pagado, "
-            "c.monto_total AS monto_pendiente "
+            "c.fecha::text AS fecha, c.monto_total "
             "FROM demo_compras_productores c "
             "JOIN demo_productores p ON c.productor_id = p.id "
             "WHERE c.estado_pago = 'pendiente' ORDER BY c.monto_total DESC"
@@ -667,8 +666,7 @@ def build_producer_pending_payments(
         return [
             {
                 "productor": r[0], "documento": r[1], "fecha": str(r[2]),
-                "monto_total": float(r[3]), "pagado": float(r[4]),
-                "monto_pendiente": float(r[5]),
+                "monto_total": float(r[3]),
             }
             for r in db.execute(q).fetchall()
         ]

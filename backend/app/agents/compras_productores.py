@@ -136,9 +136,9 @@ Datos de compras a productores en iDempiere:
             try:
                 pending = build_producer_pending_payments(producto=producto, org_ids=org_ids)
                 if pending:
-                    total_pendiente = sum(d.get("monto_pendiente", 0) for d in pending)
+                    total_pendiente = sum(d.get("monto_total", 0) for d in pending)
                     sections.append(
-                        f"## Pagos Pendientes ({len(pending)} órdenes - Total: Bs. {total_pendiente:,.2f})"
+                        f"## Facturas Pendientes de Pago ({len(pending)} facturas - Total: Bs. {total_pendiente:,.2f})"
                     )
                     sections.append(self._format_table(pending))
             except Exception:
