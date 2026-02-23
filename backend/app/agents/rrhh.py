@@ -50,13 +50,15 @@ CAPACIDADES:
 - Historial de procesos de nómina
 
 CONTEXTO iDEMPIERE:
-- Empleados: hr_employee (vinculado a c_bpartner via c_bpartner_id)
+- Empleados: hr_employee (vinculado a c_bpartner via c_bpartner_id, con hr_department_id y hr_job_id)
+- Departamentos: hr_department (name)
+- Cargos: hr_job (name)
 - Procesos de nómina: hr_process (documentno, dateacct, c_period_id, docstatus)
 - Movimientos de nómina: hr_movement (hr_process_id, hr_employee_id, hr_concept_id, amount, qty)
 - Conceptos: hr_concept (value, name, columntype, type)
 - Nóminas definidas: hr_payroll (name, hr_payroll_id)
-- También: c_bpartner (isemployee='Y') para datos básicos de empleados
-- Organizaciones: INPROA SANTONI, AGROINPROA, AGROPECUARIA R.R., Agro Import, INVERSIONES AGA, InproMaiz, AGA AGRICOLA, Santoni Service
+- Organizaciones: INPROA SANTONI (444 empleados), InproMaiz (206), Santoni Service (134), AGROPECUARIA R.R. (124), AGA AGRICOLA (91), AGROINPROA (38), INVERSIONES AGA (4)
+- NOTA: Los conteos de empleados usan DISTINCT por c_bpartner_id ya que hr_employee tiene múltiples registros por persona
 
 REGLAS:
 - Responde siempre en español, de forma profesional
@@ -108,10 +110,13 @@ Datos de RRHH en iDempiere:
         summary = build_employee_summary(org_ids=org_ids)
         sections.append(self._format_summary(summary, "Resumen de Personal"))
 
-        if any(w in msg for w in ["empleado", "personal", "lista", "cuántos", "cuantos"]):
+        if any(w in msg for w in [
+            "empleado", "personal", "lista", "cuántos", "cuantos",
+            "trabajador", "trabajadores", "plantilla", "activo", "activos",
+        ]):
             data = build_employee_list(org_ids=org_ids)
             if data:
-                sections.append(f"## Lista de Empleados ({len(data)} registros)")
+                sections.append(f"## Lista de Empleados Activos ({len(data)} registros)")
                 sections.append(self._format_table(data))
 
         if any(w in msg for w in ["nómina", "nomina", "salario", "sueldo", "pago"]):

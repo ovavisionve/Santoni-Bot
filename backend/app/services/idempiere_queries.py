@@ -604,45 +604,69 @@ def build_financial_summary(
 # ---------------------------------------------------------------------------
 
 def build_employee_summary(org_ids: list[int] | None = None) -> dict:
-    """Employee summary from iDempiere c_bpartner (isemployee='Y').
-    NOTE: Full HR module (hr_*) availability needs to be verified."""
+    """Employee summary from iDempiere hr_employee (with DISTINCT to avoid duplicates).
+
+    hr_employee has multiple rows per person (one per payroll period), so we use
+    COUNT(DISTINCT e.c_bpartner_id) for accurate counts.  Organization is taken
+    from hr_employee.ad_org_id (correctly assigned) instead of c_bpartner.ad_org_id
+    (which often points to the wildcard '*' org).
+    """
     db = IdempiereSession()
     try:
-        # Overall counts
-        emp_conditions = ["bp.isemployee = 'Y'"]
-        emp_params: dict = {}
-        _add_org_filter(emp_conditions, emp_params, org_ids, "bp")
-        emp_where = " AND ".join(emp_conditions)
+        # Overall counts (unique employees)
+        conditions = ["1=1"]
+        params: dict = {}
+        _add_org_filter(conditions, params, org_ids, "e")
+        where = " AND ".join(conditions)
+
         totals_q = text(
-            f"SELECT COUNT(*) AS total, "
-            f"SUM(CASE WHEN bp.isactive = 'Y' THEN 1 ELSE 0 END) AS activos, "
-            f"SUM(CASE WHEN bp.isactive = 'N' THEN 1 ELSE 0 END) AS inactivos "
-            f"FROM adempiere.c_bpartner bp WHERE {emp_where}"
+            f"SELECT "
+            f"COUNT(DISTINCT e.c_bpartner_id) AS total, "
+            f"COUNT(DISTINCT CASE WHEN e.isactive = 'Y' THEN e.c_bpartner_id END) AS activos, "
+            f"COUNT(DISTINCT CASE WHEN e.isactive = 'N' THEN e.c_bpartner_id END) AS inactivos "
+            f"FROM adempiere.hr_employee e "
+            f"WHERE {where}"
         )
-        row = db.execute(totals_q, emp_params).fetchone()
+        row = db.execute(totals_q, params).fetchone()
         totals = {
             "total": row[0] if row else 0,
             "activos": row[1] if row else 0,
             "inactivos": row[2] if row else 0,
         }
 
-        # By department (using c_bpartner groups or org)
-        by_dept_q = text(
-            f"SELECT COALESCE(o.name, 'Sin Departamento') AS departamento, "
-            f"COUNT(*) AS total, "
-            f"SUM(CASE WHEN bp.isactive = 'Y' THEN 1 ELSE 0 END) AS activos "
-            f"FROM adempiere.c_bpartner bp "
-            f"LEFT JOIN adempiere.ad_org o ON bp.ad_org_id = o.ad_org_id "
-            f"WHERE {emp_where} "
+        # By organization (unique employees per org)
+        by_org_q = text(
+            f"SELECT COALESCE(o.name, 'Sin Organización') AS organizacion, "
+            f"COUNT(DISTINCT e.c_bpartner_id) AS total, "
+            f"COUNT(DISTINCT CASE WHEN e.isactive = 'Y' THEN e.c_bpartner_id END) AS activos "
+            f"FROM adempiere.hr_employee e "
+            f"LEFT JOIN adempiere.ad_org o ON e.ad_org_id = o.ad_org_id "
+            f"WHERE {where} "
             f"GROUP BY o.name ORDER BY total DESC"
+        )
+        by_org = [
+            {"organizacion": r[0], "total": r[1], "activos": r[2]}
+            for r in db.execute(by_org_q, params).fetchall()
+        ]
+
+        # By department (from hr_department)
+        by_dept_q = text(
+            f"SELECT COALESCE(d.name, 'Sin Departamento') AS departamento, "
+            f"COUNT(DISTINCT e.c_bpartner_id) AS total, "
+            f"COUNT(DISTINCT CASE WHEN e.isactive = 'Y' THEN e.c_bpartner_id END) AS activos "
+            f"FROM adempiere.hr_employee e "
+            f"LEFT JOIN adempiere.hr_department d ON e.hr_department_id = d.hr_department_id "
+            f"WHERE {where} "
+            f"GROUP BY d.name ORDER BY total DESC LIMIT 20"
         )
         by_dept = [
             {"departamento": r[0], "total": r[1], "activos": r[2]}
-            for r in db.execute(by_dept_q, emp_params).fetchall()
+            for r in db.execute(by_dept_q, params).fetchall()
         ]
 
         return {
             "totales": totals,
+            "por_organizacion": by_org,
             "por_departamento": by_dept,
         }
     finally:
@@ -650,7 +674,12 @@ def build_employee_summary(org_ids: list[int] | None = None) -> dict:
 
 
 def build_employee_list(org_ids: list[int] | None = None) -> list[dict]:
-    """List of employees from iDempiere hr_employee + c_bpartner."""
+    """List of unique active employees from iDempiere hr_employee + c_bpartner.
+
+    Uses DISTINCT ON (bp.c_bpartner_id) to eliminate duplicate rows caused by
+    hr_employee having multiple records per person (one per payroll period).
+    Joins hr_department and hr_job for richer employee info.
+    """
     db = IdempiereSession()
     try:
         conditions = ["e.isactive = 'Y'"]
@@ -659,26 +688,36 @@ def build_employee_list(org_ids: list[int] | None = None) -> list[dict]:
         where = " AND ".join(conditions)
 
         q = text(
-            f"SELECT bp.name AS nombre, bp.value AS codigo, "
+            f"SELECT DISTINCT ON (bp.c_bpartner_id) "
+            f"bp.name AS nombre, bp.value AS codigo, "
             f"COALESCE(o.name, '') AS organizacion, "
-            f"CASE WHEN bp.isactive = 'Y' THEN 'Activo' ELSE 'Inactivo' END AS estado, "
+            f"COALESCE(d.name, '') AS departamento, "
+            f"COALESCE(j.name, '') AS cargo, "
             f"e.startdate AS fecha_ingreso "
             f"FROM adempiere.hr_employee e "
             f"JOIN adempiere.c_bpartner bp ON e.c_bpartner_id = bp.c_bpartner_id "
             f"LEFT JOIN adempiere.ad_org o ON e.ad_org_id = o.ad_org_id "
+            f"LEFT JOIN adempiere.hr_department d ON e.hr_department_id = d.hr_department_id "
+            f"LEFT JOIN adempiere.hr_job j ON e.hr_job_id = j.hr_job_id "
             f"WHERE {where} "
-            f"ORDER BY bp.name LIMIT 50"
+            f"ORDER BY bp.c_bpartner_id, e.startdate DESC"
         )
-        return [
+        rows = db.execute(q, params).fetchall()
+
+        # Sort by name for display after deduplication
+        results = [
             {
                 "nombre": r[0],
                 "codigo": r[1],
                 "organizacion": r[2],
-                "estado": r[3],
-                "fecha_ingreso": str(r[4]) if r[4] else "",
+                "departamento": r[3],
+                "cargo": r[4],
+                "fecha_ingreso": str(r[5]) if r[5] else "",
             }
-            for r in db.execute(q, params).fetchall()
+            for r in rows
         ]
+        results.sort(key=lambda x: x["nombre"])
+        return results[:100]
     finally:
         db.close()
 
