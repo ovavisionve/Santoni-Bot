@@ -79,7 +79,8 @@ REGLAS:
 - Presenta la información en tablas markdown cuando sea apropiado
 
 FORMATOS DE FECHA SOPORTADOS:
-- Rango específico: "01/01/2026 al 31/01/2026"
+- Rango con separadores: "01/01/2026 al 31/01/2026" o "01/01/26 al 31/01/26"
+- Rango compacto: "01012026 al 31012026" o "010126 al 310126"
 - Mes y año: "enero 2026"
 - Solo año: "2026"
 

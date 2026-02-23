@@ -2,7 +2,10 @@
 Utilidades compartidas de extracción de fechas para todos los agentes de SantoniBot.
 
 Formatos soportados:
-- Rango: "01/01/2026 al 31/01/2026" o "01-01-2026 al 31-01-2026"
+- Rango con separadores: "01/01/2026 al 31/01/2026", "01-01-2026 al 31-01-2026"
+- Rango con año corto: "01/01/26 al 31/01/26", "1/1/26 al 31/1/26"
+- Rango compacto (ddmmyyyy o ddmmyy): "01012026 al 31012026", "010126 al 310126"
+- Rango mixto: "01/12/2025 al 311225" (una con separadores, otra compacta)
 - Mes y año: "enero 2026", "febrero", "marzo 2025"
 - Solo año: "2026", "2025"
 """
@@ -20,26 +23,75 @@ MESES_MAP = {
 # Mapa inverso: número → nombre
 MESES_NOMBRES = {v: k.title() for k, v in MESES_MAP.items()}
 
-# Regex: dd/mm/yyyy al dd/mm/yyyy (o con guiones)
-_DATE_RANGE_RE = re.compile(
-    r'(\d{1,2})[/-](\d{1,2})[/-](\d{4})\s+al\s+(\d{1,2})[/-](\d{1,2})[/-](\d{4})'
-)
+# Individual date patterns
+_SEP_DATE_RE = re.compile(r'(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})')
+_COMPACT_DATE_RE = re.compile(r'\b(\d{6,8})\b')
+
+# "al" keyword to split date ranges
+_AL_RE = re.compile(r'\bal\b', re.IGNORECASE)
+
+
+def _normalize_year(y: str) -> str:
+    """Convert 2-digit year to 4-digit (assumes 2000s)."""
+    if len(y) == 2:
+        return f"20{y}"
+    return y
+
+
+def _parse_single_date(text: str) -> str | None:
+    """Try to parse a single date from text. Returns 'YYYY-MM-DD' or None.
+
+    Tries separated format (dd/mm/yyyy, dd/mm/yy) first, then compact (ddmmyyyy, ddmmyy).
+    """
+    # Try separated format: dd/mm/yyyy or dd/mm/yy
+    m = _SEP_DATE_RE.search(text)
+    if m:
+        d, mo, y = m.groups()
+        try:
+            y = _normalize_year(y)
+            yi, mi, di = int(y), int(mo), int(d)
+            if 2000 <= yi <= 2099 and 1 <= mi <= 12 and 1 <= di <= 31:
+                return f"{yi}-{mi:02d}-{di:02d}"
+        except (ValueError, IndexError):
+            pass
+
+    # Try compact format: ddmmyyyy (8) or ddmmyy (6)
+    m = _COMPACT_DATE_RE.search(text)
+    if m:
+        s = m.group(1)
+        if len(s) == 8:
+            d, mo, y = int(s[0:2]), int(s[2:4]), int(s[4:8])
+        elif len(s) == 6:
+            d, mo, y = int(s[0:2]), int(s[2:4]), int(f"20{s[4:6]}")
+        else:
+            return None
+        if 1 <= mo <= 12 and 1 <= d <= 31 and 2000 <= y <= 2099:
+            return f"{y}-{mo:02d}-{d:02d}"
+
+    return None
 
 
 def extract_date_range(message: str) -> tuple[str | None, str | None]:
-    """Extract date range from 'dd/mm/yyyy al dd/mm/yyyy' pattern.
+    """Extract date range from message text.
+
+    Finds the keyword "al" and parses dates on each side independently.
+    Each date can be in any supported format (separated or compact).
 
     Returns (date_from, date_to) in 'YYYY-MM-DD' format, or (None, None).
     """
-    m = _DATE_RANGE_RE.search(message)
-    if m:
-        d1, m1, y1, d2, m2, y2 = m.groups()
-        try:
-            date_from = f"{y1}-{int(m1):02d}-{int(d1):02d}"
-            date_to = f"{y2}-{int(m2):02d}-{int(d2):02d}"
-            return date_from, date_to
-        except (ValueError, IndexError):
-            pass
+    al_match = _AL_RE.search(message)
+    if not al_match:
+        return None, None
+
+    before_al = message[:al_match.start()]
+    after_al = message[al_match.end():]
+
+    date_from = _parse_single_date(before_al)
+    date_to = _parse_single_date(after_al)
+
+    if date_from and date_to:
+        return date_from, date_to
+
     return None, None
 
 
@@ -76,5 +128,5 @@ def build_period_label(
     if mes and anio:
         return f"{MESES_NOMBRES.get(mes, str(mes))} {anio}"
     if anio:
-        return f"Anio {anio}"
+        return f"Año {anio}"
     return "Todos los periodos"

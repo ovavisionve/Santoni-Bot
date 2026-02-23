@@ -1266,6 +1266,7 @@ def build_accounting_summary(
         ]
 
         # Balance: Assets, Liabilities, Equity
+        # Use correct sign convention: A=debit-normal, L/O=credit-normal
         balance_conds = [
             "ev.accounttype IN ('A', 'L', 'O')",
             "fa.isactive = 'Y'",
@@ -1283,7 +1284,10 @@ def build_accounting_summary(
             f"  WHEN ev.accounttype = 'L' THEN 'Pasivo' "
             f"  WHEN ev.accounttype = 'O' THEN 'Patrimonio' "
             f"  END AS tipo, "
-            f"COALESCE(SUM(fa.amtacctdr - fa.amtacctcr), 0) AS saldo "
+            f"CASE "
+            f"  WHEN ev.accounttype = 'A' THEN COALESCE(SUM(fa.amtacctdr - fa.amtacctcr), 0) "
+            f"  ELSE COALESCE(SUM(fa.amtacctcr - fa.amtacctdr), 0) "
+            f"END AS saldo "
             f"FROM adempiere.fact_acct fa "
             f"JOIN adempiere.c_elementvalue ev ON fa.account_id = ev.c_elementvalue_id "
             f"WHERE {balance_where} "
@@ -1342,6 +1346,10 @@ def build_account_detail(
         org_ids: List of allowed organization IDs
 
     Returns dict with account info, period totals, opening/closing balance.
+
+    IMPORTANT - Balance sign convention:
+    - Debit-normal accounts (A=Activo, E=Gasto): saldo = debe - haber
+    - Credit-normal accounts (L=Pasivo, O=Patrimonio, R=Ingreso): saldo = haber - debe
     """
     db = IdempiereSession()
     try:
@@ -1361,7 +1369,12 @@ def build_account_detail(
 
         acct_id = acct_row[0]
         acct_name = acct_row[2]
-        acct_type = acct_row[3]
+        acct_type = acct_row[3]  # A=Activo, L=Pasivo, O=Patrimonio, R=Ingreso, E=Gasto
+
+        # Determine balance sign: credit-normal accounts flip the sign
+        # L (Pasivo), O (Patrimonio), R (Ingreso) → saldo = haber - debe
+        # A (Activo), E (Gasto) → saldo = debe - haber
+        is_credit_normal = acct_type in ("L", "O", "R")
 
         # 2. Build date conditions
         period_conditions = ["fa.isactive = 'Y'", "fa.account_id = :acct_id"]
@@ -1402,6 +1415,13 @@ def build_account_detail(
         total_haber = float(row[2]) if row else 0.0
 
         # 4. Opening balance (all movements BEFORE the period start)
+        # Use the correct sign convention based on account type
+        saldo_sql_expr = (
+            "COALESCE(SUM(fa.amtacctcr - fa.amtacctdr), 0)"
+            if is_credit_normal
+            else "COALESCE(SUM(fa.amtacctdr - fa.amtacctcr), 0)"
+        )
+
         saldo_inicial = 0.0
         if date_from:
             opening_conds = [
@@ -1412,7 +1432,7 @@ def build_account_detail(
             opening_params: dict = {"acct_id": acct_id, "date_from": date_from}
             _add_org_filter(opening_conds, opening_params, org_ids, "fa")
             opening_q = text(
-                f"SELECT COALESCE(SUM(fa.amtacctdr - fa.amtacctcr), 0) "
+                f"SELECT {saldo_sql_expr} "
                 f"FROM adempiere.fact_acct fa "
                 f"WHERE {' AND '.join(opening_conds)}"
             )
@@ -1422,21 +1442,25 @@ def build_account_detail(
             opening_conds = [
                 "fa.isactive = 'Y'",
                 "fa.account_id = :acct_id",
-                f"fa.dateacct < '{anio}-{mes:02d}-01'",
+                "fa.dateacct < :opening_date",
             ]
-            opening_params2: dict = {"acct_id": acct_id}
+            opening_params2: dict = {"acct_id": acct_id, "opening_date": f"{anio}-{mes:02d}-01"}
             _add_org_filter(opening_conds, opening_params2, org_ids, "fa")
             opening_q = text(
-                f"SELECT COALESCE(SUM(fa.amtacctdr - fa.amtacctcr), 0) "
+                f"SELECT {saldo_sql_expr} "
                 f"FROM adempiere.fact_acct fa "
                 f"WHERE {' AND '.join(opening_conds)}"
             )
             r = db.execute(opening_q, opening_params2).fetchone()
             saldo_inicial = float(r[0]) if r else 0.0
 
-        saldo_final = saldo_inicial + total_debe - total_haber
+        # Closing balance: apply period movements with correct sign
+        if is_credit_normal:
+            saldo_final = saldo_inicial + total_haber - total_debe
+        else:
+            saldo_final = saldo_inicial + total_debe - total_haber
 
-        # 5. Daily breakdown (top 30 dates by movement)
+        # 5. Daily breakdown with running balance
         daily_q = text(
             f"SELECT fa.dateacct::date AS fecha, "
             f"COALESCE(SUM(fa.amtacctdr), 0) AS debe, "
@@ -1444,12 +1468,25 @@ def build_account_detail(
             f"COUNT(*) AS asientos "
             f"FROM adempiere.fact_acct fa WHERE {period_where} "
             f"GROUP BY fa.dateacct::date ORDER BY fa.dateacct::date "
-            f"LIMIT 30"
+            f"LIMIT 31"
         )
-        daily = [
-            {"fecha": str(r[0]), "debe": float(r[1]), "haber": float(r[2]), "asientos": r[3]}
-            for r in db.execute(daily_q, period_params).fetchall()
-        ]
+        daily_rows = db.execute(daily_q, period_params).fetchall()
+        daily = []
+        running_balance = saldo_inicial
+        for r in daily_rows:
+            debe_dia = float(r[1])
+            haber_dia = float(r[2])
+            if is_credit_normal:
+                running_balance += haber_dia - debe_dia
+            else:
+                running_balance += debe_dia - haber_dia
+            daily.append({
+                "fecha": str(r[0]),
+                "debe": debe_dia,
+                "haber": haber_dia,
+                "asientos": r[3],
+                "saldo": round(running_balance, 2),
+            })
 
         # 6. Currency info (get from first movement)
         currency_name = "VES"
@@ -1462,20 +1499,24 @@ def build_account_detail(
         if curr_rows:
             currency_name = ", ".join(r[0] for r in curr_rows)
 
+        acct_type_labels = {
+            "A": "Activo", "L": "Pasivo", "O": "Patrimonio",
+            "R": "Ingreso", "E": "Gasto",
+        }
+        naturaleza = "Crédito" if is_credit_normal else "Débito"
+
         return {
             "cuenta_codigo": account_code,
             "cuenta_nombre": acct_name,
-            "tipo_cuenta": {
-                "A": "Activo", "L": "Pasivo", "O": "Patrimonio",
-                "R": "Ingreso", "E": "Gasto",
-            }.get(acct_type, acct_type),
+            "tipo_cuenta": acct_type_labels.get(acct_type, acct_type),
+            "naturaleza": naturaleza,
             "periodo": period_label,
             "moneda": currency_name,
             "movimientos": movimientos,
             "total_debe": total_debe,
             "total_haber": total_haber,
-            "saldo_inicial": saldo_inicial,
-            "saldo_final": saldo_final,
+            "saldo_inicial": round(saldo_inicial, 2),
+            "saldo_final": round(saldo_final, 2),
             "detalle_diario": daily,
         }
     finally:
