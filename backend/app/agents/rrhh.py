@@ -47,7 +47,9 @@ class RRHHAgent(BaseAgent):
 Tu especialidad es la gestión del talento humano y consultas de nómina.
 
 CAPACIDADES:
-- Listado y resumen de empleados por organización/departamento
+- Listado y resumen de empleados por organización/departamento/cargo
+- Búsqueda de empleados por cargo/puesto (ej: "cuantos obreros integrales", "lista de gerentes")
+- Los datos incluyen desglose por cargo (por_cargo) con conteos exactos
 - Cumpleañeros del mes (fecha de cumpleaños de empleados)
 - Consultas de nómina por período (quincenas, mensuales)
 - Conceptos de nómina: salario base, bonos, deducciones, neto a pagar
@@ -100,6 +102,77 @@ Datos de RRHH en iDempiere:
 - c_bpartner: Datos de empleados (isemployee='Y', name, value)
 """
 
+    # Job title keywords that indicate a cargo-specific query.
+    # When any of these appear, extract the surrounding words as the cargo search term.
+    _CARGO_KEYWORDS = [
+        "obrero", "obreros", "gerente", "gerentes", "analista", "analistas",
+        "supervisor", "supervisora", "supervisores", "coordinador", "coordinadora",
+        "coordinadores", "jefe", "jefa", "jefes", "director", "directora",
+        "directores", "operario", "operarios", "operador", "operadores",
+        "asistente", "asistentes", "auxiliar", "auxiliares", "secretaria",
+        "secretario", "técnico", "tecnicos", "técnicos", "tecnico",
+        "ingeniero", "ingenieros", "ingeniera", "chofer", "choferes",
+        "vigilante", "vigilantes", "electricista", "electricistas",
+        "mecánico", "mecanico", "mecánicos", "mecanicos",
+        "soldador", "soldadores", "almacenista", "almacenistas",
+        "recepcionista", "cajero", "cajera", "contador", "contadora",
+        "administrador", "administradora", "mensajero",
+    ]
+
+    def _extract_cargo_search(self, msg: str) -> str | None:
+        """Extract job title search term from the message.
+
+        Detects cargo keywords and returns a cleaned search term.
+        E.g. 'cuantos obreros integrales hay' → 'obrero integral'
+        E.g. 'lista de analistas de control de calidad' → 'analista de control de calidad'
+
+        Returns None if the message asks about multiple categories (e.g.
+        'cuantos empleados, cuantos obreros y cuantos gerenciales') because
+        in that case the por_cargo summary is a better answer.
+        """
+        msg_lower = msg.lower()
+
+        # If the message lists multiple categories, don't extract a single cargo
+        # e.g. "cuantos empleados, cuantos obreros y cuantos gerenciales"
+        cargo_hits = sum(1 for kw in self._CARGO_KEYWORDS if kw in msg_lower)
+        if cargo_hits >= 2:
+            return None
+        # Find which cargo keyword appears
+        found_kw = None
+        kw_pos = -1
+        for kw in self._CARGO_KEYWORDS:
+            pos = msg_lower.find(kw)
+            if pos != -1 and (kw_pos == -1 or pos < kw_pos):
+                found_kw = kw
+                kw_pos = pos
+
+        if found_kw is None:
+            # Also check for "cargo" / "puesto" keyword followed by a name
+            for trigger in ["cargo de ", "cargo ", "puesto de ", "puesto "]:
+                pos = msg_lower.find(trigger)
+                if pos != -1:
+                    rest = msg_lower[pos + len(trigger):].strip()
+                    # Take until end or common stop words
+                    for stop in [" hay", " tiene", " en ", " de la ", " activo", "?"]:
+                        idx = rest.find(stop)
+                        if idx != -1:
+                            rest = rest[:idx]
+                    return rest.strip() if rest.strip() else None
+            return None
+
+        # Extract from keyword position to end, then clean up
+        rest = msg_lower[kw_pos:].strip()
+        # Remove trailing stop words/phrases
+        for stop in [" hay", " tiene", " tenemos", " existen", " en la",
+                     " actualmente", " activo", " activos", "?"]:
+            idx = rest.find(stop)
+            if idx != -1:
+                rest = rest[:idx]
+        # Normalize plural to singular for better ILIKE matching
+        # "obreros integrales" → "obrero integral"  (SQL uses ILIKE %...%)
+        result = rest.strip()
+        return result if result else None
+
     def fetch_data(self, message: str, org_ids: list[int] | None = None, salesrep_id: int | None = None) -> str | None:
         msg = message.lower()
         sections = []
@@ -112,11 +185,28 @@ Datos de RRHH en iDempiere:
 
         label = build_period_label(date_from, date_to, mes, anio)
 
+        # Detect cargo/job search
+        cargo_search = self._extract_cargo_search(message)
+
         # Employee summary (always included)
         summary = build_employee_summary(org_ids=org_ids)
         sections.append(self._format_summary(summary, "Resumen de Personal"))
 
-        if any(w in msg for w in [
+        if cargo_search:
+            # Cargo-specific query: filter employee list by job title
+            data = build_employee_list(org_ids=org_ids, cargo_search=cargo_search)
+            if data:
+                sections.append(
+                    f"## Empleados con cargo '{cargo_search.upper()}' ({len(data)} encontrados)"
+                )
+                sections.append(self._format_table(data))
+            else:
+                sections.append(
+                    f"## Búsqueda por cargo: '{cargo_search}'\n"
+                    f"No se encontraron empleados activos con ese cargo. "
+                    f"Revisa la sección 'por_cargo' del resumen para ver los cargos disponibles."
+                )
+        elif any(w in msg for w in [
             "empleado", "personal", "lista", "cuántos", "cuantos",
             "trabajador", "trabajadores", "plantilla", "activo", "activos",
         ]):

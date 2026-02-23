@@ -709,27 +709,62 @@ def build_employee_summary(org_ids: list[int] | None = None) -> dict:
             for r in db.execute(by_dept_q, params).fetchall()
         ]
 
+        # By job/cargo (from hr_job)
+        by_job_q = text(
+            f"SELECT COALESCE(j.name, 'Sin Cargo') AS cargo, "
+            f"COUNT(DISTINCT e.c_bpartner_id) AS total, "
+            f"COUNT(DISTINCT CASE WHEN e.isactive = 'Y' THEN e.c_bpartner_id END) AS activos "
+            f"FROM adempiere.hr_employee e "
+            f"LEFT JOIN adempiere.hr_job j ON e.hr_job_id = j.hr_job_id "
+            f"WHERE {where} "
+            f"GROUP BY j.name ORDER BY total DESC LIMIT 30"
+        )
+        by_job = [
+            {"cargo": r[0], "total": r[1], "activos": r[2]}
+            for r in db.execute(by_job_q, params).fetchall()
+        ]
+
         return {
             "totales": totals,
             "por_organizacion": by_org,
             "por_departamento": by_dept,
+            "por_cargo": by_job,
         }
     finally:
         db.close()
 
 
-def build_employee_list(org_ids: list[int] | None = None) -> list[dict]:
+def build_employee_list(
+    org_ids: list[int] | None = None,
+    cargo_search: str | None = None,
+) -> list[dict]:
     """List of unique active employees from iDempiere hr_employee + c_bpartner.
 
     Uses DISTINCT ON (bp.c_bpartner_id) to eliminate duplicate rows caused by
     hr_employee having multiple records per person (one per payroll period).
     Joins hr_department and hr_job for richer employee info.
+
+    If cargo_search is provided, filters by job title using ILIKE.
     """
     db = IdempiereSession()
     try:
         conditions = ["e.isactive = 'Y'"]
         params: dict = {}
         _add_org_filter(conditions, params, org_ids, "e")
+
+        if cargo_search:
+            # Split into words and require ALL words to appear (handles plural/singular)
+            # e.g. "obreros integrales" → j.name ILIKE '%obrero%' AND j.name ILIKE '%integral%'
+            words = cargo_search.strip().split()
+            for i, word in enumerate(words):
+                # Strip trailing 's'/'es' for basic singular matching
+                stem = word.rstrip("s")
+                if stem.endswith("e") and word.endswith("es") and len(stem) > 3:
+                    stem = stem[:-1]  # "integrales" → "integral"
+                key = f"cargo_w{i}"
+                conditions.append(f"j.name ILIKE :{key}")
+                params[key] = f"%{stem}%"
+
         where = " AND ".join(conditions)
 
         q = text(
@@ -762,7 +797,9 @@ def build_employee_list(org_ids: list[int] | None = None) -> list[dict]:
             for r in rows
         ]
         results.sort(key=lambda x: x["nombre"])
-        return results[:100]
+        # When filtering by cargo, allow more results; otherwise cap at 100
+        limit = 200 if cargo_search else 100
+        return results[:limit]
     finally:
         db.close()
 
