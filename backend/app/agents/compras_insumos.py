@@ -89,21 +89,114 @@ Datos de compras de insumos en iDempiere:
 - m_product_category: Categorías de productos
 """
 
+    # Words that indicate a general query (not a specific product search)
+    _GENERAL_KEYWORDS = [
+        "resumen", "total", "proveedor", "proveedores", "mensual",
+        "principales", "inventario", "stock", "todos los insumos",
+        "cuánto se", "cuanto se", "cuánto factur", "cuanto factur",
+    ]
+
     def _extract_product_search(self, message: str) -> str | None:
-        """Extract product code or name from user message."""
+        """Extract product code or name from user message.
+
+        Handles:
+        - Product codes: REP-LAMI-0037
+        - Quoted names: "harina de avena"
+        - "producto X" / "producto: X"
+        - "compras de X" / "historial de compras de X"
+        - "cuántas X compramos"
+        - "precio de X"
+        - Fallback: if message looks like a product description (no general keywords)
+        """
         msg = message.strip()
+        msg_lower = msg.lower()
+
         # Product code pattern: letters+dash+letters+dash+digits (e.g. REP-LAMI-0037)
         code_match = re.search(r'[A-Za-z]{2,}[-][A-Za-z]{2,}[-]\d+', msg)
         if code_match:
             return code_match.group()
+
         # Quoted product name
         quoted = re.search(r'["\u201c](.+?)["\u201d]', msg)
         if quoted:
             return quoted.group(1)
+
         # "producto X" or "producto: X"
-        prod_match = re.search(r'producto[:\s]+(\S+)', msg, re.IGNORECASE)
-        if prod_match:
-            return prod_match.group(1)
+        prod_match = re.search(
+            r'producto[:\s]+(.+?)(?:\s+(?:en|del|desde|este)\b|\s*[?]|$)',
+            msg_lower,
+        )
+        if prod_match and len(prod_match.group(1).strip()) >= 3:
+            return prod_match.group(1).strip()
+
+        # "compras de {product}" / "historial de compras de {product}"
+        compras_match = re.search(
+            r'(?:compras?\s+de|historial\s+de(?:\s+compras?\s+de)?)\s+'
+            r'(.+?)(?:\s+(?:en|del|desde|este|el|último|ultima)\b|\s*[?]|$)',
+            msg_lower,
+        )
+        if compras_match:
+            product = compras_match.group(1).strip()
+            product = re.sub(
+                r'\s+(?:del?|en|este|el|[úu]ltimo|ultima|trimestre|semestre|mes|año)\s*$',
+                '', product,
+            )
+            # Skip generic terms
+            if len(product) >= 3 and product not in (
+                'insumos', 'los insumos', 'todos', 'todos los', 'todos los insumos',
+            ):
+                return product
+
+        # "cuántas {product} compramos/compró"
+        cuanto_match = re.search(
+            r'cu[aá]nt[ao]s?\s+(.+?)\s+(?:compramos|comprado|compr[oó]|se\s+compr)',
+            msg_lower,
+        )
+        if cuanto_match:
+            product = cuanto_match.group(1).strip()
+            if len(product) >= 3:
+                return product
+
+        # "precio(s) de (las últimas N compras de) {product}"
+        precio_match = re.search(
+            r'precios?\s+de(?:\s+las?\s+[úu]ltim[ao]s?\s+\d+\s+compras?\s+de)?\s+'
+            r'(.+?)(?:\s+(?:en|del|desde|este|el)\b|\s*[?]|$)',
+            msg_lower,
+        )
+        if precio_match:
+            product = precio_match.group(1).strip()
+            if len(product) >= 3:
+                return product
+
+        # Fallback: if message has no general keywords and looks like a product
+        # description (e.g. user just typed "caja de carton para cereales")
+        if not any(kw in msg_lower for kw in self._GENERAL_KEYWORDS):
+            # Remove dates, question marks, common filler
+            cleaned = re.sub(
+                r'(?:en|del?|desde|hasta|este|el|año|mes|enero|febrero|marzo|abril|'
+                r'mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre|'
+                r'\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}|\d{4})\b',
+                '', msg_lower,
+            )
+            cleaned = re.sub(r'[?¿!¡,.]', '', cleaned).strip()
+            cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+            # Must have at least 2 words and 5+ chars to be a product name
+            if len(cleaned) >= 5 and ' ' in cleaned:
+                return cleaned
+
+        return None
+
+    def _extract_product_from_history(
+        self, history: list[tuple[str, str]],
+    ) -> str | None:
+        """Try to extract a product search term from recent history."""
+        if not history:
+            return None
+        for role, content in reversed(history):
+            if role == "user":
+                product = self._extract_product_search(content)
+                if product:
+                    return product
         return None
 
     def fetch_data(self, message: str, org_ids: list[int] | None = None, salesrep_id: int | None = None, history: list[tuple[str, str]] | None = None) -> str | None:
@@ -120,19 +213,23 @@ Datos de compras de insumos en iDempiere:
 
         # Check if user is searching for a specific product
         product_search = self._extract_product_search(message)
+        # Follow-up: if no product in current message, check history
+        if not product_search and history:
+            product_search = self._extract_product_from_history(history)
+
         if product_search:
             try:
-                history = build_product_purchase_history(
+                prod_data = build_product_purchase_history(
                     product_search=product_search,
                     org_ids=org_ids,
                     date_from=date_from, date_to=date_to,
                     mes=mes, anio=anio,
                 )
-                if history:
+                if prod_data:
                     sections.append(
-                        f"## Historial de Compras - Producto '{product_search}' ({len(history)} registros)"
+                        f"## Historial de Compras - Producto '{product_search}' ({len(prod_data)} registros)"
                     )
-                    sections.append(self._format_table(history))
+                    sections.append(self._format_table(prod_data))
                 else:
                     sections.append(
                         f"## Búsqueda de Producto '{product_search}'\n"

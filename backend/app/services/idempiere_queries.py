@@ -1686,16 +1686,16 @@ def build_supply_purchases(
 
         # By product category (top items purchased)
         by_product_q = text(
-            f"SELECT p.name AS producto, "
+            f"SELECT p.value AS codigo, p.name AS producto, "
             f"COALESCE(SUM(il.linenetamt), 0) AS total "
             f"FROM adempiere.c_invoice i "
             f"JOIN adempiere.c_invoiceline il ON i.c_invoice_id = il.c_invoice_id "
             f"JOIN adempiere.m_product p ON il.m_product_id = p.m_product_id "
             f"WHERE {where} "
-            f"GROUP BY p.name ORDER BY total DESC LIMIT 20"
+            f"GROUP BY p.value, p.name ORDER BY total DESC LIMIT 20"
         )
         by_product = [
-            {"producto": r[0], "total": float(r[1])}
+            {"codigo": r[0], "producto": r[1], "total": float(r[2])}
             for r in db.execute(by_product_q, params).fetchall()
         ]
 
