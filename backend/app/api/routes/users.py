@@ -8,7 +8,7 @@ from app.database import get_db, IdempiereSession
 from app.middleware.auth import require_admin
 from app.models.user import User, UserRole, Department
 from app.schemas.user import UserCreate, UserUpdate, UserResponse
-from app.services.auth import hash_password
+from app.services.auth import hash_password, verify_password
 
 logger = logging.getLogger("santonibot.users")
 
@@ -146,11 +146,21 @@ def update_user(
     admin: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
+    # Verify admin password first
+    if not verify_password(data.admin_password, admin.hashed_password):
+        raise HTTPException(
+            status_code=403, detail="Contraseña de administrador incorrecta"
+        )
+
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
 
     update_data = data.model_dump(exclude_unset=True)
+
+    # Remove non-model fields
+    update_data.pop("admin_password", None)
+    new_password = update_data.pop("new_password", None)
 
     if "role" in update_data:
         if update_data["role"] not in [r.value for r in UserRole]:
@@ -162,8 +172,17 @@ def update_user(
             raise HTTPException(status_code=400, detail="Departamento inválido")
         update_data["department"] = Department(update_data["department"])
 
+    # Check email uniqueness if changed
+    if "email" in update_data and update_data["email"] != user.email:
+        if db.query(User).filter(User.email == update_data["email"]).first():
+            raise HTTPException(status_code=400, detail="Email ya registrado")
+
     for key, value in update_data.items():
         setattr(user, key, value)
+
+    # Handle password change
+    if new_password:
+        user.hashed_password = hash_password(new_password)
 
     db.commit()
     db.refresh(user)

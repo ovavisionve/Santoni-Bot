@@ -302,7 +302,19 @@ class ApiClient {
 
   async updateUser(
     id: number,
-    data: Partial<import("@/types").User & { password?: string }>
+    data: {
+      admin_password: string;
+      email?: string;
+      full_name?: string;
+      role?: string;
+      department?: string;
+      extra_departments?: string | null;
+      allowed_org_ids?: string | null;
+      idempiere_salesrep_id?: number | null;
+      sensitivity_level?: number;
+      is_active?: boolean;
+      new_password?: string | null;
+    }
   ) {
     return this.request<import("@/types").User>(`/api/users/${id}`, {
       method: "PATCH",

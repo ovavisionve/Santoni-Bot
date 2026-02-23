@@ -44,6 +44,7 @@ class UserCreate(BaseModel):
 
 
 class UserUpdate(BaseModel):
+    admin_password: str  # Required: admin must confirm their password
     email: EmailStr | None = None
     full_name: str | None = None
     role: str | None = None
@@ -53,6 +54,14 @@ class UserUpdate(BaseModel):
     idempiere_salesrep_id: int | None = None
     sensitivity_level: int | None = None
     is_active: bool | None = None
+    new_password: str | None = None  # Optional: set new password for the user
+
+    @field_validator("new_password")
+    @classmethod
+    def check_new_password(cls, v: str | None) -> str | None:
+        if v is not None and v != "":
+            return validate_password_strength(v)
+        return v
 
 
 class PasswordChange(BaseModel):
