@@ -103,6 +103,10 @@ _KEYWORD_RULES: list[tuple[str, list[str]]] = [
     ("rrhh", [
         "nomina", "nómina", "empleado", "empleados", "personal",
         "trabajador", "trabajadores", "plantilla",
+        "obrero", "obreros", "gerente", "gerentes",
+        "analista", "supervisor", "supervisora", "coordinador", "coordinadora",
+        "operario", "operarios", "operador", "chofer", "choferes",
+        "cargo", "cargos", "puesto", "puestos",
         "vacacion", "vacaciones", "asistencia", "inasistencia",
         "ausentismo", "ausentimos", "ausencia", "ausencias", "falta", "faltas",
         "evaluacion", "evaluación",
