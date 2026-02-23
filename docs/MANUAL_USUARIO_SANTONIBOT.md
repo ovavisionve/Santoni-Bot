@@ -1699,6 +1699,44 @@ El servidor Nginx configura tres zonas de limitacion de velocidad:
 
 ---
 
+## Graficas y Visualizacion
+
+### P: Por que no aparece el boton de grafica en una respuesta?
+**R:** El boton de grafica solo aparece cuando la respuesta contiene una tabla con al menos 3 filas de datos y al menos una columna numerica. Si su respuesta no cumple estos criterios, reformule la consulta para obtener mas datos.
+
+### P: Puedo cambiar el tipo de grafica?
+**R:** El sistema selecciona automaticamente el tipo mas adecuado (barras, lineas, area, torta) basandose en la naturaleza de los datos. Para series temporales (meses, semanas) se usan lineas; para comparaciones se usan barras. Actualmente no se puede cambiar manualmente el tipo.
+
+### P: La grafica exportada se ve borrosa.
+**R:** Las graficas se exportan en alta resolucion (2x pixeles). Si se ven borrosas, verifique que no esta reduciendo la imagen al insertarla en un documento. Use el tamano original para mejor calidad.
+
+---
+
+## Para el equipo de TI
+
+### P: Donde se almacenan las conversaciones?
+**R:** Las conversaciones se almacenan en la base de datos PostgreSQL interna del sistema (PostgreSQL 16), no en la base de datos de iDempiere. Cada conversacion se vincula al ID del usuario que la creo.
+
+### P: Que pasa si se cae el servidor de iDempiere?
+**R:** Si la base de datos de iDempiere no esta disponible, los agentes departamentales no podran ejecutar las consultas SQL y mostraran un mensaje de error. El chat y el login seguiran funcionando, pero las consultas de datos no estaran disponibles hasta que se restablezca la conexion con iDempiere.
+
+### P: Cuantos usuarios pueden usar el sistema simultaneamente?
+**R:** El sistema esta disenado para soportar multiples usuarios concurrentes. El limite practico depende de los recursos del servidor (CPU, memoria) y de la capacidad de la API de IA (Groq). En condiciones normales, decenas de usuarios pueden usar el sistema simultaneamente.
+
+### P: Como se actualiza SantoniBot?
+**R:** Las actualizaciones se despliegan a traves de Docker Compose. El equipo de OVA Agency realiza las actualizaciones coordinando con el equipo de TI para minimizar el tiempo de inactividad. Tipicamente, el proceso de actualizacion toma menos de 5 minutos.
+
+### P: Como reinicio el sistema si hay un problema?
+**R:** Contacte al equipo de OVA Agency para asistencia tecnica. En casos de emergencia, un reinicio basico puede hacerse ejecutando los comandos de Docker correspondientes desde el servidor, pero esto debe hacerse con cuidado para no perder datos en proceso.
+
+### P: Los datos del ERP se copian a SantoniBot?
+**R:** No. SantoniBot **consulta directamente** la base de datos de iDempiere en tiempo real. No se copian ni replican datos. Esto garantiza que la informacion siempre esta actualizada y que no hay duplicacion.
+
+### P: Que sucede con los datos cuando se elimina un usuario?
+**R:** Al eliminar un usuario, se elimina su cuenta y sus conversaciones asociadas. Los registros de auditoria se conservan para mantener la trazabilidad. Los datos del ERP no se ven afectados.
+
+---
+
 # 12. Glosario
 
 | Termino | Definicion |
@@ -1806,6 +1844,151 @@ Desarrollo de Software y Soluciones de IA
 | **IA Principal** | Groq (Llama 3.1 70B) |
 | **IA Secundaria** | Claude API (Anthropic) |
 | **Despliegue** | Docker Compose + Coolify + Nginx |
+
+---
+
+## Historial de cambios del manual
+
+| Version | Fecha | Cambios |
+|---------|-------|---------|
+| 1.0 | Febrero 2026 | Version inicial del manual de usuario |
+
+---
+
+# Anexos
+
+## Anexo A: Guia rapida de referencia
+
+### Atajos de teclado
+
+| Atajo | Funcion |
+|-------|---------|
+| `Enter` | Enviar mensaje |
+| `Shift + Enter` | Nueva linea en el mensaje |
+
+### Iconos de la interfaz
+
+| Icono | Significado | Ubicacion |
+|-------|-----------|-----------|
+| Clip (Paperclip) | Adjuntar archivo | Campo de entrada |
+| Flecha (Send) | Enviar mensaje | Campo de entrada |
+| Menu (hamburguesa) | Mostrar/ocultar sidebar | Encabezado (movil) |
+| Engranaje (Settings) | Panel de Administracion | Sidebar (solo admin) |
+| Flecha de salida (LogOut) | Cerrar sesion | Sidebar |
+| Mas (+) | Nueva conversacion | Sidebar |
+| Lupa (Search) | Buscar conversaciones | Sidebar |
+| Papelera (Trash) | Eliminar conversacion/usuario | Sidebar / Admin |
+| Grafico de barras | Ver como grafica | Respuesta del chat |
+| Descarga | Exportar datos | Respuesta del chat |
+| Copiar | Copiar respuesta al portapapeles | Respuesta del chat |
+
+### URLs del sistema
+
+| Pagina | Ruta |
+|--------|------|
+| Login | `/login` |
+| Chat principal | `/chat` |
+| Panel de Administracion | `/admin` |
+| Dashboard de KPIs | `/dashboard` (en desarrollo) |
+
+## Anexo B: Requisitos minimos del sistema
+
+### Para usuarios finales
+
+| Requisito | Minimo |
+|-----------|--------|
+| Navegador | Chrome 90+, Firefox 90+, Edge 90+, Safari 15+ |
+| Conexion a Internet | Acceso a la red interna de Santoni |
+| Resolucion de pantalla | 1280 x 720 px o superior |
+| JavaScript | Habilitado (requerido) |
+| Cookies | Habilitadas (requerido para autenticacion) |
+
+### Para dispositivos moviles
+
+SantoniBot es **responsive** y se adapta a pantallas de dispositivos moviles. Sin embargo, la experiencia optima es en pantallas de escritorio o tablets. En dispositivos moviles:
+- La barra lateral se oculta automaticamente y se accede con el boton de menu
+- Las tablas pueden requerir desplazamiento horizontal
+- Las graficas se adaptan al ancho de la pantalla
+
+## Anexo C: Flujo de trabajo recomendado por departamento
+
+### Finanzas - Inicio del dia
+
+1. "Cual es el saldo de bancos hoy?"
+2. "Cuentas por cobrar vencidas con mas de 30 dias"
+3. "Cuentas por pagar que vencen esta semana"
+4. "Flujo de caja del mes"
+
+### Ventas - Revision matutina
+
+1. "Ventas de ayer por zona"
+2. "Cobranza del dia anterior"
+3. "Clientes morosos con mas de 15 dias"
+4. "Ranking de vendedores de la semana"
+
+### Produccion - Reporte de turno
+
+1. "Produccion de hoy"
+2. "Eficiencia de la linea del turno actual"
+3. "Desperdicio del dia"
+4. "Ordenes de produccion pendientes"
+
+### RRHH - Revision semanal
+
+1. "Resumen de asistencia de la semana"
+2. "Empleados con vacaciones pendientes"
+3. "Cumpleanos de la proxima semana"
+4. "Resumen de nomina del mes"
+
+### Compras - Seguimiento diario
+
+1. "Ordenes de compra pendientes de recepcion"
+2. "Compras recibidas esta semana"
+3. "Inventario critico de materiales"
+4. "Resumen de compras a productores de la semana"
+
+## Anexo D: Solucion de problemas comunes
+
+### El sistema no carga o muestra pagina en blanco
+
+1. Verifique su conexion a la red interna de Santoni
+2. Intente recargar la pagina con `Ctrl + F5` (Windows) o `Cmd + Shift + R` (Mac)
+3. Limpie la cache del navegador
+4. Intente con otro navegador
+5. Si persiste, contacte al equipo de TI
+
+### La respuesta se queda cargando indefinidamente
+
+1. Espere al menos 60 segundos (consultas complejas pueden tardar)
+2. Si no responde, recargue la pagina
+3. Inicie sesion nuevamente si se lo solicita
+4. Reformule la consulta de forma mas simple
+5. Si persiste, verifique que el servidor de iDempiere esta operativo
+
+### Los datos no coinciden con lo esperado
+
+1. Verifique que esta consultando el periodo correcto
+2. Confirme que esta viendo la organizacion correcta
+3. Considere que el agente puede estar aplicando filtros diferentes
+4. Consulte el mismo dato directamente en iDempiere para comparar
+5. Si la discrepancia es significativa, reporte al equipo de TI con:
+   - Captura de pantalla de SantoniBot
+   - Captura de pantalla de iDempiere
+   - Periodo y filtros utilizados en ambos
+
+### No puedo adjuntar un archivo
+
+1. Verifique que el archivo no exceda los 10 MB
+2. Verifique que el formato es compatible (PDF, Excel, Word, CSV, TXT, imagenes)
+3. Intente con un archivo mas pequeno
+4. Si el problema persiste, intente con otro navegador
+
+### La grafica no se genera correctamente
+
+1. Verifique que la tabla tiene al menos 3 filas de datos
+2. Verifique que hay al menos una columna con valores numericos
+3. Intente solicitar los datos en un formato tabular explicito
+4. Reformule la consulta pidiendo "en tabla con columnas: nombre, valor"
 
 ---
 
