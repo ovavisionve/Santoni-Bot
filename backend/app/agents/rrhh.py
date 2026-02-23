@@ -141,7 +141,11 @@ Datos de RRHH en iDempiere:
                     sections.append(f"## Cumpleañeros de {mes_label} ({len(data)} empleados)")
                     sections.append(self._format_table(data))
                 else:
-                    sections.append(f"## Cumpleañeros de {mes_label}\nNo se encontraron empleados con cumpleaños registrado en este mes.")
+                    sections.append(
+                        f"## Cumpleañeros de {mes_label}\n"
+                        f"No se encontraron empleados con cumpleaños registrado para {mes_label}. "
+                        f"Es posible que la fecha de nacimiento no esté cargada en el sistema ERP."
+                    )
             except Exception as exc:
                 sections.append(
                     f"## Cumpleañeros de {mes_label}\n"
