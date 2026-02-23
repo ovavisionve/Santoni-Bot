@@ -133,14 +133,21 @@ Datos de RRHH en iDempiere:
             if birthday_mes is None and not date_from:
                 from datetime import datetime as _dt
                 birthday_mes = _dt.now().month
-            data = build_birthday_list(mes=birthday_mes, org_ids=org_ids)
             from app.agents.date_utils import MESES_NOMBRES
             mes_label = MESES_NOMBRES.get(birthday_mes, str(birthday_mes)) if birthday_mes else "Todos los meses"
-            if data:
-                sections.append(f"## Cumpleañeros de {mes_label} ({len(data)} empleados)")
-                sections.append(self._format_table(data))
-            else:
-                sections.append(f"## Cumpleañeros de {mes_label}\nNo se encontraron empleados con cumpleaños registrado en este mes.")
+            try:
+                data = build_birthday_list(mes=birthday_mes, org_ids=org_ids)
+                if data:
+                    sections.append(f"## Cumpleañeros de {mes_label} ({len(data)} empleados)")
+                    sections.append(self._format_table(data))
+                else:
+                    sections.append(f"## Cumpleañeros de {mes_label}\nNo se encontraron empleados con cumpleaños registrado en este mes.")
+            except Exception as exc:
+                sections.append(
+                    f"## Cumpleañeros de {mes_label}\n"
+                    f"No se pudo consultar la información de cumpleaños: {type(exc).__name__}. "
+                    f"Es posible que el campo de fecha de nacimiento no esté disponible en la base de datos."
+                )
 
         if any(w in msg for w in ["nómina", "nomina", "salario", "sueldo", "pago"]):
             data = build_payroll_summary(
