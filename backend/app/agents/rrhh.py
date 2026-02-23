@@ -1,13 +1,22 @@
 """
 Agente de Recursos Humanos - Alimentos Santoni
 Especializado en: nómina, vacaciones, asistencia, datos de empleados.
+
+Fuente de datos: hr_employee, hr_process, hr_movement, hr_concept,
+hr_payroll + c_bpartner en iDempiere (PostgreSQL 13).
 """
 
-import re
-from datetime import datetime
-
 from app.agents.base_agent import BaseAgent
-from app.services.query_service import build_employee_summary, execute_demo_query
+from app.agents.date_utils import (
+    extract_date_range,
+    extract_month_year,
+    build_period_label,
+)
+from app.services.query_service import (
+    build_employee_summary,
+    build_employee_list,
+    build_payroll_summary,
+)
 
 
 class RRHHAgent(BaseAgent):
@@ -34,104 +43,81 @@ class RRHHAgent(BaseAgent):
         return """Eres el Agente de Recursos Humanos de SantoniBot, el sistema inteligente de Alimentos Santoni, C.A.
 Tu especialidad es la gestión del talento humano y consultas de nómina.
 
+CAPACIDADES:
+- Listado y resumen de empleados por organización/departamento
+- Consultas de nómina por período (quincenas, mensuales)
+- Conceptos de nómina: salario base, bonos, deducciones, neto a pagar
+- Historial de procesos de nómina
+
+CONTEXTO iDEMPIERE:
+- Empleados: hr_employee (vinculado a c_bpartner via c_bpartner_id)
+- Procesos de nómina: hr_process (documentno, dateacct, c_period_id, docstatus)
+- Movimientos de nómina: hr_movement (hr_process_id, hr_employee_id, hr_concept_id, amount, qty)
+- Conceptos: hr_concept (value, name, columntype, type)
+- Nóminas definidas: hr_payroll (name, hr_payroll_id)
+- También: c_bpartner (isemployee='Y') para datos básicos de empleados
+- Organizaciones: INPROA SANTONI, AGROINPROA, AGROPECUARIA R.R., Agro Import, INVERSIONES AGA, InproMaiz, AGA AGRICOLA, Santoni Service
+
 REGLAS:
 - Responde siempre en español, de forma profesional
-- Los datos de RRHH son ALTAMENTE SENSIBLES
-- Presenta montos salariales en Bolívares (Bs.)
+- Los datos de RRHH son ALTAMENTE SENSIBLES - no divulgar salarios individuales sin autorización
+- Presenta montos salariales en Bolívares (Bs.) con formato venezolano (punto=miles, coma=decimal)
 - Los datos que recibes son REALES de la base de datos de Santoni
+- NUNCA inventes datos. Si no hay datos para un filtro, informa claramente
 
-CONTEXTO:
+CONTEXTO ORGANIZACIONAL:
 - Ubicaciones: Agua Blanca (2 plantas), Araure (oficinas administrativas)
 - Turnos: Oficina diurno, Planta rotativo
 - Horario oficina: 7:30am a 5pm
 
+FORMATOS DE FECHA SOPORTADOS:
+- Rango específico: "01/01/2026 al 31/01/2026"
+- Mes y año: "enero 2026"
+- Solo año: "2026"
+
 IMPORTANTE SOBRE PERÍODOS:
 - SIEMPRE indica claramente el período de los datos que estás presentando
-- Si el usuario hace una pregunta amplia sin especificar período, presenta los datos disponibles y al final sugiere: "Si necesitas datos de un período específico, indícame el mes o año que deseas consultar."
-- Si el usuario menciona un período específico, los datos ya vendrán filtrados"""
+- Si el usuario hace una pregunta amplia sin período, presenta datos disponibles y sugiere: "Si necesitas datos de un período específico, indícame el mes, año o rango de fechas."
+- Si el usuario especificó un rango de fechas, los datos ya vienen filtrados para ese rango exacto"""
 
     def get_sql_context(self) -> str:
         return """
-Tablas: demo_empleados, demo_nominas, demo_asistencias
+Datos de RRHH en iDempiere:
+- hr_employee: Empleados (c_bpartner_id, hr_department_id, hr_job_id, startdate, enddate, isactive)
+- hr_process: Procesos de nómina (hr_payroll_id, c_period_id, dateacct, documentno, docstatus)
+- hr_movement: Movimientos (hr_process_id, hr_employee_id, hr_concept_id, amount, qty)
+- hr_concept: Conceptos de nómina (value, name, type, columntype)
+- hr_payroll: Definiciones de nómina (name)
+- c_bpartner: Datos de empleados (isemployee='Y', name, value)
 """
 
     def fetch_data(self, message: str, org_ids: list[int] | None = None, salesrep_id: int | None = None) -> str | None:
         msg = message.lower()
         sections = []
 
+        # Extract dates
+        date_from, date_to = extract_date_range(message)
+        mes, anio = extract_month_year(message)
+        if date_from and date_to:
+            mes = None
+
+        label = build_period_label(date_from, date_to, mes, anio)
+
+        # Employee summary (always included)
         summary = build_employee_summary(org_ids=org_ids)
         sections.append(self._format_summary(summary, "Resumen de Personal"))
 
         if any(w in msg for w in ["empleado", "personal", "lista", "cuántos", "cuantos"]):
-            try:
-                data = execute_demo_query(
-                    "SELECT nombre, cargo, departamento, ubicacion, turno, activo "
-                    "FROM demo_empleados ORDER BY departamento, nombre"
-                )
-                sections.append(f"## Lista de Empleados ({len(data)} total)")
+            data = build_employee_list(org_ids=org_ids)
+            if data:
+                sections.append(f"## Lista de Empleados ({len(data)} registros)")
                 sections.append(self._format_table(data))
-            except Exception:
-                pass
 
         if any(w in msg for w in ["nómina", "nomina", "salario", "sueldo", "pago"]):
-            try:
-                periodo = None
-                anio = datetime.now().year
-                year_match = re.search(r'20\d{2}', message)
-                if year_match:
-                    anio = int(year_match.group())
-                meses_map = {
-                    "enero": f"{anio}-01", "febrero": f"{anio}-02", "marzo": f"{anio}-03",
-                    "abril": f"{anio}-04", "mayo": f"{anio}-05", "junio": f"{anio}-06",
-                    "julio": f"{anio}-07", "agosto": f"{anio}-08", "septiembre": f"{anio}-09",
-                    "octubre": f"{anio}-10", "noviembre": f"{anio}-11", "diciembre": f"{anio}-12",
-                }
-                for nombre, per in meses_map.items():
-                    if nombre in msg:
-                        periodo = per
-                        break
-
-                if periodo:
-                    data = execute_demo_query(
-                        "SELECT e.nombre, e.cargo, e.departamento, n.salario_basico, "
-                        "n.asignaciones, n.deducciones, n.neto_pagar "
-                        "FROM demo_nominas n JOIN demo_empleados e ON n.empleado_id = e.id "
-                        "WHERE n.periodo = :periodo ORDER BY n.neto_pagar DESC",
-                        {"periodo": periodo},
-                    )
-                    total = sum(d["neto_pagar"] for d in data)
-                    sections.append(f"## Nómina {periodo} (Total: Bs. {total:,.2f})")
-                    sections.append(self._format_table(data))
-                else:
-                    data = execute_demo_query(
-                        "SELECT periodo, COUNT(*) as empleados, "
-                        "SUM(neto_pagar) as total_nomina, AVG(neto_pagar) as promedio "
-                        "FROM demo_nominas GROUP BY periodo ORDER BY periodo"
-                    )
-                    sections.append("## Resumen de Nóminas por Período")
-                    sections.append(self._format_table(data))
-            except Exception:
-                pass
-
-        if any(w in msg for w in ["asistencia", "falta", "ausent", "permiso", "inasist"]):
-            try:
-                data = execute_demo_query(
-                    "SELECT tipo, COUNT(*) as cantidad "
-                    "FROM demo_asistencias GROUP BY tipo ORDER BY cantidad DESC"
-                )
-                sections.append("## Resumen de Asistencia (Enero 2025)")
-                sections.append(self._format_table(data))
-
-                faltas = execute_demo_query(
-                    "SELECT e.nombre, e.departamento, COUNT(*) as faltas "
-                    "FROM demo_asistencias a JOIN demo_empleados e ON a.empleado_id = e.id "
-                    "WHERE a.tipo = 'falta' GROUP BY e.nombre, e.departamento "
-                    "ORDER BY faltas DESC LIMIT 10"
-                )
-                if faltas:
-                    sections.append("## Empleados con Más Faltas")
-                    sections.append(self._format_table(faltas))
-            except Exception:
-                pass
+            data = build_payroll_summary(
+                mes=mes, anio=anio, org_ids=org_ids,
+                date_from=date_from, date_to=date_to,
+            )
+            sections.append(self._format_summary(data, f"Resumen de Nómina - {label}"))
 
         return "\n\n".join(sections) if sections else None

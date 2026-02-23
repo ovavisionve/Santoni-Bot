@@ -2,12 +2,17 @@
 Agente de Compras a Productores - Alimentos Santoni
 Especializado en: compras de materia prima agrícola (arroz, maíz) a productores,
 volúmenes, precios por kilo/tonelada, pagos pendientes, productores registrados.
+
+Fuente de datos: c_order (issotrx='N'), c_orderline, c_bpartner (isagricultor='Y'),
+m_product en iDempiere (PostgreSQL 13).
 """
 
-import re
-from datetime import datetime
-
 from app.agents.base_agent import BaseAgent
+from app.agents.date_utils import (
+    extract_date_range,
+    extract_month_year,
+    build_period_label,
+)
 from app.services.query_service import (
     build_producer_purchases,
     build_registered_producers,
@@ -40,12 +45,30 @@ class ComprasProductoresAgent(BaseAgent):
         return """Eres el Agente de Compras a Productores de SantoniBot, el sistema inteligente de Alimentos Santoni, C.A.
 Tu especialidad es la gestión de compras de materia prima agrícola a productores.
 
+CAPACIDADES:
+- Resumen de compras por producto, período y productor
+- Top productores por volumen y monto
+- Pagos pendientes a productores
+- Análisis de precios por kg/tonelada
+- Productores registrados
+
+CONTEXTO iDEMPIERE:
+- Órdenes de compra: c_order (issotrx='N', docstatus='CO') - 277,538 órdenes
+- Líneas de orden: c_orderline (m_product_id, qtyordered, priceactual, linenetamt)
+- Productores: c_bpartner (isagricultor='Y', codigoproductor, codigocompras)
+- Productos: m_product (arroz paddy acondicionado, maíz blanco de consumo)
+- Campos de guías agrícolas en c_order: driver, plateno, grossweight, tareweight, netweight, classification, tipofrijol, guidemac, guideproducer, guidesada
+- Ubicación productores: c_bpartner_location → c_city → c_region
+- Monedas: VES (Bolívares, ID 205), USD (Dólares, ID 100)
+- Organizaciones: INPROA SANTONI, AGROINPROA, AGROPECUARIA R.R., Agro Import, INVERSIONES AGA, InproMaiz, AGA AGRICOLA, Santoni Service
+
 REGLAS:
 - Responde siempre en español
 - Presenta volúmenes en kg y toneladas
-- Presenta precios en Bs./kg
+- Presenta precios en Bs./kg con formato venezolano (punto=miles, coma=decimal)
 - Distingue entre Arroz Paddy Húmedo y Maíz
 - Los datos que recibes son REALES de la base de datos de Santoni
+- NUNCA inventes datos. Si no hay datos para un filtro, informa claramente
 
 CONTEXTO:
 - Responsable: Marlenis Figueredo
@@ -54,36 +77,36 @@ CONTEXTO:
 - El usuario puede referirse al maíz como "maíz blanco", "maíz", etc.
 - Zonas productoras: Portuguesa, Barinas, Apure, Lara, Cojedes
 
+FORMATOS DE FECHA SOPORTADOS:
+- Rango específico: "01/01/2026 al 31/01/2026"
+- Mes y año: "enero 2026"
+- Solo año: "2026"
+
 IMPORTANTE SOBRE PERÍODOS:
-- Los datos que recibes corresponden al año actual por defecto, a menos que el usuario especifique otro año
+- Los datos corresponden al año actual por defecto, a menos que el usuario especifique otro año
 - SIEMPRE indica claramente el período de los datos que estás presentando
-- Si el usuario hace una pregunta amplia sin especificar período, presenta los datos del año actual y al final sugiere: "Si necesitas datos de otro período, indícame el año o mes que deseas consultar."
-- Si el usuario menciona un año específico, los datos ya vendrán filtrados para ese año"""
+- Si el usuario hace una pregunta amplia sin período, presenta datos del año actual y sugiere: "Si necesitas datos de otro período, indícame el año, mes o rango de fechas."
+- Si el usuario especificó un rango de fechas, los datos ya vienen filtrados para ese rango exacto"""
 
     def get_sql_context(self) -> str:
         return """
-Tablas: demo_productores, demo_compras_productores
+Datos de compras a productores en iDempiere:
+- c_order: Órdenes de compra (issotrx='N', dateordered, grandtotal, docstatus, driver, plateno, grossweight, netweight, classification)
+- c_orderline: Líneas (m_product_id, qtyordered, priceactual, linenetamt)
+- c_bpartner: Productores (isagricultor='Y', codigoproductor, name, value)
+- c_bpartner_location: Ubicación (c_city_id, c_region_id)
+- m_product: Productos agrícolas (arroz, maíz)
 """
 
     def fetch_data(self, message: str, org_ids: list[int] | None = None, salesrep_id: int | None = None) -> str | None:
         msg = message.lower()
         sections = []
 
-        anio = datetime.now().year
-        year_match = re.search(r'20\d{2}', message)
-        if year_match:
-            anio = int(year_match.group())
-
-        mes = None
-        meses_map = {
-            "enero": 1, "febrero": 2, "marzo": 3, "abril": 4,
-            "mayo": 5, "junio": 6, "julio": 7, "agosto": 8,
-            "septiembre": 9, "octubre": 10, "noviembre": 11, "diciembre": 12,
-        }
-        for nombre, num in meses_map.items():
-            if nombre in msg:
-                mes = num
-                break
+        # Extract dates
+        date_from, date_to = extract_date_range(message)
+        mes, anio = extract_month_year(message)
+        if date_from and date_to:
+            mes = None
 
         producto = None
         if "arroz" in msg:
@@ -91,8 +114,12 @@ Tablas: demo_productores, demo_compras_productores
         elif "maíz" in msg or "maiz" in msg:
             producto = "maiz"
 
-        label = f"Año {anio}" if anio else "Todos los años"
-        summary = build_producer_purchases(producto=producto, mes=mes, anio=anio, org_ids=org_ids)
+        label = build_period_label(date_from, date_to, mes, anio)
+
+        summary = build_producer_purchases(
+            producto=producto, mes=mes, anio=anio, org_ids=org_ids,
+            date_from=date_from, date_to=date_to,
+        )
         sections.append(self._format_summary(summary, f"Compras a Productores - {label}"))
 
         if any(w in msg for w in ["productor", "registrad", "cuántos", "cuantos"]):
@@ -118,9 +145,12 @@ Tablas: demo_productores, demo_compras_productores
 
         if any(w in msg for w in ["precio", "costo", "valor"]):
             try:
-                prices = build_producer_price_analysis(anio=anio, org_ids=org_ids)
+                prices = build_producer_price_analysis(
+                    anio=anio, org_ids=org_ids,
+                    date_from=date_from, date_to=date_to,
+                )
                 if prices:
-                    sections.append(f"## Análisis de Precios {anio} (Bs./kg)")
+                    sections.append(f"## Análisis de Precios ({label}) (Bs./kg)")
                     sections.append(self._format_table(prices))
             except Exception:
                 pass
