@@ -67,6 +67,22 @@ def _get_history(db: Session, conversation_id: int, limit: int = 8) -> list[tupl
     return [(m.role.value, m.content) for m in messages[:-1]] if len(messages) > 1 else []
 
 
+def _get_last_agent(db: Session, conversation_id: int) -> str | None:
+    """Get the agent used in the last bot response for context continuity."""
+    last_bot_msg = (
+        db.query(Message)
+        .filter(
+            Message.conversation_id == conversation_id,
+            Message.role == "assistant",
+            Message.agent_used.isnot(None),
+            Message.agent_used != "general",
+        )
+        .order_by(Message.created_at.desc())
+        .first()
+    )
+    return last_bot_msg.agent_used if last_bot_msg else None
+
+
 # ──────────────────────────────────────────────────────────────
 # Streaming endpoint (SSE) — primary, fast
 # ──────────────────────────────────────────────────────────────
@@ -101,7 +117,8 @@ async def stream_message(
     db.commit()
 
     history = _get_history(db, conversation.id)
-    agent_name = await orchestrator.get_stream_agent_name(data.message, current_user)
+    last_agent = _get_last_agent(db, conversation.id)
+    agent_name = await orchestrator.get_stream_agent_name(data.message, current_user, last_agent=last_agent)
 
     # Send initial metadata
     conv_id = conversation.id
@@ -129,6 +146,7 @@ async def stream_message(
                     message=message_text,
                     user=current_user,
                     history=history,
+                    last_agent=last_agent,
                 ):
                     full_response.append(token)
                     yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
@@ -212,6 +230,7 @@ async def send_message(
     db.commit()
 
     history = _get_history(db, conversation.id)
+    last_agent = _get_last_agent(db, conversation.id)
 
     # Read attached document if present
     document = None
@@ -227,6 +246,7 @@ async def send_message(
             user=current_user,
             history=history,
             document=document,
+            last_agent=last_agent,
         )
     except Exception as exc:
         logger.error(

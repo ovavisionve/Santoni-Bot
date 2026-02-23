@@ -141,11 +141,18 @@ def _has_account_code(msg: str) -> bool:
     return bool(re.search(r'\d\.\d{2}\.\d{2}', msg))
 
 
-def classify_by_keywords(message: str, allowed_departments: list[str]) -> str:
+def classify_by_keywords(
+    message: str,
+    allowed_departments: list[str],
+    last_agent: str | None = None,
+) -> str:
     """
     Classify a message by scanning for department-specific keywords.
     Returns the agent name or "general" if no match found.
     Returns "no_access" if the matched department is not in allowed list.
+
+    If no keyword matches and last_agent is provided, uses the last agent
+    as context for follow-up messages (e.g. "¿estás seguro?", "dame más detalle").
     ~0ms execution time.
     """
     msg = message.lower()
@@ -167,9 +174,13 @@ def classify_by_keywords(message: str, allowed_departments: list[str]) -> str:
                 return "no_access"
             return agent_name
 
-    # Fallback: if message is a question about data, try ventas as default
-    # (most common department at Santoni)
-    # Exclude "cual/cuales" — too generic, catches accounting questions
+    # Fallback 1: continue with last agent for follow-up messages
+    # Catches: "¿estás seguro?", "dame más detalle", "ok dame de enero",
+    # "y en dólares?", "y por zona?", etc.
+    if last_agent and last_agent in allowed_departments and last_agent != "general":
+        return last_agent
+
+    # Fallback 2: if message is a question about data, try ventas as default
     if any(w in msg for w in ["cuanto", "cuánto", "dame", "muestra", "reporte"]):
         if "ventas" in allowed_departments:
             return "ventas"
@@ -198,15 +209,18 @@ class Orchestrator:
             "compras_productores": ComprasProductoresAgent(),
         }
 
-    async def classify(self, message: str, allowed_departments: list[str]) -> str:
+    async def classify(
+        self, message: str, allowed_departments: list[str], last_agent: str | None = None,
+    ) -> str:
         """Classify user intent using keyword matching (instant)."""
-        return classify_by_keywords(message, allowed_departments)
+        return classify_by_keywords(message, allowed_departments, last_agent=last_agent)
 
     async def process(
         self,
         message: str,
         user: User,
         history: list[tuple[str, str]] | None = None,
+        last_agent: str | None = None,
         document: dict | None = None,
     ) -> dict:
         """Process a user message through the appropriate agent."""
@@ -217,8 +231,8 @@ class Orchestrator:
 
         allowed = user.allowed_departments
 
-        # Classify the query (instant keyword match)
-        agent_name = await self.classify(message, allowed)
+        # Classify the query (instant keyword match, with last-agent fallback)
+        agent_name = await self.classify(message, allowed, last_agent=last_agent)
         logger.info("Classified '%s' → %s", message[:60], agent_name)
 
         # Handle access denied
@@ -265,10 +279,11 @@ class Orchestrator:
         message: str,
         user: User,
         history: list[tuple[str, str]] | None = None,
+        last_agent: str | None = None,
     ) -> AsyncIterator[str]:
         """Stream response tokens via the appropriate agent."""
         allowed = user.allowed_departments
-        agent_name = await self.classify(message, allowed)
+        agent_name = await self.classify(message, allowed, last_agent=last_agent)
         logger.info("Stream classified '%s' → %s", message[:60], agent_name)
 
         if agent_name == "no_access":
@@ -295,11 +310,11 @@ class Orchestrator:
             yield token
 
     async def get_stream_agent_name(
-        self, message: str, user: User
+        self, message: str, user: User, last_agent: str | None = None,
     ) -> str:
         """Return the agent name for a message (for metadata after streaming)."""
         allowed = user.allowed_departments
-        return await self.classify(message, allowed)
+        return await self.classify(message, allowed, last_agent=last_agent)
 
     async def _handle_document(
         self,
