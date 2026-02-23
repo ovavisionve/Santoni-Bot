@@ -90,11 +90,30 @@ def _parse_single_date(text: str) -> str | None:
 def extract_date_range(message: str) -> tuple[str | None, str | None]:
     """Extract date range from message text.
 
-    Finds the keyword "al" and parses dates on each side independently.
-    Each date can be in any supported format (separated or compact).
+    Supported patterns:
+    - Explicit range: "01/01/2026 al 31/01/2026", "01012026 al 31012026"
+    - Relative end: "desde noviembre 2025 a la fecha", "desde enero hasta hoy"
 
     Returns (date_from, date_to) in 'YYYY-MM-DD' format, or (None, None).
     """
+    msg = message.lower()
+    now = datetime.now()
+    today = now.strftime("%Y-%m-%d")
+
+    # Pattern: "desde [month] [year] a la fecha / hasta hoy"
+    has_today_end = any(p in msg for p in [
+        "a la fecha", "hasta hoy", "hasta la fecha", "fecha de hoy",
+    ])
+    desde_match = re.search(r'desde\s+(\w+)(?:\s+(?:de\s+)?(\d{4}))?', msg)
+    if desde_match and has_today_end:
+        month_name = desde_match.group(1)
+        if month_name in MESES_MAP:
+            month_num = MESES_MAP[month_name]
+            year = int(desde_match.group(2)) if desde_match.group(2) else now.year
+            date_from = f"{year}-{month_num:02d}-01"
+            return date_from, today
+
+    # Standard "al" pattern: "01/01/2026 al 31/01/2026"
     al_match = _AL_RE.search(message)
     if not al_match:
         return None, None

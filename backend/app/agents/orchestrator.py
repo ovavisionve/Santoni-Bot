@@ -48,6 +48,8 @@ _KEYWORD_RULES: list[tuple[str, list[str]]] = [
         "ordenes de compra", "inventario de material", "inventario",
         "material", "compra de insumo", "compras insumo", "suministro",
         "tiempo de entrega", "stock",
+        "historial de compra", "historial de compras",
+        "compras de", "compra del producto",
     ]),
     # Contabilidad — BEFORE ventas/finanzas to catch accounting terms first
     ("contabilidad", [

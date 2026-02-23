@@ -1526,6 +1526,70 @@ def build_supply_purchases(
         db.close()
 
 
+def build_product_purchase_history(
+    product_search: str,
+    org_ids: list[int] | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    mes: int | None = None,
+    anio: int | None = None,
+) -> list[dict]:
+    """Purchase history for a specific product from iDempiere.
+
+    Searches by product code (value) or name. Returns recent purchase invoices
+    for that product with supplier, quantity, unit price, and total.
+    """
+    db = IdempiereSession()
+    try:
+        conditions = [
+            "i.issotrx = 'N'",
+            "i.docstatus = 'CO'",
+            "i.isactive = 'Y'",
+        ]
+        params: dict = {"search": f"%{product_search}%"}
+        _add_org_filter(conditions, params, org_ids, "i")
+        _add_date_filter(conditions, params, date_from, date_to, mes, anio, "i.dateinvoiced")
+
+        # Match by product value (code) or name
+        conditions.append(
+            "(LOWER(p.value) LIKE LOWER(:search) OR LOWER(p.name) LIKE LOWER(:search))"
+        )
+
+        where = " AND ".join(conditions)
+
+        q = text(
+            f"SELECT p.value AS codigo_producto, p.name AS producto, "
+            f"bp.name AS proveedor, i.documentno AS factura, "
+            f"i.dateinvoiced AS fecha, "
+            f"il.qtyinvoiced AS cantidad, "
+            f"il.priceactual AS precio_unitario, "
+            f"il.linenetamt AS total_linea "
+            f"FROM adempiere.c_invoice i "
+            f"JOIN adempiere.c_invoiceline il ON i.c_invoice_id = il.c_invoice_id "
+            f"JOIN adempiere.m_product p ON il.m_product_id = p.m_product_id "
+            f"JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id "
+            f"WHERE {where} "
+            f"ORDER BY i.dateinvoiced DESC "
+            f"LIMIT 50"
+        )
+        rows = db.execute(q, params).fetchall()
+        return [
+            {
+                "codigo_producto": r[0],
+                "producto": r[1],
+                "proveedor": r[2],
+                "factura": r[3],
+                "fecha": r[4].isoformat() if r[4] else None,
+                "cantidad": float(r[5]),
+                "precio_unitario": float(r[6]),
+                "total_linea": float(r[7]),
+            }
+            for r in rows
+        ]
+    finally:
+        db.close()
+
+
 # ---------------------------------------------------------------------------
 # CONTABILIDAD (Accounting)
 # ---------------------------------------------------------------------------

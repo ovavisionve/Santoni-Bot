@@ -997,6 +997,24 @@ def build_supply_purchases(
         db.close()
 
 
+def build_product_purchase_history(
+    product_search: str,
+    org_ids: list[int] | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    mes: int | None = None,
+    anio: int | None = None,
+) -> list[dict]:
+    """Product purchase history - routes to demo or iDempiere."""
+    if _is_production():
+        from app.services.idempiere_queries import build_product_purchase_history as _prod
+        return _prod(
+            product_search=product_search, org_ids=org_ids,
+            date_from=date_from, date_to=date_to, mes=mes, anio=anio,
+        )
+    return []
+
+
 # ---------------------------------------------------------------------------
 # Pre-built queries: CONTABILIDAD (Accounting)
 # ---------------------------------------------------------------------------

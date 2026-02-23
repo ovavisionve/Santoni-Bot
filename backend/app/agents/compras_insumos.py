@@ -13,7 +13,9 @@ from app.agents.date_utils import (
     extract_month_year,
     build_period_label,
 )
-from app.services.query_service import build_supply_purchases
+import re
+
+from app.services.query_service import build_supply_purchases, build_product_purchase_history
 
 
 class ComprasInsumosAgent(BaseAgent):
@@ -87,7 +89,25 @@ Datos de compras de insumos en iDempiere:
 - m_product_category: Categorías de productos
 """
 
+    def _extract_product_search(self, message: str) -> str | None:
+        """Extract product code or name from user message."""
+        msg = message.strip()
+        # Product code pattern: letters+dash+letters+dash+digits (e.g. REP-LAMI-0037)
+        code_match = re.search(r'[A-Za-z]{2,}[-][A-Za-z]{2,}[-]\d+', msg)
+        if code_match:
+            return code_match.group()
+        # Quoted product name
+        quoted = re.search(r'["\u201c](.+?)["\u201d]', msg)
+        if quoted:
+            return quoted.group(1)
+        # "producto X" or "producto: X"
+        prod_match = re.search(r'producto[:\s]+(\S+)', msg, re.IGNORECASE)
+        if prod_match:
+            return prod_match.group(1)
+        return None
+
     def fetch_data(self, message: str, org_ids: list[int] | None = None, salesrep_id: int | None = None) -> str | None:
+        msg = message.lower()
         sections = []
 
         # Extract dates
@@ -97,10 +117,36 @@ Datos de compras de insumos en iDempiere:
             mes = None
 
         label = build_period_label(date_from, date_to, mes, anio)
-        summary = build_supply_purchases(
-            mes=mes, anio=anio, org_ids=org_ids,
-            date_from=date_from, date_to=date_to,
-        )
-        sections.append(self._format_summary(summary, f"Resumen de Compras de Insumos - {label}"))
+
+        # Check if user is searching for a specific product
+        product_search = self._extract_product_search(message)
+        if product_search:
+            try:
+                history = build_product_purchase_history(
+                    product_search=product_search,
+                    org_ids=org_ids,
+                    date_from=date_from, date_to=date_to,
+                    mes=mes, anio=anio,
+                )
+                if history:
+                    sections.append(
+                        f"## Historial de Compras - Producto '{product_search}' ({len(history)} registros)"
+                    )
+                    sections.append(self._format_table(history))
+                else:
+                    sections.append(
+                        f"## Búsqueda de Producto '{product_search}'\n"
+                        f"No se encontraron compras para este producto en el período {label}."
+                    )
+            except Exception:
+                pass
+
+        # General summary (always include unless product-specific search returned data)
+        if not sections or any(w in msg for w in ["resumen", "total", "cuánto", "cuanto"]):
+            summary = build_supply_purchases(
+                mes=mes, anio=anio, org_ids=org_ids,
+                date_from=date_from, date_to=date_to,
+            )
+            sections.append(self._format_summary(summary, f"Resumen de Compras de Insumos - {label}"))
 
         return "\n\n".join(sections) if sections else None
