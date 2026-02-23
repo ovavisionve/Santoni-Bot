@@ -937,6 +937,27 @@ def build_attendance_summary(
     }
 
 
+def build_turnover_summary(
+    anio: int | None = None,
+    org_ids: list[int] | None = None,
+) -> dict:
+    """Turnover/rotation summary - routes to demo or iDempiere."""
+    if _is_production():
+        from app.services.idempiere_queries import build_turnover_summary as _prod
+        return _prod(anio=anio, org_ids=org_ids)
+
+    # Demo fallback
+    return {
+        "anio": anio,
+        "totales": {
+            "empleados_activos": 0,
+            "bajas": 0,
+            "tasa_rotacion_pct": 0.0,
+        },
+        "por_organizacion": [],
+    }
+
+
 # ---------------------------------------------------------------------------
 # Pre-built queries: COMPRAS INSUMOS (Supply Purchases)
 # ---------------------------------------------------------------------------

@@ -17,6 +17,7 @@ from app.services.query_service import (
     build_employee_list,
     build_payroll_summary,
     build_attendance_summary,
+    build_turnover_summary,
 )
 
 
@@ -139,6 +140,15 @@ Datos de RRHH en iDempiere:
             )
             sections.append(self._format_summary(
                 data, f"Indicadores de Ausentismo - {label}",
+            ))
+
+        if any(w in msg for w in [
+            "rotación", "rotacion", "baja", "bajas", "egreso", "egresos",
+            "renuncia", "despido", "turnover", "salida", "salidas",
+        ]):
+            data = build_turnover_summary(anio=anio, org_ids=org_ids)
+            sections.append(self._format_summary(
+                data, f"Indicadores de Rotación - Año {anio}",
             ))
 
         return "\n\n".join(sections) if sections else None

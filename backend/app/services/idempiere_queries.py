@@ -881,10 +881,12 @@ def build_attendance_summary(
         where = " AND ".join(conditions)
 
         # Summary by concept
+        # NOTE: hm.qty is always 0 for absence concepts in Santoni's iDempiere.
+        # We use ABS(hm.amount) for monetary impact and COUNT(*) for occurrences.
         by_concept_q = text(
             f"SELECT hc.name AS concepto, "
             f"COUNT(DISTINCT hm.c_bpartner_id) AS empleados_afectados, "
-            f"COALESCE(SUM(hm.qty), 0) AS total_dias, "
+            f"COALESCE(SUM(ABS(hm.amount)), 0) AS monto, "
             f"COUNT(*) AS registros "
             f"FROM adempiere.hr_process hp "
             f"JOIN adempiere.hr_movement hm ON hp.hr_process_id = hm.hr_process_id "
@@ -896,7 +898,7 @@ def build_attendance_summary(
             {
                 "concepto": r[0],
                 "empleados_afectados": r[1],
-                "total_dias": float(r[2]),
+                "monto": float(r[2]),
                 "registros": r[3],
             }
             for r in db.execute(by_concept_q, params).fetchall()
@@ -906,19 +908,21 @@ def build_attendance_summary(
         by_org_q = text(
             f"SELECT COALESCE(o.name, 'Sin Org') AS organizacion, "
             f"COUNT(DISTINCT hm.c_bpartner_id) AS empleados_afectados, "
-            f"COALESCE(SUM(hm.qty), 0) AS total_dias "
+            f"COALESCE(SUM(ABS(hm.amount)), 0) AS monto, "
+            f"COUNT(*) AS registros "
             f"FROM adempiere.hr_process hp "
             f"JOIN adempiere.hr_movement hm ON hp.hr_process_id = hm.hr_process_id "
             f"JOIN adempiere.hr_concept hc ON hm.hr_concept_id = hc.hr_concept_id "
             f"LEFT JOIN adempiere.ad_org o ON hm.ad_org_id = o.ad_org_id "
             f"WHERE {where} "
-            f"GROUP BY o.name ORDER BY total_dias DESC"
+            f"GROUP BY o.name ORDER BY registros DESC"
         )
         by_org = [
             {
                 "organizacion": r[0],
                 "empleados_afectados": r[1],
-                "total_dias": float(r[2]),
+                "monto": float(r[2]),
+                "registros": r[3],
             }
             for r in db.execute(by_org_q, params).fetchall()
         ]
@@ -956,6 +960,78 @@ def build_attendance_summary(
         return {
             "totales": totals,
             "por_concepto": by_concept,
+            "por_organizacion": by_org,
+        }
+    finally:
+        db.close()
+
+
+def build_turnover_summary(
+    anio: int | None = None,
+    org_ids: list[int] | None = None,
+) -> dict:
+    """Employee turnover (rotation) from hr_employee enddate.
+
+    Counts employees whose enddate falls within the given year as 'bajas'.
+    Calculates turnover rate = bajas / total_activos * 100.
+    """
+    from datetime import datetime
+
+    if not anio:
+        anio = datetime.now().year
+
+    db = IdempiereSession()
+    try:
+        # Bajas (employees with enddate in the given year)
+        conditions = [
+            "e.isactive = 'N'",
+            "e.enddate >= :year_start",
+            "e.enddate < :year_end",
+        ]
+        params: dict = {
+            "year_start": f"{anio}-01-01",
+            "year_end": f"{anio + 1}-01-01",
+        }
+        _add_org_filter(conditions, params, org_ids, "e")
+        where = " AND ".join(conditions)
+
+        # Bajas by org
+        by_org_q = text(
+            f"SELECT COALESCE(o.name, 'Sin Org') AS organizacion, "
+            f"COUNT(DISTINCT e.c_bpartner_id) AS bajas "
+            f"FROM adempiere.hr_employee e "
+            f"LEFT JOIN adempiere.ad_org o ON e.ad_org_id = o.ad_org_id "
+            f"WHERE {where} "
+            f"GROUP BY o.name ORDER BY bajas DESC"
+        )
+        by_org = [
+            {"organizacion": r[0], "bajas": r[1]}
+            for r in db.execute(by_org_q, params).fetchall()
+        ]
+        total_bajas = sum(r["bajas"] for r in by_org)
+
+        # Total active employees for rate
+        emp_conditions = ["1=1"]
+        emp_params: dict = {}
+        _add_org_filter(emp_conditions, emp_params, org_ids, "e")
+        emp_where = " AND ".join(emp_conditions)
+        emp_q = text(
+            f"SELECT COUNT(DISTINCT e.c_bpartner_id) "
+            f"FROM adempiere.hr_employee e "
+            f"WHERE e.isactive = 'Y' AND {emp_where}"
+        )
+        emp_row = db.execute(emp_q, emp_params).fetchone()
+        total_activos = emp_row[0] if emp_row else 0
+
+        tasa = (total_bajas / total_activos * 100) if total_activos else 0
+
+        return {
+            "anio": anio,
+            "totales": {
+                "empleados_activos": total_activos,
+                "bajas": total_bajas,
+                "tasa_rotacion_pct": round(tasa, 2),
+            },
             "por_organizacion": by_org,
         }
     finally:
@@ -1473,6 +1549,7 @@ def build_accounting_summary(
             f"  WHEN ev.accounttype = 'O' THEN 'Patrimonio' "
             f"  WHEN ev.accounttype = 'R' THEN 'Ingreso' "
             f"  WHEN ev.accounttype = 'E' THEN 'Gasto' "
+            f"  WHEN ev.accounttype = 'M' THEN 'Memorándum' "
             f"  ELSE ev.accounttype END AS tipo_cuenta, "
             f"COALESCE(SUM(fa.amtacctdr), 0) AS debe, "
             f"COALESCE(SUM(fa.amtacctcr), 0) AS haber, "
@@ -1738,7 +1815,7 @@ def build_account_detail(
 
         acct_type_labels = {
             "A": "Activo", "L": "Pasivo", "O": "Patrimonio",
-            "R": "Ingreso", "E": "Gasto",
+            "R": "Ingreso", "E": "Gasto", "M": "Memorándum",
         }
         naturaleza = "Crédito" if is_credit_normal else "Débito"
 
