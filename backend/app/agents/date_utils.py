@@ -36,7 +36,12 @@ _CURRENCY_VES_RE = re.compile(r'\b(bol[ií]vares?|bs\.?f?|ves)\b', re.IGNORECASE
 _CURRENCY_USD_RE = re.compile(r'\b(d[oó]lares?|usd|dol)\b', re.IGNORECASE)
 
 # iDempiere c_currency_id values
-CURRENCY_IDS = {"VES": 205, "USD": 100}
+# Santoni uses multiple currency entries for dollars (DOL, Dol, DoL, USA, dol, etc.)
+# All must be included when filtering by "dólares"
+CURRENCY_IDS: dict[str, list[int]] = {
+    "VES": [205],
+    "USD": [100, 1000000, 1000003, 1000006, 1000008, 1000009, 1000011, 1000013, 1000017],
+}
 
 # "al" keyword to split date ranges
 _AL_RE = re.compile(r'\bal\b', re.IGNORECASE)
@@ -143,10 +148,12 @@ def build_period_label(
     return "Todos los periodos"
 
 
-def detect_currency(message: str) -> int | None:
+def detect_currency(message: str) -> list[int] | None:
     """Detect currency from user message.
 
-    Returns iDempiere c_currency_id (205=VES, 100=USD) or None if not specified.
+    Returns list of iDempiere c_currency_id values, or None if not specified.
+    Multiple IDs are needed because Santoni uses several currency entries
+    for dollars (DOL, Dol, DoL, USA, dol, USD, etc.).
     """
     if _CURRENCY_VES_RE.search(message):
         return CURRENCY_IDS["VES"]

@@ -60,14 +60,17 @@ def _add_org_filter(
 def _add_currency_filter(
     conditions: list[str],
     params: dict,
-    currency_id: int | None,
+    currency_ids: list[int] | None,
     table_alias: str,
 ) -> None:
-    """Add c_currency_id filter if currency_id is provided.
+    """Add c_currency_id IN (...) filter if currency_ids is provided.
+    Supports multiple IDs because Santoni uses several currency entries for dollars.
     Modifies conditions and params in place."""
-    if currency_id:
-        conditions.append(f"{table_alias}.c_currency_id = :currency_id")
-        params["currency_id"] = currency_id
+    if currency_ids:
+        placeholders = ", ".join(f":cur_{i}" for i in range(len(currency_ids)))
+        conditions.append(f"{table_alias}.c_currency_id IN ({placeholders})")
+        for i, cid in enumerate(currency_ids):
+            params[f"cur_{i}"] = cid
 
 
 def _add_date_filter(
@@ -131,7 +134,7 @@ def build_sales_summary(
     salesrep_id: int | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
-    currency_id: int | None = None,
+    currency_ids: list[int] | None = None,
 ) -> dict:
     """Sales summary from iDempiere c_invoice (issotrx='Y')."""
     db = IdempiereSession()
@@ -144,7 +147,7 @@ def build_sales_summary(
         params: dict = {}
         _add_org_filter(conditions, params, org_ids, "i")
         _add_salesrep_filter(conditions, params, salesrep_id, "i")
-        _add_currency_filter(conditions, params, currency_id, "i")
+        _add_currency_filter(conditions, params, currency_ids, "i")
         _add_date_filter(conditions, params, date_from, date_to, mes, anio, "i.dateinvoiced")
 
         # TODO: zona and vendedor filters need validation after iDempiere exploration
@@ -245,7 +248,7 @@ def build_collection_summary(
     salesrep_id: int | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
-    currency_id: int | None = None,
+    currency_ids: list[int] | None = None,
 ) -> dict:
     """Collection summary from iDempiere c_payment (isreceipt='Y')."""
     db = IdempiereSession()
@@ -257,7 +260,7 @@ def build_collection_summary(
         ]
         params: dict = {}
         _add_org_filter(conditions, params, org_ids, "p")
-        _add_currency_filter(conditions, params, currency_id, "p")
+        _add_currency_filter(conditions, params, currency_ids, "p")
         # Payments don't have salesrep_id directly; filter via linked invoice
         if salesrep_id:
             conditions.append(
@@ -335,7 +338,7 @@ def build_top_clients(
     salesrep_id: int | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
-    currency_id: int | None = None,
+    currency_ids: list[int] | None = None,
 ) -> list[dict]:
     """Top clients by invoiced amount from iDempiere."""
     db = IdempiereSession()
@@ -348,7 +351,7 @@ def build_top_clients(
         params: dict = {"limit": limit}
         _add_org_filter(conditions, params, org_ids, "i")
         _add_salesrep_filter(conditions, params, salesrep_id, "i")
-        _add_currency_filter(conditions, params, currency_id, "i")
+        _add_currency_filter(conditions, params, currency_ids, "i")
         _add_date_filter(conditions, params, date_from, date_to, None, anio, "i.dateinvoiced")
 
         where = " AND ".join(conditions)
@@ -1353,7 +1356,7 @@ def build_account_detail(
     mes: int | None = None,
     anio: int | None = None,
     org_ids: list[int] | None = None,
-    currency_id: int | None = None,
+    currency_ids: list[int] | None = None,
 ) -> dict:
     """Query detail for a specific account code from fact_acct.
 
@@ -1364,7 +1367,7 @@ def build_account_detail(
         mes: Month number (used if date_from/to not provided)
         anio: Year (used if date_from/to not provided)
         org_ids: List of allowed organization IDs
-        currency_id: iDempiere c_currency_id (205=VES, 100=USD). Filters fact_acct entries.
+        currency_ids: List of iDempiere c_currency_id values. Filters fact_acct entries.
 
     Returns dict with account info, period totals, opening/closing balance.
 
@@ -1401,7 +1404,7 @@ def build_account_detail(
         period_conditions = ["fa.isactive = 'Y'", "fa.account_id = :acct_id"]
         period_params: dict = {"acct_id": acct_id}
         _add_org_filter(period_conditions, period_params, org_ids, "fa")
-        _add_currency_filter(period_conditions, period_params, currency_id, "fa")
+        _add_currency_filter(period_conditions, period_params, currency_ids, "fa")
 
         if date_from and date_to:
             period_conditions.append("fa.dateacct >= :date_from")
@@ -1453,7 +1456,7 @@ def build_account_detail(
             ]
             opening_params: dict = {"acct_id": acct_id, "date_from": date_from}
             _add_org_filter(opening_conds, opening_params, org_ids, "fa")
-            _add_currency_filter(opening_conds, opening_params, currency_id, "fa")
+            _add_currency_filter(opening_conds, opening_params, currency_ids, "fa")
             opening_q = text(
                 f"SELECT {saldo_sql_expr} "
                 f"FROM adempiere.fact_acct fa "
@@ -1469,7 +1472,7 @@ def build_account_detail(
             ]
             opening_params2: dict = {"acct_id": acct_id, "opening_date": f"{anio}-{mes:02d}-01"}
             _add_org_filter(opening_conds, opening_params2, org_ids, "fa")
-            _add_currency_filter(opening_conds, opening_params2, currency_id, "fa")
+            _add_currency_filter(opening_conds, opening_params2, currency_ids, "fa")
             opening_q = text(
                 f"SELECT {saldo_sql_expr} "
                 f"FROM adempiere.fact_acct fa "
@@ -1514,12 +1517,13 @@ def build_account_detail(
 
         # 6. Currency info
         currency_name = "VES"
-        if currency_id:
+        if currency_ids:
+            # Show label based on the first currency ID
             curr_q = text(
                 "SELECT c.iso_code FROM adempiere.c_currency c "
                 "WHERE c.c_currency_id = :cid"
             )
-            curr_row = db.execute(curr_q, {"cid": currency_id}).fetchone()
+            curr_row = db.execute(curr_q, {"cid": currency_ids[0]}).fetchone()
             if curr_row:
                 currency_name = curr_row[0]
         else:

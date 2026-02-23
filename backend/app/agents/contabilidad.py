@@ -142,7 +142,7 @@ Se pueden consultar cuentas específicas por código (ej: 2.01.01.10) con rango 
         sections = []
 
         # Detect currency from message
-        currency_id = detect_currency(message)
+        currency_ids = detect_currency(message)
 
         # Check if user is asking about a specific account code
         account_match = _ACCOUNT_CODE_RE.search(message)
@@ -159,7 +159,7 @@ Se pueden consultar cuentas específicas por código (ej: 2.01.01.10) con rango 
                     date_from=date_from,
                     date_to=date_to,
                     org_ids=org_ids,
-                    currency_id=currency_id,
+                    currency_ids=currency_ids,
                 )
             else:
                 mes, anio = extract_month_year(message)
@@ -168,7 +168,7 @@ Se pueden consultar cuentas específicas por código (ej: 2.01.01.10) con rango 
                     mes=mes,
                     anio=anio,
                     org_ids=org_ids,
-                    currency_id=currency_id,
+                    currency_ids=currency_ids,
                 )
 
             if "error" in detail:

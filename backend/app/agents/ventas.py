@@ -122,7 +122,7 @@ Datos de ventas de iDempiere:
             mes = None
 
         # Detect currency filter
-        currency_id = detect_currency(message)
+        currency_ids = detect_currency(message)
 
         vendedor = None
         for v in ["carlos matias", "lenny silva", "yuleidys gutierrez"]:
@@ -147,7 +147,7 @@ Datos de ventas de iDempiere:
                 limit=limit, zona=zona, vendedor=vendedor, anio=anio,
                 org_ids=org_ids, salesrep_id=salesrep_id,
                 date_from=date_from, date_to=date_to,
-                currency_id=currency_id,
+                currency_ids=currency_ids,
             )
             sections.append(f"## Top {limit} Clientes por Ventas ({label})")
             sections.append(self._format_table(data))
@@ -157,7 +157,7 @@ Datos de ventas de iDempiere:
                 zona=zona, vendedor=vendedor, mes=mes, anio=anio,
                 org_ids=org_ids, salesrep_id=salesrep_id,
                 date_from=date_from, date_to=date_to,
-                currency_id=currency_id,
+                currency_ids=currency_ids,
             )
             sections.append(self._format_summary(data, f"Resumen de Cobranza - {label}"))
 
@@ -171,7 +171,7 @@ Datos de ventas de iDempiere:
                 zona=zona, vendedor=vendedor, mes=mes, anio=anio,
                 org_ids=org_ids, salesrep_id=salesrep_id,
                 date_from=date_from, date_to=date_to,
-                currency_id=currency_id,
+                currency_ids=currency_ids,
             )
             sections.append(self._format_summary(data, f"Resumen de Ventas - {label}"))
 
