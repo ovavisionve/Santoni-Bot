@@ -112,11 +112,14 @@ ROLE_MAX_SENSITIVITY: dict[str, int] = {
 }
 
 
-def check_sensitivity(department: str, user_role: str) -> bool:
-    """Check if user's role allows access to the department's sensitivity level."""
+def check_sensitivity(department: str, user_sensitivity_level: int) -> bool:
+    """Check if user's sensitivity level allows access to the department's data.
+
+    The user's sensitivity_level is stored per-user in the DB and chosen
+    by the admin when creating the user.  0=basic, 1=financial, 2=confidential.
+    """
     dept_level = DEPARTMENT_SENSITIVITY.get(department, 0)
-    role_max = ROLE_MAX_SENSITIVITY.get(user_role, 0)
-    return role_max >= dept_level
+    return user_sensitivity_level >= dept_level
 
 
 # ──────────────────────────────────────────────────────────────

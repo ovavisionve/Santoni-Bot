@@ -8,6 +8,7 @@ export interface User {
   extra_departments: string | null;
   allowed_org_ids: string | null;
   idempiere_salesrep_id: number | null;
+  sensitivity_level: number;
   is_active: boolean;
   totp_enabled: boolean;
   created_at: string;

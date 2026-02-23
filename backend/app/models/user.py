@@ -24,6 +24,17 @@ class Department(str, enum.Enum):
     COMPRAS_PRODUCTORES = "compras_productores"
 
 
+class SensitivityLevel(int, enum.Enum):
+    """Data sensitivity levels for access control.
+    0 = basic (operational data: sales, production, purchases)
+    1 = financial (accounting, financial data)
+    2 = confidential (HR, payroll, personal data)
+    """
+    BASICO = 0
+    FINANCIERO = 1
+    CONFIDENCIAL = 2
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -49,6 +60,11 @@ class User(Base):
     # Used for VENDEDOR role to filter sales data to their own
     idempiere_salesrep_id: Mapped[int | None] = mapped_column(
         Integer, nullable=True
+    )
+    # Data sensitivity level: 0=basic, 1=financial, 2=confidential
+    # Controls what type of data the user can see
+    sensitivity_level: Mapped[int] = mapped_column(
+        Integer, default=0
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     totp_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)

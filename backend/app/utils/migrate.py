@@ -48,6 +48,13 @@ _MIGRATIONS = [
         ALTER TABLE users ADD COLUMN IF NOT EXISTS idempiere_salesrep_id INTEGER;
         """,
     ),
+    # --- 004: Sensitivity level per user ---
+    (
+        "Add sensitivity_level column to users",
+        """
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS sensitivity_level INTEGER DEFAULT 0;
+        """,
+    ),
 ]
 
 

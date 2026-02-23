@@ -56,6 +56,7 @@ def create_user(
         extra_departments=data.extra_departments,
         allowed_org_ids=data.allowed_org_ids,
         idempiere_salesrep_id=data.idempiere_salesrep_id,
+        sensitivity_level=data.sensitivity_level,
     )
     db.add(user)
     db.commit()

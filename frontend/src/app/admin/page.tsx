@@ -60,6 +60,7 @@ export default function AdminPage() {
     extra_departments: "" as string,
     allowed_org_ids: "" as string,
     idempiere_salesrep_id: null as number | null,
+    sensitivity_level: 0,
   });
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [salesreps, setSalesreps] = useState<{ id: number; name: string }[]>([]);
@@ -134,6 +135,7 @@ export default function AdminPage() {
         extra_departments: "",
         allowed_org_ids: "",
         idempiere_salesrep_id: null,
+        sensitivity_level: 0,
       });
       loadData();
     } catch (err) {
@@ -501,6 +503,44 @@ export default function AdminPage() {
                     </select>
                   </div>
                 )}
+                {/* Sensitivity level selector */}
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-gray-700">
+                    Nivel de acceso a datos
+                  </label>
+                  <div className="space-y-2">
+                    {[
+                      { value: 0, label: "Basico", desc: "Datos operativos (ventas, produccion, compras)", color: "bg-green-100 text-green-800 border-green-300" },
+                      { value: 1, label: "Financiero", desc: "Datos contables y financieros", color: "bg-blue-100 text-blue-800 border-blue-300" },
+                      { value: 2, label: "Confidencial", desc: "Nomina, salarios, datos personales (RRHH)", color: "bg-red-100 text-red-800 border-red-300" },
+                    ].map((level) => (
+                      <label
+                        key={level.value}
+                        className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                          newUser.sensitivity_level === level.value
+                            ? level.color
+                            : "bg-white border-gray-200 hover:bg-gray-50"
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="sensitivity_level"
+                          value={level.value}
+                          checked={newUser.sensitivity_level === level.value}
+                          onChange={() =>
+                            setNewUser({ ...newUser, sensitivity_level: level.value })
+                          }
+                          className="text-santoni-600 focus:ring-santoni-500"
+                        />
+                        <div>
+                          <div className="text-sm font-medium">{level.label}</div>
+                          <div className="text-xs opacity-70">{level.desc}</div>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
                 <div className="flex gap-2">
                   <button type="submit" className="btn-primary text-sm">
                     Crear
@@ -531,6 +571,9 @@ export default function AdminPage() {
                     </th>
                     <th className="text-left px-4 py-3 font-medium text-gray-600">
                       Rol
+                    </th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-600">
+                      Sensibilidad
                     </th>
                     <th className="text-left px-4 py-3 font-medium text-gray-600">
                       Empresas
@@ -571,6 +614,17 @@ export default function AdminPage() {
                           }`}
                         >
                           {ROLE_LABELS[u.role] || u.role}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${
+                          (u.sensitivity_level ?? 0) === 2
+                            ? "bg-red-100 text-red-700"
+                            : (u.sensitivity_level ?? 0) === 1
+                              ? "bg-blue-100 text-blue-700"
+                              : "bg-green-100 text-green-700"
+                        }`}>
+                          {(u.sensitivity_level ?? 0) === 2 ? "Confidencial" : (u.sensitivity_level ?? 0) === 1 ? "Financiero" : "Basico"}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-xs text-gray-500">

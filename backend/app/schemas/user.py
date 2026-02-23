@@ -35,6 +35,7 @@ class UserCreate(BaseModel):
     extra_departments: str | None = None
     allowed_org_ids: str | None = None
     idempiere_salesrep_id: int | None = None
+    sensitivity_level: int = 0  # 0=basico, 1=financiero, 2=confidencial
 
     @field_validator("password")
     @classmethod
@@ -50,6 +51,7 @@ class UserUpdate(BaseModel):
     extra_departments: str | None = None
     allowed_org_ids: str | None = None
     idempiere_salesrep_id: int | None = None
+    sensitivity_level: int | None = None
     is_active: bool | None = None
 
 
@@ -73,6 +75,7 @@ class UserResponse(BaseModel):
     extra_departments: str | None
     allowed_org_ids: str | None = None
     idempiere_salesrep_id: int | None = None
+    sensitivity_level: int = 0
     is_active: bool
     totp_enabled: bool = False
     created_at: datetime
