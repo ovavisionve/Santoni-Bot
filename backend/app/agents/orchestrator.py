@@ -96,11 +96,23 @@ _KEYWORD_RULES: list[tuple[str, list[str]]] = [
     # RRHH
     ("rrhh", [
         "nomina", "nómina", "empleado", "empleados", "personal",
+        "trabajador", "trabajadores", "plantilla",
         "vacacion", "vacaciones", "asistencia", "inasistencia",
+        "ausentismo", "ausencia", "ausencias", "falta", "faltas",
         "evaluacion", "evaluación", "cumpleaño", "cumpleaños",
-        "salario", "sueldo", "recurso humano", "recursos humanos",
-        "rrhh", "talento humano", "contrato", "liquidacion",
-        "liquidación", "prestacion", "prestación",
+        "salario", "sueldo", "sueldos", "salarios",
+        "recurso humano", "recursos humanos",
+        "rrhh", "talento humano",
+        "contrato", "contratos", "contratacion", "contratación",
+        "liquidacion", "liquidación",
+        "prestacion", "prestación", "prestaciones",
+        "renuncia", "renunciado", "renuncias",
+        "despido", "despidos", "despedido",
+        "bono", "bonos", "bonificacion", "bonificación",
+        "permiso", "permisos", "reposo", "reposos",
+        "incapacidad", "incapacidades",
+        "rotacion", "rotación",
+        "capacitacion", "capacitación",
     ]),
     # Producción
     ("produccion", [
