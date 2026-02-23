@@ -15,6 +15,7 @@ from app.agents.date_utils import (
 from app.services.query_service import (
     build_employee_summary,
     build_employee_list,
+    build_birthday_list,
     build_payroll_summary,
     build_attendance_summary,
     build_turnover_summary,
@@ -47,10 +48,12 @@ Tu especialidad es la gestión del talento humano y consultas de nómina.
 
 CAPACIDADES:
 - Listado y resumen de empleados por organización/departamento
+- Cumpleañeros del mes (fecha de cumpleaños de empleados)
 - Consultas de nómina por período (quincenas, mensuales)
 - Conceptos de nómina: salario base, bonos, deducciones, neto a pagar
 - Historial de procesos de nómina
 - Indicadores de ausentismo: conceptos de ausencia en nómina (inasistencia, falta, permiso, reposo, incapacidad, licencia)
+- NOTA AUSENTISMO: Los datos de ausentismo provienen de conceptos de nómina y se expresan en cantidad de OCURRENCIAS y MONTO en Bs. No se dispone de horas-hombre en el sistema de nómina de iDempiere.
 
 CONTEXTO iDEMPIERE:
 - Empleados: hr_employee (vinculado a c_bpartner via c_bpartner_id, con hr_department_id y hr_job_id)
@@ -121,6 +124,23 @@ Datos de RRHH en iDempiere:
             if data:
                 sections.append(f"## Lista de Empleados Activos ({len(data)} registros)")
                 sections.append(self._format_table(data))
+
+        if any(w in msg for w in [
+            "cumpleaño", "cumpleaños", "cumpleañero", "cumpleañeros",
+        ]):
+            # For birthdays, use mes from the message (or current month if not specified)
+            birthday_mes = mes
+            if birthday_mes is None and not date_from:
+                from datetime import datetime as _dt
+                birthday_mes = _dt.now().month
+            data = build_birthday_list(mes=birthday_mes, org_ids=org_ids)
+            from app.agents.date_utils import MESES_NOMBRES
+            mes_label = MESES_NOMBRES.get(birthday_mes, str(birthday_mes)) if birthday_mes else "Todos los meses"
+            if data:
+                sections.append(f"## Cumpleañeros de {mes_label} ({len(data)} empleados)")
+                sections.append(self._format_table(data))
+            else:
+                sections.append(f"## Cumpleañeros de {mes_label}\nNo se encontraron empleados con cumpleaños registrado en este mes.")
 
         if any(w in msg for w in ["nómina", "nomina", "salario", "sueldo", "pago"]):
             data = build_payroll_summary(

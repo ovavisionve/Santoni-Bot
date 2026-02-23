@@ -105,7 +105,8 @@ _KEYWORD_RULES: list[tuple[str, list[str]]] = [
         "trabajador", "trabajadores", "plantilla",
         "vacacion", "vacaciones", "asistencia", "inasistencia",
         "ausentismo", "ausentimos", "ausencia", "ausencias", "falta", "faltas",
-        "evaluacion", "evaluación", "cumpleaño", "cumpleaños",
+        "evaluacion", "evaluación",
+        "cumpleaño", "cumpleaños", "cumpleañero", "cumpleañeros",
         "salario", "sueldo", "sueldos", "salarios",
         "recurso humano", "recursos humanos",
         "rrhh", "talento humano",
@@ -457,6 +458,10 @@ class Orchestrator:
                     "'diferencia entre este mes y el anterior'), estructura la respuesta con: "
                     "1) Datos del primer período, 2) Datos del segundo período, "
                     "3) Tabla comparativa con variación absoluta y porcentual. "
+                    "REGLA CRÍTICA: NUNCA inventes datos, cifras, fechas de fundación, ni información "
+                    "que no esté en los datos proporcionados o en el historial de la conversación. "
+                    "Si no tienes la información, di claramente: 'No tengo esa información disponible'. "
+                    "NO inventes números, porcentajes, ni fechas aproximadas. "
                     "Sé conciso."
                 )
             )
@@ -487,6 +492,8 @@ class Orchestrator:
                 content=(
                     "Eres SantoniBot, el asistente inteligente de Alimentos Santoni. "
                     "Responde de forma amable y profesional en español. "
+                    "NUNCA inventes datos, cifras ni fechas. Si no tienes la información, "
+                    "di claramente que no la tienes disponible. "
                     "Sé conciso."
                 )
             )

@@ -767,6 +767,62 @@ def build_employee_list(org_ids: list[int] | None = None) -> list[dict]:
         db.close()
 
 
+def build_birthday_list(
+    mes: int | None = None,
+    org_ids: list[int] | None = None,
+) -> list[dict]:
+    """List employees whose birthday falls in the given month.
+
+    Uses c_bpartner.birthday joined via hr_employee (DISTINCT ON to deduplicate).
+    """
+    db = IdempiereSession()
+    try:
+        conditions = ["e.isactive = 'Y'", "bp.birthday IS NOT NULL"]
+        params: dict = {}
+        _add_org_filter(conditions, params, org_ids, "e")
+
+        if mes:
+            conditions.append("EXTRACT(MONTH FROM bp.birthday) = :mes")
+            params["mes"] = mes
+
+        where = " AND ".join(conditions)
+
+        q = text(
+            f"SELECT DISTINCT ON (bp.c_bpartner_id) "
+            f"bp.name AS nombre, "
+            f"EXTRACT(DAY FROM bp.birthday)::int AS dia, "
+            f"EXTRACT(MONTH FROM bp.birthday)::int AS mes, "
+            f"COALESCE(d.name, '') AS departamento, "
+            f"COALESCE(o.name, '') AS organizacion, "
+            f"COALESCE(j.name, '') AS cargo "
+            f"FROM adempiere.hr_employee e "
+            f"JOIN adempiere.c_bpartner bp ON e.c_bpartner_id = bp.c_bpartner_id "
+            f"LEFT JOIN adempiere.ad_org o ON e.ad_org_id = o.ad_org_id "
+            f"LEFT JOIN adempiere.hr_department d ON e.hr_department_id = d.hr_department_id "
+            f"LEFT JOIN adempiere.hr_job j ON e.hr_job_id = j.hr_job_id "
+            f"WHERE {where} "
+            f"ORDER BY bp.c_bpartner_id, e.startdate DESC"
+        )
+        rows = db.execute(q, params).fetchall()
+
+        results = [
+            {
+                "nombre": r[0],
+                "dia": r[1],
+                "mes": r[2],
+                "departamento": r[3],
+                "organizacion": r[4],
+                "cargo": r[5],
+            }
+            for r in rows
+        ]
+        # Sort by day of month for display
+        results.sort(key=lambda x: x["dia"])
+        return results
+    finally:
+        db.close()
+
+
 def build_payroll_summary(
     mes: int | None = None,
     anio: int | None = None,
@@ -901,7 +957,7 @@ def build_attendance_summary(
                 "concepto": r[0],
                 "empleados_afectados": r[1],
                 "monto_bs": float(r[2]),
-                "registros": r[3],
+                "ocurrencias": r[3],
             }
             for r in db.execute(by_concept_q, params).fetchall()
         ]
@@ -924,7 +980,7 @@ def build_attendance_summary(
                 "organizacion": r[0],
                 "empleados_afectados": r[1],
                 "monto_bs": float(r[2]),
-                "registros": r[3],
+                "ocurrencias": r[3],
             }
             for r in db.execute(by_org_q, params).fetchall()
         ]
@@ -945,11 +1001,14 @@ def build_attendance_summary(
         total_afectados = sum(c["empleados_afectados"] for c in by_concept)
         tasa = (total_afectados / total_activos * 100) if total_activos else 0
 
+        total_ocurrencias = sum(c["ocurrencias"] for c in by_concept)
         totals = {
             "empleados_activos": total_activos,
             "empleados_con_ausencias": total_afectados,
+            "total_ocurrencias": total_ocurrencias,
             "tasa_ausentismo_pct": round(tasa, 2),
             "conceptos_encontrados": len(by_concept),
+            "nota_horas": "No se dispone de horas-hombre en el sistema de nómina. Los datos se expresan en ocurrencias y monto (Bs.).",
         }
 
         if not by_concept:

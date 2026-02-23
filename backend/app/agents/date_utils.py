@@ -14,6 +14,7 @@ Monedas detectadas:
 - USD/Dólares: "dolares", "usd", "dol" → c_currency_id 100
 """
 
+import calendar
 import re
 from datetime import datetime
 
@@ -112,6 +113,17 @@ def extract_date_range(message: str) -> tuple[str | None, str | None]:
             year = int(desde_match.group(2)) if desde_match.group(2) else now.year
             date_from = f"{year}-{month_num:02d}-01"
             return date_from, today
+
+    # Pattern: multiple month names → date range
+    # e.g. "septiembre, octubre y noviembre 2025" → 2025-09-01 al 2025-11-30
+    found_months = [num for nombre, num in MESES_MAP.items() if nombre in msg]
+    if len(found_months) >= 2:
+        year_match = re.search(r'20\d{2}', message)
+        year = int(year_match.group()) if year_match else now.year
+        min_month = min(found_months)
+        max_month = max(found_months)
+        last_day = calendar.monthrange(year, max_month)[1]
+        return f"{year}-{min_month:02d}-01", f"{year}-{max_month:02d}-{last_day:02d}"
 
     # Standard "al" pattern: "01/01/2026 al 31/01/2026"
     al_match = _AL_RE.search(message)
