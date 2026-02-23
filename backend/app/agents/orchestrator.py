@@ -41,8 +41,8 @@ _KEYWORD_RULES: list[tuple[str, list[str]]] = [
         "compras a productor", "precio del arroz", "precio del maiz",
         "precio del maíz", "tonelada", "kilogramo",
     ]),
-    # Compras de insumos (before generic "compra" and before ventas
-    # to prevent "inventario" matching "venta" substring)
+    # Compras de insumos — after compras_productores (which catches "compra de arroz" etc.)
+    # and before ventas (to prevent "inventario" matching "venta" substring)
     ("compras_insumos", [
         "insumo", "proveedor", "proveedores", "orden de compra",
         "ordenes de compra", "inventario de material", "inventario",
@@ -50,6 +50,8 @@ _KEYWORD_RULES: list[tuple[str, list[str]]] = [
         "tiempo de entrega", "stock",
         "historial de compra", "historial de compras",
         "compras de", "compra del producto",
+        # "compra" catches verb forms: compramos, comprado, compró
+        "compra",
     ]),
     # Contabilidad — BEFORE ventas/finanzas to catch accounting terms first
     ("contabilidad", [
@@ -168,11 +170,22 @@ def classify_by_keywords(
         return "no_access"
 
     # Scan keyword rules (order matters: specific before broad)
+    # If a keyword matches but the user lacks access to that department,
+    # continue scanning — another keyword might match an allowed department.
+    hit_no_access = False
     for agent_name, keywords in _KEYWORD_RULES:
         if any(kw in msg for kw in keywords):
-            if agent_name not in allowed_departments:
-                return "no_access"
-            return agent_name
+            if agent_name in allowed_departments:
+                return agent_name
+            # Mark that we found a match but user lacks access; keep scanning
+            hit_no_access = True
+
+    # If keywords matched a blocked department, try last_agent fallback
+    # before returning no_access (e.g. Jorge in compras_insumos says "cliente")
+    if hit_no_access:
+        if last_agent and last_agent in allowed_departments and last_agent != "general":
+            return last_agent
+        return "no_access"
 
     # Fallback 1: continue with last agent for follow-up messages
     # Catches: "¿estás seguro?", "dame más detalle", "ok dame de enero",
