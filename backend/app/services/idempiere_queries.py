@@ -457,8 +457,8 @@ def build_overdue_receivables(
             "COALESCE(sr.name, '') AS vendedor, "
             "COALESCE(cz.zona_name, '') AS zona, "
             "i.grandtotal AS monto_total, i.dateinvoiced AS fecha, "
-            "COALESCE(pterm.netdays, 30) AS dias_credito, "
-            "CURRENT_DATE - (i.dateinvoiced + COALESCE(pterm.netdays, 30)) AS dias_vencido "
+            "CASE WHEN COALESCE(pterm.netdays, 0) = 0 THEN 30 ELSE pterm.netdays END AS dias_credito, "
+            "CURRENT_DATE - (i.dateinvoiced + CASE WHEN COALESCE(pterm.netdays, 0) = 0 THEN 30 ELSE pterm.netdays END) AS dias_vencido "
             "FROM adempiere.c_invoice i "
             "JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id "
             "LEFT JOIN adempiere.c_bpartner sr ON i.salesrep_id = sr.c_bpartner_id "
@@ -470,7 +470,7 @@ def build_overdue_receivables(
             "AND i.grandtotal > 100 "
             f"{org_clause}"
             f"{salesrep_clause}"
-            "AND (i.dateinvoiced + COALESCE(pterm.netdays, 30)) < CURRENT_DATE "
+            "AND (i.dateinvoiced + CASE WHEN COALESCE(pterm.netdays, 0) = 0 THEN 30 ELSE pterm.netdays END) < CURRENT_DATE "
             "ORDER BY dias_vencido DESC "
             "LIMIT 50"
         )
@@ -570,7 +570,7 @@ def build_financial_summary(
             "i.docstatus = 'CO'",
             "i.ispaid = 'N'",
             "i.isactive = 'Y'",
-            "(i.dateinvoiced + COALESCE(pt.netdays, 30)) < CURRENT_DATE",
+            "(i.dateinvoiced + CASE WHEN COALESCE(pt.netdays, 0) = 0 THEN 30 ELSE pt.netdays END) < CURRENT_DATE",
         ]
         overdue_params: dict = {}
         _add_org_filter(overdue_conds, overdue_params, org_ids, "i")
@@ -615,7 +615,7 @@ def build_financial_summary(
             "i.docstatus = 'CO'",
             "i.ispaid = 'N'",
             "i.isactive = 'Y'",
-            "(i.dateinvoiced + COALESCE(pt.netdays, 30)) < CURRENT_DATE",
+            "(i.dateinvoiced + CASE WHEN COALESCE(pt.netdays, 0) = 0 THEN 30 ELSE pt.netdays END) < CURRENT_DATE",
         ]
         overdue_ap_params: dict = {}
         _add_org_filter(overdue_ap_conds, overdue_ap_params, org_ids, "i")
