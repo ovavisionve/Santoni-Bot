@@ -1124,3 +1124,162 @@ def build_accounting_summary(mes: int | None = None, anio: int | None = None, or
         }
     finally:
         db.close()
+
+
+def build_account_detail(
+    account_code: str,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    mes: int | None = None,
+    anio: int | None = None,
+    org_ids: list[int] | None = None,
+) -> dict:
+    """Query detail for a specific account code from fact_acct.
+
+    Parameters:
+        account_code: Account code like '2.01.01.10'
+        date_from: Start date 'YYYY-MM-DD' (overrides mes/anio if provided)
+        date_to: End date 'YYYY-MM-DD' (overrides mes/anio if provided)
+        mes: Month number (used if date_from/to not provided)
+        anio: Year (used if date_from/to not provided)
+        org_ids: List of allowed organization IDs
+
+    Returns dict with account info, period totals, opening/closing balance.
+    """
+    db = IdempiereSession()
+    try:
+        # 1. Find the account by code
+        acct_q = text(
+            "SELECT ev.c_elementvalue_id, ev.value, ev.name, ev.accounttype "
+            "FROM adempiere.c_elementvalue ev "
+            "WHERE ev.value = :code AND ev.isactive = 'Y' "
+            "LIMIT 1"
+        )
+        acct_row = db.execute(acct_q, {"code": account_code}).fetchone()
+        if not acct_row:
+            return {
+                "error": f"Cuenta '{account_code}' no encontrada en el plan de cuentas",
+                "cuenta_codigo": account_code,
+            }
+
+        acct_id = acct_row[0]
+        acct_name = acct_row[2]
+        acct_type = acct_row[3]
+
+        # 2. Build date conditions
+        period_conditions = ["fa.isactive = 'Y'", "fa.account_id = :acct_id"]
+        period_params: dict = {"acct_id": acct_id}
+        _add_org_filter(period_conditions, period_params, org_ids, "fa")
+
+        if date_from and date_to:
+            period_conditions.append("fa.dateacct >= :date_from")
+            period_conditions.append("fa.dateacct <= :date_to")
+            period_params["date_from"] = date_from
+            period_params["date_to"] = date_to
+            period_label = f"{date_from} al {date_to}"
+        elif mes and anio:
+            period_conditions.append("EXTRACT(YEAR FROM fa.dateacct) = :anio")
+            period_conditions.append("EXTRACT(MONTH FROM fa.dateacct) = :mes")
+            period_params["anio"] = anio
+            period_params["mes"] = mes
+            period_label = f"{mes:02d}/{anio}"
+        elif anio:
+            period_conditions.append("EXTRACT(YEAR FROM fa.dateacct) = :anio")
+            period_params["anio"] = anio
+            period_label = f"Año {anio}"
+        else:
+            period_label = "Todos los períodos"
+
+        period_where = " AND ".join(period_conditions)
+
+        # 3. Period totals (debit/credit in the period)
+        totals_q = text(
+            f"SELECT COUNT(*) AS movimientos, "
+            f"COALESCE(SUM(fa.amtacctdr), 0) AS total_debe, "
+            f"COALESCE(SUM(fa.amtacctcr), 0) AS total_haber "
+            f"FROM adempiere.fact_acct fa WHERE {period_where}"
+        )
+        row = db.execute(totals_q, period_params).fetchone()
+        movimientos = row[0] if row else 0
+        total_debe = float(row[1]) if row else 0.0
+        total_haber = float(row[2]) if row else 0.0
+
+        # 4. Opening balance (all movements BEFORE the period start)
+        saldo_inicial = 0.0
+        if date_from:
+            opening_conds = [
+                "fa.isactive = 'Y'",
+                "fa.account_id = :acct_id",
+                "fa.dateacct < :date_from",
+            ]
+            opening_params: dict = {"acct_id": acct_id, "date_from": date_from}
+            _add_org_filter(opening_conds, opening_params, org_ids, "fa")
+            opening_q = text(
+                f"SELECT COALESCE(SUM(fa.amtacctdr - fa.amtacctcr), 0) "
+                f"FROM adempiere.fact_acct fa "
+                f"WHERE {' AND '.join(opening_conds)}"
+            )
+            r = db.execute(opening_q, opening_params).fetchone()
+            saldo_inicial = float(r[0]) if r else 0.0
+        elif mes and anio:
+            opening_conds = [
+                "fa.isactive = 'Y'",
+                "fa.account_id = :acct_id",
+                f"fa.dateacct < '{anio}-{mes:02d}-01'",
+            ]
+            opening_params2: dict = {"acct_id": acct_id}
+            _add_org_filter(opening_conds, opening_params2, org_ids, "fa")
+            opening_q = text(
+                f"SELECT COALESCE(SUM(fa.amtacctdr - fa.amtacctcr), 0) "
+                f"FROM adempiere.fact_acct fa "
+                f"WHERE {' AND '.join(opening_conds)}"
+            )
+            r = db.execute(opening_q, opening_params2).fetchone()
+            saldo_inicial = float(r[0]) if r else 0.0
+
+        saldo_final = saldo_inicial + total_debe - total_haber
+
+        # 5. Daily breakdown (top 30 dates by movement)
+        daily_q = text(
+            f"SELECT fa.dateacct::date AS fecha, "
+            f"COALESCE(SUM(fa.amtacctdr), 0) AS debe, "
+            f"COALESCE(SUM(fa.amtacctcr), 0) AS haber, "
+            f"COUNT(*) AS asientos "
+            f"FROM adempiere.fact_acct fa WHERE {period_where} "
+            f"GROUP BY fa.dateacct::date ORDER BY fa.dateacct::date "
+            f"LIMIT 30"
+        )
+        daily = [
+            {"fecha": str(r[0]), "debe": float(r[1]), "haber": float(r[2]), "asientos": r[3]}
+            for r in db.execute(daily_q, period_params).fetchall()
+        ]
+
+        # 6. Currency info (get from first movement)
+        currency_name = "VES"
+        curr_q = text(
+            f"SELECT DISTINCT c.iso_code FROM adempiere.fact_acct fa "
+            f"JOIN adempiere.c_currency c ON fa.c_currency_id = c.c_currency_id "
+            f"WHERE fa.account_id = :acct_id AND fa.isactive = 'Y' LIMIT 3"
+        )
+        curr_rows = db.execute(curr_q, {"acct_id": acct_id}).fetchall()
+        if curr_rows:
+            currency_name = ", ".join(r[0] for r in curr_rows)
+
+        return {
+            "cuenta_codigo": account_code,
+            "cuenta_nombre": acct_name,
+            "tipo_cuenta": {
+                "A": "Activo", "L": "Pasivo", "O": "Patrimonio",
+                "R": "Ingreso", "E": "Gasto",
+            }.get(acct_type, acct_type),
+            "periodo": period_label,
+            "moneda": currency_name,
+            "movimientos": movimientos,
+            "total_debe": total_debe,
+            "total_haber": total_haber,
+            "saldo_inicial": saldo_inicial,
+            "saldo_final": saldo_final,
+            "detalle_diario": daily,
+        }
+    finally:
+        db.close()

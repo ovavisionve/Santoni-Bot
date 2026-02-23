@@ -887,3 +887,39 @@ def build_accounting_summary(mes: int | None = None, anio: int | None = None, or
         }
     finally:
         db.close()
+
+
+def build_account_detail(
+    account_code: str,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    mes: int | None = None,
+    anio: int | None = None,
+    org_ids: list[int] | None = None,
+) -> dict:
+    """Detail for a specific account code - routes to demo or iDempiere."""
+    if _is_production():
+        from app.services.idempiere_queries import build_account_detail as _prod
+        return _prod(
+            account_code=account_code,
+            date_from=date_from,
+            date_to=date_to,
+            mes=mes,
+            anio=anio,
+            org_ids=org_ids,
+        )
+
+    # Demo fallback - return minimal response
+    return {
+        "cuenta_codigo": account_code,
+        "cuenta_nombre": f"Cuenta {account_code} (demo)",
+        "tipo_cuenta": "N/A",
+        "periodo": f"{date_from} al {date_to}" if date_from else f"{mes}/{anio}" if mes else str(anio),
+        "moneda": "VES",
+        "movimientos": 0,
+        "total_debe": 0.0,
+        "total_haber": 0.0,
+        "saldo_inicial": 0.0,
+        "saldo_final": 0.0,
+        "detalle_diario": [],
+    }
