@@ -114,16 +114,37 @@ def extract_date_range(message: str) -> tuple[str | None, str | None]:
 def extract_month_year(message: str) -> tuple[int | None, int]:
     """Extract month name and year from message text.
 
+    Handles:
+    - Explicit months: "enero 2025", "marzo"
+    - Relative references: "este mes", "mes actual", "mes pasado", "mes anterior"
+
     Returns (mes, anio). Mes can be None if no month found.
     Year defaults to current year if not specified.
     """
     msg = message.lower()
-    anio = datetime.now().year
+    now = datetime.now()
+    anio = now.year
     year_match = re.search(r'20\d{2}', message)
     if year_match:
         anio = int(year_match.group())
 
     mes = None
+
+    # Relative month references (before explicit month names)
+    if any(p in msg for p in ["este mes", "mes actual", "mes en curso"]):
+        mes = now.month
+        anio = now.year  # override year even if another year was mentioned
+        return mes, anio
+    if any(p in msg for p in ["mes pasado", "mes anterior"]):
+        if now.month == 1:
+            mes = 12
+            anio = now.year - 1
+        else:
+            mes = now.month - 1
+            anio = now.year
+        return mes, anio
+
+    # Explicit month names
     for nombre, num in MESES_MAP.items():
         if nombre in msg:
             mes = num

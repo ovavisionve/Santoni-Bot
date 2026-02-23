@@ -41,12 +41,13 @@ _KEYWORD_RULES: list[tuple[str, list[str]]] = [
         "compras a productor", "precio del arroz", "precio del maiz",
         "precio del maíz", "tonelada", "kilogramo",
     ]),
-    # Compras de insumos (before generic "compra")
+    # Compras de insumos (before generic "compra" and before ventas
+    # to prevent "inventario" matching "venta" substring)
     ("compras_insumos", [
         "insumo", "proveedor", "proveedores", "orden de compra",
-        "ordenes de compra", "inventario de material", "material",
-        "compra de insumo", "compras insumo", "suministro",
-        "tiempo de entrega",
+        "ordenes de compra", "inventario de material", "inventario",
+        "material", "compra de insumo", "compras insumo", "suministro",
+        "tiempo de entrega", "stock",
     ]),
     # Contabilidad — BEFORE ventas/finanzas to catch accounting terms first
     ("contabilidad", [
