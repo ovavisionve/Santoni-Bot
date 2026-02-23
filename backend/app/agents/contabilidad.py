@@ -20,6 +20,22 @@ from app.services.query_service import build_accounting_summary, build_account_d
 # Regex for account codes like 2.01.01.10, 1.01.02, etc.
 _ACCOUNT_CODE_RE = re.compile(r'\b(\d\.\d{2}(?:\.\d{2}){1,3})\b')
 
+# Currency detection patterns
+_CURRENCY_VES_RE = re.compile(r'\b(bol[ií]vares?|bs\.?f?|ves)\b', re.IGNORECASE)
+_CURRENCY_USD_RE = re.compile(r'\b(d[oó]lares?|usd)\b', re.IGNORECASE)
+
+# iDempiere currency IDs
+_CURRENCY_IDS = {"VES": 205, "USD": 100}
+
+
+def _detect_currency(message: str) -> int | None:
+    """Detect currency from user message. Returns iDempiere c_currency_id or None."""
+    if _CURRENCY_VES_RE.search(message):
+        return _CURRENCY_IDS["VES"]
+    if _CURRENCY_USD_RE.search(message):
+        return _CURRENCY_IDS["USD"]
+    return None
+
 
 class ContabilidadAgent(BaseAgent):
     @property
@@ -64,8 +80,14 @@ REGLAS:
 - Usa terminología contable venezolana estándar
 - Indica el período contable de referencia
 - Los datos que recibes son REALES de la base de datos de Santoni
-- NUNCA inventes datos. Si los datos dicen 0 movimientos, informa que no hay movimientos
+- NUNCA inventes datos
 - Si recibes un error indicando que la cuenta no fue encontrada, informa al usuario
+
+IMPORTANTE - CASO DE 0 MOVIMIENTOS:
+- Si los datos muestran movimientos=0, NO digas "no tengo información". La cuenta SÍ existe.
+- Con 0 movimientos, SIEMPRE muestra: saldo_inicial, saldo_final (serán iguales), y explica que no hubo movimientos en el período.
+- Ejemplo: "La cuenta X no registró movimientos en el período consultado. El saldo al inicio y cierre del período es de Bs. 1.234,56."
+- Solo di "no tengo información" si recibes un ERROR indicando que la cuenta no existe.
 
 FORMATOS DE FECHA SOPORTADOS:
 - Rango con separadores: "01/01/2026 al 31/01/2026" o "01/01/26 al 31/01/26"
@@ -98,6 +120,9 @@ Se pueden consultar cuentas específicas por código (ej: 2.01.01.10) con rango 
     def fetch_data(self, message: str, org_ids: list[int] | None = None, salesrep_id: int | None = None) -> str | None:
         sections = []
 
+        # Detect currency from message
+        currency_id = _detect_currency(message)
+
         # Check if user is asking about a specific account code
         account_match = _ACCOUNT_CODE_RE.search(message)
 
@@ -113,6 +138,7 @@ Se pueden consultar cuentas específicas por código (ej: 2.01.01.10) con rango 
                     date_from=date_from,
                     date_to=date_to,
                     org_ids=org_ids,
+                    currency_id=currency_id,
                 )
             else:
                 mes, anio = extract_month_year(message)
@@ -121,6 +147,7 @@ Se pueden consultar cuentas específicas por código (ej: 2.01.01.10) con rango 
                     mes=mes,
                     anio=anio,
                     org_ids=org_ids,
+                    currency_id=currency_id,
                 )
 
             if "error" in detail:

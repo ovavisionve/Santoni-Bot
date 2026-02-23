@@ -1334,6 +1334,7 @@ def build_account_detail(
     mes: int | None = None,
     anio: int | None = None,
     org_ids: list[int] | None = None,
+    currency_id: int | None = None,
 ) -> dict:
     """Query detail for a specific account code from fact_acct.
 
@@ -1344,6 +1345,7 @@ def build_account_detail(
         mes: Month number (used if date_from/to not provided)
         anio: Year (used if date_from/to not provided)
         org_ids: List of allowed organization IDs
+        currency_id: iDempiere c_currency_id (205=VES, 100=USD). Filters fact_acct entries.
 
     Returns dict with account info, period totals, opening/closing balance.
 
@@ -1380,6 +1382,11 @@ def build_account_detail(
         period_conditions = ["fa.isactive = 'Y'", "fa.account_id = :acct_id"]
         period_params: dict = {"acct_id": acct_id}
         _add_org_filter(period_conditions, period_params, org_ids, "fa")
+
+        # Currency filter
+        if currency_id:
+            period_conditions.append("fa.c_currency_id = :currency_id")
+            period_params["currency_id"] = currency_id
 
         if date_from and date_to:
             period_conditions.append("fa.dateacct >= :date_from")
@@ -1431,6 +1438,9 @@ def build_account_detail(
             ]
             opening_params: dict = {"acct_id": acct_id, "date_from": date_from}
             _add_org_filter(opening_conds, opening_params, org_ids, "fa")
+            if currency_id:
+                opening_conds.append("fa.c_currency_id = :currency_id")
+                opening_params["currency_id"] = currency_id
             opening_q = text(
                 f"SELECT {saldo_sql_expr} "
                 f"FROM adempiere.fact_acct fa "
@@ -1446,6 +1456,9 @@ def build_account_detail(
             ]
             opening_params2: dict = {"acct_id": acct_id, "opening_date": f"{anio}-{mes:02d}-01"}
             _add_org_filter(opening_conds, opening_params2, org_ids, "fa")
+            if currency_id:
+                opening_conds.append("fa.c_currency_id = :currency_id")
+                opening_params2["currency_id"] = currency_id
             opening_q = text(
                 f"SELECT {saldo_sql_expr} "
                 f"FROM adempiere.fact_acct fa "
@@ -1488,16 +1501,25 @@ def build_account_detail(
                 "saldo": round(running_balance, 2),
             })
 
-        # 6. Currency info (get from first movement)
+        # 6. Currency info
         currency_name = "VES"
-        curr_q = text(
-            f"SELECT DISTINCT c.iso_code FROM adempiere.fact_acct fa "
-            f"JOIN adempiere.c_currency c ON fa.c_currency_id = c.c_currency_id "
-            f"WHERE fa.account_id = :acct_id AND fa.isactive = 'Y' LIMIT 3"
-        )
-        curr_rows = db.execute(curr_q, {"acct_id": acct_id}).fetchall()
-        if curr_rows:
-            currency_name = ", ".join(r[0] for r in curr_rows)
+        if currency_id:
+            curr_q = text(
+                "SELECT c.iso_code FROM adempiere.c_currency c "
+                "WHERE c.c_currency_id = :cid"
+            )
+            curr_row = db.execute(curr_q, {"cid": currency_id}).fetchone()
+            if curr_row:
+                currency_name = curr_row[0]
+        else:
+            curr_q = text(
+                "SELECT DISTINCT c.iso_code FROM adempiere.fact_acct fa "
+                "JOIN adempiere.c_currency c ON fa.c_currency_id = c.c_currency_id "
+                "WHERE fa.account_id = :acct_id AND fa.isactive = 'Y' LIMIT 3"
+            )
+            curr_rows = db.execute(curr_q, {"acct_id": acct_id}).fetchall()
+            if curr_rows:
+                currency_name = ", ".join(r[0] for r in curr_rows)
 
         acct_type_labels = {
             "A": "Activo", "L": "Pasivo", "O": "Patrimonio",

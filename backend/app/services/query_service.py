@@ -991,6 +991,7 @@ def build_account_detail(
     mes: int | None = None,
     anio: int | None = None,
     org_ids: list[int] | None = None,
+    currency_id: int | None = None,
 ) -> dict:
     """Detail for a specific account code - routes to demo or iDempiere."""
     if _is_production():
@@ -1002,6 +1003,7 @@ def build_account_detail(
             mes=mes,
             anio=anio,
             org_ids=org_ids,
+            currency_id=currency_id,
         )
 
     # Demo fallback - return minimal response
