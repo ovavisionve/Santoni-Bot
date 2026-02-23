@@ -150,27 +150,43 @@ def build_sales_summary(
         _add_currency_filter(conditions, params, currency_ids, "i")
         _add_date_filter(conditions, params, date_from, date_to, mes, anio, "i.dateinvoiced")
 
-        # TODO: zona and vendedor filters need validation after iDempiere exploration
-        # Santoni may use c_salesregion for zones and ad_user/c_bpartner for salesreps
         if vendedor:
             conditions.append("COALESCE(sr.name, '') ILIKE :vendedor")
             params["vendedor"] = f"%{vendedor}%"
         if zona:
-            conditions.append("COALESCE(sreg.name, '') ILIKE :zona")
+            conditions.append("COALESCE(cz.zona_name, '') ILIKE :zona")
             params["zona"] = f"%{zona}%"
 
         where = " AND ".join(conditions)
 
+        # CTE: one zone per client (avoids JOIN multiplication from
+        # c_bpartner_location having multiple rows per client)
+        zone_cte = (
+            "WITH client_zone AS ("
+            "SELECT DISTINCT ON (bpl.c_bpartner_id) "
+            "bpl.c_bpartner_id, sreg.name AS zona_name "
+            "FROM adempiere.c_bpartner_location bpl "
+            "LEFT JOIN adempiere.c_salesregion sreg "
+            "ON bpl.c_salesregion_id = sreg.c_salesregion_id "
+            "WHERE bpl.isactive = 'Y' "
+            "ORDER BY bpl.c_bpartner_id, bpl.c_bpartner_location_id DESC) "
+        )
+        joins = (
+            "LEFT JOIN adempiere.c_bpartner sr "
+            "ON i.salesrep_id = sr.c_bpartner_id "
+            "LEFT JOIN client_zone cz "
+            "ON i.c_bpartner_id = cz.c_bpartner_id "
+        )
+
         # Totals
         totals_q = text(
+            f"{zone_cte}"
             f"SELECT COUNT(*) AS total_facturas, "
             f"COALESCE(SUM(i.grandtotal), 0) AS total_facturado, "
             f"COALESCE(SUM(i.totallines), 0) AS total_neto, "
             f"COALESCE(SUM(i.grandtotal - i.totallines), 0) AS total_iva "
             f"FROM adempiere.c_invoice i "
-            f"LEFT JOIN adempiere.c_bpartner sr ON i.salesrep_id = sr.c_bpartner_id "
-            f"LEFT JOIN adempiere.c_bpartner_location bpl ON i.c_bpartner_id = bpl.c_bpartner_id AND bpl.isactive = 'Y' "
-            f"LEFT JOIN adempiere.c_salesregion sreg ON bpl.c_salesregion_id = sreg.c_salesregion_id "
+            f"{joins}"
             f"WHERE {where}"
         )
         row = db.execute(totals_q, params).fetchone()
@@ -183,26 +199,26 @@ def build_sales_summary(
 
         # By sales region (zona)
         by_zone_q = text(
-            f"SELECT COALESCE(sreg.name, 'Sin Zona') AS zona, COUNT(*) AS facturas, "
+            f"{zone_cte}"
+            f"SELECT COALESCE(cz.zona_name, 'Sin Zona') AS zona, COUNT(*) AS facturas, "
             f"COALESCE(SUM(i.grandtotal), 0) AS total "
             f"FROM adempiere.c_invoice i "
-            f"LEFT JOIN adempiere.c_bpartner sr ON i.salesrep_id = sr.c_bpartner_id "
-            f"LEFT JOIN adempiere.c_bpartner_location bpl ON i.c_bpartner_id = bpl.c_bpartner_id AND bpl.isactive = 'Y' "
-            f"LEFT JOIN adempiere.c_salesregion sreg ON bpl.c_salesregion_id = sreg.c_salesregion_id "
+            f"{joins}"
             f"WHERE {where} "
-            f"GROUP BY sreg.name ORDER BY total DESC"
+            f"GROUP BY cz.zona_name ORDER BY total DESC"
         )
         by_zone = [
             {"zona": r[0], "facturas": r[1], "total": float(r[2])}
             for r in db.execute(by_zone_q, params).fetchall()
         ]
 
-        # By sales rep (vendedor)
+        # By sales rep (distribuidor/intermediario - salesrep_id tracks distributors)
         by_vendor_q = text(
-            f"SELECT COALESCE(sr.name, 'Sin Vendedor') AS vendedor, COUNT(*) AS facturas, "
+            f"{zone_cte}"
+            f"SELECT COALESCE(sr.name, 'Sin Distribuidor') AS vendedor, COUNT(*) AS facturas, "
             f"COALESCE(SUM(i.grandtotal), 0) AS total "
             f"FROM adempiere.c_invoice i "
-            f"LEFT JOIN adempiere.c_bpartner sr ON i.salesrep_id = sr.c_bpartner_id "
+            f"{joins}"
             f"WHERE {where} "
             f"GROUP BY sr.name ORDER BY total DESC"
         )
@@ -213,12 +229,11 @@ def build_sales_summary(
 
         # By month
         by_month_q = text(
+            f"{zone_cte}"
             f"SELECT EXTRACT(MONTH FROM i.dateinvoiced)::int AS mes, COUNT(*) AS facturas, "
             f"COALESCE(SUM(i.grandtotal), 0) AS total "
             f"FROM adempiere.c_invoice i "
-            f"LEFT JOIN adempiere.c_bpartner sr ON i.salesrep_id = sr.c_bpartner_id "
-            f"LEFT JOIN adempiere.c_bpartner_location bpl ON i.c_bpartner_id = bpl.c_bpartner_id AND bpl.isactive = 'Y' "
-            f"LEFT JOIN adempiere.c_salesregion sreg ON bpl.c_salesregion_id = sreg.c_salesregion_id "
+            f"{joins}"
             f"WHERE {where} "
             f"GROUP BY EXTRACT(MONTH FROM i.dateinvoiced) ORDER BY mes"
         )
@@ -340,7 +355,11 @@ def build_top_clients(
     date_to: str | None = None,
     currency_ids: list[int] | None = None,
 ) -> list[dict]:
-    """Top clients by invoiced amount from iDempiere."""
+    """Top clients by invoiced amount from iDempiere.
+
+    Uses client_zone CTE to avoid JOIN multiplication from
+    c_bpartner_location having multiple rows per client.
+    """
     db = IdempiereSession()
     try:
         conditions = [
@@ -356,20 +375,31 @@ def build_top_clients(
 
         where = " AND ".join(conditions)
 
+        zone_cte = (
+            "WITH client_zone AS ("
+            "SELECT DISTINCT ON (bpl.c_bpartner_id) "
+            "bpl.c_bpartner_id, sreg.name AS zona_name "
+            "FROM adempiere.c_bpartner_location bpl "
+            "LEFT JOIN adempiere.c_salesregion sreg "
+            "ON bpl.c_salesregion_id = sreg.c_salesregion_id "
+            "WHERE bpl.isactive = 'Y' "
+            "ORDER BY bpl.c_bpartner_id, bpl.c_bpartner_location_id DESC) "
+        )
+
         q = text(
+            f"{zone_cte}"
             f"SELECT bp.value AS codigo, bp.name AS nombre, "
-            f"COALESCE(sreg.name, 'Sin Zona') AS zona, "
-            f"COALESCE(sr.name, 'Sin Vendedor') AS vendedor, "
+            f"COALESCE(cz.zona_name, 'Sin Zona') AS zona, "
+            f"COALESCE(sr.name, 'Sin Distribuidor') AS vendedor, "
             f"'' AS tipologia, "
             f"COUNT(i.c_invoice_id) AS facturas, "
             f"COALESCE(SUM(i.grandtotal), 0) AS total_facturado "
             f"FROM adempiere.c_invoice i "
             f"JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id "
             f"LEFT JOIN adempiere.c_bpartner sr ON i.salesrep_id = sr.c_bpartner_id "
-            f"LEFT JOIN adempiere.c_bpartner_location bpl ON bp.c_bpartner_id = bpl.c_bpartner_id AND bpl.isactive = 'Y' "
-            f"LEFT JOIN adempiere.c_salesregion sreg ON bpl.c_salesregion_id = sreg.c_salesregion_id "
+            f"LEFT JOIN client_zone cz ON bp.c_bpartner_id = cz.c_bpartner_id "
             f"WHERE {where} "
-            f"GROUP BY bp.value, bp.name, sreg.name, sr.name "
+            f"GROUP BY bp.value, bp.name, cz.zona_name, sr.name "
             f"ORDER BY total_facturado DESC "
             f"LIMIT :limit"
         )
@@ -394,7 +424,11 @@ def build_overdue_receivables(
     org_ids: list[int] | None = None,
     salesrep_id: int | None = None,
 ) -> list[dict]:
-    """Overdue accounts receivable from iDempiere (unpaid sales invoices)."""
+    """Overdue accounts receivable from iDempiere (unpaid sales invoices).
+
+    Uses client_zone CTE for zone info, and filters to recent invoices
+    (last 3 years) with amounts > 100 to exclude old residual balances.
+    """
     db = IdempiereSession()
     try:
         # Build org filter for overdue receivables
@@ -411,20 +445,29 @@ def build_overdue_receivables(
             org_params["salesrep_id"] = salesrep_id
 
         q = text(
+            "WITH client_zone AS ("
+            "SELECT DISTINCT ON (bpl.c_bpartner_id) "
+            "bpl.c_bpartner_id, sreg.name AS zona_name "
+            "FROM adempiere.c_bpartner_location bpl "
+            "LEFT JOIN adempiere.c_salesregion sreg "
+            "ON bpl.c_salesregion_id = sreg.c_salesregion_id "
+            "WHERE bpl.isactive = 'Y' "
+            "ORDER BY bpl.c_bpartner_id, bpl.c_bpartner_location_id DESC) "
             "SELECT i.documentno AS numero_factura, bp.name AS cliente, "
             "COALESCE(sr.name, '') AS vendedor, "
-            "COALESCE(sreg.name, '') AS zona, "
+            "COALESCE(cz.zona_name, '') AS zona, "
             "i.grandtotal AS monto_total, i.dateinvoiced AS fecha, "
             "COALESCE(pterm.netdays, 30) AS dias_credito, "
             "CURRENT_DATE - (i.dateinvoiced + COALESCE(pterm.netdays, 30)) AS dias_vencido "
             "FROM adempiere.c_invoice i "
             "JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id "
             "LEFT JOIN adempiere.c_bpartner sr ON i.salesrep_id = sr.c_bpartner_id "
-            "LEFT JOIN adempiere.c_bpartner_location bpl ON bp.c_bpartner_id = bpl.c_bpartner_id AND bpl.isactive = 'Y' "
-            "LEFT JOIN adempiere.c_salesregion sreg ON bpl.c_salesregion_id = sreg.c_salesregion_id "
+            "LEFT JOIN client_zone cz ON bp.c_bpartner_id = cz.c_bpartner_id "
             "LEFT JOIN adempiere.c_paymentterm pterm ON i.c_paymentterm_id = pterm.c_paymentterm_id "
             "WHERE i.issotrx = 'Y' AND i.docstatus = 'CO' AND i.ispaid = 'N' "
             "AND i.isactive = 'Y' "
+            "AND i.dateinvoiced >= (CURRENT_DATE - INTERVAL '3 years') "
+            "AND i.grandtotal > 100 "
             f"{org_clause}"
             f"{salesrep_clause}"
             "AND (i.dateinvoiced + COALESCE(pterm.netdays, 30)) < CURRENT_DATE "
