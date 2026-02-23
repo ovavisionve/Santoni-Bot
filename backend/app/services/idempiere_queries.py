@@ -685,7 +685,7 @@ def build_production_summary(mes: int | None = None, anio: int | None = None, or
 # ---------------------------------------------------------------------------
 
 def build_producer_purchases(
-    producto: str | None = None, anio: int | None = None, org_ids: list[int] | None = None,
+    producto: str | None = None, mes: int | None = None, anio: int | None = None, org_ids: list[int] | None = None,
 ) -> dict:
     """Producer purchases from iDempiere."""
     db = IdempiereSession()
@@ -701,6 +701,10 @@ def build_producer_purchases(
         if anio:
             conditions.append("EXTRACT(YEAR FROM o.dateordered) = :anio")
             params["anio"] = anio
+
+        if mes:
+            conditions.append("EXTRACT(MONTH FROM o.dateordered) = :mes")
+            params["mes"] = mes
 
         if producto:
             conditions.append("LOWER(p.name) LIKE :producto")

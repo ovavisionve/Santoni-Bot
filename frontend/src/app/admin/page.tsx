@@ -23,6 +23,10 @@ import {
   AlertTriangle,
   Lock,
   Unlock,
+  Download,
+  ChevronDown,
+  ChevronUp,
+  Eye,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -106,8 +110,12 @@ export default function AdminPage() {
         setOrganizations(orgs);
         setSalesreps(reps);
       } else if (tab === "logs") {
-        const l = await api.getAuditLogs();
+        const [l, u] = await Promise.all([
+          api.getAuditLogs(),
+          users.length ? Promise.resolve(users) : api.getUsers(),
+        ]);
         setAuditLogs(l.data);
+        if (!users.length) setUsers(u);
       }
     } catch {
       // ignore
@@ -675,110 +683,7 @@ export default function AdminPage() {
 
         {/* Audit Logs Tab */}
         {tab === "logs" && (
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b border-gray-200">
-                <tr>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">
-                    Fecha
-                  </th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">
-                    Usuario
-                  </th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">
-                    Acción
-                  </th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">
-                    Detalle
-                  </th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">
-                    Agente
-                  </th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">
-                    IP
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {auditLogs.map((log) => (
-                  <tr
-                    key={log.id}
-                    className={`hover:bg-gray-50 ${
-                      log.action === "access_denied" || log.action === "login_failed"
-                        ? "bg-red-50"
-                        : ""
-                    }`}
-                  >
-                    <td className="px-4 py-3 text-gray-500 whitespace-nowrap text-xs">
-                      {new Date(log.created_at).toLocaleString("es-VE")}
-                    </td>
-                    <td className="px-4 py-3">
-                      {log.username ? (
-                        <div>
-                          <div className="font-medium text-gray-900 text-xs">
-                            {log.full_name}
-                          </div>
-                          <div className="text-gray-400 text-xs">
-                            @{log.username}
-                          </div>
-                        </div>
-                      ) : (
-                        <span className="text-gray-400 text-xs italic">
-                          Desconocido
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span
-                        className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
-                          log.action === "login"
-                            ? "bg-green-100 text-green-700"
-                            : log.action === "login_failed"
-                              ? "bg-red-100 text-red-700"
-                              : log.action === "access_denied"
-                                ? "bg-red-100 text-red-700"
-                                : log.action === "chat_query"
-                                  ? "bg-blue-100 text-blue-700"
-                                  : "bg-gray-100 text-gray-700"
-                        }`}
-                      >
-                        {log.action === "login"
-                          ? "Inicio sesión"
-                          : log.action === "login_failed"
-                            ? "Login fallido"
-                            : log.action === "access_denied"
-                              ? "ACCESO DENEGADO"
-                              : log.action === "chat_query"
-                                ? "Consulta"
-                                : log.action}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-gray-600 max-w-sm truncate text-xs">
-                      {log.detail}
-                    </td>
-                    <td className="px-4 py-3 text-gray-500 text-xs">
-                      {log.agent_used
-                        ? DEPARTMENT_LABELS[log.agent_used] || log.agent_used
-                        : "-"}
-                    </td>
-                    <td className="px-4 py-3 text-gray-400 text-xs font-mono">
-                      {log.ip_address || "-"}
-                    </td>
-                  </tr>
-                ))}
-                {auditLogs.length === 0 && (
-                  <tr>
-                    <td
-                      colSpan={6}
-                      className="px-4 py-8 text-center text-gray-400"
-                    >
-                      No hay registros de auditoría
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+          <AuditPanel auditLogs={auditLogs} users={users} />
         )}
       </div>
     </div>
@@ -1384,6 +1289,263 @@ function MetricsPanel() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function AuditPanel({
+  auditLogs,
+  users,
+}: {
+  auditLogs: Array<{
+    id: number;
+    user_id: number;
+    username: string | null;
+    full_name: string | null;
+    action: string;
+    resource: string;
+    detail: string;
+    agent_used: string;
+    ip_address: string | null;
+    created_at: string;
+  }>;
+  users: User[];
+}) {
+  const [expandedRow, setExpandedRow] = useState<number | null>(null);
+  const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
+  const [viewingConvs, setViewingConvs] = useState<{
+    user: { id: number; username: string; full_name: string };
+    conversations: Array<{
+      id: number;
+      title: string;
+      created_at: string | null;
+      message_count: number;
+      messages: Array<{ role: string; content: string; agent_used: string | null; created_at: string | null }>;
+    }>;
+  } | null>(null);
+  const [loadingConvs, setLoadingConvs] = useState(false);
+  const [expandedConv, setExpandedConv] = useState<number | null>(null);
+
+  const handleViewConversations = async (userId: number) => {
+    setLoadingConvs(true);
+    try {
+      const data = await api.getUserConversations(userId);
+      setViewingConvs({ user: data.user, conversations: data.conversations });
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Error al cargar conversaciones");
+    } finally {
+      setLoadingConvs(false);
+    }
+  };
+
+  const handleDownload = (userId: number, format: "txt" | "pdf") => {
+    const url = api.exportUserConversationsUrl(userId, format);
+    const token = localStorage.getItem("santonibot_token");
+    // Use fetch with auth header and download the blob
+    fetch(url, { headers: { Authorization: `Bearer ${token || ""}` } })
+      .then(r => {
+        if (!r.ok) throw new Error("Error al descargar");
+        return r.blob();
+      })
+      .then(blob => {
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = `conversaciones_${format}.${format}`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+      })
+      .catch(err => alert(err.message));
+  };
+
+  // If viewing conversations for a user, show that view
+  if (viewingConvs) {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setViewingConvs(null)}
+              className="text-gray-500 hover:text-gray-700"
+            >
+              <ArrowLeft size={20} />
+            </button>
+            <div>
+              <h2 className="text-lg font-semibold">
+                Conversaciones de {viewingConvs.user.full_name}
+              </h2>
+              <p className="text-xs text-gray-500">@{viewingConvs.user.username} - {viewingConvs.conversations.length} conversaciones</p>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => handleDownload(viewingConvs.user.id, "txt")}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm text-gray-700 transition-colors"
+            >
+              <Download size={14} /> TXT
+            </button>
+            <button
+              onClick={() => handleDownload(viewingConvs.user.id, "pdf")}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-santoni-600 hover:bg-santoni-700 rounded-lg text-sm text-white transition-colors"
+            >
+              <Download size={14} /> PDF
+            </button>
+          </div>
+        </div>
+
+        {viewingConvs.conversations.map((conv) => (
+          <div key={conv.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <button
+              onClick={() => setExpandedConv(expandedConv === conv.id ? null : conv.id)}
+              className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50"
+            >
+              <div className="text-left">
+                <div className="text-sm font-medium text-gray-900">{conv.title}</div>
+                <div className="text-xs text-gray-500">
+                  {conv.created_at ? new Date(conv.created_at).toLocaleString("es-VE") : ""} - {conv.message_count} mensajes
+                </div>
+              </div>
+              {expandedConv === conv.id ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+            </button>
+            {expandedConv === conv.id && (
+              <div className="border-t border-gray-100 px-4 py-3 space-y-3 bg-gray-50 max-h-96 overflow-y-auto">
+                {conv.messages.map((m, i) => (
+                  <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+                    <div className={`max-w-[80%] rounded-lg px-3 py-2 text-xs ${
+                      m.role === "user"
+                        ? "bg-santoni-600 text-white"
+                        : "bg-white border border-gray-200 text-gray-700"
+                    }`}>
+                      {m.role !== "user" && m.agent_used && (
+                        <div className="text-[10px] font-medium text-santoni-500 mb-1">
+                          {DEPARTMENT_LABELS[m.agent_used] || m.agent_used}
+                        </div>
+                      )}
+                      <div className="whitespace-pre-wrap break-words">{m.content}</div>
+                      {m.created_at && (
+                        <div className={`text-[10px] mt-1 ${m.role === "user" ? "text-white/60" : "text-gray-400"}`}>
+                          {new Date(m.created_at).toLocaleTimeString("es-VE", { hour: "2-digit", minute: "2-digit" })}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+
+        {viewingConvs.conversations.length === 0 && (
+          <div className="text-center text-gray-400 py-8">Este usuario no tiene conversaciones</div>
+        )}
+      </div>
+    );
+  }
+
+  // Unique users with conversations
+  const uniqueUserIds = [...new Set(auditLogs.filter(l => l.user_id).map(l => l.user_id))];
+
+  return (
+    <div className="space-y-4">
+      {/* Quick user conversation access */}
+      {users.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+            <Eye size={16} />
+            Ver conversaciones por usuario
+          </h3>
+          <div className="flex flex-wrap gap-2">
+            {users.map((u) => (
+              <button
+                key={u.id}
+                onClick={() => handleViewConversations(u.id)}
+                disabled={loadingConvs}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-50 hover:bg-santoni-50 hover:text-santoni-700 border border-gray-200 rounded-lg text-xs text-gray-600 transition-colors disabled:opacity-50"
+              >
+                <MessageSquare size={12} />
+                {u.full_name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Audit log table */}
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 border-b border-gray-200">
+            <tr>
+              <th className="text-left px-4 py-3 font-medium text-gray-600">Fecha</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600">Usuario</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600">Accion</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600">Detalle</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600">Agente</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600">IP</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {auditLogs.map((log) => (
+              <tr
+                key={log.id}
+                className={`hover:bg-gray-50 cursor-pointer ${
+                  log.action === "access_denied" || log.action === "login_failed"
+                    ? "bg-red-50"
+                    : ""
+                }`}
+                onClick={() => setExpandedRow(expandedRow === log.id ? null : log.id)}
+              >
+                <td className="px-4 py-3 text-gray-500 whitespace-nowrap text-xs">
+                  {new Date(log.created_at).toLocaleString("es-VE")}
+                </td>
+                <td className="px-4 py-3">
+                  {log.username ? (
+                    <div>
+                      <div className="font-medium text-gray-900 text-xs">{log.full_name}</div>
+                      <div className="text-gray-400 text-xs">@{log.username}</div>
+                    </div>
+                  ) : (
+                    <span className="text-gray-400 text-xs italic">Desconocido</span>
+                  )}
+                </td>
+                <td className="px-4 py-3">
+                  <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
+                    log.action === "login" ? "bg-green-100 text-green-700"
+                    : log.action === "login_failed" ? "bg-red-100 text-red-700"
+                    : log.action === "access_denied" ? "bg-red-100 text-red-700"
+                    : log.action === "chat_query" ? "bg-blue-100 text-blue-700"
+                    : "bg-gray-100 text-gray-700"
+                  }`}>
+                    {log.action === "login" ? "Inicio sesion"
+                    : log.action === "login_failed" ? "Login fallido"
+                    : log.action === "access_denied" ? "ACCESO DENEGADO"
+                    : log.action === "chat_query" ? "Consulta"
+                    : log.action}
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-gray-600 text-xs">
+                  {expandedRow === log.id ? (
+                    <div className="whitespace-pre-wrap break-words max-w-lg">{log.detail}</div>
+                  ) : (
+                    <div className="max-w-sm truncate">{log.detail}</div>
+                  )}
+                </td>
+                <td className="px-4 py-3 text-gray-500 text-xs">
+                  {log.agent_used ? DEPARTMENT_LABELS[log.agent_used] || log.agent_used : "-"}
+                </td>
+                <td className="px-4 py-3 text-gray-400 text-xs font-mono">
+                  {log.ip_address || "-"}
+                </td>
+              </tr>
+            ))}
+            {auditLogs.length === 0 && (
+              <tr>
+                <td colSpan={6} className="px-4 py-8 text-center text-gray-400">
+                  No hay registros de auditoria
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

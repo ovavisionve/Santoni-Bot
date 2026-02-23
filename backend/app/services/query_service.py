@@ -482,17 +482,21 @@ def build_production_summary(mes: int | None = None, anio: int | None = None, or
 # ---------------------------------------------------------------------------
 
 def build_producer_purchases(
-    producto: str | None = None, anio: int | None = None, org_ids: list[int] | None = None,
+    producto: str | None = None, mes: int | None = None, anio: int | None = None, org_ids: list[int] | None = None,
 ) -> dict:
     """Producer purchases - routes to demo or iDempiere."""
     if _is_production():
         from app.services.idempiere_queries import build_producer_purchases as _prod
-        return _prod(producto=producto, anio=anio, org_ids=org_ids)
+        return _prod(producto=producto, mes=mes, anio=anio, org_ids=org_ids)
 
     db = SessionLocal()
     try:
         conditions = ["EXTRACT(YEAR FROM cp.fecha) = :anio"]
         params: dict = {"anio": anio}
+
+        if mes:
+            conditions.append("EXTRACT(MONTH FROM cp.fecha) = :mes")
+            params["mes"] = mes
 
         if producto:
             conditions.append("LOWER(cp.producto) LIKE :producto")

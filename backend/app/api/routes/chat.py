@@ -161,7 +161,7 @@ async def stream_message(
                     user_id=user_id,
                     action="chat_query",
                     resource="chat",
-                    detail=f"Consulta: {message_text[:200]}",
+                    detail=f"Consulta: {message_text}",
                     agent_used=agent_name,
                     ip_address=ip_addr,
                 )
@@ -254,7 +254,7 @@ async def send_message(
         user_id=current_user.id,
         action=action,
         resource="chat",
-        detail=f"{'ACCESO DENEGADO - ' if action == 'access_denied' else ''}Consulta: {data.message[:200]}",
+        detail=f"{'ACCESO DENEGADO - ' if action == 'access_denied' else ''}Consulta: {data.message}",
         agent_used=result.get("agent_used"),
         ip_address=request.client.host if request.client else None,
     )

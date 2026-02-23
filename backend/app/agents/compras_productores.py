@@ -74,6 +74,17 @@ Tablas: demo_productores, demo_compras_productores
         if year_match:
             anio = int(year_match.group())
 
+        mes = None
+        meses_map = {
+            "enero": 1, "febrero": 2, "marzo": 3, "abril": 4,
+            "mayo": 5, "junio": 6, "julio": 7, "agosto": 8,
+            "septiembre": 9, "octubre": 10, "noviembre": 11, "diciembre": 12,
+        }
+        for nombre, num in meses_map.items():
+            if nombre in msg:
+                mes = num
+                break
+
         producto = None
         if "arroz" in msg:
             producto = "arroz paddy"
@@ -81,7 +92,7 @@ Tablas: demo_productores, demo_compras_productores
             producto = "maiz"
 
         label = f"Año {anio}" if anio else "Todos los años"
-        summary = build_producer_purchases(producto=producto, anio=anio, org_ids=org_ids)
+        summary = build_producer_purchases(producto=producto, mes=mes, anio=anio, org_ids=org_ids)
         sections.append(self._format_summary(summary, f"Compras a Productores - {label}"))
 
         if any(w in msg for w in ["productor", "registrad", "cuántos", "cuantos"]):

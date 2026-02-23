@@ -3,6 +3,7 @@ Agente de Recursos Humanos - Alimentos Santoni
 Especializado en: nómina, vacaciones, asistencia, datos de empleados.
 """
 
+import re
 from datetime import datetime
 
 from app.agents.base_agent import BaseAgent
@@ -76,6 +77,9 @@ Tablas: demo_empleados, demo_nominas, demo_asistencias
             try:
                 periodo = None
                 anio = datetime.now().year
+                year_match = re.search(r'20\d{2}', message)
+                if year_match:
+                    anio = int(year_match.group())
                 meses_map = {
                     "enero": f"{anio}-01", "febrero": f"{anio}-02", "marzo": f"{anio}-03",
                     "abril": f"{anio}-04", "mayo": f"{anio}-05", "junio": f"{anio}-06",

@@ -395,6 +395,30 @@ class ApiClient {
     }>("/api/dashboard/alerts");
   }
 
+  // User conversations (admin audit)
+  async getUserConversations(userId: number) {
+    return this.request<{
+      user: { id: number; username: string; full_name: string; department: string | null };
+      conversations: Array<{
+        id: number;
+        title: string;
+        created_at: string | null;
+        message_count: number;
+        messages: Array<{
+          role: string;
+          content: string;
+          agent_used: string | null;
+          created_at: string | null;
+        }>;
+      }>;
+      total: number;
+    }>(`/api/admin/users/${userId}/conversations`);
+  }
+
+  exportUserConversationsUrl(userId: number, format: "txt" | "pdf" = "txt"): string {
+    return `${API_BASE}/api/admin/users/${userId}/conversations/export?format=${format}`;
+  }
+
   // Usage metrics (admin/supervisor)
   async getUsageMetrics(days = 7) {
     return this.request<{
