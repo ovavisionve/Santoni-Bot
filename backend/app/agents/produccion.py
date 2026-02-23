@@ -101,6 +101,11 @@ Datos de producción/inventario en iDempiere:
 - Tipos: V+=Recepción MP, C-=Despacho PT, M+/M-=Mov. Internos, P+/P-=Producción
 """
 
+    _DOCUMENT_KEYWORDS = [
+        "documento", "detalle", "reciente", "último", "ultimos",
+        "recepci", "despacho", "movimiento",
+    ]
+
     def fetch_data(self, message: str, org_ids: list[int] | None = None, salesrep_id: int | None = None, history: list[tuple[str, str]] | None = None) -> str | None:
         msg = message.lower()
         sections = []
@@ -120,10 +125,17 @@ Datos de producción/inventario en iDempiere:
         )
         sections.append(self._format_summary(summary, f"Movimientos de Inventario - {label}"))
 
-        if any(w in msg for w in [
-            "documento", "detalle", "reciente", "último", "ultimos",
-            "recepci", "despacho", "movimiento",
-        ]):
+        include_documents = any(w in msg for w in self._DOCUMENT_KEYWORDS)
+        # Follow-up: carry over document listing from history
+        if not include_documents and history:
+            for role, content in reversed(history):
+                if role == "user" and any(
+                    w in content.lower() for w in self._DOCUMENT_KEYWORDS
+                ):
+                    include_documents = True
+                    break
+
+        if include_documents:
             data = build_production_orders(
                 mes=mes, anio=anio, org_ids=org_ids,
                 date_from=date_from, date_to=date_to,

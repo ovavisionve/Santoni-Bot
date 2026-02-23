@@ -138,18 +138,42 @@ Se pueden consultar cuentas específicas por código (ej: 2.01.01.10) con rango 
         ]
         return "\n".join(lines)
 
+    @staticmethod
+    def _extract_account_from_history(
+        history: list[tuple[str, str]],
+    ) -> str | None:
+        """Try to find an account code (e.g. 2.01.01.10) from recent user messages."""
+        if not history:
+            return None
+        for role, content in reversed(history):
+            if role == "user":
+                match = _ACCOUNT_CODE_RE.search(content)
+                if match:
+                    return match.group(1)
+        return None
+
     def fetch_data(self, message: str, org_ids: list[int] | None = None, salesrep_id: int | None = None, history: list[tuple[str, str]] | None = None) -> str | None:
         sections = []
 
-        # Detect currency from message
+        # Detect currency from message (or carry over from history)
         currency_ids = detect_currency(message)
+        if not currency_ids and history:
+            for role, content in reversed(history):
+                if role == "user":
+                    c = detect_currency(content)
+                    if c:
+                        currency_ids = c
+                        break
 
         # Check if user is asking about a specific account code
         account_match = _ACCOUNT_CODE_RE.search(message)
+        account_code = account_match.group(1) if account_match else None
 
-        if account_match:
-            account_code = account_match.group(1)
+        # Follow-up: if no account code in current message, check history
+        if not account_code and history:
+            account_code = self._extract_account_from_history(history)
 
+        if account_code:
             # Try to extract date range first (dd/mm/yyyy al dd/mm/yyyy)
             date_from, date_to = extract_date_range(message)
 

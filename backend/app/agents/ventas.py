@@ -110,6 +110,100 @@ Datos de ventas de iDempiere:
 - m_product: Productos (name, m_product_category_id)
 """
 
+    # ---- Extraction helpers (reused for history) ----
+
+    _ZONES = [
+        "portuguesa", "barinas", "lara", "carabobo", "aragua", "zulia",
+        "maracaibo", "falcon", "margarita", "trujillo", "merida", "mérida",
+        "tachira", "táchira", "guanare", "cabimas", "valencia", "caracas",
+        "oriente", "santa barbara",
+    ]
+    _VENDEDORES = ["carlos matias", "lenny silva", "yuleidys gutierrez"]
+    _ORG_MAP = [
+        ("inpromaiz", "InproMaiz"),
+        ("inpro maiz", "InproMaiz"),
+        ("inproa santoni", "INPROA SANTONI"),
+        ("inproa", "INPROA SANTONI"),
+        ("santoni service", "Santoni Service"),
+        ("agropecuaria", "AGROPECUARIA"),
+        ("aga agricola", "AGA AGRICOLA"),
+        ("aga agrícola", "AGA AGRICOLA"),
+        ("agroinproa", "AGROINPROA"),
+        ("inversiones aga", "INVERSIONES AGA"),
+    ]
+    _QUERY_TYPES = {
+        "top": ["top", "mejor", "ranking", "pareto", "principales"],
+        "cobranza": ["cobran", "cobro", "recauda", "pago"],
+        "vencidas": ["atrasa", "vencid", "pendiente", "deuda", "mora"],
+        "ventas": ["venta", "factur", "ingreso", "volumen"],
+    }
+
+    @classmethod
+    def _extract_zona(cls, msg: str) -> str | None:
+        msg_lower = msg.lower()
+        for z in cls._ZONES:
+            if z in msg_lower:
+                return z.title()
+        return None
+
+    @classmethod
+    def _extract_vendedor(cls, msg: str) -> str | None:
+        msg_lower = msg.lower()
+        for v in cls._VENDEDORES:
+            if v in msg_lower:
+                return v.title()
+        return None
+
+    @classmethod
+    def _extract_org_name(cls, msg: str) -> str | None:
+        msg_lower = msg.lower()
+        for kw, val in cls._ORG_MAP:
+            if kw in msg_lower:
+                return val
+        return None
+
+    @classmethod
+    def _detect_query_type(cls, msg: str) -> str | None:
+        msg_lower = msg.lower()
+        for qtype, kws in cls._QUERY_TYPES.items():
+            if any(w in msg_lower for w in kws):
+                return qtype
+        return None
+
+    def _extract_context_from_history(
+        self, history: list[tuple[str, str]],
+    ) -> dict:
+        """Extract zona, vendedor, org_name, currency, query_type from history."""
+        ctx: dict = {}
+        if not history:
+            return ctx
+        for role, content in reversed(history):
+            if role != "user":
+                continue
+            if "zona" not in ctx:
+                z = self._extract_zona(content)
+                if z:
+                    ctx["zona"] = z
+            if "vendedor" not in ctx:
+                v = self._extract_vendedor(content)
+                if v:
+                    ctx["vendedor"] = v
+            if "org_name" not in ctx:
+                o = self._extract_org_name(content)
+                if o:
+                    ctx["org_name"] = o
+            if "currency" not in ctx:
+                c = detect_currency(content)
+                if c:
+                    ctx["currency"] = c
+            if "query_type" not in ctx:
+                qt = self._detect_query_type(content)
+                if qt:
+                    ctx["query_type"] = qt
+            if len(ctx) >= 5:
+                break
+        return ctx
+
     def fetch_data(self, message: str, org_ids: list[int] | None = None, salesrep_id: int | None = None, history: list[tuple[str, str]] | None = None) -> str | None:
         msg = message.lower()
         sections = []
@@ -125,42 +219,31 @@ Datos de ventas de iDempiere:
         # Detect currency filter
         currency_ids = detect_currency(message)
 
-        vendedor = None
-        for v in ["carlos matias", "lenny silva", "yuleidys gutierrez"]:
-            if v in msg:
-                vendedor = v.title()
-                break
+        vendedor = self._extract_vendedor(message)
+        zona = self._extract_zona(message)
+        org_name = self._extract_org_name(message)
 
-        zona = None
-        for z in ["portuguesa", "barinas", "lara", "carabobo", "aragua", "zulia",
-                   "maracaibo", "falcon", "margarita", "trujillo", "merida", "mérida",
-                   "tachira", "táchira", "guanare", "cabimas", "valencia", "caracas",
-                   "oriente", "santa barbara"]:
-            if z in msg:
-                zona = z.title()
-                break
-
-        # Extract organization name from message
-        org_name = None
-        for org_keyword, org_value in [
-            ("inpromaiz", "InproMaiz"),
-            ("inpro maiz", "InproMaiz"),
-            ("inproa santoni", "INPROA SANTONI"),
-            ("inproa", "INPROA SANTONI"),
-            ("santoni service", "Santoni Service"),
-            ("agropecuaria", "AGROPECUARIA"),
-            ("aga agricola", "AGA AGRICOLA"),
-            ("aga agrícola", "AGA AGRICOLA"),
-            ("agroinproa", "AGROINPROA"),
-            ("inversiones aga", "INVERSIONES AGA"),
-        ]:
-            if org_keyword in msg:
-                org_name = org_value
-                break
+        # Follow-up: carry over context from history
+        hist_ctx: dict = {}
+        if history:
+            hist_ctx = self._extract_context_from_history(history)
+        if not vendedor:
+            vendedor = hist_ctx.get("vendedor")
+        if not zona:
+            zona = hist_ctx.get("zona")
+        if not org_name:
+            org_name = hist_ctx.get("org_name")
+        if not currency_ids:
+            currency_ids = hist_ctx.get("currency")
 
         label = build_period_label(date_from, date_to, mes, anio)
 
-        if any(w in msg for w in ["top", "mejor", "ranking", "pareto", "principales"]):
+        # Determine which sections to include
+        query_type = self._detect_query_type(message)
+        if not query_type and hist_ctx:
+            query_type = hist_ctx.get("query_type")
+
+        if query_type == "top" or any(w in msg for w in self._QUERY_TYPES["top"]):
             limit = 20
             limit_match = re.search(r'top\s*(\d+)', msg)
             if limit_match:
@@ -175,7 +258,7 @@ Datos de ventas de iDempiere:
             sections.append(f"## Top {limit} Clientes por Ventas ({label}{org_label})")
             sections.append(self._format_table(data))
 
-        if any(w in msg for w in ["cobran", "cobro", "recauda", "pago"]):
+        if query_type == "cobranza" or any(w in msg for w in self._QUERY_TYPES["cobranza"]):
             data = build_collection_summary(
                 zona=zona, vendedor=vendedor, mes=mes, anio=anio,
                 org_ids=org_ids, salesrep_id=salesrep_id,
@@ -184,12 +267,12 @@ Datos de ventas de iDempiere:
             )
             sections.append(self._format_summary(data, f"Resumen de Cobranza - {label}"))
 
-        if any(w in msg for w in ["atrasa", "vencid", "pendiente", "deuda", "mora"]):
+        if query_type == "vencidas" or any(w in msg for w in self._QUERY_TYPES["vencidas"]):
             data = build_overdue_receivables(org_ids=org_ids, salesrep_id=salesrep_id)
             sections.append("## Cuentas por Cobrar Vencidas")
             sections.append(self._format_table(data))
 
-        if any(w in msg for w in ["venta", "factur", "ingreso", "volumen"]) or not sections:
+        if query_type == "ventas" or any(w in msg for w in self._QUERY_TYPES["ventas"]) or not sections:
             data = build_sales_summary(
                 zona=zona, vendedor=vendedor, mes=mes, anio=anio,
                 org_ids=org_ids, salesrep_id=salesrep_id,

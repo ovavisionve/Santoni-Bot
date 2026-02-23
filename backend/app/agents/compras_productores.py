@@ -99,6 +99,47 @@ Datos de compras a productores en iDempiere:
 - m_product: Productos agrícolas (arroz, maíz)
 """
 
+    # ---- History-based follow-up helpers ----
+
+    @staticmethod
+    def _extract_producto(msg: str) -> str | None:
+        msg_lower = msg.lower()
+        if "arroz" in msg_lower:
+            return "arroz paddy"
+        if "maíz" in msg_lower or "maiz" in msg_lower:
+            return "maiz"
+        return None
+
+    _SECTION_KEYWORDS: dict[str, list[str]] = {
+        "productores": ["productor", "registrad", "cuántos", "cuantos"],
+        "pendientes": ["pago", "pendiente", "deuda", "deb"],
+        "precios": ["precio", "costo", "valor"],
+    }
+
+    def _extract_context_from_history(
+        self, history: list[tuple[str, str]],
+    ) -> dict:
+        """Extract producto and section keywords from recent user history."""
+        ctx: dict = {}
+        if not history:
+            return ctx
+        for role, content in reversed(history):
+            if role != "user":
+                continue
+            if "producto" not in ctx:
+                prod = self._extract_producto(content)
+                if prod:
+                    ctx["producto"] = prod
+            msg = content.lower()
+            if "sections" not in ctx:
+                for section, kws in self._SECTION_KEYWORDS.items():
+                    if any(w in msg for w in kws):
+                        ctx["sections"] = section
+                        break
+            if "producto" in ctx and "sections" in ctx:
+                break
+        return ctx
+
     def fetch_data(self, message: str, org_ids: list[int] | None = None, salesrep_id: int | None = None, history: list[tuple[str, str]] | None = None) -> str | None:
         msg = message.lower()
         sections = []
@@ -109,11 +150,17 @@ Datos de compras a productores en iDempiere:
         if date_from and date_to:
             mes = None
 
-        producto = None
-        if "arroz" in msg:
-            producto = "arroz paddy"
-        elif "maíz" in msg or "maiz" in msg:
-            producto = "maiz"
+        producto = self._extract_producto(message)
+
+        # Follow-up: carry over context from history
+        hist_ctx: dict = {}
+        if history and (not producto or not any(
+            any(w in msg for w in kws) for kws in self._SECTION_KEYWORDS.values()
+        )):
+            hist_ctx = self._extract_context_from_history(history)
+
+        if not producto:
+            producto = hist_ctx.get("producto")
 
         label = build_period_label(date_from, date_to, mes, anio)
 
@@ -123,7 +170,21 @@ Datos de compras a productores en iDempiere:
         )
         sections.append(self._format_summary(summary, f"Compras a Productores - {label}"))
 
-        if any(w in msg for w in ["productor", "registrad", "cuántos", "cuantos"]):
+        include_productores = any(w in msg for w in self._SECTION_KEYWORDS["productores"])
+        include_pendientes = any(w in msg for w in self._SECTION_KEYWORDS["pendientes"])
+        include_precios = any(w in msg for w in self._SECTION_KEYWORDS["precios"])
+
+        # If follow-up has no section keywords, carry over from history
+        if not include_productores and not include_pendientes and not include_precios:
+            section_type = hist_ctx.get("sections")
+            if section_type == "productores":
+                include_productores = True
+            elif section_type == "pendientes":
+                include_pendientes = True
+            elif section_type == "precios":
+                include_precios = True
+
+        if include_productores:
             try:
                 producers = build_registered_producers(org_ids=org_ids)
                 if producers:
@@ -132,7 +193,7 @@ Datos de compras a productores en iDempiere:
             except Exception:
                 pass
 
-        if any(w in msg for w in ["pago", "pendiente", "deuda", "deb"]):
+        if include_pendientes:
             try:
                 pending = build_producer_pending_payments(producto=producto, org_ids=org_ids)
                 if pending:
@@ -144,7 +205,7 @@ Datos de compras a productores en iDempiere:
             except Exception:
                 pass
 
-        if any(w in msg for w in ["precio", "costo", "valor"]):
+        if include_precios:
             try:
                 prices = build_producer_price_analysis(
                     anio=anio, org_ids=org_ids,

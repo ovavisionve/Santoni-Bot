@@ -89,6 +89,8 @@ Datos financieros de iDempiere:
 - c_allocationline: Asignación de pagos a facturas
 """
 
+    _RECEIVABLES_KEYWORDS = ["cobrar", "morosidad", "vencid", "atras"]
+
     def fetch_data(self, message: str, org_ids: list[int] | None = None, salesrep_id: int | None = None, history: list[tuple[str, str]] | None = None) -> str | None:
         msg = message.lower()
         sections = []
@@ -106,7 +108,17 @@ Datos financieros de iDempiere:
         )
         sections.append(self._format_summary(summary, f"Resumen Financiero - {label}"))
 
-        if any(w in msg for w in ["cobrar", "morosidad", "vencid", "atras"]):
+        include_receivables = any(w in msg for w in self._RECEIVABLES_KEYWORDS)
+        # Follow-up: carry over receivables section from history
+        if not include_receivables and history:
+            for role, content in reversed(history):
+                if role == "user" and any(
+                    w in content.lower() for w in self._RECEIVABLES_KEYWORDS
+                ):
+                    include_receivables = True
+                    break
+
+        if include_receivables:
             data = build_overdue_receivables(org_ids=org_ids)
             sections.append("## Cuentas por Cobrar Vencidas")
             sections.append(self._format_table(data))
