@@ -102,6 +102,42 @@ Datos contables de iDempiere:
 Se pueden consultar cuentas específicas por código (ej: 2.01.01.10) con rango de fechas.
 """
 
+    @staticmethod
+    def _format_zero_movement(detail: dict) -> str:
+        """Build an explicit message for accounts with 0 movements in the period.
+
+        This bypasses _format_summary to prevent the LLM from misinterpreting
+        0 movements as 'no information available'.
+        """
+        code = detail.get("cuenta_codigo", "")
+        name = detail.get("cuenta_nombre", "")
+        acct_type = detail.get("tipo_cuenta", "")
+        nature = detail.get("naturaleza", "")
+        period = detail.get("periodo", "")
+        currency = detail.get("moneda", "VES")
+        saldo_ini = detail.get("saldo_inicial", 0.0)
+        saldo_fin = detail.get("saldo_final", 0.0)
+
+        lines = [
+            f"## Cuenta {code} — {name}",
+            f"- Tipo de cuenta: {acct_type}",
+            f"- Naturaleza: {nature}",
+            f"- Moneda: {currency}",
+            f"- Período consultado: {period}",
+            "",
+            "**La cuenta NO registró movimientos en este período.**",
+            "",
+            f"| Concepto | Monto ({currency}) |",
+            "|---|---:|",
+            f"| Saldo Inicial | {saldo_ini:,.2f} |",
+            f"| Debe en el período | 0,00 |",
+            f"| Haber en el período | 0,00 |",
+            f"| **Saldo Final** | **{saldo_fin:,.2f}** |",
+            "",
+            "El saldo se mantiene sin cambios al no haber movimientos en el período consultado.",
+        ]
+        return "\n".join(lines)
+
     def fetch_data(self, message: str, org_ids: list[int] | None = None, salesrep_id: int | None = None) -> str | None:
         sections = []
 
@@ -138,7 +174,12 @@ Se pueden consultar cuentas específicas por código (ej: 2.01.01.10) con rango 
             if "error" in detail:
                 sections.append(f"**ERROR:** {detail['error']}")
             else:
-                sections.append(self._format_summary(detail, f"Cuenta {account_code}"))
+                # Build deterministic response for 0-movement case
+                # so the LLM doesn't misinterpret it as "no information"
+                if detail.get("movimientos", 0) == 0:
+                    sections.append(self._format_zero_movement(detail))
+                else:
+                    sections.append(self._format_summary(detail, f"Cuenta {account_code}"))
         else:
             # General accounting summary (no specific account)
             date_from, date_to = extract_date_range(message)
