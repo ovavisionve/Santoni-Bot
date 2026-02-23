@@ -14,6 +14,7 @@ from app.agents.date_utils import (
     extract_date_range,
     extract_month_year,
     build_period_label,
+    detect_currency,
 )
 from app.services.query_service import (
     build_sales_summary,
@@ -88,7 +89,13 @@ IMPORTANTE SOBRE PERÍODOS:
 - Los datos corresponden al año actual por defecto, a menos que el usuario especifique otro año
 - SIEMPRE indica claramente el período de los datos (ej: "Datos del año 2026")
 - Si el usuario hace una pregunta amplia sin período, presenta datos del año actual y sugiere: "Si necesitas datos de otro período, indícame el año, mes o rango de fechas."
-- Si el usuario especificó un rango de fechas, los datos ya vienen filtrados para ese rango exacto"""
+- Si el usuario especificó un rango de fechas, los datos ya vienen filtrados para ese rango exacto
+
+SOBRE MONEDA:
+- Si el usuario pide datos "en dólares", "en USD", "en DOL", los datos ya vienen filtrados SOLO por facturas en esa moneda
+- Si el usuario pide datos "en bolívares", "en BS", "en VES", los datos ya vienen filtrados SOLO por facturas en bolívares
+- Si no se especifica moneda, se muestran TODAS las facturas sin importar moneda
+- NUNCA intentes convertir montos entre monedas. Los datos son montos reales facturados en la moneda solicitada."""
 
     def get_sql_context(self) -> str:
         return """
@@ -114,6 +121,9 @@ Datos de ventas de iDempiere:
         if date_from and date_to:
             mes = None
 
+        # Detect currency filter
+        currency_id = detect_currency(message)
+
         vendedor = None
         for v in ["carlos matias", "lenny silva", "yuleidys gutierrez"]:
             if v in msg:
@@ -137,6 +147,7 @@ Datos de ventas de iDempiere:
                 limit=limit, zona=zona, vendedor=vendedor, anio=anio,
                 org_ids=org_ids, salesrep_id=salesrep_id,
                 date_from=date_from, date_to=date_to,
+                currency_id=currency_id,
             )
             sections.append(f"## Top {limit} Clientes por Ventas ({label})")
             sections.append(self._format_table(data))
@@ -146,6 +157,7 @@ Datos de ventas de iDempiere:
                 zona=zona, vendedor=vendedor, mes=mes, anio=anio,
                 org_ids=org_ids, salesrep_id=salesrep_id,
                 date_from=date_from, date_to=date_to,
+                currency_id=currency_id,
             )
             sections.append(self._format_summary(data, f"Resumen de Cobranza - {label}"))
 
@@ -159,6 +171,7 @@ Datos de ventas de iDempiere:
                 zona=zona, vendedor=vendedor, mes=mes, anio=anio,
                 org_ids=org_ids, salesrep_id=salesrep_id,
                 date_from=date_from, date_to=date_to,
+                currency_id=currency_id,
             )
             sections.append(self._format_summary(data, f"Resumen de Ventas - {label}"))
 

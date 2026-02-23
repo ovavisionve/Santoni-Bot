@@ -13,28 +13,13 @@ from app.agents.date_utils import (
     extract_date_range,
     extract_month_year,
     build_period_label,
+    detect_currency,
 )
 from app.services.query_service import build_accounting_summary, build_account_detail
 
 
 # Regex for account codes like 2.01.01.10, 1.01.02, etc.
 _ACCOUNT_CODE_RE = re.compile(r'\b(\d\.\d{2}(?:\.\d{2}){1,3})\b')
-
-# Currency detection patterns
-_CURRENCY_VES_RE = re.compile(r'\b(bol[ií]vares?|bs\.?f?|ves)\b', re.IGNORECASE)
-_CURRENCY_USD_RE = re.compile(r'\b(d[oó]lares?|usd)\b', re.IGNORECASE)
-
-# iDempiere currency IDs
-_CURRENCY_IDS = {"VES": 205, "USD": 100}
-
-
-def _detect_currency(message: str) -> int | None:
-    """Detect currency from user message. Returns iDempiere c_currency_id or None."""
-    if _CURRENCY_VES_RE.search(message):
-        return _CURRENCY_IDS["VES"]
-    if _CURRENCY_USD_RE.search(message):
-        return _CURRENCY_IDS["USD"]
-    return None
 
 
 class ContabilidadAgent(BaseAgent):
@@ -121,7 +106,7 @@ Se pueden consultar cuentas específicas por código (ej: 2.01.01.10) con rango 
         sections = []
 
         # Detect currency from message
-        currency_id = _detect_currency(message)
+        currency_id = detect_currency(message)
 
         # Check if user is asking about a specific account code
         account_match = _ACCOUNT_CODE_RE.search(message)

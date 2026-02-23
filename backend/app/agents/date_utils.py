@@ -1,13 +1,17 @@
 """
-Utilidades compartidas de extracción de fechas para todos los agentes de SantoniBot.
+Utilidades compartidas de extracción de fechas y moneda para todos los agentes de SantoniBot.
 
-Formatos soportados:
+Formatos de fecha soportados:
 - Rango con separadores: "01/01/2026 al 31/01/2026", "01-01-2026 al 31-01-2026"
 - Rango con año corto: "01/01/26 al 31/01/26", "1/1/26 al 31/1/26"
 - Rango compacto (ddmmyyyy o ddmmyy): "01012026 al 31012026", "010126 al 310126"
 - Rango mixto: "01/12/2025 al 311225" (una con separadores, otra compacta)
 - Mes y año: "enero 2026", "febrero", "marzo 2025"
 - Solo año: "2026", "2025"
+
+Monedas detectadas:
+- VES/Bolívares: "bolivares", "bs", "ves" → c_currency_id 205
+- USD/Dólares: "dolares", "usd", "dol" → c_currency_id 100
 """
 
 import re
@@ -26,6 +30,13 @@ MESES_NOMBRES = {v: k.title() for k, v in MESES_MAP.items()}
 # Individual date patterns
 _SEP_DATE_RE = re.compile(r'(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})')
 _COMPACT_DATE_RE = re.compile(r'\b(\d{6,8})\b')
+
+# Currency detection patterns
+_CURRENCY_VES_RE = re.compile(r'\b(bol[ií]vares?|bs\.?f?|ves)\b', re.IGNORECASE)
+_CURRENCY_USD_RE = re.compile(r'\b(d[oó]lares?|usd|dol)\b', re.IGNORECASE)
+
+# iDempiere c_currency_id values
+CURRENCY_IDS = {"VES": 205, "USD": 100}
 
 # "al" keyword to split date ranges
 _AL_RE = re.compile(r'\bal\b', re.IGNORECASE)
@@ -130,3 +141,15 @@ def build_period_label(
     if anio:
         return f"Año {anio}"
     return "Todos los periodos"
+
+
+def detect_currency(message: str) -> int | None:
+    """Detect currency from user message.
+
+    Returns iDempiere c_currency_id (205=VES, 100=USD) or None if not specified.
+    """
+    if _CURRENCY_VES_RE.search(message):
+        return CURRENCY_IDS["VES"]
+    if _CURRENCY_USD_RE.search(message):
+        return CURRENCY_IDS["USD"]
+    return None

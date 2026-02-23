@@ -148,6 +148,7 @@ def build_sales_summary(
     salesrep_id: int | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    currency_id: int | None = None,
 ) -> dict:
     """Sales summary - routes to demo or iDempiere."""
     if _is_production():
@@ -156,6 +157,7 @@ def build_sales_summary(
             zona=zona, vendedor=vendedor, mes=mes, anio=anio,
             org_ids=org_ids, salesrep_id=salesrep_id,
             date_from=date_from, date_to=date_to,
+            currency_id=currency_id,
         )
 
     db = SessionLocal()
@@ -244,6 +246,7 @@ def build_collection_summary(
     salesrep_id: int | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    currency_id: int | None = None,
 ) -> dict:
     """Collection summary - routes to demo or iDempiere."""
     if _is_production():
@@ -252,6 +255,7 @@ def build_collection_summary(
             zona=zona, vendedor=vendedor, mes=mes, anio=anio,
             org_ids=org_ids, salesrep_id=salesrep_id,
             date_from=date_from, date_to=date_to,
+            currency_id=currency_id,
         )
 
     db = SessionLocal()
@@ -324,6 +328,7 @@ def build_top_clients(
     salesrep_id: int | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    currency_id: int | None = None,
 ) -> list[dict]:
     """Top clients - routes to demo or iDempiere."""
     if _is_production():
@@ -332,6 +337,7 @@ def build_top_clients(
             limit=limit, zona=zona, vendedor=vendedor, anio=anio,
             org_ids=org_ids, salesrep_id=salesrep_id,
             date_from=date_from, date_to=date_to,
+            currency_id=currency_id,
         )
 
     db = SessionLocal()

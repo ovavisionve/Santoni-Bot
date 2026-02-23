@@ -57,6 +57,19 @@ def _add_org_filter(
             params[f"org_{i}"] = org_id
 
 
+def _add_currency_filter(
+    conditions: list[str],
+    params: dict,
+    currency_id: int | None,
+    table_alias: str,
+) -> None:
+    """Add c_currency_id filter if currency_id is provided.
+    Modifies conditions and params in place."""
+    if currency_id:
+        conditions.append(f"{table_alias}.c_currency_id = :currency_id")
+        params["currency_id"] = currency_id
+
+
 def _add_date_filter(
     conditions: list[str],
     params: dict,
@@ -118,6 +131,7 @@ def build_sales_summary(
     salesrep_id: int | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    currency_id: int | None = None,
 ) -> dict:
     """Sales summary from iDempiere c_invoice (issotrx='Y')."""
     db = IdempiereSession()
@@ -130,6 +144,7 @@ def build_sales_summary(
         params: dict = {}
         _add_org_filter(conditions, params, org_ids, "i")
         _add_salesrep_filter(conditions, params, salesrep_id, "i")
+        _add_currency_filter(conditions, params, currency_id, "i")
         _add_date_filter(conditions, params, date_from, date_to, mes, anio, "i.dateinvoiced")
 
         # TODO: zona and vendedor filters need validation after iDempiere exploration
@@ -230,6 +245,7 @@ def build_collection_summary(
     salesrep_id: int | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    currency_id: int | None = None,
 ) -> dict:
     """Collection summary from iDempiere c_payment (isreceipt='Y')."""
     db = IdempiereSession()
@@ -241,6 +257,7 @@ def build_collection_summary(
         ]
         params: dict = {}
         _add_org_filter(conditions, params, org_ids, "p")
+        _add_currency_filter(conditions, params, currency_id, "p")
         # Payments don't have salesrep_id directly; filter via linked invoice
         if salesrep_id:
             conditions.append(
@@ -318,6 +335,7 @@ def build_top_clients(
     salesrep_id: int | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    currency_id: int | None = None,
 ) -> list[dict]:
     """Top clients by invoiced amount from iDempiere."""
     db = IdempiereSession()
@@ -330,6 +348,7 @@ def build_top_clients(
         params: dict = {"limit": limit}
         _add_org_filter(conditions, params, org_ids, "i")
         _add_salesrep_filter(conditions, params, salesrep_id, "i")
+        _add_currency_filter(conditions, params, currency_id, "i")
         _add_date_filter(conditions, params, date_from, date_to, None, anio, "i.dateinvoiced")
 
         where = " AND ".join(conditions)
@@ -1382,11 +1401,7 @@ def build_account_detail(
         period_conditions = ["fa.isactive = 'Y'", "fa.account_id = :acct_id"]
         period_params: dict = {"acct_id": acct_id}
         _add_org_filter(period_conditions, period_params, org_ids, "fa")
-
-        # Currency filter
-        if currency_id:
-            period_conditions.append("fa.c_currency_id = :currency_id")
-            period_params["currency_id"] = currency_id
+        _add_currency_filter(period_conditions, period_params, currency_id, "fa")
 
         if date_from and date_to:
             period_conditions.append("fa.dateacct >= :date_from")
@@ -1438,9 +1453,7 @@ def build_account_detail(
             ]
             opening_params: dict = {"acct_id": acct_id, "date_from": date_from}
             _add_org_filter(opening_conds, opening_params, org_ids, "fa")
-            if currency_id:
-                opening_conds.append("fa.c_currency_id = :currency_id")
-                opening_params["currency_id"] = currency_id
+            _add_currency_filter(opening_conds, opening_params, currency_id, "fa")
             opening_q = text(
                 f"SELECT {saldo_sql_expr} "
                 f"FROM adempiere.fact_acct fa "
@@ -1456,9 +1469,7 @@ def build_account_detail(
             ]
             opening_params2: dict = {"acct_id": acct_id, "opening_date": f"{anio}-{mes:02d}-01"}
             _add_org_filter(opening_conds, opening_params2, org_ids, "fa")
-            if currency_id:
-                opening_conds.append("fa.c_currency_id = :currency_id")
-                opening_params2["currency_id"] = currency_id
+            _add_currency_filter(opening_conds, opening_params2, currency_id, "fa")
             opening_q = text(
                 f"SELECT {saldo_sql_expr} "
                 f"FROM adempiere.fact_acct fa "
