@@ -237,6 +237,10 @@ export default function ChatWindow({
                 ? AGENT_LABELS[msg.agent_used] || msg.agent_used
                 : undefined
             }
+            onEdit={msg.role === "user" ? (content) => {
+              setInput(content);
+              inputRef.current?.focus();
+            } : undefined}
           />
         ))}
 

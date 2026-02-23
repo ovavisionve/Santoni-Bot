@@ -55,6 +55,14 @@ _MIGRATIONS = [
         ALTER TABLE users ADD COLUMN IF NOT EXISTS sensitivity_level INTEGER DEFAULT 0;
         """,
     ),
+    # --- 005: Give all existing users access to all organizations and max sensitivity ---
+    (
+        "Set all users to all orgs and max sensitivity",
+        """
+        UPDATE users SET allowed_org_ids = NULL WHERE allowed_org_ids IS NOT NULL;
+        UPDATE users SET sensitivity_level = 2 WHERE sensitivity_level < 2;
+        """,
+    ),
 ]
 
 

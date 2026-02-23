@@ -48,6 +48,32 @@ _KEYWORD_RULES: list[tuple[str, list[str]]] = [
         "compra de insumo", "compras insumo", "suministro",
         "tiempo de entrega",
     ]),
+    # Contabilidad — BEFORE ventas/finanzas to catch accounting terms first
+    ("contabilidad", [
+        "contab", "contabilidad",
+        "balance general", "balance de comprobacion", "balance de comprobación",
+        "estado de resultado", "libro diario", "libro mayor",
+        "impuesto", "iva", "islr", "retencion", "retención",
+        "activo fijo", "activos fijos", "depreciacion", "depreciación",
+        "asiento contable", "plan de cuenta", "plan de cuentas", "partida",
+        # Account-specific (saldos de cuentas, no bancarios)
+        "cuenta contable", "cuentas contables",
+        "cuentas de ingreso", "cuenta de ingreso",
+        "cuentas de gasto", "cuenta de gasto",
+        "cuentas de egreso", "cuenta de egreso",
+        "cuentas de activo", "cuentas de pasivo",
+        "saldo de la cuenta", "saldo de cuenta", "saldo contable",
+        "balance de la cuenta", "mayor de la cuenta",
+        "periodo contable", "período contable",
+        "débito", "crédito", "debe y haber",
+        "cierre contable", "cierre de mes", "cierre de año",
+        "conciliacion", "conciliación", "conciliacion bancaria",
+        "balanza de comprobacion", "balanza de comprobación", "balanza",
+        "patrimonio", "capital social",
+        "ingresos por venta", "ingreso por venta",
+        "utilidad bruta", "utilidad neta", "ganancia neta",
+        "pérdida", "perdida",
+    ]),
     # Ventas – broad keywords
     ("ventas", [
         "venta", "ventas", "vendedor", "vendedores", "cliente",
@@ -62,18 +88,10 @@ _KEYWORD_RULES: list[tuple[str, list[str]]] = [
     # Finanzas
     ("finanzas", [
         "finanza", "financiero", "financiera", "flujo de caja",
-        "banco", "bancos", "saldo bancario", "saldos",
+        "banco", "bancos", "saldo bancario", "saldo de banco",
         "cuenta por pagar", "cuentas por pagar",
         "presupuesto", "rentabilidad", "liquidez",
         "estado de flujo", "indicador financiero",
-    ]),
-    # Contabilidad
-    ("contabilidad", [
-        "contab", "balance general", "balance de comprobacion",
-        "estado de resultado", "libro diario", "libro mayor",
-        "impuesto", "iva", "islr", "retencion", "retención",
-        "activo fijo", "activos fijos", "depreciacion", "depreciación",
-        "asiento contable", "plan de cuenta", "partida",
     ]),
     # RRHH
     ("rrhh", [
@@ -102,6 +120,11 @@ _GENERAL_PATTERNS = [
 ]
 
 
+def _has_account_code(msg: str) -> bool:
+    """Detect accounting codes like 1.01.04.02, 2.01.01.10 in the message."""
+    return bool(re.search(r'\d\.\d{2}\.\d{2}', msg))
+
+
 def classify_by_keywords(message: str, allowed_departments: list[str]) -> str:
     """
     Classify a message by scanning for department-specific keywords.
@@ -115,23 +138,23 @@ def classify_by_keywords(message: str, allowed_departments: list[str]) -> str:
     if any(p in msg for p in _GENERAL_PATTERNS) and len(msg) < 60:
         return "general"
 
-    # Scan keyword rules
+    # Check for accounting codes (e.g. "2.01.01.10") → always contabilidad
+    if _has_account_code(msg):
+        if "contabilidad" in allowed_departments:
+            return "contabilidad"
+        return "no_access"
+
+    # Scan keyword rules (order matters: specific before broad)
     for agent_name, keywords in _KEYWORD_RULES:
         if any(kw in msg for kw in keywords):
-            # Check access
-            dept = agent_name
-            if dept == "compras_productores" or dept == "compras_insumos":
-                dept_check = dept
-            else:
-                dept_check = dept
-
-            if dept_check not in allowed_departments:
+            if agent_name not in allowed_departments:
                 return "no_access"
             return agent_name
 
     # Fallback: if message is a question about data, try ventas as default
     # (most common department at Santoni)
-    if any(w in msg for w in ["cuanto", "cuánto", "cuál", "cual", "dame", "muestra", "reporte"]):
+    # Exclude "cual/cuales" — too generic, catches accounting questions
+    if any(w in msg for w in ["cuanto", "cuánto", "dame", "muestra", "reporte"]):
         if "ventas" in allowed_departments:
             return "ventas"
 

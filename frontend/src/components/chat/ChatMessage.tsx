@@ -13,6 +13,7 @@ import {
   Copy,
   Check,
   BarChart3,
+  Pencil,
 } from "lucide-react";
 import ChartRenderer, { type ChartData } from "./ChartRenderer";
 
@@ -20,6 +21,7 @@ interface ChatMessageProps {
   message: Message;
   userName: string;
   agentLabel?: string;
+  onEdit?: (content: string) => void;
 }
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -248,6 +250,7 @@ export default function ChatMessage({
   message,
   userName,
   agentLabel,
+  onEdit,
 }: ChatMessageProps) {
   const [copied, setCopied] = useState(false);
   const [showChart, setShowChart] = useState(false);
@@ -307,6 +310,17 @@ export default function ChatMessage({
             : "bg-white border border-gray-100 shadow-sm rounded-2xl rounded-tl-sm"
         } px-4 py-3`}
       >
+        {/* Edit button for user messages */}
+        {isUser && onEdit && (
+          <button
+            onClick={() => onEdit(message.content.replace(/\n\n📎.*$/, ""))}
+            className="copy-btn absolute top-2 left-2 p-1.5 rounded-md bg-santoni-500/20 hover:bg-santoni-500/30 text-santoni-200 hover:text-white transition-all"
+            title="Editar consulta"
+          >
+            <Pencil size={13} />
+          </button>
+        )}
+
         {/* Copy button for assistant messages */}
         {!isUser && (
           <button
