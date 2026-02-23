@@ -74,6 +74,15 @@ _KEYWORD_RULES: list[tuple[str, list[str]]] = [
         "utilidad bruta", "utilidad neta", "ganancia neta",
         "pérdida", "perdida",
     ]),
+    # Finanzas — BEFORE ventas so "cuentas por cobrar" routes here
+    ("finanzas", [
+        "finanza", "financiero", "financiera", "flujo de caja",
+        "banco", "bancos", "saldo bancario", "saldo de banco",
+        "cuenta por cobrar", "cuentas por cobrar", "por cobrar",
+        "cuenta por pagar", "cuentas por pagar", "por pagar",
+        "presupuesto", "rentabilidad", "liquidez",
+        "estado de flujo", "indicador financiero",
+    ]),
     # Ventas – broad keywords
     ("ventas", [
         "venta", "ventas", "vendedor", "vendedores", "cliente",
@@ -83,15 +92,7 @@ _KEYWORD_RULES: list[tuple[str, list[str]]] = [
         "top 10", "top 20", "top 5", "mejores clientes",
         "metas de venta", "meta de venta", "cotizacion", "cotización",
         "moroso", "morosos", "deuda", "deudas", "vencido", "vencida",
-        "pendiente de cobro", "cuentas por cobrar",
-    ]),
-    # Finanzas
-    ("finanzas", [
-        "finanza", "financiero", "financiera", "flujo de caja",
-        "banco", "bancos", "saldo bancario", "saldo de banco",
-        "cuenta por pagar", "cuentas por pagar",
-        "presupuesto", "rentabilidad", "liquidez",
-        "estado de flujo", "indicador financiero",
+        "pendiente de cobro",
     ]),
     # RRHH
     ("rrhh", [

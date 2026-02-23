@@ -348,6 +348,7 @@ def build_top_clients(
     limit: int = 20,
     zona: str | None = None,
     vendedor: str | None = None,
+    mes: int | None = None,
     anio: int | None = None,
     org_ids: list[int] | None = None,
     salesrep_id: int | None = None,
@@ -371,7 +372,7 @@ def build_top_clients(
         _add_org_filter(conditions, params, org_ids, "i")
         _add_salesrep_filter(conditions, params, salesrep_id, "i")
         _add_currency_filter(conditions, params, currency_ids, "i")
-        _add_date_filter(conditions, params, date_from, date_to, None, anio, "i.dateinvoiced")
+        _add_date_filter(conditions, params, date_from, date_to, mes, anio, "i.dateinvoiced")
 
         where = " AND ".join(conditions)
 
@@ -454,10 +455,10 @@ def build_overdue_receivables(
             "WHERE bpl.isactive = 'Y' "
             "ORDER BY bpl.c_bpartner_id, bpl.c_bpartner_location_id DESC) "
             "SELECT i.documentno AS numero_factura, bp.name AS cliente, "
-            "COALESCE(sr.name, '') AS vendedor, "
+            "COALESCE(sr.name, '') AS distribuidor, "
             "COALESCE(cz.zona_name, '') AS zona, "
             "i.grandtotal AS monto_total, i.dateinvoiced AS fecha, "
-            "CASE WHEN COALESCE(pterm.netdays, 0) = 0 THEN 30 ELSE pterm.netdays END AS dias_credito, "
+            "(i.dateinvoiced + CASE WHEN COALESCE(pterm.netdays, 0) = 0 THEN 30 ELSE pterm.netdays END)::date AS fecha_vencimiento, "
             "CURRENT_DATE - (i.dateinvoiced + CASE WHEN COALESCE(pterm.netdays, 0) = 0 THEN 30 ELSE pterm.netdays END) AS dias_vencido "
             "FROM adempiere.c_invoice i "
             "JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id "
@@ -479,11 +480,11 @@ def build_overdue_receivables(
             {
                 "numero_factura": r[0],
                 "cliente": r[1],
-                "vendedor": r[2],
+                "distribuidor": r[2],
                 "zona": r[3],
                 "monto_total": float(r[4]),
                 "fecha": r[5].isoformat() if r[5] else None,
-                "fecha_vencimiento": None,  # Calculated from dateinvoiced + netdays
+                "fecha_vencimiento": r[6].isoformat() if r[6] else None,
                 "dias_vencido": r[7],
             }
             for r in rows
@@ -887,7 +888,7 @@ def build_attendance_summary(
         by_concept_q = text(
             f"SELECT hc.name AS concepto, "
             f"COUNT(DISTINCT hm.c_bpartner_id) AS empleados_afectados, "
-            f"COALESCE(SUM(ABS(hm.amount)), 0) AS monto, "
+            f"COALESCE(SUM(ABS(hm.amount)), 0) AS monto_bs, "
             f"COUNT(*) AS registros "
             f"FROM adempiere.hr_process hp "
             f"JOIN adempiere.hr_movement hm ON hp.hr_process_id = hm.hr_process_id "
@@ -899,7 +900,7 @@ def build_attendance_summary(
             {
                 "concepto": r[0],
                 "empleados_afectados": r[1],
-                "monto": float(r[2]),
+                "monto_bs": float(r[2]),
                 "registros": r[3],
             }
             for r in db.execute(by_concept_q, params).fetchall()
@@ -909,7 +910,7 @@ def build_attendance_summary(
         by_org_q = text(
             f"SELECT COALESCE(o.name, 'Sin Org') AS organizacion, "
             f"COUNT(DISTINCT hm.c_bpartner_id) AS empleados_afectados, "
-            f"COALESCE(SUM(ABS(hm.amount)), 0) AS monto, "
+            f"COALESCE(SUM(ABS(hm.amount)), 0) AS monto_bs, "
             f"COUNT(*) AS registros "
             f"FROM adempiere.hr_process hp "
             f"JOIN adempiere.hr_movement hm ON hp.hr_process_id = hm.hr_process_id "
@@ -922,7 +923,7 @@ def build_attendance_summary(
             {
                 "organizacion": r[0],
                 "empleados_afectados": r[1],
-                "monto": float(r[2]),
+                "monto_bs": float(r[2]),
                 "registros": r[3],
             }
             for r in db.execute(by_org_q, params).fetchall()

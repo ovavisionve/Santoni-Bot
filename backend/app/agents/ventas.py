@@ -145,7 +145,7 @@ Datos de ventas de iDempiere:
             if limit_match:
                 limit = int(limit_match.group(1))
             data = build_top_clients(
-                limit=limit, zona=zona, vendedor=vendedor, anio=anio,
+                limit=limit, zona=zona, vendedor=vendedor, mes=mes, anio=anio,
                 org_ids=org_ids, salesrep_id=salesrep_id,
                 date_from=date_from, date_to=date_to,
                 currency_ids=currency_ids,

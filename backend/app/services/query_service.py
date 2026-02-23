@@ -323,6 +323,7 @@ def build_top_clients(
     limit: int = 20,
     zona: str | None = None,
     vendedor: str | None = None,
+    mes: int | None = None,
     anio: int | None = None,
     org_ids: list[int] | None = None,
     salesrep_id: int | None = None,
@@ -334,7 +335,7 @@ def build_top_clients(
     if _is_production():
         from app.services.idempiere_queries import build_top_clients as _prod
         return _prod(
-            limit=limit, zona=zona, vendedor=vendedor, anio=anio,
+            limit=limit, zona=zona, vendedor=vendedor, mes=mes, anio=anio,
             org_ids=org_ids, salesrep_id=salesrep_id,
             date_from=date_from, date_to=date_to,
             currency_ids=currency_ids,
