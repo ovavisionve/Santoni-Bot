@@ -194,25 +194,34 @@ Datos de RRHH en iDempiere:
 
         if cargo_search:
             # Cargo-specific query: filter employee list by job title
-            data = build_employee_list(org_ids=org_ids, cargo_search=cargo_search)
+            date_label = f" (ingresados {label})" if date_from else ""
+            data = build_employee_list(
+                org_ids=org_ids, cargo_search=cargo_search,
+                date_from=date_from, date_to=date_to,
+            )
             if data:
                 sections.append(
-                    f"## Empleados con cargo '{cargo_search.upper()}' ({len(data)} encontrados)"
+                    f"## Empleados con cargo '{cargo_search.upper()}'{date_label} ({len(data)} encontrados)"
                 )
                 sections.append(self._format_table(data))
             else:
                 sections.append(
-                    f"## Búsqueda por cargo: '{cargo_search}'\n"
-                    f"No se encontraron empleados activos con ese cargo. "
+                    f"## Búsqueda por cargo: '{cargo_search}'{date_label}\n"
+                    f"No se encontraron empleados activos con ese cargo"
+                    f"{' en el período indicado' if date_from else ''}. "
                     f"Revisa la sección 'por_cargo' del resumen para ver los cargos disponibles."
                 )
         elif any(w in msg for w in [
             "empleado", "personal", "lista", "cuántos", "cuantos",
             "trabajador", "trabajadores", "plantilla", "activo", "activos",
         ]):
-            data = build_employee_list(org_ids=org_ids)
+            data = build_employee_list(
+                org_ids=org_ids,
+                date_from=date_from, date_to=date_to,
+            )
             if data:
-                sections.append(f"## Lista de Empleados Activos ({len(data)} registros)")
+                date_label = f" - {label}" if date_from else ""
+                sections.append(f"## Lista de Empleados Activos{date_label} ({len(data)} registros)")
                 sections.append(self._format_table(data))
 
         if any(w in msg for w in [

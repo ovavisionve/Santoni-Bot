@@ -737,6 +737,8 @@ def build_employee_summary(org_ids: list[int] | None = None) -> dict:
 def build_employee_list(
     org_ids: list[int] | None = None,
     cargo_search: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
 ) -> list[dict]:
     """List of unique active employees from iDempiere hr_employee + c_bpartner.
 
@@ -745,6 +747,7 @@ def build_employee_list(
     Joins hr_department and hr_job for richer employee info.
 
     If cargo_search is provided, filters by job title using ILIKE.
+    If date_from/date_to provided, filters by startdate (fecha de ingreso).
     """
     db = IdempiereSession()
     try:
@@ -764,6 +767,13 @@ def build_employee_list(
                 key = f"cargo_w{i}"
                 conditions.append(f"j.name ILIKE :{key}")
                 params[key] = f"%{stem}%"
+
+        if date_from:
+            conditions.append("e.startdate >= :date_from")
+            params["date_from"] = date_from
+        if date_to:
+            conditions.append("e.startdate <= :date_to")
+            params["date_to"] = date_to
 
         where = " AND ".join(conditions)
 
