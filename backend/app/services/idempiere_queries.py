@@ -840,7 +840,7 @@ def build_attendance_summary(
         # Summary by concept
         by_concept_q = text(
             f"SELECT hc.name AS concepto, "
-            f"COUNT(DISTINCT hm.hr_employee_id) AS empleados_afectados, "
+            f"COUNT(DISTINCT hm.c_bpartner_id) AS empleados_afectados, "
             f"COALESCE(SUM(hm.qty), 0) AS total_dias, "
             f"COUNT(*) AS registros "
             f"FROM adempiere.hr_process hp "
@@ -862,12 +862,12 @@ def build_attendance_summary(
         # Summary by org
         by_org_q = text(
             f"SELECT COALESCE(o.name, 'Sin Org') AS organizacion, "
-            f"COUNT(DISTINCT hm.hr_employee_id) AS empleados_afectados, "
+            f"COUNT(DISTINCT hm.c_bpartner_id) AS empleados_afectados, "
             f"COALESCE(SUM(hm.qty), 0) AS total_dias "
             f"FROM adempiere.hr_process hp "
             f"JOIN adempiere.hr_movement hm ON hp.hr_process_id = hm.hr_process_id "
             f"JOIN adempiere.hr_concept hc ON hm.hr_concept_id = hc.hr_concept_id "
-            f"LEFT JOIN adempiere.ad_org o ON hp.ad_org_id = o.ad_org_id "
+            f"LEFT JOIN adempiere.ad_org o ON hm.ad_org_id = o.ad_org_id "
             f"WHERE {where} "
             f"GROUP BY o.name ORDER BY total_dias DESC"
         )
