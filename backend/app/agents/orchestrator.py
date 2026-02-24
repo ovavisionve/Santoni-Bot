@@ -361,7 +361,7 @@ class Orchestrator:
         msgs = [system_msg]
 
         if history:
-            for role, content in history[-4:]:
+            for role, content in history[-10:]:
                 if role == "user":
                     msgs.append(HumanMessage(content=content))
                 elif role == "assistant":
@@ -476,7 +476,7 @@ class Orchestrator:
         ]
 
         if history:
-            for role, content in history[-4:]:
+            for role, content in history[-10:]:
                 if role == "user":
                     messages.append(HumanMessage(content=content))
                 elif role == "assistant":
@@ -507,7 +507,7 @@ class Orchestrator:
             )
         ]
         if history:
-            for role, content in history[-4:]:
+            for role, content in history[-10:]:
                 if role == "user":
                     messages.append(HumanMessage(content=content))
                 elif role == "assistant":
