@@ -53,7 +53,7 @@ def _get_or_create_conversation(
     return conv
 
 
-def _get_history(db: Session, conversation_id: int, limit: int = 20) -> list[tuple[str, str]]:
+def _get_history(db: Session, conversation_id: int, limit: int = 40) -> list[tuple[str, str]]:
     """Get recent conversation history as (role, content) tuples."""
     messages = (
         db.query(Message)
