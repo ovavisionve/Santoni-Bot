@@ -47,7 +47,10 @@ _KEYWORD_RULES: list[tuple[str, list[str]]] = [
         "insumo", "proveedor", "proveedores", "orden de compra",
         "ordenes de compra", "inventario de material", "inventario",
         "material", "compra de insumo", "compras insumo", "suministro",
-        "tiempo de entrega", "stock",
+        "tiempo de entrega", "stock", "existencia", "existencias",
+        "almacén", "almacen", "almacenes", "bodega",
+        "disponible en almacen", "disponible en almacén",
+        "cuánto hay", "cuanto hay", "cuánto queda", "cuanto queda",
         "historial de compra", "historial de compras",
         "compras de", "compra del producto",
         # "compra" catches verb forms: compramos, comprado, compró

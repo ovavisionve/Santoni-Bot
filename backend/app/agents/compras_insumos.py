@@ -15,7 +15,7 @@ from app.agents.date_utils import (
 )
 import re
 
-from app.services.query_service import build_supply_purchases, build_product_purchase_history
+from app.services.query_service import build_supply_purchases, build_product_purchase_history, build_inventory_stock
 
 
 class ComprasInsumosAgent(BaseAgent):
@@ -47,6 +47,8 @@ CAPACIDADES:
 - Top proveedores por volumen de compra
 - Productos más comprados (insumos, materiales, empaques)
 - Análisis mensual de compras
+- Inventario/stock actual por producto, almacén, organización y categoría
+- Búsqueda de productos en inventario por nombre o código
 
 CONTEXTO iDEMPIERE:
 - Facturas de compra: c_invoice (issotrx='N', docstatus='CO') - las facturas de compra tienen issotrx='N'
@@ -77,7 +79,15 @@ IMPORTANTE SOBRE PERÍODOS:
 - Los datos corresponden al año actual por defecto, a menos que el usuario especifique otro año
 - SIEMPRE indica claramente el período de los datos que estás presentando
 - Si el usuario hace una pregunta amplia sin período, presenta datos del año actual y sugiere: "Si necesitas datos de otro período, indícame el año, mes o rango de fechas."
-- Si el usuario especificó un rango de fechas, los datos ya vienen filtrados para ese rango exacto"""
+- Si el usuario especificó un rango de fechas, los datos ya vienen filtrados para ese rango exacto
+
+SOBRE INVENTARIO/STOCK:
+- Los datos de inventario provienen de m_storageonhand (stock actual en almacenes)
+- La cantidad es la existencia actual (qtyonhand), NO es un histórico
+- Los productos pueden estar en múltiples almacenes y organizaciones
+- Categorías principales: MANT. Y REPUESTOS, MANTENIMIENTO INSTALACIONES, REPUESTOS PLANTA, más productos alimenticios
+- Si el usuario busca un producto específico, los datos ya vienen filtrados por nombre/código
+- La columna 'unidad' muestra la unidad de medida del producto (kg, unidad, litro, etc.)"""
 
     def get_sql_context(self) -> str:
         return """
@@ -87,13 +97,27 @@ Datos de compras de insumos en iDempiere:
 - c_bpartner: Proveedores (isvendor='Y', name, value)
 - m_product: Productos/insumos (name, m_product_category_id)
 - m_product_category: Categorías de productos
+- m_storageonhand: Stock actual en almacenes (m_product_id, qtyonhand, m_locator_id)
+- m_locator: Ubicaciones de almacén (m_warehouse_id)
+- m_warehouse: Almacenes (name, ad_org_id)
 """
 
     # Words that indicate a general query (not a specific product search)
     _GENERAL_KEYWORDS = [
         "resumen", "total", "proveedor", "proveedores", "mensual",
-        "principales", "inventario", "stock", "todos los insumos",
+        "principales", "inventario", "stock", "existencia", "almacén",
+        "almacen", "todos los insumos",
         "cuánto se", "cuanto se", "cuánto factur", "cuanto factur",
+    ]
+
+    # Keywords that indicate an inventory/stock query
+    _INVENTORY_KEYWORDS = [
+        "inventario", "stock", "existencia", "existencias",
+        "almacén", "almacen", "almacenes",
+        "disponible", "disponibilidad", "disponibles",
+        "cuánto hay", "cuanto hay", "cuánto queda", "cuanto queda",
+        "cuánto tenemos", "cuanto tenemos",
+        "en almacén", "en almacen", "en bodega",
     ]
 
     def _extract_product_search(self, message: str) -> str | None:
@@ -217,7 +241,20 @@ Datos de compras de insumos en iDempiere:
         if not product_search and history:
             product_search = self._extract_product_from_history(history)
 
-        if product_search:
+        # Check if this is an inventory/stock query
+        is_inventory = any(w in msg for w in self._INVENTORY_KEYWORDS)
+
+        if is_inventory:
+            # For inventory queries, use product_search as filter if available
+            inv_data = build_inventory_stock(
+                org_ids=org_ids,
+                product_search=product_search,
+            )
+            filter_label = f" - '{product_search}'" if product_search else ""
+            sections.append(self._format_summary(
+                inv_data, f"Inventario / Stock Actual{filter_label}",
+            ))
+        elif product_search:
             try:
                 prod_data = build_product_purchase_history(
                     product_search=product_search,
@@ -238,7 +275,7 @@ Datos de compras de insumos en iDempiere:
             except Exception:
                 pass
 
-        # General summary (always include unless product-specific search returned data)
+        # General summary (always include unless product-specific or inventory search returned data)
         if not sections or any(w in msg for w in ["resumen", "total", "cuánto", "cuanto"]):
             summary = build_supply_purchases(
                 mes=mes, anio=anio, org_ids=org_ids,
