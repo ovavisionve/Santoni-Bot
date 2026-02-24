@@ -625,6 +625,96 @@ def test_compute_confidence_general():
 
 
 # ===========================================================================
+# 7. TEMPORAL CONTEXT INHERITANCE TESTS - Follow-ups inherit date/month
+# ===========================================================================
+
+from app.agents.date_utils import extract_date_range, extract_month_year
+
+
+def _extract_dates_from_history(
+    history: list[tuple[str, str]],
+) -> tuple[str | None, str | None, int | None, int | None]:
+    """Replica of ComprasInsumosAgent._extract_dates_from_history."""
+    for role, content in reversed(history):
+        if role != "user":
+            continue
+        df, dt = extract_date_range(content)
+        if df:
+            mes_h, anio_h = extract_month_year(content)
+            return df, dt, mes_h, anio_h
+        mes_h, anio_h = extract_month_year(content)
+        if mes_h is not None:
+            return None, None, mes_h, anio_h
+    return None, None, None, None
+
+
+def test_temporal_inherit_este_mes():
+    """'Y en dólares?' after 'compras este mes' should inherit current month"""
+    history = [
+        ("user", "¿Cuánto se compró de insumos este mes?"),
+        ("assistant", "En febrero de 2026 se compraron..."),
+    ]
+    df, dt, mes, anio = _extract_dates_from_history(history)
+    from datetime import datetime
+    assert mes == datetime.now().month, f"Expected current month {datetime.now().month}, got {mes}"
+    assert df is None, f"Expected no date_from, got {df}"
+
+
+def test_temporal_inherit_explicit_month():
+    """'Y en dólares?' after 'compras en enero' should inherit enero"""
+    history = [
+        ("user", "¿Cuánto se compró de insumos en enero 2026?"),
+        ("assistant", "En enero de 2026 se compraron..."),
+    ]
+    df, dt, mes, anio = _extract_dates_from_history(history)
+    assert mes == 1, f"Expected mes=1 (enero), got {mes}"
+    assert anio == 2026, f"Expected anio=2026, got {anio}"
+
+
+def test_temporal_inherit_date_range():
+    """Follow-up after date range query should inherit the range"""
+    history = [
+        ("user", "compras desde el 01/01/2026 al 31/01/2026"),
+        ("assistant", "Las compras en ese período..."),
+    ]
+    df, dt, mes, anio = _extract_dates_from_history(history)
+    assert df == "2026-01-01", f"Expected date_from=2026-01-01, got {df}"
+    assert dt == "2026-01-31", f"Expected date_to=2026-01-31, got {dt}"
+
+
+def test_temporal_inherit_chain():
+    """Third follow-up should still inherit from first query"""
+    history = [
+        ("user", "¿Cuánto se compró de insumos en enero?"),
+        ("assistant", "En enero se compraron..."),
+        ("user", "Y en dólares?"),
+        ("assistant", "En dólares, enero..."),
+    ]
+    # "Y en dólares?" has no temporal context → keeps scanning back
+    # Finds "enero" in first user message
+    df, dt, mes, anio = _extract_dates_from_history(history)
+    assert mes == 1, f"Expected mes=1 (enero) from chain, got {mes}"
+
+
+def test_temporal_no_inherit_without_history():
+    """No history → no temporal context"""
+    df, dt, mes, anio = _extract_dates_from_history([])
+    assert df is None
+    assert mes is None
+    assert anio is None
+
+
+def test_temporal_no_inherit_generic_history():
+    """History with no temporal info → no inheritance"""
+    history = [
+        ("user", "hola"),
+        ("assistant", "¡Hola! ¿En qué puedo ayudarte?"),
+    ]
+    df, dt, mes, anio = _extract_dates_from_history(history)
+    assert mes is None, f"Expected mes=None, got {mes}"
+
+
+# ===========================================================================
 # MAIN: Run all tests and print results
 # ===========================================================================
 
@@ -686,6 +776,13 @@ if __name__ == "__main__":
         ("CONFIDENCE: compute agente+datos = 1.0", test_compute_confidence_agent_with_data),
         ("CONFIDENCE: compute agente-datos = 0.68", test_compute_confidence_agent_no_data),
         ("CONFIDENCE: compute general <= 0.5", test_compute_confidence_general),
+        # Temporal context inheritance
+        ("TEMPORAL: hereda 'este mes' del historial", test_temporal_inherit_este_mes),
+        ("TEMPORAL: hereda mes explícito (enero)", test_temporal_inherit_explicit_month),
+        ("TEMPORAL: hereda rango de fechas", test_temporal_inherit_date_range),
+        ("TEMPORAL: hereda en cadena (3er follow-up)", test_temporal_inherit_chain),
+        ("TEMPORAL: sin historial → sin herencia", test_temporal_no_inherit_without_history),
+        ("TEMPORAL: historial genérico → sin herencia", test_temporal_no_inherit_generic_history),
     ]
 
     passed = 0

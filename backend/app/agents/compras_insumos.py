@@ -280,6 +280,30 @@ Datos de compras de insumos en iDempiere:
                     return product
         return None
 
+    def _extract_dates_from_history(
+        self, history: list[tuple[str, str]],
+    ) -> tuple[str | None, str | None, int | None, int | None]:
+        """Extract temporal context from recent history for follow-up messages.
+
+        Scans backwards through user messages looking for one that contains
+        explicit temporal info (date range or month name).
+
+        Returns (date_from, date_to, mes, anio) or all-None if nothing found.
+        """
+        for role, content in reversed(history):
+            if role != "user":
+                continue
+            df, dt = extract_date_range(content)
+            if df:
+                # History message had an explicit date range
+                mes_h, anio_h = extract_month_year(content)
+                return df, dt, mes_h, anio_h
+            mes_h, anio_h = extract_month_year(content)
+            if mes_h is not None:
+                # History message had an explicit month
+                return None, None, mes_h, anio_h
+        return None, None, None, None
+
     def _detect_currency(self, message: str, history: list[tuple[str, str]] | None = None) -> list[int] | None:
         """Detect which currency the user wants based on message and history.
 
@@ -315,11 +339,23 @@ Datos de compras de insumos en iDempiere:
         msg = message.lower()
         sections = []
 
-        # Extract dates
+        # Extract dates from current message
         date_from, date_to = extract_date_range(message)
         mes, anio = extract_month_year(message)
         if date_from and date_to:
             mes = None
+
+        # Follow-up: if no specific temporal context in current message,
+        # inherit from history (e.g. "Y en dólares?" after "compras este mes")
+        if mes is None and date_from is None and history:
+            h_df, h_dt, h_mes, h_anio = self._extract_dates_from_history(history)
+            if h_df or h_mes is not None:
+                date_from, date_to = h_df, h_dt
+                mes = h_mes
+                if h_anio is not None:
+                    anio = h_anio
+                if date_from and date_to:
+                    mes = None
 
         label = build_period_label(date_from, date_to, mes, anio)
 
