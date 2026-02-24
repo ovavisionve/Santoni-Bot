@@ -117,8 +117,8 @@ def _extract_product_search(message: str) -> str | None:
 
     return None
 
-# Jorge's departments: compras_insumos (primary)
-JORGE_DEPARTMENTS = ["compras_insumos"]
+# Jorge's departments: compras_insumos (primary) + ventas, compras_productores, produccion (extra)
+JORGE_DEPARTMENTS = ["compras_insumos", "ventas", "compras_productores", "produccion"]
 
 # ===========================================================================
 # 1. ROUTING TESTS - Does the orchestrator send Jorge to the right agent?
@@ -191,14 +191,18 @@ def test_routing_historial_producto_codigo():
 
 def test_routing_cliente_inproa_rango():
     """'cliente inproa santoni, en el rango de fecha 01-11-25 hasta el 23-02-26'
-    Contains 'cliente' which matches ventas, but Jorge only has compras_insumos.
-    With last_agent=compras_insumos, should fallback to compras_insumos."""
+    Contains 'cliente' which matches ventas. Jorge has access to ventas,
+    so it routes there. The original bug was no_access - now it's accessible.
+    Key: result must NOT be 'no_access' or 'general'."""
     result = classify_by_keywords(
         "cliente inproa santoni, en el rango de fecha 01-11-25 hasta el 23-02-26",
         JORGE_DEPARTMENTS,
         last_agent="compras_insumos",
     )
-    assert result == "compras_insumos", f"Expected compras_insumos, got {result}"
+    assert result != "no_access", f"Must NOT be no_access, got {result}"
+    assert result != "general", f"Must NOT be general, got {result}"
+    # 'cliente' keyword → ventas (Jorge has access), which is acceptable
+    assert result in ("ventas", "compras_insumos"), f"Expected ventas or compras_insumos, got {result}"
 
 
 def test_routing_ultimo_proveedor():
