@@ -1061,7 +1061,7 @@ def build_payroll_summary(
         # Process summary
         totals_q = text(
             f"SELECT COUNT(DISTINCT hp.hr_process_id) AS total_procesos, "
-            f"COUNT(DISTINCT hm.hr_employee_id) AS empleados_procesados, "
+            f"COUNT(DISTINCT hm.c_bpartner_id) AS empleados_procesados, "
             f"COALESCE(SUM(CASE WHEN hm.amount > 0 THEN hm.amount ELSE 0 END), 0) AS total_devengado, "
             f"COALESCE(SUM(CASE WHEN hm.amount < 0 THEN ABS(hm.amount) ELSE 0 END), 0) AS total_deducciones "
             f"FROM adempiere.hr_process hp "

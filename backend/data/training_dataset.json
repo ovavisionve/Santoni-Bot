@@ -3,9 +3,9 @@
   "created": "2026-02-24",
   "description": "Dataset de entrenamiento y evaluación para SantoniBot. Generado a partir de conversaciones reales de usuarios y cuestionario de levantamiento de Alimentos Santoni, C.A.",
   "stats": {
-    "total_entries": 132,
+    "total_entries": 134,
     "por_agente": {
-      "rrhh": 35,
+      "rrhh": 37,
       "compras_insumos": 42,
       "ventas": 15,
       "finanzas": 15,
@@ -17,7 +17,7 @@
       "conversacion_real": 57,
       "cuestionario_validacion": 37,
       "patron_comun": 30,
-      "correccion_bug": 8
+      "correccion_bug": 10
     }
   },
   "entries": [
@@ -284,7 +284,11 @@
 
     {"id": 131, "pregunta": "En gastos?", "agente_esperado": "compras_insumos", "departamento_usuario": "compras_insumos", "contexto": {"last_agent": "compras_insumos", "historial": [["user", "¿Cuánto se compró de insumos este mes?"], ["assistant", "Se compraron 1.158M VES..."], ["user", "Y en dólares?"], ["assistant", "Se compraron 1.228K USD..."]]}, "extracciones": {}, "es_followup": true, "fuente": "conversacion_real", "usuario": "jchahine", "resultado_real": {"agente_usado": "compras_insumos", "exito": true}, "categoria": "followup", "nota": "Follow-up ambiguo: gastos no es una consulta de compras de insumos. Bot pide aclaración correctamente"},
 
-    {"id": 132, "pregunta": "administrativos", "agente_esperado": "compras_insumos", "departamento_usuario": "compras_insumos", "contexto": {"last_agent": "compras_insumos", "historial": [["user", "En gastos?"], ["assistant", "¿Te refieres a gastos en Bolívares o en Dólares?"]]}, "extracciones": {}, "es_followup": true, "fuente": "conversacion_real", "usuario": "jchahine", "resultado_real": {"agente_usado": "compras_insumos", "exito": true}, "categoria": "followup", "nota": "Follow-up ultra-corto. Bot reconoce que 'gastos administrativos' no es su dominio y pide más detalles"}
+    {"id": 132, "pregunta": "administrativos", "agente_esperado": "compras_insumos", "departamento_usuario": "compras_insumos", "contexto": {"last_agent": "compras_insumos", "historial": [["user", "En gastos?"], ["assistant", "¿Te refieres a gastos en Bolívares o en Dólares?"]]}, "extracciones": {}, "es_followup": true, "fuente": "conversacion_real", "usuario": "jchahine", "resultado_real": {"agente_usado": "compras_insumos", "exito": true}, "categoria": "followup", "nota": "Follow-up ultra-corto. Bot reconoce que 'gastos administrativos' no es su dominio y pide más detalles"},
+
+    {"id": 133, "pregunta": "resumen de nomina de enero 2026", "agente_esperado": "rrhh", "departamento_usuario": "rrhh", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"mes": 1, "anio": 2026}, "es_followup": false, "fuente": "correccion_bug", "usuario": "esalas", "resultado_real": {"agente_usado": "rrhh", "exito": true, "bug_corregido": "columna_sql_incorrecta"}, "categoria": "nomina", "nota": "Bug: hr_movement no tiene hr_employee_id, usa c_bpartner_id. Error 502 ProgrammingError. Fix: cambiar hm.hr_employee_id → hm.c_bpartner_id"},
+
+    {"id": 134, "pregunta": "cual es mi estimado de gastos semanales en el departamento de nomina", "agente_esperado": "rrhh", "departamento_usuario": "rrhh", "contexto": {"last_agent": null, "historial": []}, "extracciones": {}, "es_followup": false, "fuente": "correccion_bug", "usuario": "esalas", "resultado_real": {"agente_usado": "rrhh", "exito": true, "bug_corregido": "columna_sql_incorrecta"}, "categoria": "nomina", "nota": "Mismo bug que id 133. Cualquier consulta de nómina fallaba por referencia a columna inexistente"}
   ],
 
   "tipos_error": {
@@ -301,7 +305,8 @@
     "privacidad": "El bot rehusó por privacidad cuando no debía",
     "herencia_temporal": "Follow-up perdía el contexto temporal (mes/fecha) de la consulta anterior",
     "pronombre_producto": "Pronombre como 'ese producto' se extraía como nombre literal en vez de resolverse del historial",
-    "separacion_moneda": "Consulta de moneda no separaba VES/USD correctamente"
+    "separacion_moneda": "Consulta de moneda no separaba VES/USD correctamente",
+    "columna_sql_incorrecta": "Referencia a columna inexistente en la tabla de iDempiere (ej: hr_employee_id en hr_movement)"
   },
 
   "categorias": [

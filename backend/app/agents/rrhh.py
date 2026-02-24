@@ -62,7 +62,7 @@ CONTEXTO iDEMPIERE:
 - Departamentos: hr_department (name)
 - Cargos: hr_job (name)
 - Procesos de nómina: hr_process (documentno, dateacct, c_period_id, docstatus)
-- Movimientos de nómina: hr_movement (hr_process_id, hr_employee_id, hr_concept_id, amount, qty)
+- Movimientos de nómina: hr_movement (hr_process_id, c_bpartner_id, hr_concept_id, amount, qty)
 - Conceptos: hr_concept (value, name, columntype, type)
 - Nóminas definidas: hr_payroll (name, hr_payroll_id)
 - Organizaciones: INPROA SANTONI (444 empleados), InproMaiz (206), Santoni Service (134), AGROPECUARIA R.R. (124), AGA AGRICOLA (91), AGROINPROA (38), INVERSIONES AGA (4)
@@ -97,7 +97,7 @@ IMPORTANTE SOBRE PERÍODOS:
 Datos de RRHH en iDempiere:
 - hr_employee: Empleados (c_bpartner_id, hr_department_id, hr_job_id, startdate, enddate, isactive)
 - hr_process: Procesos de nómina (hr_payroll_id, c_period_id, dateacct, documentno, docstatus)
-- hr_movement: Movimientos (hr_process_id, hr_employee_id, hr_concept_id, amount, qty)
+- hr_movement: Movimientos (hr_process_id, c_bpartner_id, hr_concept_id, amount, qty)
 - hr_concept: Conceptos de nómina (value, name, type, columntype)
 - hr_payroll: Definiciones de nómina (name)
 - c_bpartner: Datos de empleados (isemployee='Y', name, value)
