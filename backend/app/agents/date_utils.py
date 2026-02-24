@@ -16,7 +16,7 @@ Monedas detectadas:
 
 import calendar
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # Mapa de meses en español → número
 MESES_MAP = {
@@ -138,6 +138,22 @@ def extract_date_range(message: str) -> tuple[str | None, str | None]:
 
     if date_from and date_to:
         return date_from, date_to
+
+    # ── Single-date / relative-date patterns (no "al" separator) ──
+
+    # Single explicit date: "el 24/02/2026", "20/02/2026" → same-day range
+    single = _parse_single_date(message)
+    if single:
+        return single, single
+
+    # "hoy" / "el dia de hoy" (not inside "desde ... hasta hoy" which was handled above)
+    if re.search(r'\bhoy\b', msg) and "desde" not in msg:
+        return today, today
+
+    # "ayer"
+    if re.search(r'\bayer\b', msg):
+        yesterday = (now - timedelta(days=1)).strftime("%Y-%m-%d")
+        return yesterday, yesterday
 
     return None, None
 

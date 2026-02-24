@@ -82,11 +82,15 @@ _KEYWORD_RULES: list[tuple[str, list[str]]] = [
     # Finanzas — BEFORE ventas so "cuentas por cobrar" routes here
     ("finanzas", [
         "finanza", "financiero", "financiera", "flujo de caja",
-        "banco", "bancos", "saldo bancario", "saldo de banco",
+        "banco", "bancos", "bancaria", "bancario", "bancarias", "bancarios",
+        "saldo bancario", "saldo de banco",
         "cuenta por cobrar", "cuentas por cobrar", "por cobrar",
         "cuenta por pagar", "cuentas por pagar", "por pagar",
         "presupuesto", "rentabilidad", "liquidez",
         "estado de flujo", "indicador financiero",
+        "prestamo", "préstamo", "prestamos", "préstamos",
+        "cuota", "cuotas",
+        "disponibilidad bancaria", "disponibilidad",
     ]),
     # Ventas – broad keywords
     ("ventas", [
