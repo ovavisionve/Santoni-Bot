@@ -3,10 +3,10 @@
   "created": "2026-02-24",
   "description": "Dataset de entrenamiento y evaluación para SantoniBot. Generado a partir de conversaciones reales de usuarios y cuestionario de levantamiento de Alimentos Santoni, C.A.",
   "stats": {
-    "total_entries": 120,
+    "total_entries": 132,
     "por_agente": {
       "rrhh": 35,
-      "compras_insumos": 30,
+      "compras_insumos": 42,
       "ventas": 15,
       "finanzas": 15,
       "contabilidad": 10,
@@ -14,9 +14,10 @@
       "compras_productores": 5
     },
     "por_fuente": {
-      "conversacion_real": 55,
-      "cuestionario_validacion": 35,
-      "patron_comun": 30
+      "conversacion_real": 57,
+      "cuestionario_validacion": 37,
+      "patron_comun": 30,
+      "correccion_bug": 8
     }
   },
   "entries": [
@@ -259,7 +260,31 @@
 
     {"id": 119, "pregunta": "quien eres", "agente_esperado": "general", "departamento_usuario": null, "contexto": {"last_agent": null, "historial": []}, "extracciones": {}, "es_followup": false, "fuente": "patron_comun", "categoria": "identidad"},
 
-    {"id": 120, "pregunta": "cuando se fundo inproa santoni", "agente_esperado": "general", "departamento_usuario": null, "contexto": {"last_agent": null, "historial": []}, "extracciones": {}, "es_followup": false, "fuente": "patron_comun", "categoria": "info_general", "nota": "Dato que el bot no tiene - no debe inventar"}
+    {"id": 120, "pregunta": "cuando se fundo inproa santoni", "agente_esperado": "general", "departamento_usuario": null, "contexto": {"last_agent": null, "historial": []}, "extracciones": {}, "es_followup": false, "fuente": "patron_comun", "categoria": "info_general", "nota": "Dato que el bot no tiene - no debe inventar"},
+
+    {"id": 121, "pregunta": "Y en dólares?", "agente_esperado": "compras_insumos", "departamento_usuario": "compras_insumos", "contexto": {"last_agent": "compras_insumos", "historial": [["user", "¿Cuánto se compró de insumos este mes?"], ["assistant", "En febrero de 2026 se compraron 1.158.470.228,10 VES en insumos."]]}, "extracciones": {"moneda": "USD", "mes": 2, "anio": 2026}, "es_followup": true, "fuente": "correccion_bug", "usuario": "jchahine", "resultado_real": {"agente_usado": "compras_insumos", "exito": true, "bug_corregido": "herencia_temporal"}, "categoria": "moneda_followup", "nota": "Bug: perdía el mes al cambiar moneda. Fix: _extract_dates_from_history hereda mes del historial"},
+
+    {"id": 122, "pregunta": "dame el inventario actual de ese producto en inproa santoni", "agente_esperado": "compras_insumos", "departamento_usuario": "compras_insumos", "contexto": {"last_agent": "compras_insumos", "historial": [["user", "quisiera saber cuantas cajas de carton quedan en inventario"], ["assistant", "Hay 2 productos cajas de carton..."], ["user", "tienes el codigo de las cajas de carton para cereales"], ["assistant", "El código es IS-CAJ-220."], ["user", "cual es el codigo de caja de carton para cereales"], ["assistant", "El código es IS-CAJ-220."]]}, "extracciones": {"producto": "cajas de carton para cereales", "organizacion": "INPROA SANTONI"}, "es_followup": true, "fuente": "correccion_bug", "usuario": "jchahine", "resultado_real": {"agente_usado": "compras_insumos", "exito": true, "bug_corregido": "pronombre_producto"}, "categoria": "inventario", "nota": "Bug: 'ese producto' extraía 'en inproa santoni' como nombre de producto. Fix: pronoun check retorna None y busca en historial"},
+
+    {"id": 123, "pregunta": "Y en dólares?", "agente_esperado": "compras_insumos", "departamento_usuario": "compras_insumos", "contexto": {"last_agent": "compras_insumos", "historial": [["user", "¿Cuánto se compró de insumos en enero?"], ["assistant", "En enero se compraron..."]]}, "extracciones": {"moneda": "USD", "mes": 1, "anio": 2026}, "es_followup": true, "fuente": "correccion_bug", "categoria": "moneda_followup", "nota": "Variante: hereda enero explícito del historial"},
+
+    {"id": 124, "pregunta": "Y en bolívares?", "agente_esperado": "compras_insumos", "departamento_usuario": "compras_insumos", "contexto": {"last_agent": "compras_insumos", "historial": [["user", "cuanto se compro en dólares este mes?"], ["assistant", "Se compraron 1.228.251 USD..."]]}, "extracciones": {"moneda": "VES", "mes": 2, "anio": 2026}, "es_followup": true, "fuente": "correccion_bug", "categoria": "moneda_followup", "nota": "Inverso: de USD a VES manteniendo mes"},
+
+    {"id": 125, "pregunta": "dame compras de este producto en enero", "agente_esperado": "compras_insumos", "departamento_usuario": "compras_insumos", "contexto": {"last_agent": "compras_insumos", "historial": [["user", "que proveedores venden laminas de hierro negro"], ["assistant", "MATERIALES Y METALES ACARIGUA..."]]}, "extracciones": {"producto": "laminas de hierro negro", "mes": 1}, "es_followup": true, "fuente": "correccion_bug", "resultado_real": {"agente_usado": "compras_insumos", "exito": true, "bug_corregido": "pronombre_producto"}, "categoria": "historial_compras", "nota": "Bug: 'este producto' no se reconocía como pronombre. Fix: early-return para pronombres demostrativos"},
+
+    {"id": 126, "pregunta": "dame el inventario del producto en el almacen", "agente_esperado": "compras_insumos", "departamento_usuario": "compras_insumos", "contexto": {"last_agent": "compras_insumos", "historial": [["user", "quiero el historial de compra del siguiente producto REP-LAMI-0037"], ["assistant", "Historial de REP-LAMI-0037..."]]}, "extracciones": {"producto": "REP-LAMI-0037"}, "es_followup": true, "fuente": "correccion_bug", "resultado_real": {"agente_usado": "compras_insumos", "exito": true, "bug_corregido": "pronombre_producto"}, "categoria": "inventario", "nota": "Bug: 'del producto' extraía 'en el almacen' como nombre. Fix: 'del' agregado a lista de pronombres"},
+
+    {"id": 127, "pregunta": "¿Cuánto se compró de insumos este mes?", "agente_esperado": "compras_insumos", "departamento_usuario": "compras_insumos", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"moneda": "VES", "mes": 2, "anio": 2026}, "es_followup": false, "fuente": "correccion_bug", "usuario": "jchahine", "resultado_real": {"agente_usado": "compras_insumos", "exito": true}, "categoria": "resumen_compras", "nota": "Default VES. Respuesta correcta: 1.158.470.228,10 VES"},
+
+    {"id": 128, "pregunta": "cuanto se compro en dólares este mes", "agente_esperado": "compras_insumos", "departamento_usuario": "compras_insumos", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"moneda": "USD", "mes": 2, "anio": 2026}, "es_followup": false, "fuente": "correccion_bug", "resultado_real": {"agente_usado": "compras_insumos", "exito": true, "bug_corregido": "separacion_moneda"}, "categoria": "resumen_compras", "nota": "Detección directa de moneda USD. Usa _USD_IDS para filtrar todos los códigos de dólar"},
+
+    {"id": 129, "pregunta": "top 10 proveedores por monto de compra", "agente_esperado": "compras_insumos", "departamento_usuario": "compras_insumos", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"anio": 2026}, "es_followup": false, "fuente": "cuestionario_validacion", "resultado_real": {"agente_usado": "compras_insumos", "exito": true}, "categoria": "proveedores", "nota": "Sin mes → año completo por defecto"},
+
+    {"id": 130, "pregunta": "Precio de las últimas 6 compras de harina de avena", "agente_esperado": "compras_insumos", "departamento_usuario": "compras_insumos", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"producto": "harina de avena", "anio": 2026}, "es_followup": false, "fuente": "cuestionario_validacion", "resultado_real": {"agente_usado": "compras_insumos", "exito": true, "nota": "Puede no encontrar datos si no hay compras de ese producto"}, "categoria": "precios"},
+
+    {"id": 131, "pregunta": "En gastos?", "agente_esperado": "compras_insumos", "departamento_usuario": "compras_insumos", "contexto": {"last_agent": "compras_insumos", "historial": [["user", "¿Cuánto se compró de insumos este mes?"], ["assistant", "Se compraron 1.158M VES..."], ["user", "Y en dólares?"], ["assistant", "Se compraron 1.228K USD..."]]}, "extracciones": {}, "es_followup": true, "fuente": "conversacion_real", "usuario": "jchahine", "resultado_real": {"agente_usado": "compras_insumos", "exito": true}, "categoria": "followup", "nota": "Follow-up ambiguo: gastos no es una consulta de compras de insumos. Bot pide aclaración correctamente"},
+
+    {"id": 132, "pregunta": "administrativos", "agente_esperado": "compras_insumos", "departamento_usuario": "compras_insumos", "contexto": {"last_agent": "compras_insumos", "historial": [["user", "En gastos?"], ["assistant", "¿Te refieres a gastos en Bolívares o en Dólares?"]]}, "extracciones": {}, "es_followup": true, "fuente": "conversacion_real", "usuario": "jchahine", "resultado_real": {"agente_usado": "compras_insumos", "exito": true}, "categoria": "followup", "nota": "Follow-up ultra-corto. Bot reconoce que 'gastos administrativos' no es su dominio y pide más detalles"}
   ],
 
   "tipos_error": {
@@ -273,7 +298,10 @@
     "dato_no_disponible": "El dato no existe en iDempiere",
     "alucinacion": "El bot inventó datos",
     "followup_perdido_y_alucinacion": "Follow-up perdido + datos inventados",
-    "privacidad": "El bot rehusó por privacidad cuando no debía"
+    "privacidad": "El bot rehusó por privacidad cuando no debía",
+    "herencia_temporal": "Follow-up perdía el contexto temporal (mes/fecha) de la consulta anterior",
+    "pronombre_producto": "Pronombre como 'ese producto' se extraía como nombre literal en vez de resolverse del historial",
+    "separacion_moneda": "Consulta de moneda no separaba VES/USD correctamente"
   },
 
   "categorias": [
