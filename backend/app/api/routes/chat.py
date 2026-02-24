@@ -118,7 +118,7 @@ async def stream_message(
 
     history = _get_history(db, conversation.id)
     last_agent = _get_last_agent(db, conversation.id)
-    agent_name = await orchestrator.get_stream_agent_name(data.message, current_user, last_agent=last_agent)
+    agent_name, routing_score, match_type = await orchestrator.get_stream_agent_name(data.message, current_user, last_agent=last_agent)
 
     # Send initial metadata
     conv_id = conversation.id
@@ -133,8 +133,8 @@ async def stream_message(
     async def event_generator():
         full_response = []
 
-        # First event: metadata (conversation_id, agent, timestamp)
-        yield f"data: {json.dumps({'type': 'meta', 'conversation_id': conv_id, 'agent': agent_name, 'timestamp': data_ts})}\n\n"
+        # First event: metadata (conversation_id, agent, timestamp, routing score)
+        yield f"data: {json.dumps({'type': 'meta', 'conversation_id': conv_id, 'agent': agent_name, 'timestamp': data_ts, 'routing_score': routing_score})}\n\n"
 
         # If cached, send the full response as a single token
         if cached:
@@ -165,11 +165,25 @@ async def stream_message(
         try:
             save_db = SessionLocal()
             try:
+                # Compute confidence score for streamed response
+                from app.agents.orchestrator import compute_confidence_score
+                has_data = bool(complete_text) and "Error al consultar" not in complete_text
+                conf_score, score_breakdown = compute_confidence_score(
+                    routing_score, has_data, agent_name,
+                )
+                score_breakdown["match_type"] = match_type
+                meta_dict = {
+                    "confidence_score": conf_score,
+                    "score_breakdown": score_breakdown,
+                    "match_type": match_type,
+                }
                 assistant_msg = Message(
                     conversation_id=conv_id,
                     role=MessageRole.ASSISTANT,
                     content=complete_text,
                     agent_used=agent_name,
+                    confidence_score=conf_score,
+                    metadata_json=json.dumps(meta_dict),
                 )
                 save_db.add(assistant_msg)
                 save_db.commit()
@@ -258,18 +272,27 @@ async def send_message(
             detail=f"Error al consultar el modelo de IA: {type(exc).__name__}: {exc}",
         )
 
-    # Save assistant response
+    # Save assistant response with confidence score
+    conf_score = result.get("confidence_score")
+    score_breakdown = result.get("score_breakdown")
+    metadata = result.get("metadata") or {}
+    meta_dict = {
+        "confidence_score": conf_score,
+        "score_breakdown": score_breakdown,
+        **metadata,
+    }
     assistant_msg = Message(
         conversation_id=conversation.id,
         role=MessageRole.ASSISTANT,
         content=result["response"],
         agent_used=result.get("agent_used"),
+        confidence_score=conf_score,
+        metadata_json=json.dumps(meta_dict) if meta_dict else None,
     )
     db.add(assistant_msg)
     db.commit()
     db.refresh(assistant_msg)
 
-    metadata = result.get("metadata") or {}
     action = "access_denied" if (metadata.get("classification") == "no_access" or metadata.get("access_denied")) else "chat_query"
     log_action(
         db,

@@ -1,0 +1,289 @@
+{
+  "version": "1.0",
+  "created": "2026-02-24",
+  "description": "Dataset de entrenamiento y evaluación para SantoniBot. Generado a partir de conversaciones reales de usuarios y cuestionario de levantamiento de Alimentos Santoni, C.A.",
+  "stats": {
+    "total_entries": 120,
+    "por_agente": {
+      "rrhh": 35,
+      "compras_insumos": 30,
+      "ventas": 15,
+      "finanzas": 15,
+      "contabilidad": 10,
+      "produccion": 10,
+      "compras_productores": 5
+    },
+    "por_fuente": {
+      "conversacion_real": 55,
+      "cuestionario_validacion": 35,
+      "patron_comun": 30
+    }
+  },
+  "entries": [
+
+    {"id": 1, "pregunta": "¿Cuántos empleados hay por departamento?", "agente_esperado": "rrhh", "departamento_usuario": "rrhh", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"producto": null, "moneda": null, "organizacion": null, "fecha_desde": null, "fecha_hasta": null}, "es_followup": false, "fuente": "conversacion_real", "usuario": "esalas", "resultado_real": {"agente_usado": "rrhh", "exito": true}, "categoria": "empleados"},
+
+    {"id": 2, "pregunta": "indicame los indices de ausentimos del mes de enero 2026", "agente_esperado": "rrhh", "departamento_usuario": "rrhh", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"producto": null, "moneda": null, "organizacion": null, "fecha_desde": null, "fecha_hasta": null, "mes": 1, "anio": 2026}, "es_followup": false, "fuente": "conversacion_real", "usuario": "esalas", "resultado_real": {"agente_usado": "general", "exito": false, "tipo_error": "routing_general"}, "categoria": "ausentismo"},
+
+    {"id": 3, "pregunta": "cuantas personas han renunciado en los meses de enero 2026 y febrero 2026", "agente_esperado": "rrhh", "departamento_usuario": "rrhh", "contexto": {"last_agent": "general", "historial": [["user", "indicame los indices de ausentimos del mes de enero 2026"]]}, "extracciones": {"producto": null, "moneda": null, "organizacion": null, "mes": 1, "anio": 2026}, "es_followup": false, "fuente": "conversacion_real", "usuario": "esalas", "resultado_real": {"agente_usado": "general", "exito": false, "tipo_error": "routing_general"}, "categoria": "rotacion"},
+
+    {"id": 4, "pregunta": "cuantos trabajadores activos hay en la empresa inproa santoni actualmente", "agente_esperado": "rrhh", "departamento_usuario": "rrhh", "contexto": {"last_agent": "general", "historial": []}, "extracciones": {"producto": null, "moneda": null, "organizacion": "INPROA SANTONI"}, "es_followup": false, "fuente": "conversacion_real", "usuario": "esalas", "resultado_real": {"agente_usado": "general", "exito": false, "tipo_error": "routing_general"}, "categoria": "empleados"},
+
+    {"id": 5, "pregunta": "cuantos trabajadores activos tiene la empresa inproa santoni", "agente_esperado": "rrhh", "departamento_usuario": "rrhh", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"producto": null, "moneda": null, "organizacion": "INPROA SANTONI"}, "es_followup": false, "fuente": "conversacion_real", "usuario": "esalas", "resultado_real": {"agente_usado": "rrhh", "exito": true, "respuesta_esperada": "444"}, "categoria": "empleados"},
+
+    {"id": 6, "pregunta": "estas seguro?", "agente_esperado": "rrhh", "departamento_usuario": "rrhh", "contexto": {"last_agent": "rrhh", "historial": [["user", "cuantos trabajadores activos tiene la empresa inproa santoni"], ["assistant", "INPROA SANTONI C.A. tiene 444 trabajadores activos."]]}, "extracciones": {}, "es_followup": true, "fuente": "conversacion_real", "usuario": "esalas", "resultado_real": {"agente_usado": "general", "exito": false, "tipo_error": "followup_perdido"}, "categoria": "followup"},
+
+    {"id": 7, "pregunta": "ok damelo en febrero 2026", "agente_esperado": "rrhh", "departamento_usuario": "rrhh", "contexto": {"last_agent": "general", "historial": [["user", "cuantos trabajadores activos tiene la empresa inproa santoni"]]}, "extracciones": {"mes": 2, "anio": 2026}, "es_followup": true, "fuente": "conversacion_real", "usuario": "esalas", "resultado_real": {"agente_usado": "general", "exito": false, "tipo_error": "followup_perdido"}, "categoria": "followup"},
+
+    {"id": 8, "pregunta": "cual es mi estimado de gastos semanales en el departamento de nomina", "agente_esperado": "rrhh", "departamento_usuario": "rrhh", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"producto": null, "moneda": null}, "es_followup": false, "fuente": "conversacion_real", "usuario": "esalas", "resultado_real": {"agente_usado": "rrhh", "exito": false, "tipo_error": "programming_error"}, "categoria": "nomina"},
+
+    {"id": 9, "pregunta": "hola cuantos son mis gastos semanales de nomina", "agente_esperado": "rrhh", "departamento_usuario": "rrhh", "contexto": {"last_agent": null, "historial": []}, "extracciones": {}, "es_followup": false, "fuente": "conversacion_real", "usuario": "esalas", "resultado_real": {"agente_usado": "general", "exito": false, "tipo_error": "routing_general"}, "categoria": "nomina"},
+
+    {"id": 10, "pregunta": "me pudieras por favor dar los cumpleañeros del mes de enero 2026", "agente_esperado": "rrhh", "departamento_usuario": "rrhh", "contexto": {"last_agent": "general", "historial": []}, "extracciones": {"mes": 1, "anio": 2026}, "es_followup": false, "fuente": "conversacion_real", "usuario": "esalas", "resultado_real": {"agente_usado": "general", "exito": false, "tipo_error": "dato_no_disponible"}, "categoria": "cumpleanos", "nota": "iDempiere no tiene fecha de nacimiento"},
+
+    {"id": 11, "pregunta": "indicame los indices de ausentimos del mes de enero 2026", "agente_esperado": "rrhh", "departamento_usuario": "rrhh", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"mes": 1, "anio": 2026}, "es_followup": false, "fuente": "conversacion_real", "usuario": "esalas", "resultado_real": {"agente_usado": "rrhh", "exito": true}, "categoria": "ausentismo", "nota": "Segunda vez - funciono en nueva conversacion"},
+
+    {"id": 12, "pregunta": "del mes de enero 2026", "agente_esperado": "rrhh", "departamento_usuario": "rrhh", "contexto": {"last_agent": "rrhh", "historial": [["user", "indicame los indices de ausentimos del mes de enero 2026"]]}, "extracciones": {"mes": 1, "anio": 2026}, "es_followup": true, "fuente": "conversacion_real", "usuario": "esalas", "resultado_real": {"agente_usado": "general", "exito": false, "tipo_error": "followup_perdido"}, "categoria": "followup"},
+
+    {"id": 13, "pregunta": "indicame los indices de ausentimos del mes de enero 2026 de la empresa agroinproa", "agente_esperado": "rrhh", "departamento_usuario": "rrhh", "contexto": {"last_agent": "general", "historial": []}, "extracciones": {"mes": 1, "anio": 2026, "organizacion": "AGROINPROA"}, "es_followup": false, "fuente": "conversacion_real", "usuario": "esalas", "resultado_real": {"agente_usado": "rrhh", "exito": true}, "categoria": "ausentismo"},
+
+    {"id": 14, "pregunta": "si", "agente_esperado": "rrhh", "departamento_usuario": "rrhh", "contexto": {"last_agent": "rrhh", "historial": [["user", "indicame los indices de ausentimos del mes de enero 2026 de la empresa agroinproa"]]}, "extracciones": {}, "es_followup": true, "fuente": "conversacion_real", "usuario": "esalas", "resultado_real": {"agente_usado": "general", "exito": false, "tipo_error": "followup_perdido"}, "categoria": "followup"},
+
+    {"id": 15, "pregunta": "cuantas faltas y atrasos", "agente_esperado": "rrhh", "departamento_usuario": "rrhh", "contexto": {"last_agent": "rrhh", "historial": [["user", "indicame los indices de ausentimos del mes de enero 2026 de la empresa agroinproa"]]}, "extracciones": {}, "es_followup": true, "fuente": "conversacion_real", "usuario": "esalas", "resultado_real": {"agente_usado": "rrhh", "exito": true}, "categoria": "ausentismo"},
+
+    {"id": 16, "pregunta": "ok damelo de inversiones aga", "agente_esperado": "rrhh", "departamento_usuario": "rrhh", "contexto": {"last_agent": "general", "historial": [["user", "indicame los indices de ausentimos del mes de enero 2026 de la empresa agroinproa"]]}, "extracciones": {"organizacion": "INVERSIONES AGA"}, "es_followup": true, "fuente": "conversacion_real", "usuario": "esalas", "resultado_real": {"agente_usado": "general", "exito": false, "tipo_error": "followup_perdido"}, "categoria": "followup"},
+
+    {"id": 17, "pregunta": "Reporte de vacaciones pendientes", "agente_esperado": "rrhh", "departamento_usuario": "rrhh", "contexto": {"last_agent": null, "historial": []}, "extracciones": {}, "es_followup": false, "fuente": "conversacion_real", "usuario": "esalas", "resultado_real": {"agente_usado": "rrhh", "exito": false, "tipo_error": "funcionalidad_no_disponible"}, "categoria": "vacaciones"},
+
+    {"id": 18, "pregunta": "indicame los indices de ausentismos de la empresa INPROA SANTONI, de los meses septiembre, octubre y noviembre del 2025", "agente_esperado": "rrhh", "departamento_usuario": "rrhh", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"organizacion": "INPROA SANTONI", "fecha_desde": "2025-09-01", "fecha_hasta": "2025-11-30"}, "es_followup": false, "fuente": "conversacion_real", "usuario": "esalas", "resultado_real": {"agente_usado": "rrhh", "exito": true, "nota": "Solo mostro septiembre, no octubre/noviembre"}, "categoria": "ausentismo"},
+
+    {"id": 19, "pregunta": "lo necesito en cantidad o horas hombres", "agente_esperado": "rrhh", "departamento_usuario": "rrhh", "contexto": {"last_agent": "rrhh", "historial": [["user", "indicame los indices de ausentismos de la empresa INPROA SANTONI, de los meses septiembre, octubre y noviembre del 2025"]]}, "extracciones": {}, "es_followup": true, "fuente": "conversacion_real", "usuario": "esalas", "resultado_real": {"agente_usado": "general", "exito": false, "tipo_error": "followup_perdido_y_alucinacion"}, "categoria": "followup", "nota": "Respondio 1234 horas hombre - dato inventado"},
+
+    {"id": 20, "pregunta": "indicame en que fecha se fundo la empresa INPROA SANTONI", "agente_esperado": "general", "departamento_usuario": "rrhh", "contexto": {"last_agent": null, "historial": []}, "extracciones": {}, "es_followup": false, "fuente": "conversacion_real", "usuario": "esalas", "resultado_real": {"agente_usado": "general", "exito": false, "tipo_error": "alucinacion"}, "categoria": "info_general", "nota": "Invento fecha de fundacion"},
+
+    {"id": 21, "pregunta": "DAME LOS CUMPLEAÑEROS DEL MES DE DICIEMBRE 2025", "agente_esperado": "rrhh", "departamento_usuario": "rrhh", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"mes": 12, "anio": 2025}, "es_followup": false, "fuente": "conversacion_real", "usuario": "esalas", "resultado_real": {"agente_usado": "general", "exito": false, "tipo_error": "dato_no_disponible"}, "categoria": "cumpleanos"},
+
+    {"id": 22, "pregunta": "indicame el numero de empleados activos en inproa santoni", "agente_esperado": "rrhh", "departamento_usuario": "rrhh", "contexto": {"last_agent": "rrhh", "historial": [["user", "¿Cuántos empleados hay por departamento?"]]}, "extracciones": {"organizacion": "INPROA SANTONI"}, "es_followup": true, "fuente": "conversacion_real", "usuario": "esalas", "resultado_real": {"agente_usado": "rrhh", "exito": true, "respuesta_esperada": "444"}, "categoria": "empleados"},
+
+    {"id": 23, "pregunta": "cuantos empleados, cuantos obreros y cuantos gerenciales", "agente_esperado": "rrhh", "departamento_usuario": "rrhh", "contexto": {"last_agent": "rrhh", "historial": []}, "extracciones": {}, "es_followup": true, "fuente": "conversacion_real", "usuario": "esalas", "resultado_real": {"agente_usado": "rrhh", "exito": true}, "categoria": "empleados"},
+
+    {"id": 24, "pregunta": "obreros integrales", "agente_esperado": "rrhh", "departamento_usuario": "rrhh", "contexto": {"last_agent": "rrhh", "historial": []}, "extracciones": {"cargo": "obrero integral"}, "es_followup": true, "fuente": "conversacion_real", "usuario": "esalas", "resultado_real": {"agente_usado": "rrhh", "exito": false, "tipo_error": "dato_no_encontrado"}, "categoria": "busqueda_cargo"},
+
+    {"id": 25, "pregunta": "analista de control de calidad", "agente_esperado": "rrhh", "departamento_usuario": "rrhh", "contexto": {"last_agent": "rrhh", "historial": []}, "extracciones": {"cargo": "analista de control de calidad"}, "es_followup": true, "fuente": "conversacion_real", "usuario": "esalas", "resultado_real": {"agente_usado": "rrhh", "exito": true}, "categoria": "busqueda_cargo"},
+
+    {"id": 26, "pregunta": "cuantos empleados hay en el departamento de Talento Humano en todo el grupo empresarial", "agente_esperado": "rrhh", "departamento_usuario": "rrhh", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"departamento_hr": "Talento Humano"}, "es_followup": false, "fuente": "conversacion_real", "usuario": "esalas", "resultado_real": {"agente_usado": "rrhh", "exito": true, "respuesta_esperada": "20 total, 19 activos"}, "categoria": "empleados"},
+
+    {"id": 27, "pregunta": "me podrias dar nombre y apellidos de cada uno, e indicarme a que empresa pertenece?", "agente_esperado": "rrhh", "departamento_usuario": "rrhh", "contexto": {"last_agent": "rrhh", "historial": [["user", "cuantos empleados hay en el departamento de Talento Humano en todo el grupo empresarial"]]}, "extracciones": {}, "es_followup": true, "fuente": "conversacion_real", "usuario": "esalas", "resultado_real": {"agente_usado": "rrhh", "exito": false, "tipo_error": "privacidad"}, "categoria": "followup", "nota": "Bot rehuso por privacidad pero deberia dar la lista"},
+
+    {"id": 28, "pregunta": "me puedes decir quien cumple años en febrero 2026 del grupo empresarial", "agente_esperado": "rrhh", "departamento_usuario": "rrhh", "contexto": {"last_agent": "rrhh", "historial": []}, "extracciones": {"mes": 2, "anio": 2026}, "es_followup": false, "fuente": "conversacion_real", "usuario": "esalas", "resultado_real": {"agente_usado": "rrhh", "exito": false, "tipo_error": "dato_no_disponible"}, "categoria": "cumpleanos"},
+
+    {"id": 29, "pregunta": "Cual es el banco con mayor disponibilidd el dia de hoy", "agente_esperado": "finanzas", "departamento_usuario": "finanzas", "contexto": {"last_agent": null, "historial": []}, "extracciones": {}, "es_followup": false, "fuente": "conversacion_real", "usuario": "oartahona", "resultado_real": {"agente_usado": "finanzas", "exito": false, "tipo_error": "datos_incorrectos"}, "categoria": "saldos_bancarios", "nota": "Dijo mayo 2026 cuando debia ser fecha actual"},
+
+    {"id": 30, "pregunta": "con el es banco con mayor disponibilidad el 24/02/2026", "agente_esperado": "finanzas", "departamento_usuario": "finanzas", "contexto": {"last_agent": "finanzas", "historial": []}, "extracciones": {"fecha_desde": "2026-02-24", "fecha_hasta": "2026-02-24"}, "es_followup": true, "fuente": "conversacion_real", "usuario": "oartahona", "resultado_real": {"agente_usado": "finanzas", "exito": false, "tipo_error": "sin_datos"}, "categoria": "saldos_bancarios"},
+
+    {"id": 31, "pregunta": "cuantos fuero los ingresos por venta el dia de ayer 23/02/2026", "agente_esperado": "finanzas", "departamento_usuario": "finanzas", "contexto": {"last_agent": "finanzas", "historial": []}, "extracciones": {"fecha_desde": "2026-02-23", "fecha_hasta": "2026-02-23"}, "es_followup": false, "fuente": "conversacion_real", "usuario": "oartahona", "resultado_real": {"agente_usado": "finanzas", "exito": false, "tipo_error": "sin_datos"}, "categoria": "ingresos"},
+
+    {"id": 32, "pregunta": "cuales fueron las liquidaciones Bancarias del dia 20/02/2026", "agente_esperado": "finanzas", "departamento_usuario": "finanzas", "contexto": {"last_agent": "finanzas", "historial": []}, "extracciones": {"fecha_desde": "2026-02-20", "fecha_hasta": "2026-02-20"}, "es_followup": false, "fuente": "conversacion_real", "usuario": "oartahona", "resultado_real": {"agente_usado": "finanzas", "exito": false, "tipo_error": "sin_datos"}, "categoria": "liquidaciones"},
+
+    {"id": 33, "pregunta": "cuotas de prestamos que vencen hoy 24/02/2026", "agente_esperado": "finanzas", "departamento_usuario": "finanzas", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"fecha_desde": "2026-02-24"}, "es_followup": false, "fuente": "conversacion_real", "usuario": "oartahona", "resultado_real": {"agente_usado": "general", "exito": false, "tipo_error": "routing_general"}, "categoria": "prestamos"},
+
+    {"id": 34, "pregunta": "¿Cuánto se compró de insumos este mes?", "agente_esperado": "compras_insumos", "departamento_usuario": "compras_insumos", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"moneda": "VES"}, "es_followup": false, "fuente": "conversacion_real", "usuario": "jchahine", "resultado_real": {"agente_usado": "compras_insumos", "exito": true}, "categoria": "resumen_compras"},
+
+    {"id": 35, "pregunta": "En gastos?", "agente_esperado": "compras_insumos", "departamento_usuario": "compras_insumos", "contexto": {"last_agent": "compras_insumos", "historial": [["user", "¿Cuánto se compró de insumos este mes?"]]}, "extracciones": {}, "es_followup": true, "fuente": "conversacion_real", "usuario": "jchahine", "resultado_real": {"agente_usado": "general", "exito": false, "tipo_error": "followup_perdido"}, "categoria": "followup"},
+
+    {"id": 36, "pregunta": "administrativos", "agente_esperado": "compras_insumos", "departamento_usuario": "compras_insumos", "contexto": {"last_agent": "general", "historial": [["user", "En gastos?"]]}, "extracciones": {}, "es_followup": true, "fuente": "conversacion_real", "usuario": "jchahine", "resultado_real": {"agente_usado": "general", "exito": false, "tipo_error": "followup_perdido"}, "categoria": "followup"},
+
+    {"id": 37, "pregunta": "Órdenes de compra pendientes por recepción de insumos del mes de febrero", "agente_esperado": "compras_insumos", "departamento_usuario": "compras_insumos", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"mes": 2, "anio": 2026}, "es_followup": false, "fuente": "conversacion_real", "usuario": "jchahine", "resultado_real": {"agente_usado": "compras_insumos", "exito": true, "nota": "Aclaro que no tiene pendientes, dio resumen"}, "categoria": "ordenes_compra"},
+
+    {"id": 38, "pregunta": "quisiera saber cuantas cajas de carton quedan en inventario", "agente_esperado": "compras_insumos", "departamento_usuario": "compras_insumos", "contexto": {"last_agent": "compras_insumos", "historial": []}, "extracciones": {"producto": "cajas de carton"}, "es_followup": false, "fuente": "conversacion_real", "usuario": "jchahine", "resultado_real": {"agente_usado": "no_access", "exito": false, "tipo_error": "no_access"}, "categoria": "inventario", "nota": "Antes del fix de inventario"},
+
+    {"id": 39, "pregunta": "tienes el codigo de las cajas de carton para cereales", "agente_esperado": "compras_insumos", "departamento_usuario": "compras_insumos", "contexto": {"last_agent": "compras_insumos", "historial": []}, "extracciones": {"producto": "cajas de carton para cereales"}, "es_followup": true, "fuente": "conversacion_real", "usuario": "jchahine", "resultado_real": {"agente_usado": "general", "exito": false, "tipo_error": "routing_general"}, "categoria": "codigo_producto"},
+
+    {"id": 40, "pregunta": "que proveedores venden laminas de hierro negro", "agente_esperado": "compras_insumos", "departamento_usuario": "compras_insumos", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"producto": "laminas de hierro negro"}, "es_followup": false, "fuente": "conversacion_real", "usuario": "jchahine", "resultado_real": {"agente_usado": "compras_insumos", "exito": false, "tipo_error": "sin_datos"}, "categoria": "proveedores"},
+
+    {"id": 41, "pregunta": "busca en el sistema el historial de compras de laminas de hierro negro", "agente_esperado": "compras_insumos", "departamento_usuario": "compras_insumos", "contexto": {"last_agent": "compras_insumos", "historial": []}, "extracciones": {"producto": "laminas de hierro negro"}, "es_followup": true, "fuente": "conversacion_real", "usuario": "jchahine", "resultado_real": {"agente_usado": "general", "exito": false, "tipo_error": "routing_general"}, "categoria": "historial_compras"},
+
+    {"id": 42, "pregunta": "quiero el historial de compra del siguiente producto REP-LAMI-0037", "agente_esperado": "compras_insumos", "departamento_usuario": "compras_insumos", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"producto": "REP-LAMI-0037"}, "es_followup": false, "fuente": "conversacion_real", "usuario": "jchahine", "resultado_real": {"agente_usado": "general", "exito": false, "tipo_error": "routing_general"}, "categoria": "historial_compras"},
+
+    {"id": 43, "pregunta": "cliente inproa santoni, en el rango de fecha 01-11-25 hasta el 23-02-26", "agente_esperado": "compras_insumos", "departamento_usuario": "compras_insumos", "contexto": {"last_agent": "general", "historial": [["user", "quiero el historial de compra del siguiente producto REP-LAMI-0037"]]}, "extracciones": {"organizacion": "INPROA SANTONI", "fecha_desde": "2025-11-01", "fecha_hasta": "2026-02-23"}, "es_followup": true, "fuente": "conversacion_real", "usuario": "jchahine", "resultado_real": {"agente_usado": "no_access", "exito": false, "tipo_error": "no_access"}, "categoria": "followup", "nota": "cliente keyword ruteó a ventas, no tiene acceso"},
+
+    {"id": 44, "pregunta": "quien fue el ultimo proveedor del siguiente producto REP-LAMI-0037 en la empresa inproa santoni", "agente_esperado": "compras_insumos", "departamento_usuario": "compras_insumos", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"producto": "REP-LAMI-0037", "organizacion": "INPROA SANTONI"}, "es_followup": false, "fuente": "conversacion_real", "usuario": "jchahine", "resultado_real": {"agente_usado": "compras_insumos", "exito": false, "tipo_error": "sin_datos"}, "categoria": "proveedores", "nota": "Primera vez no encontro, luego si"},
+
+    {"id": 45, "pregunta": "quien fue el ultimo proveedor del siguiente producto REP-TUER-0115 en la empresa inproa santoni", "agente_esperado": "compras_insumos", "departamento_usuario": "compras_insumos", "contexto": {"last_agent": "compras_insumos", "historial": []}, "extracciones": {"producto": "REP-TUER-0115", "organizacion": "INPROA SANTONI"}, "es_followup": false, "fuente": "conversacion_real", "usuario": "jchahine", "resultado_real": {"agente_usado": "compras_insumos", "exito": true, "respuesta_esperada": "TORNILLERIA EL GUAMAL, C.A."}, "categoria": "proveedores"},
+
+    {"id": 46, "pregunta": "que cantidad de gasoil se ha comprado en la empresa Inproa santoni desde el 01-01-26 hasta el 23-02-26", "agente_esperado": "compras_insumos", "departamento_usuario": "compras_insumos", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"producto": "gasoil", "organizacion": "INPROA SANTONI", "fecha_desde": "2026-01-01", "fecha_hasta": "2026-02-23"}, "es_followup": false, "fuente": "conversacion_real", "usuario": "jchahine", "resultado_real": {"agente_usado": "general", "exito": false, "tipo_error": "routing_general"}, "categoria": "cantidad_producto"},
+
+    {"id": 47, "pregunta": "cual es el codigo de caja de carton para cereales", "agente_esperado": "compras_insumos", "departamento_usuario": "compras_insumos", "contexto": {"last_agent": "compras_insumos", "historial": []}, "extracciones": {"producto": "caja de carton para cereales"}, "es_followup": false, "fuente": "conversacion_real", "usuario": "jchahine", "resultado_real": {"agente_usado": "compras_insumos", "exito": true}, "categoria": "codigo_producto"},
+
+    {"id": 48, "pregunta": "dame el inventario actual de ese producto en inproa santoni", "agente_esperado": "compras_insumos", "departamento_usuario": "compras_insumos", "contexto": {"last_agent": "compras_insumos", "historial": [["user", "cual es el codigo de caja de carton para cereales"]]}, "extracciones": {"organizacion": "INPROA SANTONI"}, "es_followup": true, "fuente": "conversacion_real", "usuario": "jchahine", "resultado_real": {"agente_usado": "compras_insumos", "exito": false, "tipo_error": "funcionalidad_no_disponible"}, "categoria": "inventario", "nota": "Antes del fix de inventario - ahora funciona"},
+
+    {"id": 49, "pregunta": "Y en dólares?", "agente_esperado": "compras_insumos", "departamento_usuario": "compras_insumos", "contexto": {"last_agent": "compras_insumos", "historial": [["user", "¿Cuánto se compró de insumos este mes?"]]}, "extracciones": {"moneda": "USD"}, "es_followup": true, "fuente": "conversacion_real", "usuario": "jchahine", "resultado_real": {"agente_usado": "general", "exito": false, "tipo_error": "followup_perdido"}, "categoria": "moneda_followup"},
+
+    {"id": 50, "pregunta": "si", "agente_esperado": "compras_insumos", "departamento_usuario": "compras_insumos", "contexto": {"last_agent": "compras_insumos", "historial": []}, "extracciones": {}, "es_followup": true, "fuente": "conversacion_real", "usuario": "jchahine", "resultado_real": {"agente_usado": "compras_insumos", "exito": true}, "categoria": "followup"},
+
+    {"id": 51, "pregunta": "¿Cuáles son los top 20 clientes por ventas del 2025?", "agente_esperado": "ventas", "departamento_usuario": "ventas", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"anio": 2025}, "es_followup": false, "fuente": "cuestionario_validacion", "usuario": null, "categoria": "ranking_clientes"},
+
+    {"id": 52, "pregunta": "Top 10 clientes de InproMaiz en enero 2026", "agente_esperado": "ventas", "departamento_usuario": "ventas", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"organizacion": "InproMaiz", "mes": 1, "anio": 2026}, "es_followup": false, "fuente": "cuestionario_validacion", "usuario": null, "categoria": "ranking_clientes"},
+
+    {"id": 53, "pregunta": "Ranking de ventas por zona del mes de enero 2026", "agente_esperado": "ventas", "departamento_usuario": "ventas", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"mes": 1, "anio": 2026}, "es_followup": false, "fuente": "cuestionario_validacion", "usuario": null, "categoria": "ventas_zona"},
+
+    {"id": 54, "pregunta": "¿Cuánto se facturó en dólares en febrero 2026?", "agente_esperado": "ventas", "departamento_usuario": "ventas", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"moneda": "USD", "mes": 2, "anio": 2026}, "es_followup": false, "fuente": "cuestionario_validacion", "usuario": null, "categoria": "facturacion"},
+
+    {"id": 55, "pregunta": "y de InproMaiz?", "agente_esperado": "ventas", "departamento_usuario": "ventas", "contexto": {"last_agent": "ventas", "historial": [["user", "¿Cuáles son los top 20 clientes por ventas del 2025?"]]}, "extracciones": {"organizacion": "InproMaiz"}, "es_followup": true, "fuente": "cuestionario_validacion", "usuario": null, "categoria": "followup"},
+
+    {"id": 56, "pregunta": "y en dólares?", "agente_esperado": "ventas", "departamento_usuario": "ventas", "contexto": {"last_agent": "ventas", "historial": [["user", "Top 10 clientes de InproMaiz en enero 2026"]]}, "extracciones": {"moneda": "USD"}, "es_followup": true, "fuente": "cuestionario_validacion", "usuario": null, "categoria": "moneda_followup"},
+
+    {"id": 57, "pregunta": "¿Cuántos empleados activos hay en INPROA SANTONI?", "agente_esperado": "rrhh", "departamento_usuario": "rrhh", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"organizacion": "INPROA SANTONI"}, "es_followup": false, "fuente": "cuestionario_validacion", "usuario": null, "resultado_esperado": "444", "categoria": "empleados"},
+
+    {"id": 58, "pregunta": "¿Cuántos obreros integrales hay?", "agente_esperado": "rrhh", "departamento_usuario": "rrhh", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"cargo": "obrero integral"}, "es_followup": false, "fuente": "cuestionario_validacion", "usuario": null, "categoria": "busqueda_cargo"},
+
+    {"id": 59, "pregunta": "¿Cuántos choferes tiene la empresa?", "agente_esperado": "rrhh", "departamento_usuario": "rrhh", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"cargo": "chofer"}, "es_followup": false, "fuente": "cuestionario_validacion", "usuario": null, "categoria": "busqueda_cargo"},
+
+    {"id": 60, "pregunta": "Indicadores de ausentismo de INPROA SANTONI de septiembre 2025", "agente_esperado": "rrhh", "departamento_usuario": "rrhh", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"organizacion": "INPROA SANTONI", "mes": 9, "anio": 2025}, "es_followup": false, "fuente": "cuestionario_validacion", "usuario": null, "categoria": "ausentismo"},
+
+    {"id": 61, "pregunta": "¿Cuántos empleados ingresaron entre enero y junio 2025?", "agente_esperado": "rrhh", "departamento_usuario": "rrhh", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"fecha_desde": "2025-01-01", "fecha_hasta": "2025-06-30"}, "es_followup": false, "fuente": "cuestionario_validacion", "usuario": null, "categoria": "ingresos_personal"},
+
+    {"id": 62, "pregunta": "Cumpleañeros del mes de marzo", "agente_esperado": "rrhh", "departamento_usuario": "rrhh", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"mes": 3}, "es_followup": false, "fuente": "cuestionario_validacion", "usuario": null, "categoria": "cumpleanos", "nota": "Requiere dato no disponible en iDempiere"},
+
+    {"id": 63, "pregunta": "Muéstrame el balance general de enero 2026", "agente_esperado": "contabilidad", "departamento_usuario": "contabilidad", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"mes": 1, "anio": 2026}, "es_followup": false, "fuente": "cuestionario_validacion", "usuario": null, "categoria": "balance_general"},
+
+    {"id": 64, "pregunta": "¿Cuál es el saldo de la cuenta 1101 en febrero 2026?", "agente_esperado": "contabilidad", "departamento_usuario": "contabilidad", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"cuenta_contable": "1101", "mes": 2, "anio": 2026}, "es_followup": false, "fuente": "cuestionario_validacion", "usuario": null, "categoria": "saldo_cuenta"},
+
+    {"id": 65, "pregunta": "Costos de productos a fecha 31/01/2026", "agente_esperado": "contabilidad", "departamento_usuario": "contabilidad", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"fecha_hasta": "2026-01-31"}, "es_followup": false, "fuente": "cuestionario_validacion", "usuario": null, "categoria": "costos"},
+
+    {"id": 66, "pregunta": "Análisis de las partidas de gastos de enero a marzo 2026", "agente_esperado": "contabilidad", "departamento_usuario": "contabilidad", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"fecha_desde": "2026-01-01", "fecha_hasta": "2026-03-31"}, "es_followup": false, "fuente": "cuestionario_validacion", "usuario": null, "categoria": "gastos"},
+
+    {"id": 67, "pregunta": "Situación financiera de InproMaiz", "agente_esperado": "contabilidad", "departamento_usuario": "contabilidad", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"organizacion": "InproMaiz"}, "es_followup": false, "fuente": "cuestionario_validacion", "usuario": null, "categoria": "situacion_financiera"},
+
+    {"id": 68, "pregunta": "¿Cuáles son los saldos bancarios actuales?", "agente_esperado": "finanzas", "departamento_usuario": "finanzas", "contexto": {"last_agent": null, "historial": []}, "extracciones": {}, "es_followup": false, "fuente": "cuestionario_validacion", "usuario": null, "categoria": "saldos_bancarios"},
+
+    {"id": 69, "pregunta": "¿Cuánto tenemos en cuentas por cobrar vencidas?", "agente_esperado": "finanzas", "departamento_usuario": "finanzas", "contexto": {"last_agent": null, "historial": []}, "extracciones": {}, "es_followup": false, "fuente": "cuestionario_validacion", "usuario": null, "categoria": "cuentas_por_cobrar"},
+
+    {"id": 70, "pregunta": "Flujo de caja de enero 2026", "agente_esperado": "finanzas", "departamento_usuario": "finanzas", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"mes": 1, "anio": 2026}, "es_followup": false, "fuente": "cuestionario_validacion", "usuario": null, "categoria": "flujo_caja"},
+
+    {"id": 71, "pregunta": "¿Cuánto debemos en cuentas por pagar?", "agente_esperado": "finanzas", "departamento_usuario": "finanzas", "contexto": {"last_agent": null, "historial": []}, "extracciones": {}, "es_followup": false, "fuente": "cuestionario_validacion", "usuario": null, "categoria": "cuentas_por_pagar"},
+
+    {"id": 72, "pregunta": "¿Cuánto se produjo en enero 2026?", "agente_esperado": "produccion", "departamento_usuario": "produccion", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"mes": 1, "anio": 2026}, "es_followup": false, "fuente": "cuestionario_validacion", "usuario": null, "categoria": "resumen_produccion"},
+
+    {"id": 73, "pregunta": "¿Cuáles son las órdenes de producción del mes?", "agente_esperado": "produccion", "departamento_usuario": "produccion", "contexto": {"last_agent": null, "historial": []}, "extracciones": {}, "es_followup": false, "fuente": "cuestionario_validacion", "usuario": null, "categoria": "ordenes_produccion"},
+
+    {"id": 74, "pregunta": "Inventario de materia prima actual", "agente_esperado": "produccion", "departamento_usuario": "produccion", "contexto": {"last_agent": null, "historial": []}, "extracciones": {}, "es_followup": false, "fuente": "cuestionario_validacion", "usuario": null, "categoria": "inventario_mp"},
+
+    {"id": 75, "pregunta": "Producción de arroz blanco en enero 2026", "agente_esperado": "produccion", "departamento_usuario": "produccion", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"producto": "arroz blanco", "mes": 1, "anio": 2026}, "es_followup": false, "fuente": "cuestionario_validacion", "usuario": null, "categoria": "produccion_producto"},
+
+    {"id": 76, "pregunta": "¿Cuánto desperdicio hubo en empaque este mes?", "agente_esperado": "produccion", "departamento_usuario": "produccion", "contexto": {"last_agent": null, "historial": []}, "extracciones": {}, "es_followup": false, "fuente": "cuestionario_validacion", "usuario": null, "categoria": "desperdicios"},
+
+    {"id": 77, "pregunta": "¿Cuántas cajas de cartón compramos en enero 2026?", "agente_esperado": "compras_insumos", "departamento_usuario": "compras_insumos", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"producto": "cajas de cartón", "mes": 1, "anio": 2026}, "es_followup": false, "fuente": "cuestionario_validacion", "usuario": null, "categoria": "cantidad_producto"},
+
+    {"id": 78, "pregunta": "Dame el historial de compras de azúcar del último trimestre", "agente_esperado": "compras_insumos", "departamento_usuario": "compras_insumos", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"producto": "azúcar"}, "es_followup": false, "fuente": "cuestionario_validacion", "usuario": null, "categoria": "historial_compras"},
+
+    {"id": 79, "pregunta": "¿Cuáles son los principales proveedores de material de empaque?", "agente_esperado": "compras_insumos", "departamento_usuario": "compras_insumos", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"producto": "material de empaque"}, "es_followup": false, "fuente": "cuestionario_validacion", "usuario": null, "categoria": "proveedores"},
+
+    {"id": 80, "pregunta": "¿Cuál es el inventario actual de todos los insumos?", "agente_esperado": "compras_insumos", "departamento_usuario": "compras_insumos", "contexto": {"last_agent": null, "historial": []}, "extracciones": {}, "es_followup": false, "fuente": "cuestionario_validacion", "usuario": null, "categoria": "inventario"},
+
+    {"id": 81, "pregunta": "Precio de las últimas 6 compras de harina de avena", "agente_esperado": "compras_insumos", "departamento_usuario": "compras_insumos", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"producto": "harina de avena"}, "es_followup": false, "fuente": "cuestionario_validacion", "usuario": null, "categoria": "precios"},
+
+    {"id": 82, "pregunta": "¿Cuánto arroz paddy se compró en 2025?", "agente_esperado": "compras_productores", "departamento_usuario": "compras_productores", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"producto": "arroz paddy", "anio": 2025}, "es_followup": false, "fuente": "cuestionario_validacion", "usuario": null, "categoria": "compras_materia_prima"},
+
+    {"id": 83, "pregunta": "¿Cuánto maíz se compró en 2025?", "agente_esperado": "compras_productores", "departamento_usuario": "compras_productores", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"producto": "maíz", "anio": 2025}, "es_followup": false, "fuente": "cuestionario_validacion", "usuario": null, "categoria": "compras_materia_prima"},
+
+    {"id": 84, "pregunta": "¿Cuántos productores de arroz hay registrados?", "agente_esperado": "compras_productores", "departamento_usuario": "compras_productores", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"producto": "arroz"}, "es_followup": false, "fuente": "cuestionario_validacion", "usuario": null, "resultado_esperado": "1679", "categoria": "productores"},
+
+    {"id": 85, "pregunta": "¿Cuántos productores de maíz hay registrados?", "agente_esperado": "compras_productores", "departamento_usuario": "compras_productores", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"producto": "maíz"}, "es_followup": false, "fuente": "cuestionario_validacion", "usuario": null, "resultado_esperado": "168", "categoria": "productores"},
+
+    {"id": 86, "pregunta": "¿Cuáles son los pagos pendientes a productores?", "agente_esperado": "compras_productores", "departamento_usuario": "compras_productores", "contexto": {"last_agent": null, "historial": []}, "extracciones": {}, "es_followup": false, "fuente": "cuestionario_validacion", "usuario": null, "categoria": "pagos_pendientes"},
+
+    {"id": 87, "pregunta": "Precio promedio del kilo de arroz en 2025", "agente_esperado": "compras_productores", "departamento_usuario": "compras_productores", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"producto": "arroz", "anio": 2025}, "es_followup": false, "fuente": "cuestionario_validacion", "usuario": null, "categoria": "precios"},
+
+    {"id": 88, "pregunta": "hola", "agente_esperado": "general", "departamento_usuario": null, "contexto": {"last_agent": null, "historial": []}, "extracciones": {}, "es_followup": false, "fuente": "patron_comun", "categoria": "saludo"},
+
+    {"id": 89, "pregunta": "gracias", "agente_esperado": "general", "departamento_usuario": null, "contexto": {"last_agent": "rrhh", "historial": []}, "extracciones": {}, "es_followup": false, "fuente": "patron_comun", "categoria": "saludo"},
+
+    {"id": 90, "pregunta": "buenos dias", "agente_esperado": "general", "departamento_usuario": null, "contexto": {"last_agent": null, "historial": []}, "extracciones": {}, "es_followup": false, "fuente": "patron_comun", "categoria": "saludo"},
+
+    {"id": 91, "pregunta": "dame más detalle", "agente_esperado": null, "departamento_usuario": null, "contexto": {"last_agent": "ventas", "historial": []}, "extracciones": {}, "es_followup": true, "fuente": "patron_comun", "categoria": "followup", "nota": "Debe mantener el agente anterior"},
+
+    {"id": 92, "pregunta": "y de febrero?", "agente_esperado": null, "departamento_usuario": null, "contexto": {"last_agent": "compras_insumos", "historial": []}, "extracciones": {"mes": 2}, "es_followup": true, "fuente": "patron_comun", "categoria": "followup_fecha"},
+
+    {"id": 93, "pregunta": "y de AGROINPROA?", "agente_esperado": null, "departamento_usuario": null, "contexto": {"last_agent": "rrhh", "historial": []}, "extracciones": {"organizacion": "AGROINPROA"}, "es_followup": true, "fuente": "patron_comun", "categoria": "followup_org"},
+
+    {"id": 94, "pregunta": "correcto", "agente_esperado": null, "departamento_usuario": null, "contexto": {"last_agent": "rrhh", "historial": []}, "extracciones": {}, "es_followup": true, "fuente": "patron_comun", "categoria": "confirmacion"},
+
+    {"id": 95, "pregunta": "no, quiero de octubre", "agente_esperado": null, "departamento_usuario": null, "contexto": {"last_agent": "compras_insumos", "historial": []}, "extracciones": {"mes": 10}, "es_followup": true, "fuente": "patron_comun", "categoria": "correccion"},
+
+    {"id": 96, "pregunta": "cuanto fue en bolivares?", "agente_esperado": null, "departamento_usuario": null, "contexto": {"last_agent": "compras_insumos", "historial": []}, "extracciones": {"moneda": "VES"}, "es_followup": true, "fuente": "patron_comun", "categoria": "moneda_followup"},
+
+    {"id": 97, "pregunta": "y en dolares?", "agente_esperado": null, "departamento_usuario": null, "contexto": {"last_agent": "compras_insumos", "historial": []}, "extracciones": {"moneda": "USD"}, "es_followup": true, "fuente": "patron_comun", "categoria": "moneda_followup"},
+
+    {"id": 98, "pregunta": "dame eso pero solo de InproMaiz", "agente_esperado": null, "departamento_usuario": null, "contexto": {"last_agent": "ventas", "historial": []}, "extracciones": {"organizacion": "InproMaiz"}, "es_followup": true, "fuente": "patron_comun", "categoria": "followup_org"},
+
+    {"id": 99, "pregunta": "cuanto se vendio en enero 2026", "agente_esperado": "ventas", "departamento_usuario": "ventas", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"mes": 1, "anio": 2026}, "es_followup": false, "fuente": "patron_comun", "categoria": "resumen_ventas"},
+
+    {"id": 100, "pregunta": "dame la cobranza del mes pasado", "agente_esperado": "ventas", "departamento_usuario": "ventas", "contexto": {"last_agent": null, "historial": []}, "extracciones": {}, "es_followup": false, "fuente": "patron_comun", "categoria": "cobranza"},
+
+    {"id": 101, "pregunta": "cuentas por cobrar vencidas", "agente_esperado": "ventas", "departamento_usuario": "ventas", "contexto": {"last_agent": null, "historial": []}, "extracciones": {}, "es_followup": false, "fuente": "patron_comun", "categoria": "cxc_vencidas"},
+
+    {"id": 102, "pregunta": "resumen de nomina de enero 2026", "agente_esperado": "rrhh", "departamento_usuario": "rrhh", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"mes": 1, "anio": 2026}, "es_followup": false, "fuente": "patron_comun", "categoria": "nomina"},
+
+    {"id": 103, "pregunta": "cuantos empleados se fueron en 2025", "agente_esperado": "rrhh", "departamento_usuario": "rrhh", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"anio": 2025}, "es_followup": false, "fuente": "patron_comun", "categoria": "rotacion"},
+
+    {"id": 104, "pregunta": "saldo de la cuenta 1.01.01.10 en enero 2026", "agente_esperado": "contabilidad", "departamento_usuario": "contabilidad", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"cuenta_contable": "1.01.01.10", "mes": 1, "anio": 2026}, "es_followup": false, "fuente": "patron_comun", "categoria": "saldo_cuenta"},
+
+    {"id": 105, "pregunta": "estado de resultados de 2025", "agente_esperado": "contabilidad", "departamento_usuario": "contabilidad", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"anio": 2025}, "es_followup": false, "fuente": "patron_comun", "categoria": "estado_resultados"},
+
+    {"id": 106, "pregunta": "libro mayor de la cuenta 5.01", "agente_esperado": "contabilidad", "departamento_usuario": "contabilidad", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"cuenta_contable": "5.01"}, "es_followup": false, "fuente": "patron_comun", "categoria": "libro_mayor"},
+
+    {"id": 107, "pregunta": "cuanto hay en banesco", "agente_esperado": "finanzas", "departamento_usuario": "finanzas", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"banco": "banesco"}, "es_followup": false, "fuente": "patron_comun", "categoria": "saldos_bancarios"},
+
+    {"id": 108, "pregunta": "cuales son las cuentas por pagar vencidas", "agente_esperado": "finanzas", "departamento_usuario": "finanzas", "contexto": {"last_agent": null, "historial": []}, "extracciones": {}, "es_followup": false, "fuente": "patron_comun", "categoria": "cuentas_por_pagar"},
+
+    {"id": 109, "pregunta": "ordenes de produccion de febrero 2026", "agente_esperado": "produccion", "departamento_usuario": "produccion", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"mes": 2, "anio": 2026}, "es_followup": false, "fuente": "patron_comun", "categoria": "ordenes_produccion"},
+
+    {"id": 110, "pregunta": "cuanto desperdicio hubo este mes", "agente_esperado": "produccion", "departamento_usuario": "produccion", "contexto": {"last_agent": null, "historial": []}, "extracciones": {}, "es_followup": false, "fuente": "patron_comun", "categoria": "desperdicios"},
+
+    {"id": 111, "pregunta": "cuanto arroz se compro a productores en enero 2026", "agente_esperado": "compras_productores", "departamento_usuario": "compras_productores", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"producto": "arroz", "mes": 1, "anio": 2026}, "es_followup": false, "fuente": "patron_comun", "categoria": "compras_materia_prima"},
+
+    {"id": 112, "pregunta": "dame el inventario de repuestos en inproa santoni", "agente_esperado": "compras_insumos", "departamento_usuario": "compras_insumos", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"producto": "repuestos", "organizacion": "INPROA SANTONI"}, "es_followup": false, "fuente": "patron_comun", "categoria": "inventario"},
+
+    {"id": 113, "pregunta": "compras de aceite de soya en el 2025", "agente_esperado": "compras_insumos", "departamento_usuario": "compras_insumos", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"producto": "aceite de soya", "anio": 2025}, "es_followup": false, "fuente": "patron_comun", "categoria": "historial_compras"},
+
+    {"id": 114, "pregunta": "resumen de compras de enero a marzo 2026", "agente_esperado": "compras_insumos", "departamento_usuario": "compras_insumos", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"fecha_desde": "2026-01-01", "fecha_hasta": "2026-03-31"}, "es_followup": false, "fuente": "patron_comun", "categoria": "resumen_compras"},
+
+    {"id": 115, "pregunta": "top 10 proveedores por monto de compra", "agente_esperado": "compras_insumos", "departamento_usuario": "compras_insumos", "contexto": {"last_agent": null, "historial": []}, "extracciones": {}, "es_followup": false, "fuente": "patron_comun", "categoria": "proveedores"},
+
+    {"id": 116, "pregunta": "cuanto stock de arroz hay en almacen", "agente_esperado": "compras_insumos", "departamento_usuario": "compras_insumos", "contexto": {"last_agent": null, "historial": []}, "extracciones": {"producto": "arroz"}, "es_followup": false, "fuente": "patron_comun", "categoria": "inventario"},
+
+    {"id": 117, "pregunta": "que me puedes decir de la empresa", "agente_esperado": "general", "departamento_usuario": null, "contexto": {"last_agent": null, "historial": []}, "extracciones": {}, "es_followup": false, "fuente": "patron_comun", "categoria": "info_general"},
+
+    {"id": 118, "pregunta": "que puedes hacer", "agente_esperado": "general", "departamento_usuario": null, "contexto": {"last_agent": null, "historial": []}, "extracciones": {}, "es_followup": false, "fuente": "patron_comun", "categoria": "ayuda"},
+
+    {"id": 119, "pregunta": "quien eres", "agente_esperado": "general", "departamento_usuario": null, "contexto": {"last_agent": null, "historial": []}, "extracciones": {}, "es_followup": false, "fuente": "patron_comun", "categoria": "identidad"},
+
+    {"id": 120, "pregunta": "cuando se fundo inproa santoni", "agente_esperado": "general", "departamento_usuario": null, "contexto": {"last_agent": null, "historial": []}, "extracciones": {}, "es_followup": false, "fuente": "patron_comun", "categoria": "info_general", "nota": "Dato que el bot no tiene - no debe inventar"}
+  ],
+
+  "tipos_error": {
+    "routing_general": "Pregunta fue al agente general cuando debía ir a un agente especializado",
+    "followup_perdido": "Follow-up perdió el contexto del agente anterior",
+    "no_access": "Keyword routing matcheó departamento sin acceso",
+    "sin_datos": "Agente correcto pero no encontró datos",
+    "datos_incorrectos": "Agente correcto pero datos incorrectos",
+    "programming_error": "Error de programación en el backend",
+    "funcionalidad_no_disponible": "La funcionalidad no está implementada",
+    "dato_no_disponible": "El dato no existe en iDempiere",
+    "alucinacion": "El bot inventó datos",
+    "followup_perdido_y_alucinacion": "Follow-up perdido + datos inventados",
+    "privacidad": "El bot rehusó por privacidad cuando no debía"
+  },
+
+  "categorias": [
+    "empleados", "ausentismo", "rotacion", "nomina", "cumpleanos", "busqueda_cargo", "vacaciones", "ingresos_personal",
+    "resumen_compras", "historial_compras", "inventario", "codigo_producto", "proveedores", "cantidad_producto", "precios", "ordenes_compra",
+    "ranking_clientes", "ventas_zona", "facturacion", "resumen_ventas", "cobranza", "cxc_vencidas",
+    "saldos_bancarios", "cuentas_por_cobrar", "cuentas_por_pagar", "flujo_caja", "liquidaciones", "prestamos", "ingresos",
+    "balance_general", "saldo_cuenta", "costos", "gastos", "estado_resultados", "libro_mayor", "situacion_financiera",
+    "resumen_produccion", "ordenes_produccion", "inventario_mp", "produccion_producto", "desperdicios",
+    "compras_materia_prima", "productores", "pagos_pendientes",
+    "saludo", "followup", "followup_fecha", "followup_org", "moneda_followup", "confirmacion", "correccion", "info_general", "ayuda", "identidad"
+  ]
+}

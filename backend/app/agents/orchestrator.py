@@ -213,6 +213,101 @@ def classify_by_keywords(
     return "general"
 
 
+def classify_with_confidence(
+    message: str,
+    allowed_departments: list[str],
+    last_agent: str | None = None,
+) -> tuple[str, float, str]:
+    """Classify a message and return (agent_name, confidence_score, match_type).
+
+    confidence_score: 0.0 to 1.0
+    match_type: describes HOW the classification was made, for the report.
+    """
+    msg = message.lower()
+
+    # Greetings
+    if any(p in msg for p in _GENERAL_PATTERNS) and len(msg) < 60:
+        return "general", 1.0, "saludo_directo"
+
+    # Accounting code
+    if _has_account_code(msg):
+        if "contabilidad" in allowed_departments:
+            return "contabilidad", 1.0, "codigo_contable"
+        return "no_access", 0.9, "codigo_contable_sin_acceso"
+
+    # Keyword scan
+    hit_no_access = False
+    for agent_name, keywords in _KEYWORD_RULES:
+        if any(kw in msg for kw in keywords):
+            if agent_name in allowed_departments:
+                return agent_name, 1.0, "keyword_directo"
+            hit_no_access = True
+
+    if hit_no_access:
+        if last_agent and last_agent in allowed_departments and last_agent != "general":
+            return last_agent, 0.6, "keyword_bloqueado_fallback_last_agent"
+        return "no_access", 0.8, "keyword_sin_acceso"
+
+    # Last agent follow-up
+    if last_agent and last_agent in allowed_departments and last_agent != "general":
+        return last_agent, 0.7, "followup_last_agent"
+
+    # Data question fallback to ventas
+    if any(w in msg for w in ["cuanto", "cuánto", "dame", "muestra", "reporte"]):
+        if "ventas" in allowed_departments:
+            return "ventas", 0.4, "fallback_ventas"
+
+    return "general", 0.3, "sin_match"
+
+
+def compute_confidence_score(
+    routing_score: float,
+    has_data: bool,
+    agent_used: str,
+) -> tuple[float, dict]:
+    """Compute overall confidence score from routing + data availability.
+
+    Returns (overall_score, score_breakdown).
+
+    Weights:
+    - routing_confidence: 60% (how sure we are about routing)
+    - data_confidence: 40% (did the query return actual data)
+    """
+    data_score = 1.0 if has_data else 0.2
+
+    # Special cases: no_access and general have fixed scores
+    if agent_used == "orchestrator":
+        # access denied
+        overall = 0.9  # We're confident it was access denied
+        breakdown = {
+            "routing": routing_score,
+            "data": 0.0,
+            "overall": overall,
+            "nota": "acceso_denegado",
+        }
+        return overall, breakdown
+
+    if agent_used == "general":
+        # General handler: lower confidence overall
+        overall = min(routing_score * 0.5, 0.5)
+        breakdown = {
+            "routing": routing_score,
+            "data": 0.0,
+            "overall": overall,
+            "nota": "agente_general",
+        }
+        return overall, breakdown
+
+    # Specialized agent: weighted average
+    overall = round(routing_score * 0.6 + data_score * 0.4, 2)
+    breakdown = {
+        "routing": routing_score,
+        "data": data_score,
+        "overall": overall,
+    }
+    return overall, breakdown
+
+
 class Orchestrator:
     """Routes user queries to the appropriate specialized agent."""
 
@@ -256,12 +351,18 @@ class Orchestrator:
 
         allowed = user.allowed_departments
 
-        # Classify the query (instant keyword match, with last-agent fallback)
-        agent_name = await self.classify(message, allowed, last_agent=last_agent)
-        logger.info("Classified '%s' → %s", message[:60], agent_name)
+        # Classify the query with confidence scoring
+        agent_name, routing_score, match_type = classify_with_confidence(
+            message, allowed, last_agent=last_agent,
+        )
+        logger.info(
+            "Classified '%s' → %s (score=%.1f, type=%s)",
+            message[:60], agent_name, routing_score, match_type,
+        )
 
         # Handle access denied
         if agent_name == "no_access":
+            score, breakdown = compute_confidence_score(routing_score, False, "orchestrator")
             return {
                 "response": (
                     "Lo siento, no tienes permisos para acceder a la información "
@@ -269,25 +370,34 @@ class Orchestrator:
                     "acceso adicional."
                 ),
                 "agent_used": "orchestrator",
-                "metadata": {"classification": "no_access"},
+                "metadata": {"classification": "no_access", "match_type": match_type},
+                "confidence_score": score,
+                "score_breakdown": breakdown,
             }
 
         # Handle general queries
         if agent_name == "general":
-            return await self._handle_general(message, history)
+            result = await self._handle_general(message, history)
+            score, breakdown = compute_confidence_score(routing_score, False, "general")
+            result["confidence_score"] = score
+            result["score_breakdown"] = {**breakdown, "match_type": match_type}
+            return result
 
         # Route to specialized agent
         agent = self.agents[agent_name]
 
         # Verify department access
         if agent.department not in allowed:
+            score, breakdown = compute_confidence_score(routing_score, False, "orchestrator")
             return {
                 "response": (
                     f"No tienes acceso al departamento de {agent.display_name}. "
                     "Contacta a tu administrador."
                 ),
                 "agent_used": "orchestrator",
-                "metadata": {"classification": agent_name, "access_denied": True},
+                "metadata": {"classification": agent_name, "access_denied": True, "match_type": match_type},
+                "confidence_score": score,
+                "score_breakdown": breakdown,
             }
 
         result = await agent.process(
@@ -297,6 +407,12 @@ class Orchestrator:
             org_ids=user.org_ids,
             salesrep_id=user.idempiere_salesrep_id,
         )
+
+        # Compute confidence score based on routing + data availability
+        has_data = result.get("metadata", {}).get("has_data", False)
+        score, breakdown = compute_confidence_score(routing_score, has_data, agent_name)
+        result["confidence_score"] = score
+        result["score_breakdown"] = {**breakdown, "match_type": match_type}
         return result
 
     async def stream(
@@ -336,10 +452,10 @@ class Orchestrator:
 
     async def get_stream_agent_name(
         self, message: str, user: User, last_agent: str | None = None,
-    ) -> str:
-        """Return the agent name for a message (for metadata after streaming)."""
+    ) -> tuple[str, float, str]:
+        """Return (agent_name, confidence_score, match_type) for a message."""
         allowed = user.allowed_departments
-        return await self.classify(message, allowed, last_agent=last_agent)
+        return classify_with_confidence(message, allowed, last_agent=last_agent)
 
     async def _handle_document(
         self,

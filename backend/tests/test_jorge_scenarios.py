@@ -558,6 +558,73 @@ def test_currency_no_inherit_unrelated_history():
 
 
 # ===========================================================================
+# 6. CONFIDENCE SCORE TESTS - Does classify_with_confidence return correct scores?
+# ===========================================================================
+
+from app.agents.orchestrator import classify_with_confidence, compute_confidence_score
+
+
+def test_confidence_keyword_directo():
+    """Direct keyword match should have score 1.0"""
+    agent, score, match_type = classify_with_confidence(
+        "¿Cuánto se compró de insumos este mes?", JORGE_DEPARTMENTS,
+    )
+    assert agent == "compras_insumos", f"Expected compras_insumos, got {agent}"
+    assert score == 1.0, f"Expected score 1.0, got {score}"
+    assert match_type == "keyword_directo", f"Expected keyword_directo, got {match_type}"
+
+
+def test_confidence_followup_last_agent():
+    """Follow-up via last_agent should have score 0.7"""
+    agent, score, match_type = classify_with_confidence(
+        "Y en dólares?", JORGE_DEPARTMENTS, last_agent="compras_insumos",
+    )
+    assert agent == "compras_insumos", f"Expected compras_insumos, got {agent}"
+    assert score == 0.7, f"Expected score 0.7, got {score}"
+    assert match_type == "followup_last_agent", f"Expected followup_last_agent, got {match_type}"
+
+
+def test_confidence_general_sin_match():
+    """No match, no last_agent → general with low score"""
+    agent, score, match_type = classify_with_confidence(
+        "que hora es?", JORGE_DEPARTMENTS,
+    )
+    assert agent == "general", f"Expected general, got {agent}"
+    assert score <= 0.3, f"Expected score <= 0.3, got {score}"
+
+
+def test_confidence_saludo():
+    """Greeting should score 1.0 (confident it's general)"""
+    agent, score, match_type = classify_with_confidence(
+        "hola", JORGE_DEPARTMENTS,
+    )
+    assert agent == "general", f"Expected general, got {agent}"
+    assert score == 1.0, f"Expected 1.0 for greeting, got {score}"
+    assert match_type == "saludo_directo"
+
+
+def test_compute_confidence_agent_with_data():
+    """Specialized agent with data should score high"""
+    score, breakdown = compute_confidence_score(1.0, True, "compras_insumos")
+    assert score == 1.0, f"Expected 1.0, got {score}"
+    assert breakdown["routing"] == 1.0
+    assert breakdown["data"] == 1.0
+
+
+def test_compute_confidence_agent_no_data():
+    """Specialized agent without data should score lower"""
+    score, breakdown = compute_confidence_score(1.0, False, "compras_insumos")
+    assert score == 0.68, f"Expected 0.68, got {score}"
+    assert breakdown["data"] == 0.2
+
+
+def test_compute_confidence_general():
+    """General agent should have low overall score"""
+    score, breakdown = compute_confidence_score(0.3, False, "general")
+    assert score <= 0.5, f"Expected <= 0.5 for general, got {score}"
+
+
+# ===========================================================================
 # MAIN: Run all tests and print results
 # ===========================================================================
 
@@ -611,6 +678,14 @@ if __name__ == "__main__":
         ("MONEDA: bolívares → VES", test_currency_bolivares_keyword),
         ("MONEDA: hereda USD de historial", test_currency_from_history),
         ("MONEDA: NO hereda de historial lejano", test_currency_no_inherit_unrelated_history),
+        # Confidence score
+        ("CONFIDENCE: keyword directo = 1.0", test_confidence_keyword_directo),
+        ("CONFIDENCE: followup last_agent = 0.7", test_confidence_followup_last_agent),
+        ("CONFIDENCE: general sin match <= 0.3", test_confidence_general_sin_match),
+        ("CONFIDENCE: saludo = 1.0", test_confidence_saludo),
+        ("CONFIDENCE: compute agente+datos = 1.0", test_compute_confidence_agent_with_data),
+        ("CONFIDENCE: compute agente-datos = 0.68", test_compute_confidence_agent_no_data),
+        ("CONFIDENCE: compute general <= 0.5", test_compute_confidence_general),
     ]
 
     passed = 0

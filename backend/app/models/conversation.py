@@ -5,6 +5,7 @@ from sqlalchemy import (
     String,
     Text,
     Integer,
+    Float,
     ForeignKey,
     DateTime,
     Enum,
@@ -52,6 +53,7 @@ class Message(Base):
     role: Mapped[MessageRole] = mapped_column(Enum(MessageRole))
     content: Mapped[str] = mapped_column(Text)
     agent_used: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    confidence_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     metadata_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
