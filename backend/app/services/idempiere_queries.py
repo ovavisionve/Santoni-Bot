@@ -135,6 +135,17 @@ def execute_idempiere_query(query: str, params: dict | None = None) -> list[dict
 # VENTAS (Sales)
 # ---------------------------------------------------------------------------
 
+def _currency_label(alias: str = "i") -> str:
+    """SQL CASE expression that groups Santoni's multiple USD currency entries
+    into a single 'USD' label and VES into 'Bs.' for display."""
+    return (
+        f"CASE WHEN {alias}.c_currency_id = 205 THEN 'Bs.' "
+        f"WHEN {alias}.c_currency_id IN "
+        f"(100,1000000,1000003,1000006,1000008,1000009,1000011,1000013,1000017) "
+        f"THEN 'USD' ELSE 'Otro' END"
+    )
+
+
 def _add_salesrep_filter(conditions: list, params: dict, salesrep_id: int | None, alias: str = "i"):
     """Add salesrep_id filter to conditions if provided."""
     if salesrep_id:
@@ -231,19 +242,19 @@ def build_sales_summary(
             for r in db.execute(by_zone_q, params).fetchall()
         ]
 
-        # By sales rep (distribuidor/intermediario - salesrep_id tracks distributors)
-        by_vendor_q = text(
+        # By distributor (salesrep_id tracks distributors, not internal salespeople)
+        by_distributor_q = text(
             f"{zone_cte}"
-            f"SELECT COALESCE(sr.name, 'Sin Distribuidor') AS vendedor, COUNT(*) AS facturas, "
+            f"SELECT COALESCE(sr.name, 'Sin Distribuidor') AS distribuidor, COUNT(*) AS facturas, "
             f"COALESCE(SUM(i.grandtotal), 0) AS total "
             f"FROM adempiere.c_invoice i "
             f"{joins}"
             f"WHERE {where} "
             f"GROUP BY sr.name ORDER BY total DESC"
         )
-        by_vendor = [
-            {"vendedor": r[0], "facturas": r[1], "total": float(r[2])}
-            for r in db.execute(by_vendor_q, params).fetchall()
+        by_distributor = [
+            {"distribuidor": r[0], "facturas": r[1], "total": float(r[2])}
+            for r in db.execute(by_distributor_q, params).fetchall()
         ]
 
         # By month
@@ -261,13 +272,31 @@ def build_sales_summary(
             for r in db.execute(by_month_q, params).fetchall()
         ]
 
+        # By currency (so user sees totals per currency instead of mixed)
+        cur_label = _currency_label("i")
+        by_currency_q = text(
+            f"{zone_cte}"
+            f"SELECT {cur_label} AS moneda, COUNT(*) AS facturas, "
+            f"COALESCE(SUM(i.grandtotal), 0) AS total_facturado, "
+            f"COALESCE(SUM(i.totallines), 0) AS total_neto "
+            f"FROM adempiere.c_invoice i "
+            f"{joins}"
+            f"WHERE {where} "
+            f"GROUP BY {cur_label} ORDER BY total_facturado DESC"
+        )
+        by_currency = [
+            {"moneda": r[0], "facturas": r[1], "total_facturado": float(r[2]), "total_neto": float(r[3])}
+            for r in db.execute(by_currency_q, params).fetchall()
+        ]
+
         return {
             "anio": anio,
             "filtros": {"zona": zona, "vendedor": vendedor, "mes": mes},
             "totales": totals,
             "por_zona": by_zone,
-            "por_vendedor": by_vendor,
+            "por_distribuidor": by_distributor,
             "por_mes": by_month,
+            "por_moneda": by_currency,
         }
     finally:
         db.close()
@@ -410,20 +439,23 @@ def build_top_clients(
             "ORDER BY bpl.c_bpartner_id, bpl.c_bpartner_location_id DESC) "
         )
 
+        cur_label = _currency_label("i")
         q = text(
             f"{zone_cte}"
             f"SELECT bp.value AS codigo, bp.name AS nombre, "
             f"COALESCE(cz.zona_name, 'Sin Zona') AS zona, "
-            f"COALESCE(sr.name, 'Sin Distribuidor') AS vendedor, "
-            f"'' AS tipologia, "
+            f"COALESCE(sr.name, 'Sin Distribuidor') AS distribuidor, "
+            f"COALESCE(bpg.name, 'Sin Tipología') AS tipologia, "
+            f"{cur_label} AS moneda, "
             f"COUNT(i.c_invoice_id) AS facturas, "
             f"COALESCE(SUM(i.grandtotal), 0) AS total_facturado "
             f"FROM adempiere.c_invoice i "
             f"JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id "
             f"LEFT JOIN adempiere.c_bpartner sr ON i.salesrep_id = sr.c_bpartner_id "
             f"LEFT JOIN client_zone cz ON bp.c_bpartner_id = cz.c_bpartner_id "
+            f"LEFT JOIN adempiere.c_bp_group bpg ON bp.c_bp_group_id = bpg.c_bp_group_id "
             f"WHERE {where} "
-            f"GROUP BY bp.value, bp.name, cz.zona_name, sr.name "
+            f"GROUP BY bp.value, bp.name, cz.zona_name, sr.name, bpg.name, {cur_label} "
             f"ORDER BY total_facturado DESC "
             f"LIMIT :limit"
         )
@@ -433,10 +465,11 @@ def build_top_clients(
                 "codigo": r[0],
                 "nombre": r[1],
                 "zona": r[2],
-                "vendedor": r[3],
+                "distribuidor": r[3],
                 "tipologia": r[4],
-                "facturas": r[5],
-                "total_facturado": float(r[6]),
+                "moneda": r[5],
+                "facturas": r[6],
+                "total_facturado": float(r[7]),
             }
             for r in rows
         ]

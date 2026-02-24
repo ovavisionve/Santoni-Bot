@@ -95,8 +95,18 @@ IMPORTANTE SOBRE PERÍODOS:
 SOBRE MONEDA:
 - Si el usuario pide datos "en dólares", "en USD", "en DOL", los datos ya vienen filtrados SOLO por facturas en esa moneda
 - Si el usuario pide datos "en bolívares", "en BS", "en VES", los datos ya vienen filtrados SOLO por facturas en bolívares
-- Si no se especifica moneda, se muestran TODAS las facturas sin importar moneda
-- NUNCA intentes convertir montos entre monedas. Los datos son montos reales facturados en la moneda solicitada."""
+- Si no se especifica moneda, se muestran TODAS las facturas. Los datos incluyen columna "moneda" (Bs. o USD) para que indiques claramente la moneda de cada monto
+- NUNCA intentes convertir montos entre monedas. Los datos son montos reales facturados en la moneda original
+- La sección "por_moneda" muestra el desglose de totales por moneda
+
+SOBRE DISTRIBUIDORES:
+- La columna "distribuidor" muestra el distribuidor/intermediario asignado a la factura (salesrep_id)
+- Los distribuidores NO son vendedores internos de Santoni. Son empresas o personas que intermedian la venta
+- Si dice "Sin Distribuidor" significa que la factura no tiene distribuidor asignado
+
+SOBRE TIPOLOGÍA:
+- La columna "tipologia" muestra el grupo/categoría del cliente (c_bp_group)
+- Refleja la clasificación que Santoni asigna a cada cliente en iDempiere"""
 
     def get_sql_context(self) -> str:
         return """
