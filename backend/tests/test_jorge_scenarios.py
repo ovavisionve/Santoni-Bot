@@ -57,6 +57,10 @@ def _extract_product_search(message: str) -> str | None:
     if quoted:
         return quoted.group(1)
 
+    # Pronoun references: "ese producto", "del producto", etc. → defer to history
+    if re.search(r'\b(?:ese|este|aquel|el|del|dicho|mismo)\s+producto\b', msg_lower):
+        return None
+
     # "producto X"
     prod_match = re.search(
         r'producto[:\s]+(.+?)(?:\s+(?:en|del|desde|este)\b|\s*[?]|$)',
@@ -499,6 +503,25 @@ def test_no_product_administrativos():
     assert result is None, f"Expected None for 'administrativos', got: {result}"
 
 
+def test_no_product_ese_producto_en_org():
+    """'dame el inventario actual de ese producto en inproa santoni' should NOT extract a product.
+    'ese producto' is a pronoun reference → should fall through to history lookup."""
+    result = _extract_product_search("dame el inventario actual de ese producto en inproa santoni")
+    assert result is None, f"Expected None for 'ese producto en X', got: {result}"
+
+
+def test_no_product_este_producto():
+    """'este producto' is a pronoun reference"""
+    result = _extract_product_search("dame compras de este producto en enero")
+    assert result is None, f"Expected None for 'este producto', got: {result}"
+
+
+def test_no_product_el_producto():
+    """'el producto' alone (no name) is a pronoun reference"""
+    result = _extract_product_search("dame el inventario del producto en el almacen")
+    assert result is None, f"Expected None for 'el producto (no name)', got: {result}"
+
+
 # ===========================================================================
 # 5. CURRENCY DETECTION TESTS - Does compras_insumos detect currency correctly?
 # ===========================================================================
@@ -760,6 +783,9 @@ if __name__ == "__main__":
         ("NO-PRODUCT: ordenes pendientes", test_no_product_ordenes_pendientes),
         ("NO-PRODUCT: cuanto se compro insumos", test_no_product_cuanto_se_compro),
         ("NO-PRODUCT: administrativos", test_no_product_administrativos),
+        ("NO-PRODUCT: 'ese producto en inproa santoni'", test_no_product_ese_producto_en_org),
+        ("NO-PRODUCT: 'este producto'", test_no_product_este_producto),
+        ("NO-PRODUCT: 'el producto' (sin nombre)", test_no_product_el_producto),
         # Currency detection
         ("MONEDA: default VES", test_currency_default_ves),
         ("MONEDA: dólares → USD", test_currency_dolares_keyword),

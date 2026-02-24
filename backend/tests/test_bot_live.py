@@ -167,16 +167,31 @@ TESTS_COMPRAS_INSUMOS = [
              "compras_insumos", BAD_COMPRAS),
         ],
     },
-    # ── Cuestionario de validación ──
+    # ── Cuestionario de validación (cada pregunta independiente) ──
     {
-        "name": "COMPRAS: Cuestionario validación",
+        "name": "COMPRAS: Cuestionario - cajas cartón enero",
         "queries": [
             ("¿Cuántas cajas de cartón compramos en enero 2026?",
              "compras_insumos", BAD_COMPRAS),
+        ],
+    },
+    {
+        "name": "COMPRAS: Cuestionario - harina de avena",
+        "queries": [
             ("Precio de las últimas 6 compras de harina de avena",
              "compras_insumos", BAD_COMPRAS),
+        ],
+    },
+    {
+        "name": "COMPRAS: Cuestionario - inventario total",
+        "queries": [
             ("¿Cuál es el inventario actual de todos los insumos?",
              "compras_insumos", BAD_GENERIC),
+        ],
+    },
+    {
+        "name": "COMPRAS: Cuestionario - top proveedores",
+        "queries": [
             ("top 10 proveedores por monto de compra",
              "compras_insumos", BAD_COMPRAS),
         ],

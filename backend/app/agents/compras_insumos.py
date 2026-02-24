@@ -174,6 +174,12 @@ Datos de compras de insumos en iDempiere:
         if quoted:
             return quoted.group(1)
 
+        # Pronoun references: "ese producto", "este producto", "del producto", etc.
+        # These refer to a product from context → return None to trigger history lookup.
+        # Must come AFTER product code and quoted name checks (those are explicit).
+        if re.search(r'\b(?:ese|este|aquel|el|del|dicho|mismo)\s+producto\b', msg_lower):
+            return None
+
         # "producto X" or "producto: X"
         prod_match = re.search(
             r'producto[:\s]+(.+?)(?:\s+(?:en|del|desde|este)\b|\s*[?]|$)',
