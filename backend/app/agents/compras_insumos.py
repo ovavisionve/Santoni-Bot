@@ -60,7 +60,7 @@ CONTEXTO iDEMPIERE:
 - Campos fiscales: lve_controlnumber, withholdingamt (retenciones)
 
 REGLAS:
-- Responde siempre en español
+- Responde ÚNICAMENTE en español. NUNCA uses palabras en otros idiomas (inglés, ruso, etc.)
 - Presenta precios con moneda y unidad de medida
 - Usa formato venezolano: punto=miles, coma=decimal (ej: 1.234.567,89)
 - Los datos que recibes son REALES de la base de datos de Santoni
@@ -192,22 +192,50 @@ Datos de compras de insumos en iDempiere:
             if len(product) >= 3:
                 return product
 
-        # Fallback: if message has no general keywords and looks like a product
-        # description (e.g. user just typed "caja de carton para cereales")
-        if not any(kw in msg_lower for kw in self._GENERAL_KEYWORDS):
-            # Remove dates, question marks, common filler
-            cleaned = re.sub(
-                r'(?:en|del?|desde|hasta|este|el|año|mes|enero|febrero|marzo|abril|'
-                r'mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre|'
-                r'\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}|\d{4})\b',
-                '', msg_lower,
-            )
-            cleaned = re.sub(r'[?¿!¡,.]', '', cleaned).strip()
-            cleaned = re.sub(r'\s+', ' ', cleaned).strip()
-            # Must have at least 2 words and 5+ chars to be a product name
-            if len(cleaned) >= 5 and ' ' in cleaned:
-                return cleaned
+        # "código de X" / "codigo del X"
+        codigo_match = re.search(
+            r'c[oó]digos?\s+(?:de|del)\s+(?:las?\s+|los?\s+)?'
+            r'(.+?)(?:\s*[?]|$)',
+            msg_lower,
+        )
+        if codigo_match:
+            product = codigo_match.group(1).strip()
+            if len(product) >= 3:
+                return product
 
+        # "cantidad de X se ha comprado / que se compró"
+        cantidad_match = re.search(
+            r'cantidad\s+de\s+(.+?)\s+(?:se\s+ha|que\s+se|compramos|comprado|compr[oó]|en\s+la\b|desde\b)',
+            msg_lower,
+        )
+        if cantidad_match:
+            product = cantidad_match.group(1).strip()
+            if len(product) >= 3:
+                return product
+
+        # "proveedores (que) venden X"
+        prov_match = re.search(
+            r'proveedores?\s+(?:que\s+)?venden\s+'
+            r'(.+?)(?:\s+(?:en|del|desde|este)\b|\s*[?]|$)',
+            msg_lower,
+        )
+        if prov_match:
+            product = prov_match.group(1).strip()
+            if len(product) >= 3:
+                return product
+
+        # "cuántas X quedan/hay/tenemos" (inventory-oriented)
+        cuanto_inv = re.search(
+            r'cu[aá]nt[ao]s?\s+(.+?)\s+(?:quedan|hay|tenemos|tienen|queda|disponible)',
+            msg_lower,
+        )
+        if cuanto_inv:
+            product = cuanto_inv.group(1).strip()
+            if len(product) >= 3:
+                return product
+
+        # NOTE: No aggressive fallback. If no specific pattern matches,
+        # return None and let the general summary + LLM handle the query.
         return None
 
     def _extract_product_from_history(
@@ -244,6 +272,8 @@ Datos de compras de insumos en iDempiere:
         # Check if this is an inventory/stock query
         is_inventory = any(w in msg for w in self._INVENTORY_KEYWORDS)
 
+        product_found = False
+
         if is_inventory:
             # For inventory queries, use product_search as filter if available
             inv_data = build_inventory_stock(
@@ -254,6 +284,7 @@ Datos de compras de insumos en iDempiere:
             sections.append(self._format_summary(
                 inv_data, f"Inventario / Stock Actual{filter_label}",
             ))
+            product_found = True
         elif product_search:
             try:
                 prod_data = build_product_purchase_history(
@@ -263,6 +294,7 @@ Datos de compras de insumos en iDempiere:
                     mes=mes, anio=anio,
                 )
                 if prod_data:
+                    product_found = True
                     sections.append(
                         f"## Historial de Compras - Producto '{product_search}' ({len(prod_data)} registros)"
                     )
@@ -270,13 +302,13 @@ Datos de compras de insumos en iDempiere:
                 else:
                     sections.append(
                         f"## Búsqueda de Producto '{product_search}'\n"
-                        f"No se encontraron compras para este producto en el período {label}."
+                        f"No se encontraron compras para '{product_search}' en el período {label}."
                     )
             except Exception:
                 pass
 
-        # General summary (always include unless product-specific or inventory search returned data)
-        if not sections or any(w in msg for w in ["resumen", "total", "cuánto", "cuanto"]):
+        # General summary: always include unless specific product/inventory data was found
+        if not product_found:
             summary = build_supply_purchases(
                 mes=mes, anio=anio, org_ids=org_ids,
                 date_from=date_from, date_to=date_to,

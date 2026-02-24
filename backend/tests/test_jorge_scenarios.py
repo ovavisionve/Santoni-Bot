@@ -21,8 +21,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from app.agents.orchestrator import classify_by_keywords
 
 # We can't instantiate ComprasInsumosAgent (needs Groq API key),
-# so we import/duplicate the class-level constants and extraction logic.
-# These are the exact same lists defined in ComprasInsumosAgent.
+# so we duplicate the class-level constants and extraction logic.
+# These MUST match the lists in ComprasInsumosAgent exactly.
 
 _INVENTORY_KEYWORDS = [
     "inventario", "stock", "existencia", "existencias",
@@ -42,7 +42,8 @@ _GENERAL_KEYWORDS = [
 
 
 def _extract_product_search(message: str) -> str | None:
-    """Replica of ComprasInsumosAgent._extract_product_search (no instance needed)."""
+    """Replica of ComprasInsumosAgent._extract_product_search (no instance needed).
+    Updated to match v2: specific patterns only, no aggressive fallback."""
     msg = message.strip()
     msg_lower = msg.lower()
 
@@ -102,19 +103,49 @@ def _extract_product_search(message: str) -> str | None:
         if len(product) >= 3:
             return product
 
-    # Fallback: if no general keywords and looks like product description
-    if not any(kw in msg_lower for kw in _GENERAL_KEYWORDS):
-        cleaned = re.sub(
-            r'(?:en|del?|desde|hasta|este|el|año|mes|enero|febrero|marzo|abril|'
-            r'mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre|'
-            r'\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}|\d{4})\b',
-            '', msg_lower,
-        )
-        cleaned = re.sub(r'[?¿!¡,.]', '', cleaned).strip()
-        cleaned = re.sub(r'\s+', ' ', cleaned).strip()
-        if len(cleaned) >= 5 and ' ' in cleaned:
-            return cleaned
+    # "código de X" / "codigo del X"
+    codigo_match = re.search(
+        r'c[oó]digos?\s+(?:de|del)\s+(?:las?\s+|los?\s+)?'
+        r'(.+?)(?:\s*[?]|$)',
+        msg_lower,
+    )
+    if codigo_match:
+        product = codigo_match.group(1).strip()
+        if len(product) >= 3:
+            return product
 
+    # "cantidad de X se ha comprado / que se compró"
+    cantidad_match = re.search(
+        r'cantidad\s+de\s+(.+?)\s+(?:se\s+ha|que\s+se|compramos|comprado|compr[oó]|en\s+la\b|desde\b)',
+        msg_lower,
+    )
+    if cantidad_match:
+        product = cantidad_match.group(1).strip()
+        if len(product) >= 3:
+            return product
+
+    # "proveedores (que) venden X"
+    prov_match = re.search(
+        r'proveedores?\s+(?:que\s+)?venden\s+'
+        r'(.+?)(?:\s+(?:en|del|desde|este)\b|\s*[?]|$)',
+        msg_lower,
+    )
+    if prov_match:
+        product = prov_match.group(1).strip()
+        if len(product) >= 3:
+            return product
+
+    # "cuántas X quedan/hay/tenemos" (inventory-oriented)
+    cuanto_inv = re.search(
+        r'cu[aá]nt[ao]s?\s+(.+?)\s+(?:quedan|hay|tenemos|tienen|queda|disponible)',
+        msg_lower,
+    )
+    if cuanto_inv:
+        product = cuanto_inv.group(1).strip()
+        if len(product) >= 3:
+            return product
+
+    # No aggressive fallback - return None and let general summary handle it
     return None
 
 # Jorge's departments: compras_insumos (primary) + ventas, compras_productores, produccion (extra)
@@ -325,7 +356,7 @@ def test_inventory_NOT_detected_for_historial():
 
 
 # ===========================================================================
-# 3. PRODUCT EXTRACTION TESTS - Does compras_insumos extract product codes?
+# 3. PRODUCT EXTRACTION TESTS - Does compras_insumos extract product correctly?
 # ===========================================================================
 
 def test_extract_product_code_rep_lami():
@@ -355,7 +386,7 @@ def test_extract_product_laminas():
 
 
 def test_extract_product_gasoil():
-    """Should extract 'gasoil' from purchase quantity question"""
+    """Should extract 'gasoil' from 'cantidad de gasoil se ha comprado'"""
     result = _extract_product_search(
         "que cantidad de gasoil se ha comprado en la empresa Inproa santoni"
     )
@@ -363,15 +394,70 @@ def test_extract_product_gasoil():
     assert "gasoil" in result.lower(), f"Expected 'gasoil' in result, got: {result}"
 
 
-def test_extract_product_cajas_carton():
-    """Should extract product from 'cajas de carton para cereales'"""
+def test_extract_product_cajas_carton_codigo():
+    """Should extract 'cajas de carton para cereales' from 'codigo de' pattern"""
     result = _extract_product_search(
         "tienes el codigo de las cajas de carton para cereales"
     )
-    # This is tricky - may or may not extract. If it does, should contain 'carton' or 'cereales'
-    if result:
-        assert "carton" in result.lower() or "cereales" in result.lower(), \
-            f"If extracted, should contain carton/cereales, got: {result}"
+    assert result is not None, "Should extract product from 'codigo de' pattern"
+    assert "carton" in result.lower() or "cereales" in result.lower(), \
+        f"Expected 'carton' or 'cereales' in result, got: {result}"
+
+
+def test_extract_product_cajas_quedan():
+    """Should extract 'cajas de carton' from 'cuantas X quedan en inventario'"""
+    result = _extract_product_search(
+        "quisiera saber cuantas cajas de carton quedan en inventario"
+    )
+    assert result is not None, "Should extract product from 'cuantas X quedan'"
+    assert "carton" in result.lower() or "caja" in result.lower(), \
+        f"Expected 'carton' or 'caja' in result, got: {result}"
+
+
+def test_extract_product_proveedores_venden():
+    """Should extract 'laminas de hierro negro' from 'proveedores venden X'"""
+    result = _extract_product_search(
+        "que proveedores venden laminas de hierro negro"
+    )
+    assert result is not None, "Should extract product from 'proveedores venden X'"
+    assert "laminas" in result.lower() or "hierro" in result.lower(), \
+        f"Expected 'laminas' or 'hierro' in result, got: {result}"
+
+
+# ===========================================================================
+# 4. FALSE POSITIVE TESTS - Messages that should NOT extract a product
+# ===========================================================================
+
+def test_no_product_dolares_followup():
+    """'Y en dólares?' should NOT extract a product"""
+    result = _extract_product_search("Y en dólares?")
+    assert result is None, f"Expected None for follow-up 'Y en dólares?', got: {result}"
+
+
+def test_no_product_gastos_followup():
+    """'En gastos?' should NOT extract a product"""
+    result = _extract_product_search("En gastos?")
+    assert result is None, f"Expected None for follow-up 'En gastos?', got: {result}"
+
+
+def test_no_product_ordenes_pendientes():
+    """'Órdenes de compra pendientes...' should NOT extract a product"""
+    result = _extract_product_search(
+        "Órdenes de compra pendientes por recepción de insumos del mes de febrero"
+    )
+    assert result is None, f"Expected None for 'ordenes pendientes', got: {result}"
+
+
+def test_no_product_cuanto_se_compro():
+    """'¿Cuánto se compró de insumos este mes?' should NOT extract a product (general query)"""
+    result = _extract_product_search("¿Cuánto se compró de insumos este mes?")
+    assert result is None, f"Expected None for general compras query, got: {result}"
+
+
+def test_no_product_administrativos():
+    """'administrativos' should NOT extract a product"""
+    result = _extract_product_search("administrativos")
+    assert result is None, f"Expected None for 'administrativos', got: {result}"
 
 
 # ===========================================================================
@@ -410,8 +496,16 @@ if __name__ == "__main__":
         ("PRODUCTO: extrae REP-LAMI-0037", test_extract_product_code_rep_lami),
         ("PRODUCTO: extrae REP-TUER-0115", test_extract_product_code_rep_tuer),
         ("PRODUCTO: extrae laminas hierro negro", test_extract_product_laminas),
-        ("PRODUCTO: extrae gasoil", test_extract_product_gasoil),
-        ("PRODUCTO: cajas carton cereales", test_extract_product_cajas_carton),
+        ("PRODUCTO: extrae gasoil (cantidad de X)", test_extract_product_gasoil),
+        ("PRODUCTO: extrae cajas carton (codigo de X)", test_extract_product_cajas_carton_codigo),
+        ("PRODUCTO: extrae cajas carton (cuantas X quedan)", test_extract_product_cajas_quedan),
+        ("PRODUCTO: extrae laminas (proveedores venden)", test_extract_product_proveedores_venden),
+        # False positive tests
+        ("NO-PRODUCT: 'Y en dólares?'", test_no_product_dolares_followup),
+        ("NO-PRODUCT: 'En gastos?'", test_no_product_gastos_followup),
+        ("NO-PRODUCT: ordenes pendientes", test_no_product_ordenes_pendientes),
+        ("NO-PRODUCT: cuanto se compro insumos", test_no_product_cuanto_se_compro),
+        ("NO-PRODUCT: administrativos", test_no_product_administrativos),
     ]
 
     passed = 0
@@ -419,7 +513,7 @@ if __name__ == "__main__":
     errors = []
 
     print("=" * 70)
-    print("TEST SCENARIOS JORGE CHAHINE - SantoniBot")
+    print("TEST SCENARIOS JORGE CHAHINE - SantoniBot v2")
     print("=" * 70)
 
     for name, test_fn in tests:

@@ -114,6 +114,63 @@ def _add_date_filter(
             params["mes"] = mes
 
 
+_PRODUCT_STOP_WORDS = {
+    'de', 'del', 'las', 'los', 'en', 'el', 'la', 'para', 'por',
+    'con', 'sin', 'un', 'una', 'al', 'que', 'se', 'ha', 'y',
+}
+
+
+def _add_product_search_filter(
+    conditions: list[str],
+    params: dict,
+    product_search: str,
+    prefix: str = "prod",
+) -> None:
+    """Add flexible product search conditions on p.name / p.value.
+
+    For product codes (e.g. REP-LAMI-0037), uses exact substring ILIKE.
+    For text searches, splits into words and uses AND ILIKE per word
+    with basic Spanish de-pluralisation (cajas→caja, laminas→lamina).
+    """
+    # Product code: exact substring match
+    if re.search(r'[A-Za-z]{2,}-[A-Za-z]{2,}-\d+', product_search):
+        params[f"{prefix}_search"] = f"%{product_search}%"
+        conditions.append(
+            f"(p.name ILIKE :{prefix}_search OR p.value ILIKE :{prefix}_search)"
+        )
+        return
+
+    # Text search: split into meaningful words
+    words = [
+        w for w in product_search.lower().split()
+        if w not in _PRODUCT_STOP_WORDS and len(w) >= 2
+    ]
+
+    if not words:
+        # Fallback to exact substring
+        params[f"{prefix}_search"] = f"%{product_search}%"
+        conditions.append(
+            f"(p.name ILIKE :{prefix}_search OR p.value ILIKE :{prefix}_search)"
+        )
+        return
+
+    # De-pluralise: strip trailing 's' for common Spanish plurals
+    clean_words = []
+    for w in words:
+        if len(w) > 3 and w.endswith('s') and w[-2] in 'aeiou':
+            clean_words.append(w[:-1])
+        else:
+            clean_words.append(w)
+
+    word_conds = []
+    for i, w in enumerate(clean_words):
+        pk = f"{prefix}_w{i}"
+        params[pk] = f"%{w}%"
+        word_conds.append(f"(p.name ILIKE :{pk} OR p.value ILIKE :{pk})")
+
+    conditions.append(f"({' AND '.join(word_conds)})")
+
+
 def execute_idempiere_query(query: str, params: dict | None = None) -> list[dict]:
     """Execute a read-only query against iDempiere.
     The connection is enforced read-only at the database level."""
@@ -1764,14 +1821,12 @@ def build_product_purchase_history(
             "i.docstatus = 'CO'",
             "i.isactive = 'Y'",
         ]
-        params: dict = {"search": f"%{product_search}%"}
+        params: dict = {}
         _add_org_filter(conditions, params, org_ids, "i")
         _add_date_filter(conditions, params, date_from, date_to, mes, anio, "i.dateinvoiced")
 
-        # Match by product value (code) or name
-        conditions.append(
-            "(LOWER(p.value) LIKE LOWER(:search) OR LOWER(p.name) LIKE LOWER(:search))"
-        )
+        # Match by product value (code) or name (word-based for text searches)
+        _add_product_search_filter(conditions, params, product_search, prefix="search")
 
         where = " AND ".join(conditions)
 
@@ -2173,10 +2228,7 @@ def build_inventory_stock(
                 params[f"org_{i}"] = org_id
 
         if product_search:
-            conditions.append(
-                "(p.name ILIKE :prod_search OR p.value ILIKE :prod_search)"
-            )
-            params["prod_search"] = f"%{product_search}%"
+            _add_product_search_filter(conditions, params, product_search)
 
         if category_search:
             conditions.append("pc.name ILIKE :cat_search")
