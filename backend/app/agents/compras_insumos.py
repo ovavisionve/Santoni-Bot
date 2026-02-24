@@ -55,7 +55,15 @@ CONTEXTO iDEMPIERE:
 - Líneas de factura: c_invoiceline (m_product_id, qtyinvoiced, linenetamt)
 - Proveedores: c_bpartner (isvendor='Y') - 26,070 socios de negocio
 - Productos: m_product (40,766 productos) con m_product_category
-- Monedas: VES (Bolívares, ID 205), USD (Dólares, ID 100)
+- Monedas en iDempiere (Santoni usa múltiples códigos de moneda):
+  * VES (ID 205) - Bolívares Soberanos (todas las organizaciones)
+  * DOL (ID 1000000) - Dólares en INPROA SANTONI
+  * DoL (ID 1000011) - Dólares en InproMaiz
+  * Dol (ID 1000006) - Dólares en INVERSIONES AGA
+  * USA (ID 1000003) - Dólares en AGROINPROA
+  * dol (ID 1000008) - Dólares en AGROPECUARIA R.R.
+  * DLA (ID 1000017) - Dólares en Santoni Service
+  * Dla (ID 1000013) - Dólares en AGA AGRICOLA
 - Organizaciones: INPROA SANTONI, AGROINPROA, AGROPECUARIA R.R., Agro Import, INVERSIONES AGA, InproMaiz, AGA AGRICOLA, Santoni Service
 - Campos fiscales: lve_controlnumber, withholdingamt (retenciones)
 
@@ -65,6 +73,11 @@ REGLAS:
 - Usa formato venezolano: punto=miles, coma=decimal (ej: 1.234.567,89)
 - Los datos que recibes son REALES de la base de datos de Santoni
 - NUNCA inventes datos. Si no hay datos para un filtro, informa claramente
+- IMPORTANTE SOBRE MONEDAS: Los datos ya vienen filtrados por moneda.
+  * Por defecto se muestran datos en Bolívares (VES).
+  * Si el campo "moneda" dice "USD", los datos son en dólares.
+  * Si dice "Todas las monedas (mixto)", aclara que los montos mezclan VES y USD.
+  * NUNCA intentes convertir entre monedas. Cada moneda se consulta por separado.
 
 CONTEXTO:
 - Responsables: Onofrio Gueccia, Jorge Chahine
@@ -101,6 +114,22 @@ Datos de compras de insumos en iDempiere:
 - m_locator: Ubicaciones de almacén (m_warehouse_id)
 - m_warehouse: Almacenes (name, ad_org_id)
 """
+
+    # Currency IDs in Santoni's iDempiere
+    _VES_IDS = [205]
+    _USD_IDS = [1000000, 1000003, 1000006, 1000008, 1000011, 1000013, 1000017]
+
+    # Keywords that indicate the user wants USD
+    _USD_KEYWORDS = [
+        "dólares", "dolares", "dólar", "dolar", "usd",
+        "en dólares", "en dolares", "en dólar", "en dolar",
+    ]
+
+    # Keywords that indicate the user wants VES
+    _VES_KEYWORDS = [
+        "bolívares", "bolivares", "bolívar", "bolivar", "ves",
+        "en bolívares", "en bolivares",
+    ]
 
     # Words that indicate a general query (not a specific product search)
     _GENERAL_KEYWORDS = [
@@ -251,6 +280,37 @@ Datos de compras de insumos en iDempiere:
                     return product
         return None
 
+    def _detect_currency(self, message: str, history: list[tuple[str, str]] | None = None) -> list[int] | None:
+        """Detect which currency the user wants based on message and history.
+
+        Returns currency_ids list, or None for default (VES).
+        Checks current message first, then history for follow-ups like "Y en dólares?".
+        """
+        msg_lower = message.lower()
+
+        # Check current message for USD keywords
+        if any(kw in msg_lower for kw in self._USD_KEYWORDS):
+            return self._USD_IDS
+
+        # Check current message for VES keywords
+        if any(kw in msg_lower for kw in self._VES_KEYWORDS):
+            return self._VES_IDS
+
+        # Check history for currency context (follow-ups)
+        if history:
+            for role, content in reversed(history):
+                if role == "user":
+                    content_lower = content.lower()
+                    if any(kw in content_lower for kw in self._USD_KEYWORDS):
+                        return self._USD_IDS
+                    if any(kw in content_lower for kw in self._VES_KEYWORDS):
+                        return self._VES_IDS
+                    # Stop at first user message that doesn't mention currency
+                    break
+
+        # Default: VES (bolívares)
+        return self._VES_IDS
+
     def fetch_data(self, message: str, org_ids: list[int] | None = None, salesrep_id: int | None = None, history: list[tuple[str, str]] | None = None) -> str | None:
         msg = message.lower()
         sections = []
@@ -262,6 +322,9 @@ Datos de compras de insumos en iDempiere:
             mes = None
 
         label = build_period_label(date_from, date_to, mes, anio)
+
+        # Detect currency preference
+        currency_ids = self._detect_currency(message, history)
 
         # Check if user is searching for a specific product
         product_search = self._extract_product_search(message)
@@ -312,6 +375,7 @@ Datos de compras de insumos en iDempiere:
             summary = build_supply_purchases(
                 mes=mes, anio=anio, org_ids=org_ids,
                 date_from=date_from, date_to=date_to,
+                currency_ids=currency_ids,
             )
             sections.append(self._format_summary(summary, f"Resumen de Compras de Insumos - {label}"))
 

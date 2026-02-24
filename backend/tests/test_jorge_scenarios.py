@@ -148,6 +148,45 @@ def _extract_product_search(message: str) -> str | None:
     # No aggressive fallback - return None and let general summary handle it
     return None
 
+
+# Currency constants (must match ComprasInsumosAgent)
+_VES_IDS = [205]
+_USD_IDS = [1000000, 1000003, 1000006, 1000008, 1000011, 1000013, 1000017]
+
+_USD_KEYWORDS = [
+    "dólares", "dolares", "dólar", "dolar", "usd",
+    "en dólares", "en dolares", "en dólar", "en dolar",
+]
+
+_VES_KEYWORDS = [
+    "bolívares", "bolivares", "bolívar", "bolivar", "ves",
+    "en bolívares", "en bolivares",
+]
+
+
+def _detect_currency(message: str, history: list[tuple[str, str]] | None = None) -> list[int] | None:
+    """Replica of ComprasInsumosAgent._detect_currency (no instance needed)."""
+    msg_lower = message.lower()
+
+    if any(kw in msg_lower for kw in _USD_KEYWORDS):
+        return _USD_IDS
+
+    if any(kw in msg_lower for kw in _VES_KEYWORDS):
+        return _VES_IDS
+
+    if history:
+        for role, content in reversed(history):
+            if role == "user":
+                content_lower = content.lower()
+                if any(kw in content_lower for kw in _USD_KEYWORDS):
+                    return _USD_IDS
+                if any(kw in content_lower for kw in _VES_KEYWORDS):
+                    return _VES_IDS
+                break
+
+    return _VES_IDS
+
+
 # Jorge's departments: compras_insumos (primary) + ventas, compras_productores, produccion (extra)
 JORGE_DEPARTMENTS = ["compras_insumos", "ventas", "compras_productores", "produccion"]
 
@@ -461,6 +500,64 @@ def test_no_product_administrativos():
 
 
 # ===========================================================================
+# 5. CURRENCY DETECTION TESTS - Does compras_insumos detect currency correctly?
+# ===========================================================================
+
+def test_currency_default_ves():
+    """Default currency (no keyword) should be VES"""
+    result = _detect_currency("¿Cuánto se compró de insumos este mes?")
+    assert result == _VES_IDS, f"Expected VES {_VES_IDS}, got {result}"
+
+
+def test_currency_dolares_keyword():
+    """'Y en dólares?' should detect USD"""
+    result = _detect_currency("Y en dólares?")
+    assert result == _USD_IDS, f"Expected USD {_USD_IDS}, got {result}"
+
+
+def test_currency_dolares_no_accent():
+    """'en dolares' (no accent) should detect USD"""
+    result = _detect_currency("cuanto se compro en dolares?")
+    assert result == _USD_IDS, f"Expected USD {_USD_IDS}, got {result}"
+
+
+def test_currency_usd_keyword():
+    """'en usd' should detect USD"""
+    result = _detect_currency("dame el total en usd")
+    assert result == _USD_IDS, f"Expected USD {_USD_IDS}, got {result}"
+
+
+def test_currency_bolivares_keyword():
+    """'en bolívares' should detect VES"""
+    result = _detect_currency("Y en bolívares?")
+    assert result == _VES_IDS, f"Expected VES {_VES_IDS}, got {result}"
+
+
+def test_currency_from_history():
+    """Follow-up should inherit USD from history"""
+    history = [
+        ("user", "cuanto se compro en dólares?"),
+        ("assistant", "Las compras en dólares fueron..."),
+    ]
+    result = _detect_currency("dame más detalle", history)
+    assert result == _USD_IDS, f"Expected USD {_USD_IDS} from history, got {result}"
+
+
+def test_currency_no_inherit_unrelated_history():
+    """Should NOT inherit currency from non-immediate history"""
+    history = [
+        ("user", "cuanto se compro en dólares?"),
+        ("assistant", "Las compras en dólares fueron..."),
+        ("user", "cuantos proveedores tenemos?"),
+        ("assistant", "Hay 50 proveedores..."),
+    ]
+    # Last user message is "cuantos proveedores tenemos?" (no currency)
+    # _detect_currency checks reversed history and stops at first user msg
+    result = _detect_currency("dame más detalle", history)
+    assert result == _VES_IDS, f"Expected VES {_VES_IDS} (last user msg had no currency), got {result}"
+
+
+# ===========================================================================
 # MAIN: Run all tests and print results
 # ===========================================================================
 
@@ -506,6 +603,14 @@ if __name__ == "__main__":
         ("NO-PRODUCT: ordenes pendientes", test_no_product_ordenes_pendientes),
         ("NO-PRODUCT: cuanto se compro insumos", test_no_product_cuanto_se_compro),
         ("NO-PRODUCT: administrativos", test_no_product_administrativos),
+        # Currency detection
+        ("MONEDA: default VES", test_currency_default_ves),
+        ("MONEDA: dólares → USD", test_currency_dolares_keyword),
+        ("MONEDA: dolares sin acento → USD", test_currency_dolares_no_accent),
+        ("MONEDA: usd → USD", test_currency_usd_keyword),
+        ("MONEDA: bolívares → VES", test_currency_bolivares_keyword),
+        ("MONEDA: hereda USD de historial", test_currency_from_history),
+        ("MONEDA: NO hereda de historial lejano", test_currency_no_inherit_unrelated_history),
     ]
 
     passed = 0

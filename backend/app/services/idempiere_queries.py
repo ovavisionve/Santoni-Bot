@@ -1719,6 +1719,7 @@ def build_supply_purchases(
     org_ids: list[int] | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    currency_ids: list[int] | None = None,
 ) -> dict:
     """Supply purchases from iDempiere: purchase invoices (issotrx='N')."""
     db = IdempiereSession()
@@ -1731,6 +1732,7 @@ def build_supply_purchases(
         params: dict = {}
         _add_org_filter(conditions, params, org_ids, "i")
         _add_date_filter(conditions, params, date_from, date_to, mes, anio, "i.dateinvoiced")
+        _add_currency_filter(conditions, params, currency_ids, "i")
 
         where = " AND ".join(conditions)
 
@@ -1789,9 +1791,17 @@ def build_supply_purchases(
             for r in db.execute(by_product_q, params).fetchall()
         ]
 
+        # Determine currency label for the agent
+        if currency_ids:
+            _VES = [205]
+            currency_label = "USD" if currency_ids != _VES else "VES"
+        else:
+            currency_label = "Todas las monedas (mixto)"
+
         return {
             "anio": anio,
             "mes": mes,
+            "moneda": currency_label,
             "totales": totals,
             "por_proveedor": by_supplier,
             "por_mes": by_month,

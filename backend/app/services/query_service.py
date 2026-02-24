@@ -989,11 +989,12 @@ def build_supply_purchases(
     org_ids: list[int] | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    currency_ids: list[int] | None = None,
 ) -> dict:
     """Supply purchases - routes to demo or iDempiere."""
     if _is_production():
         from app.services.idempiere_queries import build_supply_purchases as _prod
-        return _prod(mes=mes, anio=anio, org_ids=org_ids, date_from=date_from, date_to=date_to)
+        return _prod(mes=mes, anio=anio, org_ids=org_ids, date_from=date_from, date_to=date_to, currency_ids=currency_ids)
 
     # Demo fallback
     db = SessionLocal()
