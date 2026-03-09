@@ -55,6 +55,7 @@ app = FastAPI(
 _cors_origins = [
     "http://localhost:3000",
     "http://localhost",
+    "http://localhost:80",
     "https://localhost",
 ]
 if settings.app_env == "production":

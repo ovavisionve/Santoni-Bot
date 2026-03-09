@@ -57,15 +57,22 @@ class ApiClient {
 
   // Auth – handled separately to avoid the generic 401 redirect
   async login(username: string, password: string, totp_code?: string) {
-    const response = await fetch(`${API_BASE}/api/auth/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password, totp_code: totp_code || null }),
-    });
+    let response: Response;
+    try {
+      response = await fetch(`${API_BASE}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password, totp_code: totp_code || null }),
+      });
+    } catch {
+      throw new Error(
+        "No se pudo conectar con el servidor. Verifique que el backend esté activo."
+      );
+    }
 
     if (!response.ok) {
       const err = await response.json().catch(() => ({}));
-      throw new Error(err.detail || "Error al iniciar sesion");
+      throw new Error(err.detail || `Error del servidor (${response.status})`);
     }
 
     const data = await response.json();
