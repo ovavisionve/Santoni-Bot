@@ -221,7 +221,7 @@ export default function ChatPage() {
         id: Date.now() + 1,
         role: "assistant",
         content:
-          `Lo siento, ocurrio un error al procesar tu consulta: ${detail}`,
+          `Lo siento, ocurrió un error al procesar tu consulta: ${detail}`,
         agent_used: null,
         created_at: new Date().toISOString(),
       };
@@ -304,12 +304,12 @@ export default function ChatPage() {
       {/* Inactivity warning banner */}
       {inactivityWarning && (
         <div className="absolute top-0 left-0 right-0 z-50 bg-yellow-500 text-white text-center py-2 px-4 text-sm font-medium shadow-lg animate-pulse">
-          Tu sesion se cerrara en 5 minutos por inactividad.{" "}
+          Tu sesión se cerrará en 5 minutos por inactividad.{" "}
           <button
             onClick={resetActivity}
             className="underline font-bold hover:text-yellow-100 ml-2"
           >
-            Continuar sesion
+            Continuar sesión
           </button>
         </div>
       )}

@@ -7,7 +7,11 @@ Fuente de datos: c_order (issotrx='N'), c_orderline, c_bpartner (isagricultor='Y
 m_product en iDempiere (PostgreSQL 13).
 """
 
+import logging
+
 from app.agents.base_agent import BaseAgent
+
+logger = logging.getLogger("santonibot.agents.compras_productores")
 from app.agents.date_utils import (
     extract_date_range,
     extract_month_year,
@@ -190,8 +194,8 @@ Datos de compras a productores en iDempiere:
                 if producers:
                     sections.append("## Productores (Proveedores) Registrados")
                     sections.append(self._format_table(producers))
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("Error consultando productores registrados: %s", exc)
 
         if include_pendientes:
             try:
@@ -202,8 +206,8 @@ Datos de compras a productores en iDempiere:
                         f"## Facturas Pendientes de Pago ({len(pending)} facturas - Total: Bs. {total_pendiente:,.2f})"
                     )
                     sections.append(self._format_table(pending))
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("Error consultando pagos pendientes a productores: %s", exc)
 
         if include_precios:
             try:
@@ -214,7 +218,7 @@ Datos de compras a productores en iDempiere:
                 if prices:
                     sections.append(f"## Análisis de Precios ({label}) (Bs./kg)")
                     sections.append(self._format_table(prices))
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("Error consultando análisis de precios: %s", exc)
 
         return "\n\n".join(sections) if sections else None

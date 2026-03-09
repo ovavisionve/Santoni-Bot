@@ -73,7 +73,7 @@ def _get_last_agent(db: Session, conversation_id: int) -> str | None:
         db.query(Message)
         .filter(
             Message.conversation_id == conversation_id,
-            Message.role == "assistant",
+            Message.role == MessageRole.ASSISTANT,
             Message.agent_used.isnot(None),
             Message.agent_used != "general",
         )
@@ -230,6 +230,9 @@ async def send_message(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    # Access control: business hours + network
+    enforce_access_controls(request, current_user.role.value)
+
     conversation = _get_or_create_conversation(
         db, current_user.id, data.conversation_id, data.message
     )

@@ -26,7 +26,7 @@ const DEPARTMENT_LABELS: Record<string, string> = {
   contabilidad: "Contabilidad",
   ventas: "Ventas",
   rrhh: "RRHH",
-  produccion: "Produccion",
+  produccion: "Producción",
   compras_insumos: "Compras Insumos",
   compras_productores: "Compras Productores",
 };
@@ -228,7 +228,7 @@ export default function DashboardPage() {
 
           <div className="bg-white rounded-xl border border-gray-200 p-5">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-sm text-gray-500">Ultimos 7 dias</span>
+              <span className="text-sm text-gray-500">Últimos 7 días</span>
               <TrendingUp size={18} className="text-green-500" />
             </div>
             <div className="text-2xl font-bold text-gray-900">
@@ -384,7 +384,7 @@ export default function DashboardPage() {
         {/* Quick actions */}
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <h2 className="font-semibold text-gray-900 mb-4">
-            Consultas rapidas
+            Consultas rápidas
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {getQuickQueries(user.department).map((q) => (
@@ -445,30 +445,30 @@ function getQuickQueries(department: string): string[] {
     finanzas: [
       "Flujo de caja del mes",
       "Saldo de bancos actualizado",
-      "Cuentas por pagar proximas a vencer",
+      "Cuentas por pagar próximas a vencer",
       "Resumen de cuentas por cobrar",
     ],
     contabilidad: [
       "Balance general actualizado",
       "Estado de resultados del mes",
-      "Balance de comprobacion",
+      "Balance de comprobación",
       "Libro mayor resumido",
     ],
     rrhh: [
       "Empleados por departamento",
-      "Resumen de nomina del mes",
+      "Resumen de nómina del mes",
       "Vacaciones pendientes",
       "Reporte de asistencia semanal",
     ],
     produccion: [
-      "Produccion de hoy",
+      "Producción de hoy",
       "Eficiencia OEE del mes",
       "Desperdicio de la semana",
-      "Ordenes de produccion pendientes",
+      "Órdenes de producción pendientes",
     ],
     compras_insumos: [
       "Compras de insumos del mes",
-      "Ordenes de compra pendientes",
+      "Órdenes de compra pendientes",
       "Top proveedores por monto",
       "Inventario de materiales",
     ],

@@ -107,7 +107,7 @@ export default function Sidebar({
           className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-santoni-800 hover:bg-santoni-900 transition-colors text-sm"
         >
           <MessageSquarePlus size={16} />
-          Nueva conversacion
+          Nueva conversación
         </button>
       </div>
 
@@ -145,7 +145,7 @@ export default function Sidebar({
         )}
         {filteredConversations.length === 0 && !searchQuery && (
           <p className="text-xs text-gray-500 text-center py-4">
-            Sin conversaciones aun
+            Sin conversaciones aún
           </p>
         )}
         {filteredConversations.map((conv) => (
@@ -238,7 +238,7 @@ export default function Sidebar({
             className="flex items-center gap-2 px-3 py-2 rounded-lg text-gray-300 hover:bg-santoni-900 transition-colors text-sm"
           >
             <Settings size={16} />
-            Administracion
+            Administración
           </Link>
         )}
 
@@ -255,7 +255,7 @@ export default function Sidebar({
           <button
             onClick={onLogout}
             className="text-gray-400 hover:text-red-400 transition-colors"
-            title="Cerrar sesion"
+            title="Cerrar sesión"
           >
             <LogOut size={16} />
           </button>

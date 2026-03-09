@@ -7,7 +7,11 @@ Fuente de datos: c_invoice (issotrx='N'), c_invoiceline,
 m_product, c_bpartner en iDempiere (PostgreSQL 13).
 """
 
+import logging
+
 from app.agents.base_agent import BaseAgent
+
+logger = logging.getLogger("santonibot.agents.compras_insumos")
 from app.agents.date_utils import (
     extract_date_range,
     extract_month_year,
@@ -409,8 +413,8 @@ Datos de compras de insumos en iDempiere:
                         f"## Búsqueda de Producto '{product_search}'\n"
                         f"No se encontraron compras para '{product_search}' en el período {label}."
                     )
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("Error buscando historial de producto '%s': %s", product_search, exc)
 
         # General summary: always include unless specific product/inventory data was found
         if not product_found:

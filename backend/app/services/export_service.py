@@ -157,15 +157,18 @@ def export_to_excel(content: str, agent_used: str | None = None) -> bytes:
 
             current_row += 1
 
-        # Auto-width columns
+        # Auto-width columns (handle MergedCell objects that lack column_letter)
         for col in ws.columns:
             max_length = 0
             col_letter = None
             for cell in col:
-                if hasattr(cell, "column_letter"):
-                    col_letter = cell.column_letter
-                if cell.value:
-                    max_length = max(max_length, len(str(cell.value)))
+                try:
+                    if hasattr(cell, "column_letter"):
+                        col_letter = cell.column_letter
+                    if cell.value:
+                        max_length = max(max_length, len(str(cell.value)))
+                except AttributeError:
+                    continue
             if col_letter:
                 ws.column_dimensions[col_letter].width = min(max_length + 2, 40)
     else:

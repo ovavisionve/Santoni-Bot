@@ -37,7 +37,7 @@ export default function LoginPage() {
       router.push("/chat");
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : "Error al iniciar sesion"
+        err instanceof Error ? err.message : "Error al iniciar sesión"
       );
     } finally {
       setLoading(false);
@@ -61,7 +61,7 @@ export default function LoginPage() {
             </div>
             <h1 className="text-2xl font-bold text-gray-900">SantoniBot</h1>
             <p className="text-gray-500 mt-1">
-              Sistema Inteligente de Analisis
+              Sistema Inteligente de Análisis
             </p>
           </div>
 
@@ -93,7 +93,7 @@ export default function LoginPage() {
                     htmlFor="password"
                     className="block text-sm font-medium text-gray-700 mb-1"
                   >
-                    Contrasena
+                    Contraseña
                   </label>
                   <div className="relative">
                     <input
@@ -102,7 +102,7 @@ export default function LoginPage() {
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       className="input-field pr-10"
-                      placeholder="Ingrese su contrasena"
+                      placeholder="Ingrese su contraseña"
                       required
                     />
                     <button
@@ -110,7 +110,7 @@ export default function LoginPage() {
                       onClick={() => setShowPassword(!showPassword)}
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
                       tabIndex={-1}
-                      aria-label={showPassword ? "Ocultar contrasena" : "Mostrar contrasena"}
+                      aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
                     >
                       {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                     </button>
@@ -122,18 +122,18 @@ export default function LoginPage() {
                 <div className="flex items-center justify-center gap-2 mb-4 text-santoni-600">
                   <ShieldCheck size={24} />
                   <span className="text-sm font-semibold">
-                    Verificacion en dos pasos
+                    Verificación en dos pasos
                   </span>
                 </div>
                 <p className="text-xs text-gray-500 text-center mb-4">
-                  Ingrese el codigo de 6 digitos de su aplicacion Google
+                  Ingrese el código de 6 dígitos de su aplicación Google
                   Authenticator
                 </p>
                 <label
                   htmlFor="totp"
                   className="block text-sm font-medium text-gray-700 mb-1"
                 >
-                  Codigo de verificacion
+                  Código de verificación
                 </label>
                 <input
                   id="totp"
@@ -156,7 +156,7 @@ export default function LoginPage() {
                   onClick={handleBack}
                   className="text-xs text-gray-400 hover:text-santoni-600 mt-2 transition-colors"
                 >
-                  Volver al inicio de sesion
+                  Volver al inicio de sesión
                 </button>
               </div>
             )}
@@ -184,7 +184,7 @@ export default function LoginPage() {
               ) : totpRequired ? (
                 "Verificar"
               ) : (
-                "Iniciar Sesion"
+                "Iniciar Sesión"
               )}
             </button>
           </form>

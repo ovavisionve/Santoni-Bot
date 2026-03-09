@@ -70,7 +70,7 @@ async def upload_document(
         )
 
     # Store temporarily
-    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    os.makedirs(UPLOAD_DIR, mode=0o700, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     safe_name = f"{current_user.id}_{timestamp}{ext}"
     file_path = os.path.join(UPLOAD_DIR, safe_name)

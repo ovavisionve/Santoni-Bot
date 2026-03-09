@@ -38,7 +38,7 @@ jobs:
       - name: Run tests
         run: |
           cd frontend
-          npm test -- --ci --passWithNoTests
+          npm test -- --ci
 
       - name: Build
         env:

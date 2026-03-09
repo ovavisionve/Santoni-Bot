@@ -49,21 +49,55 @@ else
     echo "  Detected: DEVELOPMENT environment"
 fi
 
+# ---- Validate critical env vars ----
+echo "[3/8] Validating environment..."
+MISSING_VARS=""
+for VAR in SECRET_KEY POSTGRES_PASSWORD; do
+    if ! grep -q "^${VAR}=" .env 2>/dev/null || grep -q "^${VAR}=change" .env 2>/dev/null; then
+        MISSING_VARS="${MISSING_VARS} ${VAR}"
+    fi
+done
+if [ -n "$MISSING_VARS" ]; then
+    echo "WARNING: Estas variables necesitan configurarse en .env:${MISSING_VARS}"
+fi
+
+# Check AI provider is configured
+AI_PROVIDER=$(grep "^AI_PROVIDER=" .env 2>/dev/null | cut -d= -f2 || echo "groq")
+case "$AI_PROVIDER" in
+    openrouter)
+        if ! grep -q "^OPENROUTER_API_KEY=." .env 2>/dev/null || grep -q "^OPENROUTER_API_KEY=your-" .env 2>/dev/null; then
+            echo "WARNING: OPENROUTER_API_KEY no configurada para AI_PROVIDER=openrouter"
+        fi
+        ;;
+    groq)
+        if ! grep -q "^GROQ_API_KEY=." .env 2>/dev/null; then
+            echo "WARNING: GROQ_API_KEY no configurada para AI_PROVIDER=groq"
+        fi
+        ;;
+esac
+
 # ---- Build containers ----
-echo "[3/6] Building containers..."
+echo "[4/8] Building containers..."
 docker compose $COMPOSE_FILES build --no-cache
 
 # ---- Stop old containers ----
-echo "[4/6] Stopping existing containers..."
+echo "[5/8] Stopping existing containers..."
 docker compose $COMPOSE_FILES down --remove-orphans 2>/dev/null || true
 
 # ---- Start services ----
-echo "[5/6] Starting services..."
+echo "[6/8] Starting services..."
 docker compose $COMPOSE_FILES up -d
 
+# ---- Run database migrations ----
+echo "[7/8] Running database migrations..."
+sleep 5  # Wait for DB to be ready
+docker compose $COMPOSE_FILES exec -T backend alembic upgrade head 2>&1 || {
+    echo "WARNING: Alembic migrations failed. Check backend logs."
+}
+
 # ---- Health check ----
-echo "[6/6] Waiting for services to start..."
-sleep 10
+echo "[8/8] Waiting for services to start..."
+sleep 5
 
 echo ""
 echo "Service status:"

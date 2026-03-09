@@ -65,7 +65,7 @@ function getRelativeTime(dateStr: string): string {
   if (diffHour === 1) return "hace 1 hora";
   if (diffHour < 24) return `hace ${diffHour}h`;
   if (diffDay === 1) return "ayer";
-  if (diffDay < 7) return `hace ${diffDay} dias`;
+  if (diffDay < 7) return `hace ${diffDay} días`;
   return date.toLocaleDateString("es-VE", { day: "2-digit", month: "short" });
 }
 
