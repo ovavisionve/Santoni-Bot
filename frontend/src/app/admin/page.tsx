@@ -1886,7 +1886,7 @@ function StatCard({
   label: string;
   value: number;
   total?: number;
-  icon: React.ComponentType<{ size?: number; className?: string }>;
+  icon: React.ComponentType<{ size?: number | string; className?: string }>;
 }) {
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-5">
