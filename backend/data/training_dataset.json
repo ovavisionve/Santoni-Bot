@@ -1,16 +1,16 @@
 {
-  "version": "2.0",
+  "version": "2.1",
   "created": "2026-02-24",
-  "description": "Dataset de entrenamiento y evaluación para SantoniBot. V2: expandido con cuestionarios Word de 7 departamentos, Excel de Compras, cuestionario de levantamiento, y escenarios negativos.",
+  "description": "Dataset de entrenamiento v2.1: +17 escenarios de bugs corregidos (NC en ventas, CxC/CxP por moneda, regiones de ventas, inventario en producción).",
   "stats": {
-    "total_entries": 261,
+    "total_entries": 278,
     "por_agente": {
       "compras_insumos": 60,
       "rrhh": 55,
-      "ventas": 32,
-      "produccion": 27,
+      "ventas": 41,
+      "produccion": 31,
+      "finanzas": 27,
       "compras_productores": 24,
-      "finanzas": 23,
       "general": 20,
       "contabilidad": 20
     },
@@ -19,12 +19,12 @@
       "conversacion_real": 52,
       "patron_comun": 41,
       "cuestionario_validacion": 39,
-      "excel_compras": 12,
-      "correccion_bug": 10
+      "correccion_bug": 27,
+      "excel_compras": 12
     },
-    "escenarios_negativos": 19,
+    "escenarios_negativos": 0,
     "con_respuesta_esperada": 15,
-    "followups": 55
+    "followups": 56
   },
   "entries": [
     {
@@ -4967,6 +4967,385 @@
       "fuente": "patron_comun",
       "categoria": "followup",
       "nota": "Solicitud de exportación PDF"
+    },
+    {
+      "id": 262,
+      "pregunta": "¿Cuánto se ha facturado este mes por zona?",
+      "agente_esperado": "ventas",
+      "departamento_usuario": "ventas",
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "moneda": null,
+        "organizacion": null
+      },
+      "es_followup": false,
+      "fuente": "correccion_bug",
+      "categoria": "facturacion_zona",
+      "resultado_real": {
+        "agente_usado": "ventas",
+        "exito": true,
+        "bug_corregido": "notas_credito_restaban_incorrectamente"
+      },
+      "nota": "Bug: CASE SQL restaba cualquier doc no-ARI (no solo ARC). Fix: WHEN ARI THEN +grandtotal, WHEN ARC THEN -grandtotal, ELSE 0. Afecta query por_zona."
+    },
+    {
+      "id": 263,
+      "pregunta": "Dame el top 10 de clientes en facturación",
+      "agente_esperado": "ventas",
+      "departamento_usuario": "ventas",
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "moneda": null,
+        "organizacion": null
+      },
+      "es_followup": false,
+      "fuente": "correccion_bug",
+      "categoria": "top_clientes",
+      "resultado_real": {
+        "agente_usado": "ventas",
+        "exito": true,
+        "bug_corregido": "notas_credito_restaban_incorrectamente"
+      },
+      "nota": "Bug: top_clients restaba docs que no eran NC. Fix: ELSE 0 en CASE SQL. Las NC (ARC) se restan correctamente, otros tipos se ignoran."
+    },
+    {
+      "id": 264,
+      "pregunta": "¿Cuánto vendimos por distribuidor en febrero?",
+      "agente_esperado": "ventas",
+      "departamento_usuario": "ventas",
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "mes": 2,
+        "anio": 2026
+      },
+      "es_followup": false,
+      "fuente": "correccion_bug",
+      "categoria": "facturacion_distribuidor",
+      "resultado_real": {
+        "agente_usado": "ventas",
+        "exito": true,
+        "bug_corregido": "notas_credito_restaban_incorrectamente"
+      },
+      "nota": "Bug: por_distribuidor restaba incorrectamente docs no-ARI. Fix: CASE con ARI/ARC/ELSE 0."
+    },
+    {
+      "id": 265,
+      "pregunta": "Facturación por moneda de este mes",
+      "agente_esperado": "ventas",
+      "departamento_usuario": "ventas",
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "moneda": null
+      },
+      "es_followup": false,
+      "fuente": "correccion_bug",
+      "categoria": "facturacion_moneda",
+      "resultado_real": {
+        "agente_usado": "ventas",
+        "exito": true,
+        "bug_corregido": "notas_credito_restaban_incorrectamente"
+      },
+      "nota": "Bug: por_moneda también afectada por CASE incorrecto. Fix: WHEN ARI +, WHEN ARC -, ELSE 0."
+    },
+    {
+      "id": 266,
+      "pregunta": "¿Cuánto nos deben los clientes?",
+      "agente_esperado": "finanzas",
+      "departamento_usuario": "finanzas",
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "moneda": null
+      },
+      "es_followup": false,
+      "fuente": "correccion_bug",
+      "categoria": "cuentas_por_cobrar",
+      "resultado_real": {
+        "agente_usado": "finanzas",
+        "exito": true,
+        "bug_corregido": "cxc_mezclaba_monedas"
+      },
+      "nota": "Bug: CxC mezclaba VES y USD en un solo total. Fix: desglose por_moneda en sección AR. Agente formatea cada moneda con su símbolo."
+    },
+    {
+      "id": 267,
+      "pregunta": "¿Cuáles son las cuentas por pagar?",
+      "agente_esperado": "finanzas",
+      "departamento_usuario": "finanzas",
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "moneda": null
+      },
+      "es_followup": false,
+      "fuente": "correccion_bug",
+      "categoria": "cuentas_por_pagar",
+      "resultado_real": {
+        "agente_usado": "finanzas",
+        "exito": true,
+        "bug_corregido": "cxp_mezclaba_monedas"
+      },
+      "nota": "Bug: CxP mezclaba VES y USD en un solo total. Fix: desglose por_moneda en sección AP. Cada moneda se muestra por separado."
+    },
+    {
+      "id": 268,
+      "pregunta": "¿Cuánto debemos a proveedores en dólares?",
+      "agente_esperado": "finanzas",
+      "departamento_usuario": "finanzas",
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "moneda": "USD"
+      },
+      "es_followup": false,
+      "fuente": "correccion_bug",
+      "categoria": "cxp_por_moneda",
+      "resultado_real": {
+        "agente_usado": "finanzas",
+        "exito": true,
+        "bug_corregido": "cxp_mezclaba_monedas"
+      },
+      "nota": "Ahora CxP separa por moneda. El usuario puede filtrar específicamente USD o VES."
+    },
+    {
+      "id": 269,
+      "pregunta": "Cuentas por cobrar en bolívares",
+      "agente_esperado": "finanzas",
+      "departamento_usuario": "finanzas",
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "moneda": "VES"
+      },
+      "es_followup": false,
+      "fuente": "correccion_bug",
+      "categoria": "cxc_por_moneda",
+      "resultado_real": {
+        "agente_usado": "finanzas",
+        "exito": true,
+        "bug_corregido": "cxc_mezclaba_monedas"
+      },
+      "nota": "CxC ahora con desglose por moneda. Permite filtrar VES específicamente."
+    },
+    {
+      "id": 270,
+      "pregunta": "¿Cuánto se vende por región?",
+      "agente_esperado": "ventas",
+      "departamento_usuario": "ventas",
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "moneda": null
+      },
+      "es_followup": false,
+      "fuente": "correccion_bug",
+      "categoria": "ventas_por_region",
+      "resultado_real": {
+        "agente_usado": "ventas",
+        "exito": true,
+        "bug_corregido": "regiones_no_existian"
+      },
+      "nota": "Nuevo: mapeo de 30+ zonas → 8 regiones macro (Llanos, Centro-Occidente, Centro, Capital, Occidente, Andes, Oriente, Guayana). Sección por_region en build_sales_summary."
+    },
+    {
+      "id": 271,
+      "pregunta": "Ventas en la región de los Llanos",
+      "agente_esperado": "ventas",
+      "departamento_usuario": "ventas",
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "region": "Llanos"
+      },
+      "es_followup": false,
+      "fuente": "correccion_bug",
+      "categoria": "ventas_region_especifica",
+      "resultado_real": {
+        "agente_usado": "ventas",
+        "exito": true,
+        "bug_corregido": "regiones_no_existian"
+      },
+      "nota": "Nuevo: se puede consultar ventas por región específica. Regiones: Llanos, Centro-Occidente, Centro, Capital, Occidente, Andes, Oriente, Guayana."
+    },
+    {
+      "id": 272,
+      "pregunta": "¿En qué zona se vende más?",
+      "agente_esperado": "ventas",
+      "departamento_usuario": "ventas",
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {},
+      "es_followup": false,
+      "fuente": "correccion_bug",
+      "categoria": "ventas_por_zona",
+      "resultado_real": {
+        "agente_usado": "ventas",
+        "exito": true,
+        "bug_corregido": "regiones_no_existian"
+      },
+      "nota": "El prompt del agente de ventas distingue cuándo usar zonas (detalle) vs regiones (macro). 'zona' → detalle por zona, 'región' → agrupado por región."
+    },
+    {
+      "id": 273,
+      "pregunta": "Comparar ventas entre regiones en febrero",
+      "agente_esperado": "ventas",
+      "departamento_usuario": "ventas",
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "mes": 2,
+        "anio": 2026
+      },
+      "es_followup": false,
+      "fuente": "correccion_bug",
+      "categoria": "ventas_comparacion_regiones",
+      "resultado_real": {
+        "agente_usado": "ventas",
+        "exito": true,
+        "bug_corregido": "regiones_no_existian"
+      },
+      "nota": "Nuevo: comparación entre regiones macro. Usa sección por_region de build_sales_summary."
+    },
+    {
+      "id": 274,
+      "pregunta": "¿Y por región?",
+      "agente_esperado": "ventas",
+      "departamento_usuario": "ventas",
+      "contexto": {
+        "last_agent": "ventas",
+        "historial": [
+          [
+            "user",
+            "¿Cuánto vendimos este mes por zona?"
+          ],
+          [
+            "assistant",
+            "Las ventas por zona en marzo 2026 son: ..."
+          ]
+        ]
+      },
+      "extracciones": {},
+      "es_followup": true,
+      "fuente": "correccion_bug",
+      "categoria": "followup_zona_a_region",
+      "resultado_real": {
+        "agente_usado": "ventas",
+        "exito": true,
+        "bug_corregido": "regiones_no_existian"
+      },
+      "nota": "Follow-up: de zonas a regiones. El agente entiende que 'por región' es la vista macro agrupada."
+    },
+    {
+      "id": 275,
+      "pregunta": "¿Cuánto hay en stock de materia prima?",
+      "agente_esperado": "produccion",
+      "departamento_usuario": "produccion",
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {},
+      "es_followup": false,
+      "fuente": "correccion_bug",
+      "categoria": "inventario_materia_prima",
+      "resultado_real": {
+        "agente_usado": "produccion",
+        "exito": true,
+        "bug_corregido": "produccion_sin_acceso_inventario"
+      },
+      "nota": "Nuevo: agente producción ahora consulta stock via build_inventory_stock cuando detecta keywords de inventario. Antes solo compras_insumos tenía acceso."
+    },
+    {
+      "id": 276,
+      "pregunta": "¿Cuánto arroz tenemos en almacén?",
+      "agente_esperado": "produccion",
+      "departamento_usuario": "produccion",
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "producto": "arroz"
+      },
+      "es_followup": false,
+      "fuente": "correccion_bug",
+      "categoria": "stock_producto_especifico",
+      "resultado_real": {
+        "agente_usado": "produccion",
+        "exito": true,
+        "bug_corregido": "produccion_sin_acceso_inventario"
+      },
+      "nota": "Producción detecta 'almacén/stock/inventario' y consulta m_storageonhand. Puede filtrar por producto específico."
+    },
+    {
+      "id": 277,
+      "pregunta": "Inventario actual de maíz",
+      "agente_esperado": "produccion",
+      "departamento_usuario": "produccion",
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "producto": "maíz"
+      },
+      "es_followup": false,
+      "fuente": "correccion_bug",
+      "categoria": "inventario_producto",
+      "resultado_real": {
+        "agente_usado": "produccion",
+        "exito": true,
+        "bug_corregido": "produccion_sin_acceso_inventario"
+      },
+      "nota": "Keywords: inventario, stock, almacén, existencia → build_inventory_stock en agente producción."
+    },
+    {
+      "id": 278,
+      "pregunta": "¿Qué materia prima tenemos disponible?",
+      "agente_esperado": "produccion",
+      "departamento_usuario": "produccion",
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {},
+      "es_followup": false,
+      "fuente": "correccion_bug",
+      "categoria": "materia_prima_disponible",
+      "resultado_real": {
+        "agente_usado": "produccion",
+        "exito": true,
+        "bug_corregido": "produccion_sin_acceso_inventario"
+      },
+      "nota": "Consulta general de disponibilidad de materia prima. Producción usa build_inventory_stock."
     }
   ],
   "tipos_error": {
