@@ -383,46 +383,55 @@ Datos de compras de insumos en iDempiere:
 
         product_found = False
 
-        if is_inventory:
-            # For inventory queries, use product_search as filter if available
-            inv_data = build_inventory_stock(
-                org_ids=org_ids,
-                product_search=product_search,
-            )
-            filter_label = f" - '{product_search}'" if product_search else ""
-            sections.append(self._format_summary(
-                inv_data, f"Inventario / Stock Actual{filter_label}",
-            ))
-            product_found = True
-        elif product_search:
-            try:
-                prod_data = build_product_purchase_history(
-                    product_search=product_search,
+        try:
+            if is_inventory:
+                # For inventory queries, use product_search as filter if available
+                inv_data = build_inventory_stock(
                     org_ids=org_ids,
-                    date_from=date_from, date_to=date_to,
-                    mes=mes, anio=anio,
+                    product_search=product_search,
                 )
-                if prod_data:
-                    product_found = True
-                    sections.append(
-                        f"## Historial de Compras - Producto '{product_search}' ({len(prod_data)} registros)"
+                filter_label = f" - '{product_search}'" if product_search else ""
+                sections.append(self._format_summary(
+                    inv_data, f"Inventario / Stock Actual{filter_label}",
+                ))
+                product_found = True
+            elif product_search:
+                try:
+                    prod_data = build_product_purchase_history(
+                        product_search=product_search,
+                        org_ids=org_ids,
+                        date_from=date_from, date_to=date_to,
+                        mes=mes, anio=anio,
                     )
-                    sections.append(self._format_table(prod_data))
-                else:
-                    sections.append(
-                        f"## Búsqueda de Producto '{product_search}'\n"
-                        f"No se encontraron compras para '{product_search}' en el período {label}."
-                    )
-            except Exception as exc:
-                logger.warning("Error buscando historial de producto '%s': %s", product_search, exc)
+                    if prod_data:
+                        product_found = True
+                        sections.append(
+                            f"## Historial de Compras - Producto '{product_search}' ({len(prod_data)} registros)"
+                        )
+                        sections.append(self._format_table(prod_data))
+                    else:
+                        sections.append(
+                            f"## Búsqueda de Producto '{product_search}'\n"
+                            f"No se encontraron compras para '{product_search}' en el período {label}."
+                        )
+                except Exception as exc:
+                    logger.warning("Error buscando historial de producto '%s': %s", product_search, exc)
 
-        # General summary: always include unless specific product/inventory data was found
-        if not product_found:
-            summary = build_supply_purchases(
-                mes=mes, anio=anio, org_ids=org_ids,
-                date_from=date_from, date_to=date_to,
-                currency_ids=currency_ids,
+            # General summary: always include unless specific product/inventory data was found
+            if not product_found:
+                summary = build_supply_purchases(
+                    mes=mes, anio=anio, org_ids=org_ids,
+                    date_from=date_from, date_to=date_to,
+                    currency_ids=currency_ids,
+                )
+                sections.append(self._format_summary(summary, f"Resumen de Compras de Insumos - {label}"))
+
+        except Exception as exc:
+            logger.error("Error consultando datos de compras de insumos: %s: %s", type(exc).__name__, exc, exc_info=True)
+            sections.append(
+                f"## Error al consultar datos\n"
+                f"Se produjo un error al consultar la base de datos: {type(exc).__name__}.\n"
+                f"Intenta de nuevo en unos momentos."
             )
-            sections.append(self._format_summary(summary, f"Resumen de Compras de Insumos - {label}"))
 
         return "\n\n".join(sections) if sections else None

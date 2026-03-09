@@ -123,7 +123,7 @@ Datos de compras a productores en iDempiere:
     def _extract_context_from_history(
         self, history: list[tuple[str, str]],
     ) -> dict:
-        """Extract producto and section keywords from recent user history."""
+        """Extract producto, section keywords, and temporal context from recent user history."""
         ctx: dict = {}
         if not history:
             return ctx
@@ -140,7 +140,18 @@ Datos de compras a productores en iDempiere:
                     if any(w in msg for w in kws):
                         ctx["sections"] = section
                         break
-            if "producto" in ctx and "sections" in ctx:
+            # Inherit temporal context from history
+            if "date_from" not in ctx:
+                df, dt = extract_date_range(content)
+                if df and dt:
+                    ctx["date_from"] = df
+                    ctx["date_to"] = dt
+            if "mes" not in ctx and "date_from" not in ctx:
+                m, a = extract_month_year(content)
+                if m:
+                    ctx["mes"] = m
+                    ctx["anio"] = a
+            if len(ctx) >= 5:
                 break
         return ctx
 
@@ -166,59 +177,77 @@ Datos de compras a productores en iDempiere:
         if not producto:
             producto = hist_ctx.get("producto")
 
+        # Inherit temporal context from history for follow-ups
+        if not date_from and not date_to and not mes:
+            if hist_ctx.get("date_from"):
+                date_from = hist_ctx["date_from"]
+                date_to = hist_ctx["date_to"]
+            elif hist_ctx.get("mes"):
+                mes = hist_ctx["mes"]
+                anio = hist_ctx.get("anio", anio)
+
         label = build_period_label(date_from, date_to, mes, anio)
 
-        summary = build_producer_purchases(
-            producto=producto, mes=mes, anio=anio, org_ids=org_ids,
-            date_from=date_from, date_to=date_to,
-        )
-        sections.append(self._format_summary(summary, f"Compras a Productores - {label}"))
+        try:
+            summary = build_producer_purchases(
+                producto=producto, mes=mes, anio=anio, org_ids=org_ids,
+                date_from=date_from, date_to=date_to,
+            )
+            sections.append(self._format_summary(summary, f"Compras a Productores - {label}"))
 
-        include_productores = any(w in msg for w in self._SECTION_KEYWORDS["productores"])
-        include_pendientes = any(w in msg for w in self._SECTION_KEYWORDS["pendientes"])
-        include_precios = any(w in msg for w in self._SECTION_KEYWORDS["precios"])
+            include_productores = any(w in msg for w in self._SECTION_KEYWORDS["productores"])
+            include_pendientes = any(w in msg for w in self._SECTION_KEYWORDS["pendientes"])
+            include_precios = any(w in msg for w in self._SECTION_KEYWORDS["precios"])
 
-        # If follow-up has no section keywords, carry over from history
-        if not include_productores and not include_pendientes and not include_precios:
-            section_type = hist_ctx.get("sections")
-            if section_type == "productores":
-                include_productores = True
-            elif section_type == "pendientes":
-                include_pendientes = True
-            elif section_type == "precios":
-                include_precios = True
+            # If follow-up has no section keywords, carry over from history
+            if not include_productores and not include_pendientes and not include_precios:
+                section_type = hist_ctx.get("sections")
+                if section_type == "productores":
+                    include_productores = True
+                elif section_type == "pendientes":
+                    include_pendientes = True
+                elif section_type == "precios":
+                    include_precios = True
 
-        if include_productores:
-            try:
-                producers = build_registered_producers(org_ids=org_ids)
-                if producers:
-                    sections.append("## Productores (Proveedores) Registrados")
-                    sections.append(self._format_table(producers))
-            except Exception as exc:
-                logger.warning("Error consultando productores registrados: %s", exc)
+            if include_productores:
+                try:
+                    producers = build_registered_producers(org_ids=org_ids)
+                    if producers:
+                        sections.append("## Productores (Proveedores) Registrados")
+                        sections.append(self._format_table(producers))
+                except Exception as exc:
+                    logger.warning("Error consultando productores registrados: %s", exc)
 
-        if include_pendientes:
-            try:
-                pending = build_producer_pending_payments(producto=producto, org_ids=org_ids)
-                if pending:
-                    total_pendiente = sum(d.get("monto_total", 0) for d in pending)
-                    sections.append(
-                        f"## Facturas Pendientes de Pago ({len(pending)} facturas - Total: Bs. {total_pendiente:,.2f})"
+            if include_pendientes:
+                try:
+                    pending = build_producer_pending_payments(producto=producto, org_ids=org_ids)
+                    if pending:
+                        total_pendiente = sum(d.get("monto_total", 0) for d in pending)
+                        sections.append(
+                            f"## Facturas Pendientes de Pago ({len(pending)} facturas - Total: Bs. {total_pendiente:,.2f})"
+                        )
+                        sections.append(self._format_table(pending))
+                except Exception as exc:
+                    logger.warning("Error consultando pagos pendientes a productores: %s", exc)
+
+            if include_precios:
+                try:
+                    prices = build_producer_price_analysis(
+                        anio=anio, org_ids=org_ids,
+                        date_from=date_from, date_to=date_to,
                     )
-                    sections.append(self._format_table(pending))
-            except Exception as exc:
-                logger.warning("Error consultando pagos pendientes a productores: %s", exc)
+                    if prices:
+                        sections.append(f"## Análisis de Precios ({label}) (Bs./kg)")
+                        sections.append(self._format_table(prices))
+                except Exception as exc:
+                    logger.warning("Error consultando análisis de precios: %s", exc)
 
-        if include_precios:
-            try:
-                prices = build_producer_price_analysis(
-                    anio=anio, org_ids=org_ids,
-                    date_from=date_from, date_to=date_to,
-                )
-                if prices:
-                    sections.append(f"## Análisis de Precios ({label}) (Bs./kg)")
-                    sections.append(self._format_table(prices))
-            except Exception as exc:
-                logger.warning("Error consultando análisis de precios: %s", exc)
+        except Exception as exc:
+            logger.error("Error consultando datos de compras a productores: %s: %s", type(exc).__name__, exc, exc_info=True)
+            sections.append(
+                f"## Error al consultar datos\n"
+                f"Se produjo un error al consultar la base de datos: {type(exc).__name__}.\n"
+                f"Intenta de nuevo en unos momentos."
+            )
 
         return "\n\n".join(sections) if sections else None

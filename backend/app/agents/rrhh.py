@@ -6,12 +6,16 @@ Fuente de datos: hr_employee, hr_process, hr_movement, hr_concept,
 hr_payroll + c_bpartner en iDempiere (PostgreSQL 13).
 """
 
+import logging
+
 from app.agents.base_agent import BaseAgent
 from app.agents.date_utils import (
     extract_date_range,
     extract_month_year,
     build_period_label,
 )
+
+logger = logging.getLogger("santonibot.agents.rrhh")
 from app.services.query_service import (
     build_employee_summary,
     build_employee_list,
@@ -196,6 +200,20 @@ Datos de RRHH en iDempiere:
         if date_from and date_to:
             mes = None
 
+        # Inherit temporal context from history for follow-ups
+        if not date_from and not date_to and not mes and history:
+            for role, content in reversed(history):
+                if role != "user":
+                    continue
+                df, dt = extract_date_range(content)
+                if df and dt:
+                    date_from, date_to = df, dt
+                    break
+                m, a = extract_month_year(content)
+                if m:
+                    mes, anio = m, a
+                    break
+
         label = build_period_label(date_from, date_to, mes, anio)
 
         # Detect cargo/job search (current message, then history fallback)
@@ -204,97 +222,106 @@ Datos de RRHH en iDempiere:
             # Follow-up with dates but no cargo keyword → check history
             cargo_search = self._extract_cargo_from_history(history)
 
-        # Employee summary (always included)
-        summary = build_employee_summary(org_ids=org_ids)
-        sections.append(self._format_summary(summary, "Resumen de Personal"))
+        try:
+            # Employee summary (always included)
+            summary = build_employee_summary(org_ids=org_ids)
+            sections.append(self._format_summary(summary, "Resumen de Personal"))
 
-        if cargo_search:
-            # Cargo-specific query: filter employee list by job title
-            date_label = f" (ingresados {label})" if date_from else ""
-            data = build_employee_list(
-                org_ids=org_ids, cargo_search=cargo_search,
-                date_from=date_from, date_to=date_to,
-            )
-            if data:
-                sections.append(
-                    f"## Empleados con cargo '{cargo_search.upper()}'{date_label} ({len(data)} encontrados)"
+            if cargo_search:
+                # Cargo-specific query: filter employee list by job title
+                date_label = f" (ingresados {label})" if date_from else ""
+                data = build_employee_list(
+                    org_ids=org_ids, cargo_search=cargo_search,
+                    date_from=date_from, date_to=date_to,
                 )
-                sections.append(self._format_table(data))
-            else:
-                sections.append(
-                    f"## Búsqueda por cargo: '{cargo_search}'{date_label}\n"
-                    f"No se encontraron empleados activos con ese cargo"
-                    f"{' en el período indicado' if date_from else ''}. "
-                    f"Revisa la sección 'por_cargo' del resumen para ver los cargos disponibles."
-                )
-        elif any(w in msg for w in [
-            "empleado", "personal", "lista", "cuántos", "cuantos",
-            "trabajador", "trabajadores", "plantilla", "activo", "activos",
-        ]):
-            data = build_employee_list(
-                org_ids=org_ids,
-                date_from=date_from, date_to=date_to,
-            )
-            if data:
-                date_label = f" - {label}" if date_from else ""
-                sections.append(f"## Lista de Empleados Activos{date_label} ({len(data)} registros)")
-                sections.append(self._format_table(data))
-
-        if any(w in msg for w in [
-            "cumpleaño", "cumpleaños", "cumpleañero", "cumpleañeros",
-        ]):
-            # For birthdays, use mes from the message (or current month if not specified)
-            birthday_mes = mes
-            if birthday_mes is None and not date_from:
-                from datetime import datetime as _dt
-                birthday_mes = _dt.now().month
-            from app.agents.date_utils import MESES_NOMBRES
-            mes_label = MESES_NOMBRES.get(birthday_mes, str(birthday_mes)) if birthday_mes else "Todos los meses"
-            try:
-                data = build_birthday_list(mes=birthday_mes, org_ids=org_ids)
                 if data:
-                    sections.append(f"## Cumpleañeros de {mes_label} ({len(data)} empleados)")
+                    sections.append(
+                        f"## Empleados con cargo '{cargo_search.upper()}'{date_label} ({len(data)} encontrados)"
+                    )
                     sections.append(self._format_table(data))
                 else:
                     sections.append(
-                        f"## Cumpleañeros de {mes_label}\n"
-                        f"No se encontraron empleados con cumpleaños registrado para {mes_label}. "
-                        f"Es posible que la fecha de nacimiento no esté cargada en el sistema ERP."
+                        f"## Búsqueda por cargo: '{cargo_search}'{date_label}\n"
+                        f"No se encontraron empleados activos con ese cargo"
+                        f"{' en el período indicado' if date_from else ''}. "
+                        f"Revisa la sección 'por_cargo' del resumen para ver los cargos disponibles."
                     )
-            except Exception as exc:
-                sections.append(
-                    f"## Cumpleañeros de {mes_label}\n"
-                    f"No se pudo consultar la información de cumpleaños: {type(exc).__name__}. "
-                    f"Es posible que el campo de fecha de nacimiento no esté disponible en la base de datos."
+            elif any(w in msg for w in [
+                "empleado", "personal", "lista", "cuántos", "cuantos",
+                "trabajador", "trabajadores", "plantilla", "activo", "activos",
+            ]):
+                data = build_employee_list(
+                    org_ids=org_ids,
+                    date_from=date_from, date_to=date_to,
                 )
+                if data:
+                    date_label = f" - {label}" if date_from else ""
+                    sections.append(f"## Lista de Empleados Activos{date_label} ({len(data)} registros)")
+                    sections.append(self._format_table(data))
 
-        if any(w in msg for w in ["nómina", "nomina", "salario", "sueldo", "pago"]):
-            data = build_payroll_summary(
-                mes=mes, anio=anio, org_ids=org_ids,
-                date_from=date_from, date_to=date_to,
+            if any(w in msg for w in [
+                "cumpleaño", "cumpleaños", "cumpleañero", "cumpleañeros",
+            ]):
+                # For birthdays, use mes from the message (or current month if not specified)
+                birthday_mes = mes
+                if birthday_mes is None and not date_from:
+                    from datetime import datetime as _dt
+                    birthday_mes = _dt.now().month
+                from app.agents.date_utils import MESES_NOMBRES
+                mes_label = MESES_NOMBRES.get(birthday_mes, str(birthday_mes)) if birthday_mes else "Todos los meses"
+                try:
+                    data = build_birthday_list(mes=birthday_mes, org_ids=org_ids)
+                    if data:
+                        sections.append(f"## Cumpleañeros de {mes_label} ({len(data)} empleados)")
+                        sections.append(self._format_table(data))
+                    else:
+                        sections.append(
+                            f"## Cumpleañeros de {mes_label}\n"
+                            f"No se encontraron empleados con cumpleaños registrado para {mes_label}. "
+                            f"Es posible que la fecha de nacimiento no esté cargada en el sistema ERP."
+                        )
+                except Exception as exc:
+                    sections.append(
+                        f"## Cumpleañeros de {mes_label}\n"
+                        f"No se pudo consultar la información de cumpleaños: {type(exc).__name__}. "
+                        f"Es posible que el campo de fecha de nacimiento no esté disponible en la base de datos."
+                    )
+
+            if any(w in msg for w in ["nómina", "nomina", "salario", "sueldo", "pago"]):
+                data = build_payroll_summary(
+                    mes=mes, anio=anio, org_ids=org_ids,
+                    date_from=date_from, date_to=date_to,
+                )
+                sections.append(self._format_summary(data, f"Resumen de Nómina - {label}"))
+
+            if any(w in msg for w in [
+                "ausentismo", "ausentimos", "ausencia", "inasistencia",
+                "falta", "faltas", "permiso", "reposo", "incapacidad",
+                "licencia", "asistencia",
+            ]):
+                data = build_attendance_summary(
+                    mes=mes, anio=anio, org_ids=org_ids,
+                    date_from=date_from, date_to=date_to,
+                )
+                sections.append(self._format_summary(
+                    data, f"Indicadores de Ausentismo - {label}",
+                ))
+
+            if any(w in msg for w in [
+                "rotación", "rotacion", "baja", "bajas", "egreso", "egresos",
+                "renuncia", "despido", "turnover", "salida", "salidas",
+            ]):
+                data = build_turnover_summary(anio=anio, org_ids=org_ids)
+                sections.append(self._format_summary(
+                    data, f"Indicadores de Rotación - Año {anio}",
+                ))
+
+        except Exception as exc:
+            logger.error("Error consultando datos de RRHH: %s: %s", type(exc).__name__, exc, exc_info=True)
+            sections.append(
+                f"## Error al consultar datos\n"
+                f"Se produjo un error al consultar la base de datos: {type(exc).__name__}.\n"
+                f"Intenta de nuevo en unos momentos."
             )
-            sections.append(self._format_summary(data, f"Resumen de Nómina - {label}"))
-
-        if any(w in msg for w in [
-            "ausentismo", "ausentimos", "ausencia", "inasistencia",
-            "falta", "faltas", "permiso", "reposo", "incapacidad",
-            "licencia", "asistencia",
-        ]):
-            data = build_attendance_summary(
-                mes=mes, anio=anio, org_ids=org_ids,
-                date_from=date_from, date_to=date_to,
-            )
-            sections.append(self._format_summary(
-                data, f"Indicadores de Ausentismo - {label}",
-            ))
-
-        if any(w in msg for w in [
-            "rotación", "rotacion", "baja", "bajas", "egreso", "egresos",
-            "renuncia", "despido", "turnover", "salida", "salidas",
-        ]):
-            data = build_turnover_summary(anio=anio, org_ids=org_ids)
-            sections.append(self._format_summary(
-                data, f"Indicadores de Rotación - Año {anio}",
-            ))
 
         return "\n\n".join(sections) if sections else None

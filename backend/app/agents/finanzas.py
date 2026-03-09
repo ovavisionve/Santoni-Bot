@@ -6,6 +6,8 @@ presupuestos, indicadores financieros, rentabilidad.
 Fuente de datos: c_bankaccount, c_payment, c_invoice en iDempiere (PostgreSQL 13).
 """
 
+import logging
+
 from app.agents.base_agent import BaseAgent
 from app.agents.date_utils import (
     extract_date_range,
@@ -16,6 +18,8 @@ from app.services.query_service import (
     build_financial_summary,
     build_overdue_receivables,
 )
+
+logger = logging.getLogger("santonibot.agents.finanzas")
 
 
 class FinanzasAgent(BaseAgent):
@@ -214,26 +218,50 @@ Datos financieros de iDempiere:
         if date_from and date_to:
             mes = None
 
-        label = build_period_label(date_from, date_to, mes, anio)
-        summary = build_financial_summary(
-            mes=mes, anio=anio, org_ids=org_ids,
-            date_from=date_from, date_to=date_to,
-        )
-        sections.append(self._format_financial_summary(summary, label))
-
-        include_receivables = any(w in msg for w in self._RECEIVABLES_KEYWORDS)
-        # Follow-up: carry over receivables section from history
-        if not include_receivables and history:
+        # Inherit temporal context from history for follow-ups
+        if not date_from and not date_to and not mes and history:
             for role, content in reversed(history):
-                if role == "user" and any(
-                    w in content.lower() for w in self._RECEIVABLES_KEYWORDS
-                ):
-                    include_receivables = True
+                if role != "user":
+                    continue
+                df, dt = extract_date_range(content)
+                if df and dt:
+                    date_from, date_to = df, dt
+                    break
+                m, a = extract_month_year(content)
+                if m:
+                    mes, anio = m, a
                     break
 
-        if include_receivables:
-            data = build_overdue_receivables(org_ids=org_ids)
-            sections.append("## Cuentas por Cobrar Vencidas")
-            sections.append(self._format_table(data))
+        label = build_period_label(date_from, date_to, mes, anio)
+
+        try:
+            summary = build_financial_summary(
+                mes=mes, anio=anio, org_ids=org_ids,
+                date_from=date_from, date_to=date_to,
+            )
+            sections.append(self._format_financial_summary(summary, label))
+
+            include_receivables = any(w in msg for w in self._RECEIVABLES_KEYWORDS)
+            # Follow-up: carry over receivables section from history
+            if not include_receivables and history:
+                for role, content in reversed(history):
+                    if role == "user" and any(
+                        w in content.lower() for w in self._RECEIVABLES_KEYWORDS
+                    ):
+                        include_receivables = True
+                        break
+
+            if include_receivables:
+                data = build_overdue_receivables(org_ids=org_ids)
+                sections.append("## Cuentas por Cobrar Vencidas")
+                sections.append(self._format_table(data))
+
+        except Exception as exc:
+            logger.error("Error consultando datos financieros: %s: %s", type(exc).__name__, exc, exc_info=True)
+            sections.append(
+                f"## Error al consultar datos\n"
+                f"Se produjo un error al consultar la base de datos: {type(exc).__name__}.\n"
+                f"Intenta de nuevo en unos momentos."
+            )
 
         return "\n\n".join(sections) if sections else None

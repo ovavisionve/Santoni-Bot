@@ -6,6 +6,7 @@ impuestos, activos fijos, consultas de cuentas específicas.
 Fuente de datos: fact_acct y c_elementvalue en iDempiere (PostgreSQL 13).
 """
 
+import logging
 import re
 
 from app.agents.base_agent import BaseAgent
@@ -16,6 +17,8 @@ from app.agents.date_utils import (
     detect_currency,
 )
 from app.services.query_service import build_accounting_summary, build_account_detail
+
+logger = logging.getLogger("santonibot.agents.contabilidad")
 
 
 # Regex for account codes like 2.01.01.10, 1.01.02, etc.
@@ -152,6 +155,23 @@ Se pueden consultar cuentas específicas por código (ej: 2.01.01.10) con rango 
                     return match.group(1)
         return None
 
+    @staticmethod
+    def _extract_dates_from_history(
+        history: list[tuple[str, str]],
+    ) -> tuple[str | None, str | None, int | None, int | None]:
+        """Extract temporal context from recent history for follow-ups."""
+        for role, content in reversed(history):
+            if role != "user":
+                continue
+            df, dt = extract_date_range(content)
+            if df:
+                m, a = extract_month_year(content)
+                return df, dt, m, a
+            m, a = extract_month_year(content)
+            if m is not None:
+                return None, None, m, a
+        return None, None, None, None
+
     def fetch_data(self, message: str, org_ids: list[int] | None = None, salesrep_id: int | None = None, history: list[tuple[str, str]] | None = None) -> str | None:
         sections = []
 
@@ -173,49 +193,80 @@ Se pueden consultar cuentas específicas por código (ej: 2.01.01.10) con rango 
         if not account_code and history:
             account_code = self._extract_account_from_history(history)
 
-        if account_code:
-            # Try to extract date range first (dd/mm/yyyy al dd/mm/yyyy)
-            date_from, date_to = extract_date_range(message)
+        try:
+            if account_code:
+                # Try to extract date range first (dd/mm/yyyy al dd/mm/yyyy)
+                date_from, date_to = extract_date_range(message)
+                mes, anio = extract_month_year(message) if not (date_from and date_to) else (None, None)
 
-            if date_from and date_to:
-                detail = build_account_detail(
-                    account_code=account_code,
-                    date_from=date_from,
-                    date_to=date_to,
-                    org_ids=org_ids,
-                    currency_ids=currency_ids,
-                )
-            else:
-                mes, anio = extract_month_year(message)
-                detail = build_account_detail(
-                    account_code=account_code,
-                    mes=mes,
-                    anio=anio,
-                    org_ids=org_ids,
-                    currency_ids=currency_ids,
-                )
+                # Inherit temporal context from history for follow-ups
+                if not date_from and not date_to and not mes and history:
+                    h_df, h_dt, h_mes, h_anio = self._extract_dates_from_history(history)
+                    if h_df:
+                        date_from, date_to = h_df, h_dt
+                    elif h_mes is not None:
+                        mes, anio = h_mes, h_anio
 
-            if "error" in detail:
-                sections.append(f"**ERROR:** {detail['error']}")
-            else:
-                # Build deterministic response for 0-movement case
-                # so the LLM doesn't misinterpret it as "no information"
-                if detail.get("movimientos", 0) == 0:
-                    sections.append(self._format_zero_movement(detail))
+                if date_from and date_to:
+                    detail = build_account_detail(
+                        account_code=account_code,
+                        date_from=date_from,
+                        date_to=date_to,
+                        org_ids=org_ids,
+                        currency_ids=currency_ids,
+                    )
                 else:
-                    sections.append(self._format_summary(detail, f"Cuenta {account_code}"))
-        else:
-            # General accounting summary (no specific account)
-            date_from, date_to = extract_date_range(message)
-            if date_from and date_to:
-                summary = build_accounting_summary(
-                    date_from=date_from, date_to=date_to, org_ids=org_ids,
-                )
-                label = build_period_label(date_from=date_from, date_to=date_to)
+                    if mes is None:
+                        mes, anio = extract_month_year(message)
+                    detail = build_account_detail(
+                        account_code=account_code,
+                        mes=mes,
+                        anio=anio,
+                        org_ids=org_ids,
+                        currency_ids=currency_ids,
+                    )
+
+                if "error" in detail:
+                    sections.append(f"**ERROR:** {detail['error']}")
+                else:
+                    if detail.get("movimientos", 0) == 0:
+                        sections.append(self._format_zero_movement(detail))
+                    else:
+                        sections.append(self._format_summary(detail, f"Cuenta {account_code}"))
             else:
-                mes, anio = extract_month_year(message)
-                summary = build_accounting_summary(mes=mes, anio=anio, org_ids=org_ids)
-                label = build_period_label(mes=mes, anio=anio)
-            sections.append(self._format_summary(summary, f"Resumen Contable - {label}"))
+                # General accounting summary (no specific account)
+                date_from, date_to = extract_date_range(message)
+                mes, anio = None, None
+                if date_from and date_to:
+                    summary = build_accounting_summary(
+                        date_from=date_from, date_to=date_to, org_ids=org_ids,
+                    )
+                    label = build_period_label(date_from=date_from, date_to=date_to)
+                else:
+                    mes, anio = extract_month_year(message)
+                    # Inherit temporal context from history for follow-ups
+                    if not mes and history:
+                        h_df, h_dt, h_mes, h_anio = self._extract_dates_from_history(history)
+                        if h_df:
+                            date_from, date_to = h_df, h_dt
+                        elif h_mes is not None:
+                            mes, anio = h_mes, h_anio
+                    if date_from and date_to:
+                        summary = build_accounting_summary(
+                            date_from=date_from, date_to=date_to, org_ids=org_ids,
+                        )
+                        label = build_period_label(date_from=date_from, date_to=date_to)
+                    else:
+                        summary = build_accounting_summary(mes=mes, anio=anio, org_ids=org_ids)
+                        label = build_period_label(mes=mes, anio=anio)
+                sections.append(self._format_summary(summary, f"Resumen Contable - {label}"))
+
+        except Exception as exc:
+            logger.error("Error consultando datos contables: %s: %s", type(exc).__name__, exc, exc_info=True)
+            sections.append(
+                f"## Error al consultar datos\n"
+                f"Se produjo un error al consultar la base de datos: {type(exc).__name__}.\n"
+                f"Intenta de nuevo en unos momentos."
+            )
 
         return "\n\n".join(sections) if sections else None

@@ -143,7 +143,9 @@ docker compose build --no-cache backend frontend && docker compose up -d
 | 7 | **Compras Productores** | `compras_productores.py` | Compras agrícolas (arroz, maíz), productores registrados, pagos pendientes, precios |
 
 ### Características transversales de los agentes:
-- **Follow-ups inteligentes**: Heredan contexto temporal y filtros del historial de conversación
+- **Follow-ups inteligentes**: Heredan contexto temporal (mes/año/rango), producto y filtros del historial
+- **Fallback sin datos**: Si un período no tiene datos, algunos agentes (ventas) intentan con el año completo
+- **Error handling dual**: try/except en `base_agent.py` + try/except interno en cada `fetch_data()`
 - **Confidence score**: Cada respuesta incluye nivel de confianza
 - **Detección automática de moneda**: Separan consultas en VES y USD
 - **Anti-hallucination**: No inventan datos, indican cuando no tienen información
@@ -199,8 +201,10 @@ Los agentes filtran por organización cuando el usuario lo especifica.
 ## Dataset de Entrenamiento
 
 Se mantiene un dataset de escenarios de entrenamiento/validación para el orchestrator:
-- **132 escenarios** cubriendo los 7 agentes
+- **300 escenarios** (v2.2) cubriendo los 7 agentes
 - Incluye: pregunta, agente esperado, tipo de consulta, follow-ups
+- 70 escenarios de follow-up con herencia de contexto
+- Tipos de error rastreados: routing, herencia temporal, fallback sin datos, errores DB
 - Usado para medir confidence score y mejorar clasificación
 
 ---
@@ -230,12 +234,13 @@ Se crearon cuestionarios para que cada departamento valide las respuestas del bo
 ### Trabajo reciente (Feb-Mar 2026):
 - Conexión exitosa a iDempiere real (queries de nómina, ventas, compras)
 - Follow-ups inteligentes con herencia de contexto temporal
-- Confidence score + dataset de 132 escenarios
+- Confidence score + dataset de 300 escenarios (v2.2)
 - Separación de compras por moneda (VES/USD)
 - Inventario desde m_storageonhand
 - Corrección de múltiples bugs reportados por usuarios reales
 - Script de pruebas en vivo (65 preguntas, 7 agentes)
 - Diagnóstico de nómina iDempiere
+- **Fix crítico (Mar 2026)**: Herencia temporal + manejo de errores en los 7 agentes (ver sección abajo)
 
 ### Pendiente:
 - Mapeo completo de todas las tablas iDempiere (algunas queries aún en ajuste)
@@ -243,6 +248,43 @@ Se crearon cuestionarios para que cada departamento valide las respuestas del bo
 - Script de migración datos demo → datos reales
 - Sentry (monitoreo de errores)
 - WhatsApp (Fase 2, post-lanzamiento)
+
+---
+
+## Patrones de Resiliencia en Agentes (implementado Mar 2026)
+
+Todos los 7 agentes implementan estos 3 patrones de forma consistente:
+
+### 1. Herencia de contexto temporal en follow-ups
+Cuando un follow-up no incluye período (mes/fecha), el agente busca en el historial:
+```python
+# En fetch_data(), después de extract_date_range/extract_month_year:
+if not date_from and not date_to and not mes and history:
+    for role, content in reversed(history):
+        if role != "user": continue
+        df, dt = extract_date_range(content)
+        if df and dt:
+            date_from, date_to = df, dt
+            break
+        m, a = extract_month_year(content)
+        if m:
+            mes, anio = m, a
+            break
+```
+
+### 2. Fallback de período vacío (ventas)
+Cuando un período específico no tiene datos, se intenta con el año completo:
+```python
+if self._is_empty_result(data) and (mes or (date_from and date_to)):
+    data_year = build_top_clients(mes=None, anio=anio, ...)
+    if not self._is_empty_result(data_year):
+        sections.append("**NOTA:** No se encontraron datos para {label}...")
+```
+
+### 3. Error handling global en base_agent + fetch_data
+- `base_agent.py`: try/except alrededor de `self.fetch_data()` protege TODOS los agentes
+- Cada agente: try/except interno en `fetch_data()` con mensaje de error amigable
+- Errores de DB se logean con `logger.error()` y se presentan al usuario como mensaje informativo
 
 ---
 

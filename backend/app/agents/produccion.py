@@ -10,12 +10,16 @@ NOTA: Santoni no utiliza el módulo de Manufactura (pp_order) de iDempiere.
 La actividad productiva se rastrea mediante movimientos de inventario (m_inout).
 """
 
+import logging
+
 from app.agents.base_agent import BaseAgent
 from app.agents.date_utils import (
     extract_date_range,
     extract_month_year,
     build_period_label,
 )
+
+logger = logging.getLogger("santonibot.agents.produccion")
 from app.services.query_service import (
     build_production_summary,
     build_production_orders,
@@ -124,48 +128,71 @@ Datos de producción/inventario en iDempiere:
         if date_from and date_to:
             mes = None
 
-        label = build_period_label(date_from, date_to, mes, anio)
-
-        # Production/inventory movement summary (always)
-        summary = build_production_summary(
-            mes=mes, anio=anio, org_ids=org_ids,
-            date_from=date_from, date_to=date_to,
-        )
-        sections.append(self._format_summary(summary, f"Movimientos de Inventario - {label}"))
-
-        include_documents = any(w in msg for w in self._DOCUMENT_KEYWORDS)
-        # Follow-up: carry over document listing from history
-        if not include_documents and history:
+        # Inherit temporal context from history for follow-ups
+        if not date_from and not date_to and not mes and history:
             for role, content in reversed(history):
-                if role == "user" and any(
-                    w in content.lower() for w in self._DOCUMENT_KEYWORDS
-                ):
-                    include_documents = True
+                if role != "user":
+                    continue
+                df, dt = extract_date_range(content)
+                if df and dt:
+                    date_from, date_to = df, dt
+                    break
+                m, a = extract_month_year(content)
+                if m:
+                    mes, anio = m, a
                     break
 
-        if include_documents:
-            data = build_production_orders(
+        label = build_period_label(date_from, date_to, mes, anio)
+
+        try:
+            # Production/inventory movement summary (always)
+            summary = build_production_summary(
                 mes=mes, anio=anio, org_ids=org_ids,
                 date_from=date_from, date_to=date_to,
             )
-            if data:
-                sections.append(f"## Documentos de Movimiento Recientes ({len(data)} registros)")
-                sections.append(self._format_table(data))
+            sections.append(self._format_summary(summary, f"Movimientos de Inventario - {label}"))
 
-        # Inventory / stock (materia prima)
-        include_inventory = any(w in msg for w in self._INVENTORY_KEYWORDS)
-        if not include_inventory and history:
-            for role, content in reversed(history):
-                if role == "user" and any(
-                    w in content.lower() for w in self._INVENTORY_KEYWORDS
-                ):
-                    include_inventory = True
-                    break
+            include_documents = any(w in msg for w in self._DOCUMENT_KEYWORDS)
+            # Follow-up: carry over document listing from history
+            if not include_documents and history:
+                for role, content in reversed(history):
+                    if role == "user" and any(
+                        w in content.lower() for w in self._DOCUMENT_KEYWORDS
+                    ):
+                        include_documents = True
+                        break
 
-        if include_inventory:
-            inv_data = build_inventory_stock(org_ids=org_ids)
-            sections.append(self._format_summary(
-                inv_data, "Inventario / Stock Actual",
-            ))
+            if include_documents:
+                data = build_production_orders(
+                    mes=mes, anio=anio, org_ids=org_ids,
+                    date_from=date_from, date_to=date_to,
+                )
+                if data:
+                    sections.append(f"## Documentos de Movimiento Recientes ({len(data)} registros)")
+                    sections.append(self._format_table(data))
+
+            # Inventory / stock (materia prima)
+            include_inventory = any(w in msg for w in self._INVENTORY_KEYWORDS)
+            if not include_inventory and history:
+                for role, content in reversed(history):
+                    if role == "user" and any(
+                        w in content.lower() for w in self._INVENTORY_KEYWORDS
+                    ):
+                        include_inventory = True
+                        break
+
+            if include_inventory:
+                inv_data = build_inventory_stock(org_ids=org_ids)
+                sections.append(self._format_summary(
+                    inv_data, "Inventario / Stock Actual",
+                ))
+
+        except Exception as exc:
+            logger.error("Error consultando datos de producción: %s: %s", type(exc).__name__, exc, exc_info=True)
+            sections.append(
+                f"## Error al consultar datos\n"
+                f"Se produjo un error al consultar la base de datos: {type(exc).__name__}.\n"
+                f"Intenta de nuevo en unos momentos."
+            )
 
         return "\n\n".join(sections) if sections else None
