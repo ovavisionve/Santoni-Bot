@@ -106,7 +106,16 @@ SOBRE DISTRIBUIDORES:
 
 SOBRE TIPOLOGÍA:
 - La columna "tipologia" muestra el grupo/categoría del cliente (c_bp_group)
-- Refleja la clasificación que Santoni asigna a cada cliente en iDempiere"""
+- Refleja la clasificación que Santoni asigna a cada cliente en iDempiere
+
+SOBRE NOTAS DE CRÉDITO:
+- Las notas de crédito (NC) ya están SEPARADAS de las facturas en los datos
+- Los totales de venta muestran: facturas brutas, notas de crédito y venta neta (facturas - NC)
+- En los desgloses por zona, mes y moneda, el campo "total" ya es el neto (facturas - NC)
+- En el top de clientes, el total_facturado ya es neto (restadas las NC del cliente)
+- SIEMPRE presenta la venta neta como el dato principal y menciona las NC como referencia
+- Ejemplo: "Venta neta: Bs. 1,500,000 (Facturado: Bs. 1,800,000 - NC: Bs. 300,000)"
+- Las cuentas por cobrar vencidas NO incluyen notas de crédito"""
 
     def get_sql_context(self) -> str:
         return """

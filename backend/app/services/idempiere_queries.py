@@ -222,7 +222,11 @@ def build_sales_summary(
     currency_ids: list[int] | None = None,
     org_name: str | None = None,
 ) -> dict:
-    """Sales summary from iDempiere c_invoice (issotrx='Y')."""
+    """Sales summary from iDempiere c_invoice (issotrx='Y').
+
+    Excludes credit notes (ARC) from the main totals and shows them
+    separately so the user sees net sales = facturas - notas de crédito.
+    """
     db = IdempiereSession()
     try:
         conditions = [
@@ -263,9 +267,15 @@ def build_sales_summary(
             "ON i.salesrep_id = sr.c_bpartner_id "
             "LEFT JOIN client_zone cz "
             "ON i.c_bpartner_id = cz.c_bpartner_id "
+            "JOIN adempiere.c_doctype dt "
+            "ON i.c_doctypetarget_id = dt.c_doctype_id "
         )
 
-        # Totals
+        # Only regular invoices (ARI), exclude credit notes (ARC)
+        where_invoices = f"{where} AND dt.docbasetype = 'ARI'"
+        where_credit = f"{where} AND dt.docbasetype = 'ARC'"
+
+        # Totals (only invoices)
         totals_q = text(
             f"{zone_cte}"
             f"SELECT COUNT(*) AS total_facturas, "
@@ -274,7 +284,7 @@ def build_sales_summary(
             f"COALESCE(SUM(i.grandtotal - i.totallines), 0) AS total_iva "
             f"FROM adempiere.c_invoice i "
             f"{joins}"
-            f"WHERE {where}"
+            f"WHERE {where_invoices}"
         )
         row = db.execute(totals_q, params).fetchone()
         totals = {
@@ -284,26 +294,49 @@ def build_sales_summary(
             "total_iva": float(row[3]) if row else 0.0,
         }
 
-        # By sales region (zona)
+        # Credit notes totals
+        credit_q = text(
+            f"{zone_cte}"
+            f"SELECT COUNT(*) AS total_nc, "
+            f"COALESCE(SUM(i.grandtotal), 0) AS total_nc_monto "
+            f"FROM adempiere.c_invoice i "
+            f"{joins}"
+            f"WHERE {where_credit}"
+        )
+        cn_row = db.execute(credit_q, params).fetchone()
+        notas_credito = {
+            "total_notas_credito": cn_row[0] if cn_row else 0,
+            "monto_notas_credito": float(cn_row[1]) if cn_row else 0.0,
+        }
+        totals["total_notas_credito"] = notas_credito["total_notas_credito"]
+        totals["monto_notas_credito"] = notas_credito["monto_notas_credito"]
+        totals["venta_neta"] = totals["total_facturado"] - notas_credito["monto_notas_credito"]
+
+        # By sales region (zona) - only invoices, net of credit notes
         by_zone_q = text(
             f"{zone_cte}"
-            f"SELECT COALESCE(cz.zona_name, 'Sin Zona') AS zona, COUNT(*) AS facturas, "
-            f"COALESCE(SUM(i.grandtotal), 0) AS total "
+            f"SELECT COALESCE(cz.zona_name, 'Sin Zona') AS zona, "
+            f"SUM(CASE WHEN dt.docbasetype = 'ARI' THEN 1 ELSE 0 END) AS facturas, "
+            f"COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal ELSE 0 END), 0) AS total_bruto, "
+            f"COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARC' THEN i.grandtotal ELSE 0 END), 0) AS total_nc, "
+            f"COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal ELSE -i.grandtotal END), 0) AS total_neto "
             f"FROM adempiere.c_invoice i "
             f"{joins}"
             f"WHERE {where} "
-            f"GROUP BY cz.zona_name ORDER BY total DESC"
+            f"GROUP BY cz.zona_name ORDER BY total_neto DESC"
         )
         by_zone = [
-            {"zona": r[0], "facturas": r[1], "total": float(r[2])}
+            {"zona": r[0], "facturas": r[1], "total_bruto": float(r[2]),
+             "notas_credito": float(r[3]), "total": float(r[4])}
             for r in db.execute(by_zone_q, params).fetchall()
         ]
 
         # By distributor (salesrep_id tracks distributors, not internal salespeople)
         by_distributor_q = text(
             f"{zone_cte}"
-            f"SELECT COALESCE(sr.name, 'Sin Distribuidor') AS distribuidor, COUNT(*) AS facturas, "
-            f"COALESCE(SUM(i.grandtotal), 0) AS total "
+            f"SELECT COALESCE(sr.name, 'Sin Distribuidor') AS distribuidor, "
+            f"SUM(CASE WHEN dt.docbasetype = 'ARI' THEN 1 ELSE 0 END) AS facturas, "
+            f"COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal ELSE -i.grandtotal END), 0) AS total "
             f"FROM adempiere.c_invoice i "
             f"{joins}"
             f"WHERE {where} "
@@ -314,18 +347,20 @@ def build_sales_summary(
             for r in db.execute(by_distributor_q, params).fetchall()
         ]
 
-        # By month
+        # By month - net of credit notes
         by_month_q = text(
             f"{zone_cte}"
-            f"SELECT EXTRACT(MONTH FROM i.dateinvoiced)::int AS mes, COUNT(*) AS facturas, "
-            f"COALESCE(SUM(i.grandtotal), 0) AS total "
+            f"SELECT EXTRACT(MONTH FROM i.dateinvoiced)::int AS mes, "
+            f"SUM(CASE WHEN dt.docbasetype = 'ARI' THEN 1 ELSE 0 END) AS facturas, "
+            f"SUM(CASE WHEN dt.docbasetype = 'ARC' THEN 1 ELSE 0 END) AS notas_credito, "
+            f"COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal ELSE -i.grandtotal END), 0) AS total "
             f"FROM adempiere.c_invoice i "
             f"{joins}"
             f"WHERE {where} "
             f"GROUP BY EXTRACT(MONTH FROM i.dateinvoiced) ORDER BY mes"
         )
         by_month = [
-            {"mes": r[0], "facturas": r[1], "total": float(r[2])}
+            {"mes": r[0], "facturas": r[1], "notas_credito": r[2], "total": float(r[3])}
             for r in db.execute(by_month_q, params).fetchall()
         ]
 
@@ -333,16 +368,21 @@ def build_sales_summary(
         cur_label = _currency_label("i")
         by_currency_q = text(
             f"{zone_cte}"
-            f"SELECT {cur_label} AS moneda, COUNT(*) AS facturas, "
-            f"COALESCE(SUM(i.grandtotal), 0) AS total_facturado, "
-            f"COALESCE(SUM(i.totallines), 0) AS total_neto "
+            f"SELECT {cur_label} AS moneda, "
+            f"SUM(CASE WHEN dt.docbasetype = 'ARI' THEN 1 ELSE 0 END) AS facturas, "
+            f"SUM(CASE WHEN dt.docbasetype = 'ARC' THEN 1 ELSE 0 END) AS notas_credito, "
+            f"COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal ELSE 0 END), 0) AS total_facturado, "
+            f"COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARC' THEN i.grandtotal ELSE 0 END), 0) AS monto_nc, "
+            f"COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal ELSE -i.grandtotal END), 0) AS venta_neta "
             f"FROM adempiere.c_invoice i "
             f"{joins}"
             f"WHERE {where} "
-            f"GROUP BY {cur_label} ORDER BY total_facturado DESC"
+            f"GROUP BY {cur_label} ORDER BY venta_neta DESC"
         )
         by_currency = [
-            {"moneda": r[0], "facturas": r[1], "total_facturado": float(r[2]), "total_neto": float(r[3])}
+            {"moneda": r[0], "facturas": r[1], "notas_credito": r[2],
+             "total_facturado": float(r[3]), "monto_notas_credito": float(r[4]),
+             "venta_neta": float(r[5])}
             for r in db.execute(by_currency_q, params).fetchall()
         ]
 
@@ -464,10 +504,13 @@ def build_top_clients(
     currency_ids: list[int] | None = None,
     org_name: str | None = None,
 ) -> list[dict]:
-    """Top clients by invoiced amount from iDempiere.
+    """Top clients by net invoiced amount from iDempiere.
 
     Uses client_zone CTE to avoid JOIN multiplication from
     c_bpartner_location having multiple rows per client.
+
+    Credit notes (ARC) are subtracted from the client's total so the
+    ranking reflects net sales per client.
     """
     db = IdempiereSession()
     try:
@@ -504,13 +547,15 @@ def build_top_clients(
             f"COALESCE(sr.name, 'Sin Distribuidor') AS distribuidor, "
             f"COALESCE(bpg.name, 'Sin Tipología') AS tipologia, "
             f"{cur_label} AS moneda, "
-            f"COUNT(i.c_invoice_id) AS facturas, "
-            f"COALESCE(SUM(i.grandtotal), 0) AS total_facturado "
+            f"SUM(CASE WHEN dt.docbasetype = 'ARI' THEN 1 ELSE 0 END) AS facturas, "
+            f"SUM(CASE WHEN dt.docbasetype = 'ARC' THEN 1 ELSE 0 END) AS notas_credito, "
+            f"COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal ELSE -i.grandtotal END), 0) AS total_facturado "
             f"FROM adempiere.c_invoice i "
             f"JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id "
             f"LEFT JOIN adempiere.c_bpartner sr ON i.salesrep_id = sr.c_bpartner_id "
             f"LEFT JOIN client_zone cz ON bp.c_bpartner_id = cz.c_bpartner_id "
             f"LEFT JOIN adempiere.c_bp_group bpg ON bp.c_bp_group_id = bpg.c_bp_group_id "
+            f"JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id "
             f"WHERE {where} "
             f"GROUP BY bp.value, bp.name, cz.zona_name, sr.name, bpg.name, {cur_label} "
             f"ORDER BY total_facturado DESC "
@@ -526,7 +571,8 @@ def build_top_clients(
                 "tipologia": r[4],
                 "moneda": r[5],
                 "facturas": r[6],
-                "total_facturado": float(r[7]),
+                "notas_credito": r[7],
+                "total_facturado": float(r[8]),
             }
             for r in rows
         ]
@@ -578,8 +624,10 @@ def build_overdue_receivables(
             "LEFT JOIN adempiere.c_bpartner sr ON i.salesrep_id = sr.c_bpartner_id "
             "LEFT JOIN client_zone cz ON bp.c_bpartner_id = cz.c_bpartner_id "
             "LEFT JOIN adempiere.c_paymentterm pterm ON i.c_paymentterm_id = pterm.c_paymentterm_id "
+            "JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id "
             "WHERE i.issotrx = 'Y' AND i.docstatus = 'CO' AND i.ispaid = 'N' "
             "AND i.isactive = 'Y' "
+            "AND dt.docbasetype = 'ARI' "
             "AND i.dateinvoiced >= (CURRENT_DATE - INTERVAL '3 years') "
             "AND i.grandtotal > 100 "
             f"{org_clause}"
