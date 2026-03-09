@@ -1769,7 +1769,7 @@ function AuditPanel({
   }
 
   // Unique users with conversations
-  const uniqueUserIds = [...new Set(auditLogs.filter(l => l.user_id).map(l => l.user_id))];
+  const uniqueUserIds = Array.from(new Set(auditLogs.filter(l => l.user_id).map(l => l.user_id)));
 
   return (
     <div className="space-y-4">
