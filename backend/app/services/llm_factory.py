@@ -77,7 +77,7 @@ def create_llm(
 
         logger.info("Using OpenRouter (%s) for %s", settings.openrouter_model, purpose)
         return ChatOpenAI(
-            api_key=settings.openrouter_api_key,
+            openai_api_key=settings.openrouter_api_key,
             base_url="https://openrouter.ai/api/v1",
             model=settings.openrouter_model,
             temperature=temperature,
