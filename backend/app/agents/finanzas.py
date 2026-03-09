@@ -66,6 +66,13 @@ IMPORTANTE SOBRE SALDOS BANCARIOS:
 - Cada cuenta muestra: banco, número de cuenta, tipo, organización y saldo
 - Si el usuario pregunta por saldos, presenta las tablas por moneda de forma clara
 
+IMPORTANTE SOBRE CUENTAS POR COBRAR Y PAGAR:
+- Las cuentas por cobrar y por pagar están SEPARADAS por moneda (Bs. y USD)
+- NUNCA sumes montos de diferentes monedas
+- Presenta cada moneda por separado: "Por cobrar en Bs.: X" y "Por cobrar en $: Y"
+- Las facturas vencidas también se presentan separadas por moneda
+- Si el usuario pregunta cuánto le deben, presenta por moneda de forma clara
+
 REGLAS:
 - Responde siempre en español, de forma profesional y clara
 - Usa formato de moneda (Bs. o $) con separadores de miles (punto=miles, coma=decimal)
@@ -151,25 +158,49 @@ Datos financieros de iDempiere:
                 symbol = "Bs." if cur == "VES" else "$" if cur == "USD" else cur
                 lines.append(f"- **{cur}**: {symbol} {total:,.2f}")
 
-        # --- Receivables ---
+        # --- Receivables (separated by currency) ---
         ar = summary.get("cuentas_por_cobrar", {})
         if ar:
             lines.append("\n### Cuentas Por Cobrar")
             lines.append(f"- Facturas pendientes: {ar.get('facturas_pendientes', 0)}")
-            lines.append(f"- Total por cobrar: {ar.get('total_por_cobrar', 0):,.2f}")
+            ar_by_cur = ar.get("por_moneda", [])
+            if ar_by_cur:
+                for item in ar_by_cur:
+                    sym = "Bs." if item["moneda"] == "Bs." else "$" if item["moneda"] == "USD" else item["moneda"]
+                    lines.append(f"  - **{item['moneda']}**: {item['facturas']} facturas por {sym} {item['total']:,.2f}")
+            else:
+                lines.append(f"- Total por cobrar: {ar.get('total_por_cobrar', 0):,.2f}")
             if ar.get("facturas_vencidas"):
                 lines.append(f"- Facturas vencidas: {ar['facturas_vencidas']}")
-                lines.append(f"- Total vencido: {ar.get('total_vencido', 0):,.2f}")
+                vencidas_cur = ar.get("vencidas_por_moneda", [])
+                if vencidas_cur:
+                    for item in vencidas_cur:
+                        sym = "Bs." if item["moneda"] == "Bs." else "$" if item["moneda"] == "USD" else item["moneda"]
+                        lines.append(f"  - **{item['moneda']}**: {item['facturas']} vencidas por {sym} {item['total']:,.2f}")
+                else:
+                    lines.append(f"- Total vencido: {ar.get('total_vencido', 0):,.2f}")
 
-        # --- Payables ---
+        # --- Payables (separated by currency) ---
         ap = summary.get("cuentas_por_pagar", {})
         if ap:
             lines.append("\n### Cuentas Por Pagar")
             lines.append(f"- Facturas pendientes: {ap.get('facturas_pendientes', 0)}")
-            lines.append(f"- Total por pagar: {ap.get('total_por_pagar', 0):,.2f}")
+            ap_by_cur = ap.get("por_moneda", [])
+            if ap_by_cur:
+                for item in ap_by_cur:
+                    sym = "Bs." if item["moneda"] == "Bs." else "$" if item["moneda"] == "USD" else item["moneda"]
+                    lines.append(f"  - **{item['moneda']}**: {item['facturas']} facturas por {sym} {item['total']:,.2f}")
+            else:
+                lines.append(f"- Total por pagar: {ap.get('total_por_pagar', 0):,.2f}")
             if ap.get("facturas_vencidas"):
                 lines.append(f"- Facturas vencidas: {ap['facturas_vencidas']}")
-                lines.append(f"- Total vencido: {ap.get('total_vencido', 0):,.2f}")
+                vencidas_cur = ap.get("vencidas_por_moneda", [])
+                if vencidas_cur:
+                    for item in vencidas_cur:
+                        sym = "Bs." if item["moneda"] == "Bs." else "$" if item["moneda"] == "USD" else item["moneda"]
+                        lines.append(f"  - **{item['moneda']}**: {item['facturas']} vencidas por {sym} {item['total']:,.2f}")
+                else:
+                    lines.append(f"- Total vencido: {ap.get('total_vencido', 0):,.2f}")
 
         return "\n".join(lines)
 

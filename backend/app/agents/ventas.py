@@ -108,6 +108,19 @@ SOBRE TIPOLOGÍA:
 - La columna "tipologia" muestra el grupo/categoría del cliente (c_bp_group)
 - Refleja la clasificación que Santoni asigna a cada cliente en iDempiere
 
+SOBRE REGIONES:
+- Los datos incluyen agrupación por REGIONES macro de Venezuela:
+  * Llanos (Portuguesa, Barinas, Cojedes, Apure)
+  * Centro-Occidente (Lara, Yaracuy, Falcón)
+  * Centro (Carabobo, Aragua)
+  * Capital (Caracas, Miranda, La Guaira)
+  * Occidente (Zulia, Santa Bárbara)
+  * Andes (Trujillo, Mérida, Táchira)
+  * Oriente (Margarita, Anzoátegui, Sucre, Monagas)
+  * Guayana (Bolívar, Delta Amacuro, Amazonas)
+- Si el usuario pide datos "por región", usa la sección "por_region"
+- Si pide por "zona" o "estado", usa la sección "por_zona" (más detallada)
+
 SOBRE NOTAS DE CRÉDITO:
 - Las notas de crédito (NC) ya están SEPARADAS de las facturas en los datos
 - Los totales de venta muestran: facturas brutas, notas de crédito y venta neta (facturas - NC)
@@ -155,6 +168,7 @@ Datos de ventas de iDempiere:
         "cobranza": ["cobran", "cobro", "recauda", "pago"],
         "vencidas": ["atrasa", "vencid", "pendiente", "deuda", "mora"],
         "ventas": ["venta", "factur", "ingreso", "volumen"],
+        "region": ["region", "región", "regiones"],
     }
 
     @classmethod

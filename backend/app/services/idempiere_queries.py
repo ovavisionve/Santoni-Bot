@@ -192,6 +192,63 @@ def execute_idempiere_query(query: str, params: dict | None = None) -> list[dict
 # VENTAS (Sales)
 # ---------------------------------------------------------------------------
 
+# Mapping of sales zones (c_salesregion) to macro regions for Venezuela
+# This groups individual states/zones into broader commercial regions
+_ZONE_TO_REGION = {
+    "portuguesa": "Llanos",
+    "barinas": "Llanos",
+    "guanare": "Llanos",
+    "cojedes": "Llanos",
+    "apure": "Llanos",
+    "lara": "Centro-Occidente",
+    "yaracuy": "Centro-Occidente",
+    "falcon": "Centro-Occidente",
+    "carabobo": "Centro",
+    "aragua": "Centro",
+    "valencia": "Centro",
+    "caracas": "Capital",
+    "miranda": "Capital",
+    "vargas": "Capital",
+    "la guaira": "Capital",
+    "zulia": "Occidente",
+    "maracaibo": "Occidente",
+    "cabimas": "Occidente",
+    "trujillo": "Andes",
+    "merida": "Andes",
+    "mérida": "Andes",
+    "tachira": "Andes",
+    "táchira": "Andes",
+    "san cristobal": "Andes",
+    "san cristóbal": "Andes",
+    "santa barbara": "Occidente",
+    "margarita": "Oriente",
+    "oriente": "Oriente",
+    "anzoategui": "Oriente",
+    "anzoátegui": "Oriente",
+    "sucre": "Oriente",
+    "monagas": "Oriente",
+    "bolivar": "Guayana",
+    "bolívar": "Guayana",
+    "delta amacuro": "Guayana",
+    "amazonas": "Guayana",
+}
+
+
+def _region_case_sql() -> str:
+    """Build a SQL CASE expression that maps zone names to macro regions."""
+    cases = []
+    # Group by region to reduce SQL size
+    region_zones: dict[str, list[str]] = {}
+    for zone, region in _ZONE_TO_REGION.items():
+        region_zones.setdefault(region, []).append(zone)
+
+    for region, zones in region_zones.items():
+        like_conds = " OR ".join(f"LOWER(cz.zona_name) LIKE '%{z}%'" for z in zones)
+        cases.append(f"WHEN ({like_conds}) THEN '{region}'")
+
+    return f"CASE {' '.join(cases)} ELSE 'Otra' END"
+
+
 def _currency_label(alias: str = "i") -> str:
     """SQL CASE expression that groups Santoni's multiple USD currency entries
     into a single 'USD' label and VES into 'Bs.' for display."""
@@ -319,7 +376,8 @@ def build_sales_summary(
             f"SUM(CASE WHEN dt.docbasetype = 'ARI' THEN 1 ELSE 0 END) AS facturas, "
             f"COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal ELSE 0 END), 0) AS total_bruto, "
             f"COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARC' THEN i.grandtotal ELSE 0 END), 0) AS total_nc, "
-            f"COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal ELSE -i.grandtotal END), 0) AS total_neto "
+            f"COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal "
+            f"WHEN dt.docbasetype = 'ARC' THEN -i.grandtotal ELSE 0 END), 0) AS total_neto "
             f"FROM adempiere.c_invoice i "
             f"{joins}"
             f"WHERE {where} "
@@ -331,12 +389,31 @@ def build_sales_summary(
             for r in db.execute(by_zone_q, params).fetchall()
         ]
 
+        # By macro region (groups zones into Llanos, Centro, Occidente, etc.)
+        region_case = _region_case_sql()
+        by_region_q = text(
+            f"{zone_cte}"
+            f"SELECT {region_case} AS region, "
+            f"SUM(CASE WHEN dt.docbasetype = 'ARI' THEN 1 ELSE 0 END) AS facturas, "
+            f"COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal "
+            f"WHEN dt.docbasetype = 'ARC' THEN -i.grandtotal ELSE 0 END), 0) AS total "
+            f"FROM adempiere.c_invoice i "
+            f"{joins}"
+            f"WHERE {where} "
+            f"GROUP BY {region_case} ORDER BY total DESC"
+        )
+        by_region = [
+            {"region": r[0], "facturas": r[1], "total": float(r[2])}
+            for r in db.execute(by_region_q, params).fetchall()
+        ]
+
         # By distributor (salesrep_id tracks distributors, not internal salespeople)
         by_distributor_q = text(
             f"{zone_cte}"
             f"SELECT COALESCE(sr.name, 'Sin Distribuidor') AS distribuidor, "
             f"SUM(CASE WHEN dt.docbasetype = 'ARI' THEN 1 ELSE 0 END) AS facturas, "
-            f"COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal ELSE -i.grandtotal END), 0) AS total "
+            f"COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal "
+            f"WHEN dt.docbasetype = 'ARC' THEN -i.grandtotal ELSE 0 END), 0) AS total "
             f"FROM adempiere.c_invoice i "
             f"{joins}"
             f"WHERE {where} "
@@ -353,7 +430,8 @@ def build_sales_summary(
             f"SELECT EXTRACT(MONTH FROM i.dateinvoiced)::int AS mes, "
             f"SUM(CASE WHEN dt.docbasetype = 'ARI' THEN 1 ELSE 0 END) AS facturas, "
             f"SUM(CASE WHEN dt.docbasetype = 'ARC' THEN 1 ELSE 0 END) AS notas_credito, "
-            f"COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal ELSE -i.grandtotal END), 0) AS total "
+            f"COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal "
+            f"WHEN dt.docbasetype = 'ARC' THEN -i.grandtotal ELSE 0 END), 0) AS total "
             f"FROM adempiere.c_invoice i "
             f"{joins}"
             f"WHERE {where} "
@@ -373,7 +451,8 @@ def build_sales_summary(
             f"SUM(CASE WHEN dt.docbasetype = 'ARC' THEN 1 ELSE 0 END) AS notas_credito, "
             f"COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal ELSE 0 END), 0) AS total_facturado, "
             f"COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARC' THEN i.grandtotal ELSE 0 END), 0) AS monto_nc, "
-            f"COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal ELSE -i.grandtotal END), 0) AS venta_neta "
+            f"COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal "
+            f"WHEN dt.docbasetype = 'ARC' THEN -i.grandtotal ELSE 0 END), 0) AS venta_neta "
             f"FROM adempiere.c_invoice i "
             f"{joins}"
             f"WHERE {where} "
@@ -390,6 +469,7 @@ def build_sales_summary(
             "anio": anio,
             "filtros": {"zona": zona, "vendedor": vendedor, "mes": mes},
             "totales": totals,
+            "por_region": by_region,
             "por_zona": by_zone,
             "por_distribuidor": by_distributor,
             "por_mes": by_month,
@@ -549,7 +629,8 @@ def build_top_clients(
             f"{cur_label} AS moneda, "
             f"SUM(CASE WHEN dt.docbasetype = 'ARI' THEN 1 ELSE 0 END) AS facturas, "
             f"SUM(CASE WHEN dt.docbasetype = 'ARC' THEN 1 ELSE 0 END) AS notas_credito, "
-            f"COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal ELSE -i.grandtotal END), 0) AS total_facturado "
+            f"COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal "
+            f"WHEN dt.docbasetype = 'ARC' THEN -i.grandtotal ELSE 0 END), 0) AS total_facturado "
             f"FROM adempiere.c_invoice i "
             f"JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id "
             f"LEFT JOIN adempiere.c_bpartner sr ON i.salesrep_id = sr.c_bpartner_id "
@@ -717,7 +798,8 @@ def build_financial_summary(
 
         total_saldo_bancario = sum(b["saldo"] for b in banks)
 
-        # Accounts receivable (unpaid sales invoices)
+        # Accounts receivable (unpaid sales invoices) - separated by currency
+        cur_label = _currency_label("i")
         ar_conditions = [
             "i.issotrx = 'Y'",
             "i.docstatus = 'CO'",
@@ -730,17 +812,23 @@ def build_financial_summary(
 
         ar_where = " AND ".join(ar_conditions)
         ar_q = text(
-            f"SELECT COUNT(*) AS facturas_pendientes, "
+            f"SELECT {cur_label} AS moneda, "
+            f"COUNT(*) AS facturas_pendientes, "
             f"COALESCE(SUM(i.grandtotal), 0) AS total_por_cobrar "
-            f"FROM adempiere.c_invoice i WHERE {ar_where}"
+            f"FROM adempiere.c_invoice i WHERE {ar_where} "
+            f"GROUP BY {cur_label} ORDER BY total_por_cobrar DESC"
         )
-        ar_row = db.execute(ar_q, ar_params).fetchone()
+        ar_rows = db.execute(ar_q, ar_params).fetchall()
         receivables = {
-            "facturas_pendientes": ar_row[0] if ar_row else 0,
-            "total_por_cobrar": float(ar_row[1]) if ar_row else 0.0,
+            "facturas_pendientes": sum(r[1] for r in ar_rows),
+            "total_por_cobrar": sum(float(r[2]) for r in ar_rows),
+            "por_moneda": [
+                {"moneda": r[0], "facturas": r[1], "total": float(r[2])}
+                for r in ar_rows
+            ],
         }
 
-        # Overdue receivables
+        # Overdue receivables - also by currency
         overdue_conds = [
             "i.issotrx = 'Y'",
             "i.docstatus = 'CO'",
@@ -752,17 +840,23 @@ def build_financial_summary(
         _add_org_filter(overdue_conds, overdue_params, org_ids, "i")
         overdue_where = " AND ".join(overdue_conds)
         overdue_q = text(
-            f"SELECT COUNT(*) AS facturas_vencidas, "
+            f"SELECT {cur_label} AS moneda, "
+            f"COUNT(*) AS facturas_vencidas, "
             f"COALESCE(SUM(i.grandtotal), 0) AS total_vencido "
             f"FROM adempiere.c_invoice i "
             f"LEFT JOIN adempiere.c_paymentterm pt ON i.c_paymentterm_id = pt.c_paymentterm_id "
-            f"WHERE {overdue_where}"
+            f"WHERE {overdue_where} "
+            f"GROUP BY {cur_label}"
         )
-        overdue_row = db.execute(overdue_q, overdue_params).fetchone()
-        receivables["facturas_vencidas"] = overdue_row[0] if overdue_row else 0
-        receivables["total_vencido"] = float(overdue_row[1]) if overdue_row else 0.0
+        overdue_rows = db.execute(overdue_q, overdue_params).fetchall()
+        receivables["facturas_vencidas"] = sum(r[1] for r in overdue_rows)
+        receivables["total_vencido"] = sum(float(r[2]) for r in overdue_rows)
+        receivables["vencidas_por_moneda"] = [
+            {"moneda": r[0], "facturas": r[1], "total": float(r[2])}
+            for r in overdue_rows
+        ]
 
-        # Accounts payable (unpaid purchase invoices)
+        # Accounts payable (unpaid purchase invoices) - separated by currency
         ap_conditions = [
             "i.issotrx = 'N'",
             "i.docstatus = 'CO'",
@@ -775,17 +869,23 @@ def build_financial_summary(
 
         ap_where = " AND ".join(ap_conditions)
         ap_q = text(
-            f"SELECT COUNT(*) AS facturas_pendientes, "
+            f"SELECT {cur_label} AS moneda, "
+            f"COUNT(*) AS facturas_pendientes, "
             f"COALESCE(SUM(i.grandtotal), 0) AS total_por_pagar "
-            f"FROM adempiere.c_invoice i WHERE {ap_where}"
+            f"FROM adempiere.c_invoice i WHERE {ap_where} "
+            f"GROUP BY {cur_label} ORDER BY total_por_pagar DESC"
         )
-        ap_row = db.execute(ap_q, ap_params).fetchone()
+        ap_rows = db.execute(ap_q, ap_params).fetchall()
         payables = {
-            "facturas_pendientes": ap_row[0] if ap_row else 0,
-            "total_por_pagar": float(ap_row[1]) if ap_row else 0.0,
+            "facturas_pendientes": sum(r[1] for r in ap_rows),
+            "total_por_pagar": sum(float(r[2]) for r in ap_rows),
+            "por_moneda": [
+                {"moneda": r[0], "facturas": r[1], "total": float(r[2])}
+                for r in ap_rows
+            ],
         }
 
-        # Overdue payables
+        # Overdue payables - also by currency
         overdue_ap_conds = [
             "i.issotrx = 'N'",
             "i.docstatus = 'CO'",
@@ -797,15 +897,21 @@ def build_financial_summary(
         _add_org_filter(overdue_ap_conds, overdue_ap_params, org_ids, "i")
         overdue_ap_where = " AND ".join(overdue_ap_conds)
         overdue_ap_q = text(
-            f"SELECT COUNT(*) AS facturas_vencidas, "
+            f"SELECT {cur_label} AS moneda, "
+            f"COUNT(*) AS facturas_vencidas, "
             f"COALESCE(SUM(i.grandtotal), 0) AS total_vencido "
             f"FROM adempiere.c_invoice i "
             f"LEFT JOIN adempiere.c_paymentterm pt ON i.c_paymentterm_id = pt.c_paymentterm_id "
-            f"WHERE {overdue_ap_where}"
+            f"WHERE {overdue_ap_where} "
+            f"GROUP BY {cur_label}"
         )
-        overdue_ap_row = db.execute(overdue_ap_q, overdue_ap_params).fetchone()
-        payables["facturas_vencidas"] = overdue_ap_row[0] if overdue_ap_row else 0
-        payables["total_vencido"] = float(overdue_ap_row[1]) if overdue_ap_row else 0.0
+        overdue_ap_rows = db.execute(overdue_ap_q, overdue_ap_params).fetchall()
+        payables["facturas_vencidas"] = sum(r[1] for r in overdue_ap_rows)
+        payables["total_vencido"] = sum(float(r[2]) for r in overdue_ap_rows)
+        payables["vencidas_por_moneda"] = [
+            {"moneda": r[0], "facturas": r[1], "total": float(r[2])}
+            for r in overdue_ap_rows
+        ]
 
         return {
             "anio": anio,

@@ -19,6 +19,7 @@ from app.agents.date_utils import (
 from app.services.query_service import (
     build_production_summary,
     build_production_orders,
+    build_inventory_stock,
 )
 
 
@@ -106,6 +107,13 @@ Datos de producción/inventario en iDempiere:
         "recepci", "despacho", "movimiento",
     ]
 
+    _INVENTORY_KEYWORDS = [
+        "inventario", "stock", "existencia", "existencias",
+        "materia prima", "materias primas", "almacén", "almacen",
+        "disponible", "disponibilidad", "cuánto hay", "cuanto hay",
+        "cuánto queda", "cuanto queda", "cuánto tenemos", "cuanto tenemos",
+    ]
+
     def fetch_data(self, message: str, org_ids: list[int] | None = None, salesrep_id: int | None = None, history: list[tuple[str, str]] | None = None) -> str | None:
         msg = message.lower()
         sections = []
@@ -143,5 +151,21 @@ Datos de producción/inventario en iDempiere:
             if data:
                 sections.append(f"## Documentos de Movimiento Recientes ({len(data)} registros)")
                 sections.append(self._format_table(data))
+
+        # Inventory / stock (materia prima)
+        include_inventory = any(w in msg for w in self._INVENTORY_KEYWORDS)
+        if not include_inventory and history:
+            for role, content in reversed(history):
+                if role == "user" and any(
+                    w in content.lower() for w in self._INVENTORY_KEYWORDS
+                ):
+                    include_inventory = True
+                    break
+
+        if include_inventory:
+            inv_data = build_inventory_stock(org_ids=org_ids)
+            sections.append(self._format_summary(
+                inv_data, "Inventario / Stock Actual",
+            ))
 
         return "\n\n".join(sections) if sections else None
