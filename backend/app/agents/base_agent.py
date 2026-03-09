@@ -114,7 +114,20 @@ class BaseAgent(ABC):
             logger.debug("RAG context unavailable for %s: %s", self.name, exc)
 
         # Fetch real data from the database
-        data_context = self.fetch_data(message, org_ids=org_ids, salesrep_id=salesrep_id, history=history)
+        try:
+            data_context = self.fetch_data(message, org_ids=org_ids, salesrep_id=salesrep_id, history=history)
+        except Exception as exc:
+            logger.error(
+                "Error in %s.fetch_data: %s: %s",
+                self.name, type(exc).__name__, exc, exc_info=True,
+            )
+            data_context = (
+                f"## Error al consultar datos\n"
+                f"Se produjo un error al consultar la base de datos: {type(exc).__name__}.\n"
+                f"Informa al usuario que hubo un problema de conexión con la base de datos "
+                f"y que intente de nuevo en unos momentos."
+            )
+
         if data_context:
             messages.append(
                 SystemMessage(

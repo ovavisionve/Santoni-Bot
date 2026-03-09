@@ -7,6 +7,7 @@ Fuente de datos: c_invoice (issotrx='Y'), c_payment (isreceipt='Y'),
 c_bpartner en iDempiere (PostgreSQL 13).
 """
 
+import logging
 import re
 
 from app.agents.base_agent import BaseAgent
@@ -206,7 +207,8 @@ Datos de ventas de iDempiere:
     def _extract_context_from_history(
         self, history: list[tuple[str, str]],
     ) -> dict:
-        """Extract zona, vendedor, org_name, currency, query_type from history."""
+        """Extract zona, vendedor, org_name, currency, query_type, and
+        temporal context (date_from, date_to, mes, anio) from history."""
         ctx: dict = {}
         if not history:
             return ctx
@@ -233,11 +235,37 @@ Datos de ventas de iDempiere:
                 qt = self._detect_query_type(content)
                 if qt:
                     ctx["query_type"] = qt
-            if len(ctx) >= 5:
+            # Inherit temporal context from history
+            if "date_from" not in ctx:
+                df, dt = extract_date_range(content)
+                if df and dt:
+                    ctx["date_from"] = df
+                    ctx["date_to"] = dt
+            if "mes" not in ctx and "date_from" not in ctx:
+                m, a = extract_month_year(content)
+                if m:
+                    ctx["mes"] = m
+                    ctx["anio"] = a
+            if len(ctx) >= 8:
                 break
         return ctx
 
+    def _is_empty_result(self, data) -> bool:
+        """Check if query result is empty (empty list or dict with all-zero totals)."""
+        if isinstance(data, list):
+            return len(data) == 0
+        if isinstance(data, dict):
+            totals = data.get("totales", {})
+            if isinstance(totals, dict):
+                return all(
+                    v == 0 or v == 0.0
+                    for v in totals.values()
+                    if isinstance(v, (int, float))
+                )
+        return False
+
     def fetch_data(self, message: str, org_ids: list[int] | None = None, salesrep_id: int | None = None, history: list[tuple[str, str]] | None = None) -> str | None:
+        logger = logging.getLogger("santonibot.agents.ventas")
         msg = message.lower()
         sections = []
 
@@ -268,6 +296,14 @@ Datos de ventas de iDempiere:
             org_name = hist_ctx.get("org_name")
         if not currency_ids:
             currency_ids = hist_ctx.get("currency")
+        # Inherit temporal context from history for follow-ups
+        if not date_from and not date_to and not mes:
+            if hist_ctx.get("date_from"):
+                date_from = hist_ctx["date_from"]
+                date_to = hist_ctx["date_to"]
+            elif hist_ctx.get("mes"):
+                mes = hist_ctx["mes"]
+                anio = hist_ctx.get("anio", anio)
 
         label = build_period_label(date_from, date_to, mes, anio)
 
@@ -276,42 +312,88 @@ Datos de ventas de iDempiere:
         if not query_type and hist_ctx:
             query_type = hist_ctx.get("query_type")
 
-        if query_type == "top" or any(w in msg for w in self._QUERY_TYPES["top"]):
-            limit = 20
-            limit_match = re.search(r'top\s*(\d+)', msg)
-            if limit_match:
-                limit = int(limit_match.group(1))
-            org_label = f" - {org_name}" if org_name else ""
-            data = build_top_clients(
-                limit=limit, zona=zona, vendedor=vendedor, mes=mes, anio=anio,
-                org_ids=org_ids, salesrep_id=salesrep_id,
-                date_from=date_from, date_to=date_to,
-                currency_ids=currency_ids, org_name=org_name,
-            )
-            sections.append(f"## Top {limit} Clientes por Ventas ({label}{org_label})")
-            sections.append(self._format_table(data))
+        try:
+            if query_type == "top" or any(w in msg for w in self._QUERY_TYPES["top"]):
+                limit = 20
+                limit_match = re.search(r'top\s*(\d+)', msg)
+                if limit_match:
+                    limit = int(limit_match.group(1))
+                org_label = f" - {org_name}" if org_name else ""
+                data = build_top_clients(
+                    limit=limit, zona=zona, vendedor=vendedor, mes=mes, anio=anio,
+                    org_ids=org_ids, salesrep_id=salesrep_id,
+                    date_from=date_from, date_to=date_to,
+                    currency_ids=currency_ids, org_name=org_name,
+                )
+                # If specific period returned empty, retry with full year
+                if self._is_empty_result(data) and (mes or (date_from and date_to)):
+                    data_year = build_top_clients(
+                        limit=limit, zona=zona, vendedor=vendedor, mes=None, anio=anio,
+                        org_ids=org_ids, salesrep_id=salesrep_id,
+                        date_from=None, date_to=None,
+                        currency_ids=currency_ids, org_name=org_name,
+                    )
+                    if not self._is_empty_result(data_year):
+                        sections.append(
+                            f"## Top {limit} Clientes por Ventas ({label}{org_label})\n"
+                            f"**NOTA:** No se encontraron datos para {label}. "
+                            f"Se muestran datos del Año {anio} completo como referencia."
+                        )
+                        sections.append(self._format_table(data_year))
+                    else:
+                        sections.append(f"## Top {limit} Clientes por Ventas ({label}{org_label})")
+                        sections.append(self._format_table(data))
+                else:
+                    sections.append(f"## Top {limit} Clientes por Ventas ({label}{org_label})")
+                    sections.append(self._format_table(data))
 
-        if query_type == "cobranza" or any(w in msg for w in self._QUERY_TYPES["cobranza"]):
-            data = build_collection_summary(
-                zona=zona, vendedor=vendedor, mes=mes, anio=anio,
-                org_ids=org_ids, salesrep_id=salesrep_id,
-                date_from=date_from, date_to=date_to,
-                currency_ids=currency_ids, org_name=org_name,
-            )
-            sections.append(self._format_summary(data, f"Resumen de Cobranza - {label}"))
+            if query_type == "cobranza" or any(w in msg for w in self._QUERY_TYPES["cobranza"]):
+                data = build_collection_summary(
+                    zona=zona, vendedor=vendedor, mes=mes, anio=anio,
+                    org_ids=org_ids, salesrep_id=salesrep_id,
+                    date_from=date_from, date_to=date_to,
+                    currency_ids=currency_ids, org_name=org_name,
+                )
+                sections.append(self._format_summary(data, f"Resumen de Cobranza - {label}"))
 
-        if query_type == "vencidas" or any(w in msg for w in self._QUERY_TYPES["vencidas"]):
-            data = build_overdue_receivables(org_ids=org_ids, salesrep_id=salesrep_id)
-            sections.append("## Cuentas por Cobrar Vencidas")
-            sections.append(self._format_table(data))
+            if query_type == "vencidas" or any(w in msg for w in self._QUERY_TYPES["vencidas"]):
+                data = build_overdue_receivables(org_ids=org_ids, salesrep_id=salesrep_id)
+                sections.append("## Cuentas por Cobrar Vencidas")
+                sections.append(self._format_table(data))
 
-        if query_type == "ventas" or any(w in msg for w in self._QUERY_TYPES["ventas"]) or not sections:
-            data = build_sales_summary(
-                zona=zona, vendedor=vendedor, mes=mes, anio=anio,
-                org_ids=org_ids, salesrep_id=salesrep_id,
-                date_from=date_from, date_to=date_to,
-                currency_ids=currency_ids, org_name=org_name,
+            if query_type == "ventas" or any(w in msg for w in self._QUERY_TYPES["ventas"]) or not sections:
+                data = build_sales_summary(
+                    zona=zona, vendedor=vendedor, mes=mes, anio=anio,
+                    org_ids=org_ids, salesrep_id=salesrep_id,
+                    date_from=date_from, date_to=date_to,
+                    currency_ids=currency_ids, org_name=org_name,
+                )
+                # If specific period returned empty, retry with full year
+                if self._is_empty_result(data) and (mes or (date_from and date_to)):
+                    data_year = build_sales_summary(
+                        zona=zona, vendedor=vendedor, mes=None, anio=anio,
+                        org_ids=org_ids, salesrep_id=salesrep_id,
+                        date_from=None, date_to=None,
+                        currency_ids=currency_ids, org_name=org_name,
+                    )
+                    if not self._is_empty_result(data_year):
+                        sections.append(
+                            f"**NOTA:** No se encontraron datos de ventas para {label}. "
+                            f"Se muestran datos del Año {anio} completo como referencia."
+                        )
+                        sections.append(self._format_summary(data_year, f"Resumen de Ventas - Año {anio}"))
+                    else:
+                        sections.append(self._format_summary(data, f"Resumen de Ventas - {label}"))
+                else:
+                    sections.append(self._format_summary(data, f"Resumen de Ventas - {label}"))
+
+        except Exception as exc:
+            logger.error("Error consultando datos de ventas: %s: %s", type(exc).__name__, exc, exc_info=True)
+            sections.append(
+                f"## Error al consultar datos\n"
+                f"Se produjo un error al consultar la base de datos: {type(exc).__name__}.\n"
+                f"Esto puede deberse a un problema de conexión con iDempiere. "
+                f"Intenta de nuevo en unos momentos."
             )
-            sections.append(self._format_summary(data, f"Resumen de Ventas - {label}"))
 
         return "\n\n".join(sections) if sections else None
