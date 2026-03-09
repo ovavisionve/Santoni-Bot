@@ -59,6 +59,13 @@ CONTEXTO iDEMPIERE:
 - Organizaciones: INPROA SANTONI, AGROINPROA, AGROPECUARIA R.R., Agro Import, INVERSIONES AGA, InproMaiz, AGA AGRICOLA, Santoni Service
 - Campos fiscales venezolanos: lve_controlnumber, withholdingamt, lve_factfiscal
 
+IMPORTANTE SOBRE SALDOS BANCARIOS:
+- Los saldos bancarios se presentan SEPARADOS por moneda (VES y USD)
+- NUNCA sumes saldos de diferentes monedas entre sí
+- Presenta los totales por moneda: "Total en Bs.: X" y "Total en $: Y"
+- Cada cuenta muestra: banco, número de cuenta, tipo, organización y saldo
+- Si el usuario pregunta por saldos, presenta las tablas por moneda de forma clara
+
 REGLAS:
 - Responde siempre en español, de forma profesional y clara
 - Usa formato de moneda (Bs. o $) con separadores de miles (punto=miles, coma=decimal)
@@ -91,6 +98,81 @@ Datos financieros de iDempiere:
 
     _RECEIVABLES_KEYWORDS = ["cobrar", "morosidad", "vencid", "atras"]
 
+    # -- helpers for currency-aware bank formatting --
+    _BANK_COLUMNS = ["banco", "numero_cuenta", "tipo", "organizacion", "saldo"]
+
+    @staticmethod
+    def _format_bank_section(title: str, accounts: list[dict], currency_symbol: str) -> str:
+        """Format a group of bank accounts for a single currency."""
+        if not accounts:
+            return ""
+        lines = [f"### {title}"]
+        lines.append(BaseAgent._format_table(accounts, columns=FinanzasAgent._BANK_COLUMNS))
+        total = sum(a["saldo"] for a in accounts)
+        lines.append(f"\n**Total {currency_symbol}: {total:,.2f}**")
+        return "\n".join(lines)
+
+    def _format_financial_summary(self, summary: dict, label: str) -> str:
+        """Custom formatting for the financial summary with currency separation."""
+        lines = [f"## Resumen Financiero - {label}"]
+
+        # --- Bank balances separated by currency ---
+        lines.append("\n## Saldos Bancarios")
+
+        ves_section = self._format_bank_section(
+            "Cuentas en Bolívares (VES)",
+            summary.get("saldos_bancarios_ves", []),
+            "Bs.",
+        )
+        if ves_section:
+            lines.append(ves_section)
+
+        usd_section = self._format_bank_section(
+            "Cuentas en Dólares (USD)",
+            summary.get("saldos_bancarios_usd", []),
+            "$",
+        )
+        if usd_section:
+            lines.append(usd_section)
+
+        other_section = self._format_bank_section(
+            "Cuentas en Otras Monedas",
+            summary.get("saldos_bancarios_otras", []),
+            "",
+        )
+        if other_section:
+            lines.append(other_section)
+
+        # Totals per currency summary
+        totals = summary.get("totales_por_moneda", {})
+        if totals:
+            lines.append("\n### Resumen de Saldos por Moneda")
+            for cur, total in sorted(totals.items()):
+                symbol = "Bs." if cur == "VES" else "$" if cur == "USD" else cur
+                lines.append(f"- **{cur}**: {symbol} {total:,.2f}")
+
+        # --- Receivables ---
+        ar = summary.get("cuentas_por_cobrar", {})
+        if ar:
+            lines.append("\n### Cuentas Por Cobrar")
+            lines.append(f"- Facturas pendientes: {ar.get('facturas_pendientes', 0)}")
+            lines.append(f"- Total por cobrar: {ar.get('total_por_cobrar', 0):,.2f}")
+            if ar.get("facturas_vencidas"):
+                lines.append(f"- Facturas vencidas: {ar['facturas_vencidas']}")
+                lines.append(f"- Total vencido: {ar.get('total_vencido', 0):,.2f}")
+
+        # --- Payables ---
+        ap = summary.get("cuentas_por_pagar", {})
+        if ap:
+            lines.append("\n### Cuentas Por Pagar")
+            lines.append(f"- Facturas pendientes: {ap.get('facturas_pendientes', 0)}")
+            lines.append(f"- Total por pagar: {ap.get('total_por_pagar', 0):,.2f}")
+            if ap.get("facturas_vencidas"):
+                lines.append(f"- Facturas vencidas: {ap['facturas_vencidas']}")
+                lines.append(f"- Total vencido: {ap.get('total_vencido', 0):,.2f}")
+
+        return "\n".join(lines)
+
     def fetch_data(self, message: str, org_ids: list[int] | None = None, salesrep_id: int | None = None, history: list[tuple[str, str]] | None = None) -> str | None:
         msg = message.lower()
         sections = []
@@ -106,7 +188,7 @@ Datos financieros de iDempiere:
             mes=mes, anio=anio, org_ids=org_ids,
             date_from=date_from, date_to=date_to,
         )
-        sections.append(self._format_summary(summary, f"Resumen Financiero - {label}"))
+        sections.append(self._format_financial_summary(summary, label))
 
         include_receivables = any(w in msg for w in self._RECEIVABLES_KEYWORDS)
         # Follow-up: carry over receivables section from history

@@ -739,10 +739,21 @@ def build_financial_summary(
                 "tipo": r[2],
                 "moneda": r[3],
                 "saldo": float(r[4]),
-                "fecha_saldo": r[5].isoformat() if r[5] else None,
+                "organizacion": "Demo",
             }
             for r in db.execute(bank_q).fetchall()
         ]
+
+        # Separate totals by currency
+        totals_by_currency: dict[str, float] = {}
+        for b in banks:
+            cur = b["moneda"]
+            totals_by_currency[cur] = totals_by_currency.get(cur, 0.0) + b["saldo"]
+
+        banks_ves = [b for b in banks if b["moneda"] == "VES"]
+        banks_usd = [b for b in banks if b["moneda"] == "USD"]
+        banks_other = [b for b in banks if b["moneda"] not in ("VES", "USD")]
+
         total_saldo_bancario = sum(b["saldo"] for b in banks)
 
         ar_conditions = [
@@ -808,7 +819,11 @@ def build_financial_summary(
             "anio": anio,
             "mes": mes,
             "saldos_bancarios": banks,
+            "saldos_bancarios_ves": banks_ves,
+            "saldos_bancarios_usd": banks_usd,
+            "saldos_bancarios_otras": banks_other,
             "total_saldo_bancario": total_saldo_bancario,
+            "totales_por_moneda": totals_by_currency,
             "cuentas_por_cobrar": receivables,
             "cuentas_por_pagar": payables,
         }

@@ -683,12 +683,14 @@ def build_financial_summary(
             f"     WHEN ba.bankaccounttype = 'I' THEN 'Inversión' "
             f"     ELSE ba.bankaccounttype END AS tipo, "
             f"COALESCE(c.iso_code, 'VES') AS moneda, "
-            f"ba.currentbalance AS saldo "
+            f"ba.currentbalance AS saldo, "
+            f"o.name AS organizacion "
             f"FROM adempiere.c_bankaccount ba "
             f"JOIN adempiere.c_bank b ON ba.c_bank_id = b.c_bank_id "
             f"LEFT JOIN adempiere.c_currency c ON ba.c_currency_id = c.c_currency_id "
+            f"LEFT JOIN adempiere.ad_org o ON ba.ad_org_id = o.ad_org_id "
             f"WHERE {bank_where} "
-            f"ORDER BY b.name"
+            f"ORDER BY c.iso_code, b.name"
         )
         banks = [
             {
@@ -697,10 +699,22 @@ def build_financial_summary(
                 "tipo": r[2],
                 "moneda": r[3],
                 "saldo": float(r[4]) if r[4] else 0.0,
-                "fecha_saldo": None,
+                "organizacion": r[5] or "Sin asignar",
             }
             for r in db.execute(bank_q, bank_params).fetchall()
         ]
+
+        # Separate totals by currency
+        totals_by_currency: dict[str, float] = {}
+        for b in banks:
+            cur = b["moneda"]
+            totals_by_currency[cur] = totals_by_currency.get(cur, 0.0) + b["saldo"]
+
+        # Group banks by currency for clearer presentation
+        banks_ves = [b for b in banks if b["moneda"] == "VES"]
+        banks_usd = [b for b in banks if b["moneda"] == "USD"]
+        banks_other = [b for b in banks if b["moneda"] not in ("VES", "USD")]
+
         total_saldo_bancario = sum(b["saldo"] for b in banks)
 
         # Accounts receivable (unpaid sales invoices)
@@ -797,7 +811,11 @@ def build_financial_summary(
             "anio": anio,
             "mes": mes,
             "saldos_bancarios": banks,
+            "saldos_bancarios_ves": banks_ves,
+            "saldos_bancarios_usd": banks_usd,
+            "saldos_bancarios_otras": banks_other,
             "total_saldo_bancario": total_saldo_bancario,
+            "totales_por_moneda": totals_by_currency,
             "cuentas_por_cobrar": receivables,
             "cuentas_por_pagar": payables,
         }
