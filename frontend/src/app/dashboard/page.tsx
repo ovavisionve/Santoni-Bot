@@ -51,7 +51,8 @@ function formatCurrency(value: number): string {
 export default function DashboardPage() {
   const router = useRouter();
   const { user, loading } = useAuth();
-  const [kpis, setKpis] = useState<Record<string, unknown> | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [kpis, setKpis] = useState<Record<string, any> | null>(null);
   const [activity, setActivity] = useState<{
     conversations: number;
     messages_7d: number;
