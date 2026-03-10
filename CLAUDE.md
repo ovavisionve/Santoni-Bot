@@ -232,6 +232,7 @@ Se crearon cuestionarios para que cada departamento valide las respuestas del bo
 - Seguridad hardened
 
 ### Trabajo reciente (Feb-Mar 2026):
+- **Datos históricos locales (10/Mar 2026)**: Sistema para cachear datos de iDempiere pre-marzo 2026 en DB local (ver sección abajo)
 - Conexión exitosa a iDempiere real (queries de nómina, ventas, compras)
 - Follow-ups inteligentes con herencia de contexto temporal
 - Confidence score + dataset de 351 escenarios (v2.4)
@@ -292,6 +293,59 @@ if self._is_empty_result(data) and (mes or (date_from and date_to)):
 - `base_agent.py`: try/except alrededor de `self.fetch_data()` protege TODOS los agentes
 - Cada agente: try/except interno en `fetch_data()` con mensaje de error amigable
 - Errores de DB se logean con `logger.error()` y se presentan al usuario como mensaje informativo
+
+---
+
+## Datos Históricos Locales (implementado Mar 2026)
+
+Para evitar depender de iDempiere para consultas de datos anteriores a marzo 2026,
+se implementó un sistema de caché local:
+
+### Arquitectura
+- **Schema `adempiere`** en la DB local de SantoniBot (PostgreSQL 16) con las mismas tablas
+- Las queries SQL existentes funcionan **sin cambios** porque usan `adempiere.tabla`
+- Routing automático: `_get_session()` en `idempiere_queries.py` decide qué DB usar
+
+### Flujo de datos
+```
+Consulta del usuario → Agente extrae fechas → _get_session(date_from, date_to, mes, anio)
+  → Si fecha < 2026-03-01 y HISTORICAL_DATA_ENABLED=true → DB local (HistoricalSession)
+  → Si fecha >= 2026-03-01 o sin fecha → iDempiere en vivo (IdempiereSession)
+```
+
+### Tablas copiadas
+- **Referencia** (copia completa): ad_org, c_bpartner, m_product, c_currency, hr_employee, etc.
+- **Transaccionales** (filtradas por fecha < corte): c_invoice, c_payment, c_order, fact_acct, etc.
+- **Snapshots** (estado actual): m_storageonhand, c_bankaccount
+
+### Comandos
+```bash
+# 1. Aplicar migración (crea schema + tablas)
+docker compose exec backend alembic upgrade head
+
+# 2. Extraer datos de iDempiere
+docker compose exec backend python scripts/extract_historical_data.py
+
+# 3. Activar en .env
+HISTORICAL_DATA_ENABLED=true
+HISTORICAL_DATA_CUTOFF=2026-03-01
+
+# 4. Reiniciar
+docker compose restart backend
+```
+
+### Configuración (.env)
+```
+HISTORICAL_DATA_ENABLED=false   # Activar después de extraer datos
+HISTORICAL_DATA_CUTOFF=2026-03-01  # Fecha de corte
+```
+
+### Funciones sin fecha (siempre van a iDempiere)
+- `build_overdue_receivables` - cuentas por cobrar actuales
+- `build_employee_summary` - plantilla actual
+- `build_inventory_stock` - stock actual
+- `build_registered_producers` - productores registrados
+- `build_producer_pending_payments` - pagos pendientes actuales
 
 ---
 

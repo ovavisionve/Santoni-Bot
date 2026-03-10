@@ -36,6 +36,28 @@ def set_idempiere_readonly(dbapi_connection, connection_record):
         logger.warning("Could not set iDempiere read-only mode: %s", e)
 
 
+# Historical data session: queries local DB's "adempiere" schema
+# for data before the cutoff date (avoids hitting iDempiere for old data).
+# Uses the SAME SQL as iDempiere queries because both have "adempiere.*" tables.
+HistoricalSession = sessionmaker(
+    autocommit=False, autoflush=False, bind=engine
+)
+
+
+@event.listens_for(engine, "connect")
+def set_historical_search_path(dbapi_connection, connection_record):
+    """Ensure the adempiere schema is in the search path for the local DB.
+    This allows queries with 'adempiere.table_name' to resolve to the local copy."""
+    try:
+        cursor = dbapi_connection.cursor()
+        cursor.execute("SELECT schema_name FROM information_schema.schemata WHERE schema_name = 'adempiere'")
+        if cursor.fetchone():
+            cursor.execute("SET search_path TO public, adempiere")
+        cursor.close()
+    except Exception as e:
+        logger.debug("Could not set search_path for historical schema: %s", e)
+
+
 class Base(DeclarativeBase):
     pass
 

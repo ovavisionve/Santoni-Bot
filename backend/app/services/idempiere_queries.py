@@ -12,18 +12,112 @@ Convention:
 - issotrx = 'N' → Purchase transaction (compra)
 - docstatus = 'CO' → Completed document
 - isactive = 'Y' → Active record
+
+Historical data routing (Mar 2026+):
+- When HISTORICAL_DATA_ENABLED=true, queries for dates before the cutoff
+  are routed to the local DB (adempiere schema) instead of iDempiere.
+- This avoids hitting iDempiere for historical data.
 """
 
 import logging
 import re
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
 from sqlalchemy import text
 
-from app.database import IdempiereSession
+from app.database import IdempiereSession, HistoricalSession
 
 logger = logging.getLogger("santonibot.idempiere_queries")
+
+
+# ---------------------------------------------------------------------------
+# Historical data routing
+# ---------------------------------------------------------------------------
+
+def _is_historical_enabled() -> bool:
+    """Check if historical data routing is enabled."""
+    try:
+        from app.config import get_settings
+        s = get_settings()
+        return s.historical_data_enabled
+    except Exception:
+        return False
+
+
+def _get_cutoff_date() -> str:
+    """Get the cutoff date string (YYYY-MM-DD)."""
+    try:
+        from app.config import get_settings
+        return get_settings().historical_data_cutoff
+    except Exception:
+        return "2026-03-01"
+
+
+def _is_before_cutoff(
+    date_from: str | None = None,
+    date_to: str | None = None,
+    mes: int | None = None,
+    anio: int | None = None,
+) -> bool:
+    """Determine if the requested date range falls entirely before the cutoff.
+
+    Returns True only if ALL requested data is before the cutoff date.
+    Returns False if:
+    - No date filters specified (defaults to current/live data)
+    - Date range extends beyond cutoff
+    - Only year specified and it's the cutoff year
+    """
+    cutoff = _get_cutoff_date()
+    try:
+        cutoff_date = datetime.strptime(cutoff, "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        return False
+
+    # Explicit date range
+    if date_to:
+        try:
+            end = datetime.strptime(str(date_to), "%Y-%m-%d").date()
+            return end < cutoff_date
+        except (ValueError, TypeError):
+            return False
+
+    # Month + year
+    if mes and anio:
+        # End of the specified month
+        if mes == 12:
+            month_end = date(anio + 1, 1, 1)
+        else:
+            month_end = date(anio, mes + 1, 1)
+        return month_end <= cutoff_date
+
+    # Only year
+    if anio and not mes:
+        year_end = date(anio + 1, 1, 1)
+        return year_end <= cutoff_date
+
+    # No date filters → use live iDempiere
+    return False
+
+
+def _get_session(
+    date_from: str | None = None,
+    date_to: str | None = None,
+    mes: int | None = None,
+    anio: int | None = None,
+):
+    """Get the appropriate DB session based on date range.
+
+    Returns HistoricalSession (local DB) for queries entirely before cutoff,
+    IdempiereSession (live) otherwise.
+    """
+    if _is_historical_enabled() and _is_before_cutoff(date_from, date_to, mes, anio):
+        logger.info(
+            "Using HISTORICAL (local) DB for date_from=%s, date_to=%s, mes=%s, anio=%s",
+            date_from, date_to, mes, anio,
+        )
+        return HistoricalSession()
+    return IdempiereSession()
 
 
 # ---------------------------------------------------------------------------
@@ -323,7 +417,7 @@ def build_sales_summary(
     Excludes credit notes (ARC) from the main totals and shows them
     separately so the user sees net sales = facturas - notas de crédito.
     """
-    db = IdempiereSession()
+    db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
     try:
         conditions = [
             "i.issotrx = 'Y'",
@@ -531,7 +625,7 @@ def build_collection_summary(
     org_name: str | None = None,
 ) -> dict:
     """Collection summary from iDempiere c_payment (isreceipt='Y')."""
-    db = IdempiereSession()
+    db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
     try:
         conditions = [
             "p.isreceipt = 'Y'",
@@ -631,7 +725,7 @@ def build_top_clients(
     Credit notes (ARC) are subtracted from the client's total so the
     ranking reflects net sales per client.
     """
-    db = IdempiereSession()
+    db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
     try:
         conditions = [
             "i.issotrx = 'Y'",
@@ -791,7 +885,7 @@ def build_financial_summary(
     # If date_from/date_to provided, nullify mes (range takes priority)
     if date_from and date_to:
         mes = None
-    db = IdempiereSession()
+    db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
     try:
         # Bank balances (filtered by org if applicable)
         bank_conditions = ["ba.isactive = 'Y'"]
@@ -1075,7 +1169,7 @@ def build_employee_list(
     If cargo_search is provided, filters by job title using ILIKE.
     If date_from/date_to provided, filters by startdate (fecha de ingreso).
     """
-    db = IdempiereSession()
+    db = _get_session(date_from=date_from, date_to=date_to)
     try:
         conditions = ["e.isactive = 'Y'"]
         params: dict = {}
@@ -1195,7 +1289,7 @@ def build_birthday_list(
     Auto-detects the birthday column across c_bpartner and lve_c_bpartner.
     Returns empty list if no birthday column exists in the database.
     """
-    db = IdempiereSession()
+    db = _get_session(mes=mes)
     try:
         bday_info = _find_birthday_column(db)
         if bday_info is None:
@@ -1260,7 +1354,7 @@ def build_payroll_summary(
     date_to: str | None = None,
 ) -> dict:
     """Payroll summary from iDempiere hr_process + hr_movement."""
-    db = IdempiereSession()
+    db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
     try:
         conditions = [
             "hp.docstatus = 'CO'",
@@ -1343,7 +1437,7 @@ def build_attendance_summary(
     Looks for payroll concepts related to absences (inasistencia, falta,
     permiso, reposo, etc.) and summarises them by type and organisation.
     """
-    db = IdempiereSession()
+    db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
     try:
         conditions = [
             "hp.docstatus = 'CO'",
@@ -1470,7 +1564,7 @@ def build_turnover_summary(
     if not anio:
         anio = datetime.now().year
 
-    db = IdempiereSession()
+    db = _get_session(anio=anio)
     try:
         # Bajas (employees with enddate in the given year)
         conditions = [
@@ -1548,7 +1642,7 @@ def build_production_summary(
     - M+/M- = Internal inventory movements
     - P+/P- = Production receipts (rare)
     """
-    db = IdempiereSession()
+    db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
     try:
         conditions = ["io.isactive = 'Y'", "io.docstatus = 'CO'"]
         params: dict = {}
@@ -1647,7 +1741,7 @@ def build_production_orders(
     date_to: str | None = None,
 ) -> list[dict]:
     """Recent material movement documents from iDempiere m_inout."""
-    db = IdempiereSession()
+    db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
     try:
         conditions = ["io.isactive = 'Y'", "io.docstatus = 'CO'"]
         params: dict = {}
@@ -1701,7 +1795,7 @@ def build_producer_purchases(
     date_to: str | None = None,
 ) -> dict:
     """Producer purchases from iDempiere."""
-    db = IdempiereSession()
+    db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
     try:
         conditions = [
             "o.issotrx = 'N'",
@@ -1883,7 +1977,7 @@ def build_producer_price_analysis(
     date_to: str | None = None,
 ) -> list[dict]:
     """Price analysis per product for producer purchases from iDempiere."""
-    db = IdempiereSession()
+    db = _get_session(date_from=date_from, date_to=date_to, anio=anio)
     try:
         conditions = [
             "o.issotrx = 'N'",
@@ -1935,7 +2029,7 @@ def build_supply_purchases(
     currency_ids: list[int] | None = None,
 ) -> dict:
     """Supply purchases from iDempiere: purchase invoices (issotrx='N')."""
-    db = IdempiereSession()
+    db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
     try:
         conditions = [
             "i.issotrx = 'N'",
@@ -2037,7 +2131,7 @@ def build_product_purchase_history(
     Searches by product code (value) or name. Returns recent purchase invoices
     for that product with supplier, quantity, unit price, and total.
     """
-    db = IdempiereSession()
+    db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
     try:
         conditions = [
             "i.issotrx = 'N'",
@@ -2100,7 +2194,7 @@ def build_pending_purchase_orders(
     Includes orders in progress (docstatus IN ('DR','IP','CO') that have
     not been fully invoiced/received).
     """
-    db = IdempiereSession()
+    db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
     try:
         conditions = [
             "o.issotrx = 'N'",
@@ -2220,7 +2314,7 @@ def build_supplier_price_comparison(
 
     Returns min, avg, max price per supplier with last purchase date.
     """
-    db = IdempiereSession()
+    db = _get_session(date_from=date_from, date_to=date_to, anio=anio)
     try:
         conditions = [
             "i.issotrx = 'N'",
@@ -2281,7 +2375,7 @@ def build_purchase_payment_status(
 
     Shows paid vs unpaid purchase invoices (c_invoice where issotrx='N').
     """
-    db = IdempiereSession()
+    db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
     try:
         conditions = [
             "i.issotrx = 'N'",
@@ -2358,7 +2452,7 @@ def build_accounting_summary(
     date_to: str | None = None,
 ) -> dict:
     """Accounting summary from iDempiere fact_acct (posted accounting facts)."""
-    db = IdempiereSession()
+    db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
     try:
         conditions = [
             "fa.isactive = 'Y'",
@@ -2494,7 +2588,7 @@ def build_account_detail(
     - Debit-normal accounts (A=Activo, E=Gasto): saldo = debe - haber
     - Credit-normal accounts (L=Pasivo, O=Patrimonio, R=Ingreso): saldo = haber - debe
     """
-    db = IdempiereSession()
+    db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
     try:
         # 1. Find the account by code
         acct_q = text(

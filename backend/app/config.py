@@ -54,6 +54,11 @@ class Settings(BaseSettings):
     chroma_host: str = "chromadb"
     chroma_port: int = 8001
 
+    # Historical data: queries before this date use local DB instead of iDempiere
+    # Format: YYYY-MM-DD. Empty string disables historical routing (all queries go to iDempiere)
+    historical_data_cutoff: str = "2026-03-01"
+    historical_data_enabled: bool = False  # Enable after running extract_historical_data.py
+
     # Access control
     enforce_business_hours: bool = False  # Set True to restrict to business hours
     business_hours_start: int = 6   # 6 AM Venezuela
