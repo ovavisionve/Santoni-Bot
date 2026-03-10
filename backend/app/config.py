@@ -1,4 +1,5 @@
 import logging
+from urllib.parse import quote_plus
 
 from pydantic_settings import BaseSettings
 from pydantic import model_validator
@@ -83,14 +84,14 @@ class Settings(BaseSettings):
     @property
     def database_url(self) -> str:
         return (
-            f"postgresql://{self.postgres_user}:{self.postgres_password}"
+            f"postgresql://{self.postgres_user}:{quote_plus(self.postgres_password)}"
             f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
         )
 
     @property
     def idempiere_database_url(self) -> str:
         return (
-            f"postgresql://{self.idempiere_db_user}:{self.idempiere_db_password}"
+            f"postgresql://{self.idempiere_db_user}:{quote_plus(self.idempiere_db_password)}"
             f"@{self.idempiere_db_host}:{self.idempiere_db_port}/{self.idempiere_db_name}"
         )
 

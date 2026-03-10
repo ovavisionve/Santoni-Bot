@@ -131,7 +131,8 @@ def get_engine():
                         password = line.split("=", 1)[1].strip().strip('"').strip("'")
                         break
 
-    url = f"postgresql://{user}:{password}@{host}:{port}/{dbname}"
+    from urllib.parse import quote_plus
+    url = f"postgresql://{user}:{quote_plus(password)}@{host}:{port}/{dbname}"
     print(f"Conectando a: {host}:{port}/{dbname} como {user}...")
     return create_engine(url, pool_pre_ping=True)
 
