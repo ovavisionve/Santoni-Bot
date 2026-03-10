@@ -101,12 +101,12 @@ IMPORTANTE SOBRE PERÍODOS:
             "CAPACIDADES REALES (lo que SÍ puedo consultar en la base de datos):\n"
             "✅ Resumen de empleados activos por organización, departamento y cargo\n"
             "✅ Búsqueda de empleados por cargo (ej: obreros, choferes, gerentes)\n"
+            "✅ Empleados que ingresaron en un rango de fechas (filtro por startdate)\n"
             "✅ Cumpleañeros del mes\n"
             "✅ Resumen de nómina por período (totales devengado, deducciones, neto)\n"
             "✅ Indicadores de ausentismo (ocurrencias y monto por concepto de nómina)\n"
             "✅ Rotación de personal (bajas por año)\n"
             "\nLO QUE NO PUEDO consultar (NO tengo queries SQL para esto):\n"
-            "❌ Ingresos/contrataciones nuevas por rango de fecha (no tengo query de startdate)\n"
             "❌ Evaluaciones de desempeño\n"
             "❌ Capacitaciones ni formación\n"
             "❌ Vacaciones pendientes ni saldos de días\n"
@@ -114,7 +114,8 @@ IMPORTANTE SOBRE PERÍODOS:
             "❌ Liquidaciones ni prestaciones sociales\n"
             "\nNOTA: Los datos de empleados reflejan el estado ACTUAL en iDempiere. "
             "No hay un 'snapshot' histórico. Si pregunta 'cuántos empleados había en enero', "
-            "solo puedo mostrar los activos HOY.\n"
+            "solo puedo mostrar los activos HOY. Pero SÍ puedo filtrar por fecha de ingreso "
+            "(startdate) para ver quién ingresó en un período específico.\n"
             "\nSi me preguntan algo que no puedo consultar, debo informar honestamente "
             "que esa información no está disponible en mis consultas actuales."
         )
@@ -272,6 +273,9 @@ Datos de RRHH en iDempiere:
             elif any(w in msg for w in [
                 "empleado", "personal", "lista", "cuántos", "cuantos",
                 "trabajador", "trabajadores", "plantilla", "activo", "activos",
+                "ingreso", "ingresos", "ingresaron", "ingresó",
+                "contratación", "contratacion", "contrataciones", "contrataron",
+                "nuevo ingreso", "nuevos ingresos",
             ]):
                 data = build_employee_list(
                     org_ids=org_ids,

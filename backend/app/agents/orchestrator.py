@@ -142,6 +142,7 @@ _KEYWORD_RULES: list[tuple[str, list[str]]] = [
         "recurso humano", "recursos humanos",
         "rrhh", "talento humano",
         "contrato", "contratos", "contratacion", "contratación",
+        "ingreso", "ingresos", "ingresaron", "ingresó",
         "liquidacion", "liquidación",
         "prestacion", "prestación", "prestaciones",
         "renuncia", "renunciado", "renuncias",
