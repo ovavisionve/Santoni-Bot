@@ -407,6 +407,7 @@ Datos de compras de insumos en iDempiere:
         mes, anio = extract_month_year(message)
         if date_from and date_to:
             mes = None
+            anio = None
 
         # Follow-up: if no specific temporal context in current message,
         # inherit from history (e.g. "Y en dólares?" after "compras este mes")
@@ -419,6 +420,7 @@ Datos de compras de insumos en iDempiere:
                     anio = h_anio
                 if date_from and date_to:
                     mes = None
+                    anio = None
 
         label = build_period_label(date_from, date_to, mes, anio)
 

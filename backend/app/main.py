@@ -38,6 +38,11 @@ if settings.sentry_dsn:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("SantoniBot starting up...")
+    logger.info(
+        "═══ APP_ENV=%s ═══ Queries irán a: %s",
+        settings.app_env,
+        "iDempiere (producción)" if settings.app_env == "production" else "DEMO tables (desarrollo)",
+    )
     run_startup_migrations()
     Base.metadata.create_all(bind=engine)
     create_admin_user()

@@ -14,6 +14,7 @@ Convention:
 - isactive = 'Y' → Active record
 """
 
+import logging
 import re
 from datetime import date
 from decimal import Decimal
@@ -21,6 +22,8 @@ from decimal import Decimal
 from sqlalchemy import text
 
 from app.database import IdempiereSession
+
+logger = logging.getLogger("santonibot.idempiere_queries")
 
 
 # ---------------------------------------------------------------------------
@@ -100,6 +103,10 @@ def _add_date_filter(
     date_column: str,
 ) -> None:
     """Add date filters. date_from/date_to override mes/anio when both provided."""
+    logger.debug(
+        "Date filter: date_from=%s, date_to=%s, mes=%s, anio=%s, col=%s",
+        date_from, date_to, mes, anio, date_column,
+    )
     if date_from and date_to:
         conditions.append(f"{date_column} >= :date_from")
         conditions.append(f"{date_column} <= :date_to")
@@ -674,7 +681,9 @@ def build_top_clients(
             f"ORDER BY total_facturado DESC "
             f"LIMIT :limit"
         )
+        logger.info("build_top_clients SQL WHERE: %s | params: %s", where, {k: v for k, v in params.items() if k != "limit"})
         rows = db.execute(q, params).fetchall()
+        logger.info("build_top_clients returned %d rows", len(rows))
         return [
             {
                 "codigo": r[0],

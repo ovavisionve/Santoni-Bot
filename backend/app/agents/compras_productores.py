@@ -177,6 +177,7 @@ Datos de compras a productores en iDempiere:
         mes, anio = extract_month_year(message)
         if date_from and date_to:
             mes = None
+            anio = None
 
         producto = self._extract_producto(message)
 

@@ -141,6 +141,7 @@ Datos de producción/inventario en iDempiere:
         mes, anio = extract_month_year(message)
         if date_from and date_to:
             mes = None
+            anio = None
 
         # Inherit temporal context from history for follow-ups
         if not date_from and not date_to and not mes and history:

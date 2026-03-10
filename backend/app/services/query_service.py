@@ -21,7 +21,10 @@ logger = logging.getLogger("santonibot.query_service")
 
 def _is_production() -> bool:
     """Check if we should use iDempiere (production) or demo tables."""
-    return get_settings().app_env == "production"
+    env = get_settings().app_env
+    is_prod = env == "production"
+    logger.debug("_is_production: APP_ENV=%s → %s", env, is_prod)
+    return is_prod
 
 
 # ---------------------------------------------------------------------------
