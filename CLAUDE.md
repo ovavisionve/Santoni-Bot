@@ -100,10 +100,10 @@ cd backend && uvicorn app.main:app --reload     # Backend en :8000
 cd frontend && npm run dev                       # Frontend en :3000
 
 # Docker (ambiente completo)
-docker-compose up -d --build                     # Levantar todo
-docker-compose logs backend --tail 50            # Ver logs backend
-docker-compose logs frontend --tail 50           # Ver logs frontend
-docker-compose down && docker-compose up -d      # Reiniciar todo
+docker compose up -d --build                     # Levantar todo
+docker compose logs backend --tail 50            # Ver logs backend
+docker compose logs frontend --tail 50           # Ver logs frontend
+docker compose down && docker compose up -d      # Reiniciar todo
 
 # Tests
 cd backend && pytest                             # Tests backend (150+)

@@ -1425,13 +1425,13 @@ nano .env
 python3 -c "import secrets; print(secrets.token_urlsafe(64))"
 
 # 5. Levantar los servicios
-docker-compose up -d
+docker compose up -d
 
 # 6. Verificar que todos los servicios estan corriendo
-docker-compose ps
+docker compose ps
 
 # 7. Ver logs del backend (para obtener la contrasena de admin si no se configuro)
-docker-compose logs backend | grep -i "admin\|password"
+docker compose logs backend | grep -i "admin\|password"
 
 # 8. Verificar health check
 curl http://localhost/api/health
@@ -1449,13 +1449,13 @@ docker compose run --rm backup
 git pull
 
 # 3. Reconstruir imagenes
-docker-compose build
+docker compose build
 
 # 4. Reiniciar servicios
-docker-compose up -d
+docker compose up -d
 
 # 5. Ejecutar migraciones (si hay)
-docker-compose exec backend alembic upgrade head
+docker compose exec backend alembic upgrade head
 
 # 6. Verificar
 curl http://localhost/api/health
@@ -1756,19 +1756,19 @@ docker run --rm -v santoni-bot_db_backups:/backups alpine sh -c \
 cd /opt/santonibot
 
 # Reiniciar todo
-docker-compose restart
+docker compose restart
 
 # Reiniciar solo el backend
-docker-compose restart backend
+docker compose restart backend
 
 # Reiniciar solo el frontend
-docker-compose restart frontend
+docker compose restart frontend
 
 # Ver estado de todos los servicios
-docker-compose ps
+docker compose ps
 
 # Ver logs en tiempo real
-docker-compose logs -f
+docker compose logs -f
 ```
 
 ### 16.7 Verificar Estado del Sistema
@@ -1782,7 +1782,7 @@ curl http://localhost/api/health/detailed \
   -H "Authorization: Bearer $TOKEN"
 
 # Estado de contenedores Docker
-docker-compose ps
+docker compose ps
 
 # Uso de recursos
 docker stats --no-stream
@@ -1796,9 +1796,9 @@ docker stats --no-stream
 | "Cuenta bloqueada" | 5 intentos fallidos | Esperar 15 min o desbloquear desde admin |
 | Error 502 en chat | Groq API no disponible | Verificar GROQ_API_KEY y conexion a internet |
 | Graficas no aparecen | Tabla con <3 filas | Normal: se requieren 3+ filas para generar grafica |
-| Frontend no carga | Contenedor frontend caido | `docker-compose restart frontend` |
-| BD interna no responde | Contenedor db caido | `docker-compose restart db` |
-| RAG no funciona | ChromaDB no disponible | `docker-compose restart chromadb` (el sistema funciona sin RAG) |
+| Frontend no carga | Contenedor frontend caido | `docker compose restart frontend` |
+| BD interna no responde | Contenedor db caido | `docker compose restart db` |
+| RAG no funciona | ChromaDB no disponible | `docker compose restart chromadb` (el sistema funciona sin RAG) |
 | "Error al consultar el modelo de IA" | API key invalida o servicio caido | Verificar API keys en `.env` y reiniciar backend |
 
 ### 16.9 Actualizacion del Sistema
@@ -1815,17 +1815,17 @@ docker compose run --rm backup
 git pull origin main
 
 # 3. Reconstruir
-docker-compose build --no-cache
+docker compose build --no-cache
 
 # 4. Reiniciar
-docker-compose up -d
+docker compose up -d
 
 # 5. Migraciones (si las hay)
-docker-compose exec backend alembic upgrade head
+docker compose exec backend alembic upgrade head
 
 # 6. Verificar
 curl http://localhost/api/health
-docker-compose logs --tail=50 backend
+docker compose logs --tail=50 backend
 ```
 
 ### 16.10 Contacto de Soporte
@@ -1833,7 +1833,7 @@ docker-compose logs --tail=50 backend
 Para problemas que no se puedan resolver con esta guia, contactar a **OVA Agency** proporcionando:
 - Descripcion del problema
 - Capturas de pantalla (si aplica)
-- Logs relevantes (`docker-compose logs --tail=200 backend`)
+- Logs relevantes (`docker compose logs --tail=200 backend`)
 - Fecha y hora del incidente
 - Usuario afectado
 
@@ -1933,13 +1933,13 @@ cd frontend && npm test                            # Tests frontend
 cd backend && alembic upgrade head                 # Migraciones
 
 # ---- Docker ----
-docker-compose up -d                               # Levantar todo
-docker-compose down                                # Detener todo
-docker-compose build --no-cache                    # Reconstruir imagenes
-docker-compose logs -f backend                     # Logs del backend
-docker-compose logs -f frontend                    # Logs del frontend
-docker-compose ps                                  # Estado de servicios
-docker-compose exec backend bash                   # Shell en el backend
+docker compose up -d                               # Levantar todo
+docker compose down                                # Detener todo
+docker compose build --no-cache                    # Reconstruir imagenes
+docker compose logs -f backend                     # Logs del backend
+docker compose logs -f frontend                    # Logs del frontend
+docker compose ps                                  # Estado de servicios
+docker compose exec backend bash                   # Shell en el backend
 docker stats --no-stream                           # Uso de recursos
 
 # ---- Backup ----
@@ -1952,8 +1952,8 @@ docker compose run --rm certbot renew
 docker compose restart nginx
 
 # ---- Base de Datos ----
-docker-compose exec db psql -U santonibot -d santonibot  # Shell PostgreSQL
-docker-compose exec db pg_dump -U santonibot santonibot > backup.sql  # Dump manual
+docker compose exec db psql -U santonibot -d santonibot  # Shell PostgreSQL
+docker compose exec db pg_dump -U santonibot santonibot > backup.sql  # Dump manual
 
 # ---- Seguridad ----
 python3 -c "import secrets; print(secrets.token_urlsafe(64))"  # Generar SECRET_KEY
