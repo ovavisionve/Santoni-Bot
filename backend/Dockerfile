@@ -17,6 +17,7 @@ RUN useradd -m -r santoni && chown -R santoni:santoni /app
 COPY --chown=santoni:santoni . .
 
 ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
 
 USER santoni
 
