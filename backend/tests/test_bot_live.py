@@ -296,7 +296,7 @@ TESTS_FINANZAS = [
         "name": "FINANZAS: Consultas por fecha",
         "queries": [
             ("cuantos fueron los ingresos por venta el dia de ayer",
-             "finanzas", BAD_FINANZAS),
+             "contabilidad", BAD_GENERIC),
             ("cuales fueron las liquidaciones Bancarias del dia 20/02/2026",
              "finanzas", BAD_FINANZAS),
         ],
@@ -332,7 +332,7 @@ TESTS_VENTAS = [
             ("cuanto se vendio en enero 2026", "ventas", BAD_VENTAS),
             ("¿Cuánto se facturó en dólares en febrero 2026?", "ventas", BAD_VENTAS),
             ("dame la cobranza del mes pasado", "ventas", BAD_VENTAS),
-            ("cuentas por cobrar vencidas", "ventas", BAD_VENTAS),
+            ("cuentas por cobrar vencidas", "finanzas", BAD_FINANZAS),
         ],
     },
     {
@@ -354,6 +354,12 @@ TESTS_CONTABILIDAD = [
             ("estado de resultados de 2025", "contabilidad", BAD_GENERIC),
         ],
     },
+    {
+        "name": "CONTABILIDAD: Ingresos por venta",
+        "queries": [
+            ("cuanto fue el ingreso por venta en febrero 2026", "contabilidad", BAD_GENERIC),
+        ],
+    },
 ]
 
 TESTS_PRODUCCION = [
@@ -373,6 +379,7 @@ TESTS_COMPRAS_PRODUCTORES = [
             ("¿Cuánto arroz paddy se compró en 2025?", "compras_productores", BAD_GENERIC),
             ("¿Cuántos productores de arroz hay registrados?", "compras_productores", BAD_GENERIC),
             ("Precio promedio del kilo de arroz en 2025", "compras_productores", BAD_GENERIC),
+            ("pagos pendientes a productores de arroz", "compras_productores", BAD_GENERIC),
         ],
     },
 ]
