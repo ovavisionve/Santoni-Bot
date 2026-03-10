@@ -103,7 +103,7 @@ def _add_date_filter(
     date_column: str,
 ) -> None:
     """Add date filters. date_from/date_to override mes/anio when both provided."""
-    logger.debug(
+    logger.info(
         "Date filter: date_from=%s, date_to=%s, mes=%s, anio=%s, col=%s",
         date_from, date_to, mes, anio, date_column,
     )

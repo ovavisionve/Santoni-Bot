@@ -37,12 +37,14 @@ if settings.sentry_dsn:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("SantoniBot starting up...")
-    logger.info(
-        "═══ APP_ENV=%s ═══ Queries irán a: %s",
-        settings.app_env,
-        "iDempiere (producción)" if settings.app_env == "production" else "DEMO tables (desarrollo)",
+    # print() garantiza que aparezca en docker logs (no depende de logging config)
+    _env_msg = (
+        f"═══ APP_ENV={settings.app_env} ═══ "
+        f"Queries irán a: {'iDempiere (producción)' if settings.app_env == 'production' else 'DEMO tables (desarrollo)'}"
     )
+    print(f"[SantoniBot] {_env_msg}", flush=True)
+    logger.info("SantoniBot starting up...")
+    logger.info(_env_msg)
     run_startup_migrations()
     Base.metadata.create_all(bind=engine)
     create_admin_user()
@@ -158,6 +160,7 @@ def health_check():
         "status": "ok",
         "app": settings.app_name,
         "version": APP_VERSION,
+        "app_env": settings.app_env,
     }
 
 

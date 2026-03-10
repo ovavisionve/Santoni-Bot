@@ -23,7 +23,7 @@ def _is_production() -> bool:
     """Check if we should use iDempiere (production) or demo tables."""
     env = get_settings().app_env
     is_prod = env == "production"
-    logger.debug("_is_production: APP_ENV=%s → %s", env, is_prod)
+    logger.info("_is_production: APP_ENV=%s → %s", env, is_prod)
     return is_prod
 
 
