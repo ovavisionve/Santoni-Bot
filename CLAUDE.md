@@ -139,7 +139,7 @@ docker compose build --no-cache backend frontend && docker compose up -d
 | 3 | **Contabilidad** | `contabilidad.py` | Balance general, estado de resultados, libro diario/mayor, cuentas contables |
 | 4 | **RRHH** | `rrhh.py` | Empleados activos, búsqueda por cargo, ausentismo, nómina, rotación, cumpleañeros |
 | 5 | **Producción** | `produccion.py` | Órdenes de producción, cantidades, desperdicios, inventario (m_storageonhand) |
-| 6 | **Compras Insumos** | `compras_insumos.py` | Compras por producto/proveedor, historial, precios, separación por moneda |
+| 6 | **Compras Insumos** | `compras_insumos.py` | Compras por producto/proveedor, historial, precios, separación por moneda, órdenes de compra pendientes (c_order), comparación de precios entre proveedores, estado de pago de facturas |
 | 7 | **Compras Productores** | `compras_productores.py` | Compras agrícolas (arroz, maíz), productores registrados, pagos pendientes, precios |
 
 ### Características transversales de los agentes:
@@ -234,13 +234,20 @@ Se crearon cuestionarios para que cada departamento valide las respuestas del bo
 ### Trabajo reciente (Feb-Mar 2026):
 - Conexión exitosa a iDempiere real (queries de nómina, ventas, compras)
 - Follow-ups inteligentes con herencia de contexto temporal
-- Confidence score + dataset de 300 escenarios (v2.2)
+- Confidence score + dataset de 351 escenarios (v2.4)
 - Separación de compras por moneda (VES/USD)
 - Inventario desde m_storageonhand
 - Corrección de múltiples bugs reportados por usuarios reales
 - Script de pruebas en vivo (65 preguntas, 7 agentes)
 - Diagnóstico de nómina iDempiere
 - **Fix crítico (Mar 2026)**: Herencia temporal + manejo de errores en los 7 agentes (ver sección abajo)
+- **Expansión compras_insumos (10/Mar 2026)**:
+  - Órdenes de compra pendientes (c_order) - antes solo consultaba facturas confirmadas
+  - Comparación de precios entre proveedores para un mismo producto
+  - Estado de pago de facturas (pagadas vs pendientes vs vencidas)
+  - Fallback automático sin fecha cuando período específico no tiene datos
+  - Búsqueda de productos más flexible (normalización de acentos, OR para 3+ palabras)
+  - Fix de texto "no tengo acceso" en capabilities de todos los agentes (causaba falsos positivos en tests)
 
 ### Pendiente:
 - Mapeo completo de todas las tablas iDempiere (algunas queries aún en ajuste)

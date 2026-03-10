@@ -102,14 +102,14 @@ IMPORTANTE SOBRE PERÍODOS:
             "✅ Detalle de cuenta específica por código (ej: 2.01.01.10) con saldo inicial, movimientos y saldo final\n"
             "✅ Desglose diario de movimientos de una cuenta\n"
             "✅ Top cuentas por volumen de movimiento\n"
-            "\nLO QUE NO PUEDO consultar (NO tengo queries SQL para esto):\n"
-            "❌ Balanza de comprobación completa (listado de todas las cuentas con saldos)\n"
-            "❌ Comparativas entre períodos (ej: enero vs febrero)\n"
-            "❌ Activos fijos ni depreciación\n"
-            "❌ Impuestos (IVA, ISLR, retenciones) como reporte separado\n"
-            "❌ Estados financieros formateados (Balance General, Estado de Resultados como PDF)\n"
-            "\nSi me preguntan algo que no puedo consultar, debo informar honestamente "
-            "que esa información no está disponible en mis consultas actuales."
+            "\nLimitaciones actuales (información no disponible en estas consultas):\n"
+            "- Balanza de comprobación completa (listado de todas las cuentas con saldos)\n"
+            "- Comparativas entre períodos (ej: enero vs febrero)\n"
+            "- Activos fijos ni depreciación\n"
+            "- Impuestos (IVA, ISLR, retenciones) como reporte separado\n"
+            "- Estados financieros formateados (Balance General, Estado de Resultados como PDF)\n"
+            "\nPara consultas fuera de este departamento, sugiere al usuario "
+            "consultar el agente apropiado."
         )
 
     def get_sql_context(self) -> str:

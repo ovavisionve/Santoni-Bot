@@ -1,11 +1,11 @@
 {
-  "version": "2.3",
-  "created": "2026-02-24",
-  "description": "Dataset de entrenamiento v2.3: +35 escenarios de conversación real admin (10/03/2026). Documentación de alucinaciones detectadas, errores de routing, y embellecimiento de datos por el LLM. Incluye escenarios para validar anti-alucinación, inyección de fecha actual, y capacidades reales de cada agente.",
+  "version": "2.4",
+  "created": "2026-03-10",
+  "description": "Dataset de entrenamiento v2.4: Nuevas capacidades de compras_insumos (c_order, comparación de precios, estado de pago). Fix de triggers 'no tengo acceso' en capabilities de todos los agentes. Mejora de búsqueda de productos (normalización de acentos, flexibilización AND→OR para 3+ palabras). Fallback automático sin fecha cuando no hay datos en período específico.",
   "stats": {
-    "total_entries": 335,
+    "total_entries": 351,
     "por_agente": {
-      "compras_insumos": 65,
+      "compras_insumos": 81,
       "rrhh": 65,
       "ventas": 58,
       "produccion": 43,
@@ -20,7 +20,8 @@
       "patron_comun": 41,
       "cuestionario_validacion": 39,
       "correccion_bug": 49,
-      "excel_compras": 12
+      "excel_compras": 12,
+      "nuevas_capacidades": 16
     },
     "escenarios_negativos": 0,
     "con_respuesta_esperada": 15,
@@ -6124,6 +6125,207 @@
       "resultado_real": { "agente_usado": "produccion", "exito": false, "tipo_error": "alucinacion" },
       "categoria": "inventario",
       "nota": "ALUCINACIÓN: Bot respondía con datos de 'julio 2024' cuando se decía 'actual'. Requiere inyección de fecha actual para que el bot sepa que 'actual' = marzo 2026."
+    },
+    {
+      "id": 336,
+      "pregunta": "Órdenes de compra pendientes por recepción de insumos del mes de febrero",
+      "agente_esperado": "compras_insumos",
+      "departamento_usuario": "compras_insumos",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": { "fecha_desde": null, "fecha_hasta": null },
+      "es_followup": false,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "resultado_real": { "agente_usado": "compras_insumos", "exito": true },
+      "categoria": "ordenes_compra",
+      "nota": "Nueva capacidad: consulta c_order para órdenes de compra pendientes"
+    },
+    {
+      "id": 337,
+      "pregunta": "¿Cuántas órdenes de compra hay pendientes este mes?",
+      "agente_esperado": "compras_insumos",
+      "departamento_usuario": "compras_insumos",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": {},
+      "es_followup": false,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "categoria": "ordenes_compra"
+    },
+    {
+      "id": 338,
+      "pregunta": "Órdenes de compra en proceso de enero a marzo 2026",
+      "agente_esperado": "compras_insumos",
+      "departamento_usuario": "compras_insumos",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": { "fecha_desde": "2026-01-01", "fecha_hasta": "2026-03-31" },
+      "es_followup": false,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "categoria": "ordenes_compra"
+    },
+    {
+      "id": 339,
+      "pregunta": "¿Qué proveedores tienen órdenes de compra pendientes?",
+      "agente_esperado": "compras_insumos",
+      "departamento_usuario": "compras_insumos",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": {},
+      "es_followup": false,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "categoria": "ordenes_compra"
+    },
+    {
+      "id": 340,
+      "pregunta": "Comparar precios de harina de avena entre proveedores",
+      "agente_esperado": "compras_insumos",
+      "departamento_usuario": "compras_insumos",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": { "producto": "harina de avena" },
+      "es_followup": false,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "categoria": "comparacion_precios"
+    },
+    {
+      "id": 341,
+      "pregunta": "¿Quién vende más barato las cajas de cartón?",
+      "agente_esperado": "compras_insumos",
+      "departamento_usuario": "compras_insumos",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": { "producto": "cajas de cartón" },
+      "es_followup": false,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "categoria": "comparacion_precios"
+    },
+    {
+      "id": 342,
+      "pregunta": "¿Cuántas facturas de compra están pendientes de pago este mes?",
+      "agente_esperado": "compras_insumos",
+      "departamento_usuario": "compras_insumos",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": {},
+      "es_followup": false,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "categoria": "estado_pago"
+    },
+    {
+      "id": 343,
+      "pregunta": "Facturas de compra vencidas sin pagar",
+      "agente_esperado": "compras_insumos",
+      "departamento_usuario": "compras_insumos",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": {},
+      "es_followup": false,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "categoria": "estado_pago"
+    },
+    {
+      "id": 344,
+      "pregunta": "Estado de pago de las facturas de compra de febrero",
+      "agente_esperado": "compras_insumos",
+      "departamento_usuario": "compras_insumos",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": {},
+      "es_followup": false,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "categoria": "estado_pago"
+    },
+    {
+      "id": 345,
+      "pregunta": "¿Cuánto debemos a los proveedores de insumos?",
+      "agente_esperado": "compras_insumos",
+      "departamento_usuario": "compras_insumos",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": {},
+      "es_followup": false,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "categoria": "estado_pago"
+    },
+    {
+      "id": 346,
+      "pregunta": "Precio de las últimas 6 compras de harina de avena",
+      "agente_esperado": "compras_insumos",
+      "departamento_usuario": "compras_insumos",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": { "producto": "harina de avena" },
+      "es_followup": false,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "categoria": "historial_producto"
+    },
+    {
+      "id": 347,
+      "pregunta": "administrativos",
+      "agente_esperado": "compras_insumos",
+      "departamento_usuario": "compras_insumos",
+      "contexto": {
+        "last_agent": "compras_insumos",
+        "historial": [
+          ["user", "En gastos?"],
+          ["assistant", "Gastos en Compras de Insumos - Marzo 2026"]
+        ]
+      },
+      "extracciones": {},
+      "es_followup": true,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "categoria": "resumen_compras",
+      "nota": "Follow-up 'administrativos' en contexto de compras debe redirigir a finanzas/rrhh, no decir 'no tengo acceso'"
+    },
+    {
+      "id": 348,
+      "pregunta": "¿Qué proveedores venden láminas de hierro negro?",
+      "agente_esperado": "compras_insumos",
+      "departamento_usuario": "compras_insumos",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": { "producto": "láminas de hierro negro" },
+      "es_followup": false,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "categoria": "proveedores"
+    },
+    {
+      "id": 349,
+      "pregunta": "¿Cuántas cajas de cartón para cereales quedan en inventario de inproa santoni?",
+      "agente_esperado": "compras_insumos",
+      "departamento_usuario": "compras_insumos",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": { "producto": "cajas de cartón para cereales", "organizacion": "inproa santoni" },
+      "es_followup": false,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "categoria": "inventario_producto"
+    },
+    {
+      "id": 350,
+      "pregunta": "¿Cuánto gasoil se compró en Inproa Santoni desde el 01-01-2026 al 23-02-2026?",
+      "agente_esperado": "compras_insumos",
+      "departamento_usuario": "compras_insumos",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": { "producto": "gasoil", "organizacion": "inproa santoni", "fecha_desde": "2026-01-01", "fecha_hasta": "2026-02-23" },
+      "es_followup": false,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "categoria": "cantidad_producto"
+    },
+    {
+      "id": 351,
+      "pregunta": "¿Quién fue el último proveedor del producto REP-LAMI-0037 en INPROA SANTONI?",
+      "agente_esperado": "compras_insumos",
+      "departamento_usuario": "compras_insumos",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": { "producto": "REP-LAMI-0037", "organizacion": "inproa santoni" },
+      "es_followup": false,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "categoria": "historial_producto"
     }
   ],
   "tipos_error": {
@@ -6220,7 +6422,10 @@
     "inventario_producto",
     "prestamos",
     "produccion_producto",
-    "ingresos_personal"
+    "ingresos_personal",
+    "ordenes_compra",
+    "comparacion_precios",
+    "estado_pago"
   ],
   "updated": "2026-03-10"
 }

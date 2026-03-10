@@ -19,7 +19,14 @@ from app.agents.date_utils import (
 )
 import re
 
-from app.services.query_service import build_supply_purchases, build_product_purchase_history, build_inventory_stock
+from app.services.query_service import (
+    build_supply_purchases,
+    build_product_purchase_history,
+    build_inventory_stock,
+    build_pending_purchase_orders,
+    build_supplier_price_comparison,
+    build_purchase_payment_status,
+)
 
 
 class ComprasInsumosAgent(BaseAgent):
@@ -53,9 +60,13 @@ CAPACIDADES:
 - Análisis mensual de compras
 - Inventario/stock actual por producto, almacén, organización y categoría
 - Búsqueda de productos en inventario por nombre o código
+- Órdenes de compra pendientes (c_order) por período, proveedor y estado
+- Comparación de precios entre proveedores para un mismo producto
+- Estado de pago de facturas de compra (pagadas vs pendientes)
 
 CONTEXTO iDEMPIERE:
 - Facturas de compra: c_invoice (issotrx='N', docstatus='CO') - las facturas de compra tienen issotrx='N'
+- Órdenes de compra: c_order (issotrx='N') - órdenes pendientes, en proceso y completadas
 - Líneas de factura: c_invoiceline (m_product_id, qtyinvoiced, linenetamt)
 - Proveedores: c_bpartner (isvendor='Y') - 26,070 socios de negocio
 - Productos: m_product (40,766 productos) con m_product_category
@@ -115,21 +126,23 @@ SOBRE INVENTARIO/STOCK:
             "✅ Tendencia mensual de compras\n"
             "✅ Historial de compras de un producto específico (por nombre o código)\n"
             "✅ Stock/inventario actual por producto, almacén, organización y categoría\n"
-            "\nLO QUE NO PUEDO consultar (NO tengo queries SQL para esto):\n"
-            "❌ Órdenes de compra pendientes (c_order) - solo consulto facturas confirmadas (c_invoice)\n"
-            "❌ Tiempos de entrega (lead times) de proveedores\n"
-            "❌ Comparación de precios entre proveedores para un mismo producto\n"
-            "❌ Histórico de evolución de precios de un insumo\n"
-            "❌ Estado de pago de facturas de compra (pagadas vs pendientes)\n"
-            "\nSi me preguntan algo que no puedo consultar, debo informar honestamente "
-            "que esa información no está disponible en mis consultas actuales."
+            "✅ Órdenes de compra pendientes (c_order) por período, estado y proveedor\n"
+            "✅ Comparación de precios entre proveedores para un mismo producto\n"
+            "✅ Estado de pago de facturas de compra (pagadas vs pendientes)\n"
+            "\nLimitaciones actuales (datos no disponibles en iDempiere):\n"
+            "- Tiempos de entrega (lead times) de proveedores\n"
+            "- Gastos administrativos (nómina, servicios) - eso corresponde al agente de RRHH o Finanzas\n"
+            "\nSi me preguntan algo fuera de compras de insumos, sugiero al usuario consultar "
+            "el agente apropiado (Finanzas, RRHH, etc.)."
         )
 
     def get_sql_context(self) -> str:
         return """
 Datos de compras de insumos en iDempiere:
-- c_invoice: Facturas de compra (issotrx='N', dateinvoiced, grandtotal, totallines, docstatus)
+- c_invoice: Facturas de compra (issotrx='N', dateinvoiced, grandtotal, ispaid, docstatus)
 - c_invoiceline: Líneas (m_product_id, qtyinvoiced, linenetamt, priceactual)
+- c_order: Órdenes de compra (issotrx='N', dateordered, grandtotal, docstatus DR/IP/CO)
+- c_orderline: Líneas de orden (m_product_id, qtyordered, priceactual)
 - c_bpartner: Proveedores (isvendor='Y', name, value)
 - m_product: Productos/insumos (name, m_product_category_id)
 - m_product_category: Categorías de productos
@@ -170,6 +183,30 @@ Datos de compras de insumos en iDempiere:
         "cuánto hay", "cuanto hay", "cuánto queda", "cuanto queda",
         "cuánto tenemos", "cuanto tenemos",
         "en almacén", "en almacen", "en bodega",
+    ]
+
+    # Keywords that indicate pending purchase orders query
+    _ORDER_KEYWORDS = [
+        "orden", "órdenes", "ordenes", "orden de compra", "órdenes de compra",
+        "ordenes de compra", "pendiente", "pendientes",
+        "por recibir", "por recepcionar", "por recepción", "por recepcion",
+        "solicitado", "solicitados", "pedido", "pedidos",
+    ]
+
+    # Keywords that indicate price comparison query
+    _PRICE_COMPARE_KEYWORDS = [
+        "comparar precio", "comparación de precio", "comparacion de precio",
+        "mejor precio", "precio más bajo", "precio mas bajo",
+        "quién vende más barato", "quien vende mas barato",
+        "proveedores que venden", "alternativas de proveedor",
+    ]
+
+    # Keywords that indicate payment status query
+    _PAYMENT_KEYWORDS = [
+        "estado de pago", "pagada", "pagadas", "pendiente de pago",
+        "por pagar", "facturas pagadas", "facturas pendientes",
+        "facturas vencidas", "vencida", "vencidas", "morosidad",
+        "cuentas por pagar", "deuda", "adeudado",
     ]
 
     def _extract_product_search(self, message: str) -> str | None:
@@ -397,14 +434,16 @@ Datos de compras de insumos en iDempiere:
         if not product_search and history:
             product_search = self._extract_product_from_history(history)
 
-        # Check if this is an inventory/stock query
+        # Detect query type
         is_inventory = any(w in msg for w in self._INVENTORY_KEYWORDS)
+        is_orders = any(w in msg for w in self._ORDER_KEYWORDS)
+        is_price_compare = any(w in msg for w in self._PRICE_COMPARE_KEYWORDS)
+        is_payment = any(w in msg for w in self._PAYMENT_KEYWORDS)
 
         product_found = False
 
         try:
             if is_inventory:
-                # For inventory queries, use product_search as filter if available
                 inv_data = build_inventory_stock(
                     org_ids=org_ids,
                     product_search=product_search,
@@ -414,29 +453,103 @@ Datos de compras de insumos en iDempiere:
                     inv_data, f"Inventario / Stock Actual{filter_label}",
                 ))
                 product_found = True
+
+            elif is_orders:
+                orders_data = build_pending_purchase_orders(
+                    mes=mes, anio=anio, org_ids=org_ids,
+                    date_from=date_from, date_to=date_to,
+                    currency_ids=currency_ids,
+                    product_search=product_search,
+                )
+                sections.append(self._format_summary(
+                    orders_data, f"Órdenes de Compra - {label}",
+                ))
+                product_found = True
+
+            elif is_payment:
+                payment_data = build_purchase_payment_status(
+                    mes=mes, anio=anio, org_ids=org_ids,
+                    date_from=date_from, date_to=date_to,
+                )
+                sections.append(self._format_summary(
+                    payment_data, f"Estado de Pago de Facturas de Compra - {label}",
+                ))
+                product_found = True
+
+            elif is_price_compare and product_search:
+                compare_data = build_supplier_price_comparison(
+                    product_search=product_search,
+                    org_ids=org_ids, anio=anio,
+                    date_from=date_from, date_to=date_to,
+                )
+                if compare_data:
+                    product_found = True
+                    sections.append(
+                        f"## Comparación de Precios - '{product_search}' ({len(compare_data)} proveedores)"
+                    )
+                    sections.append(self._format_table(compare_data))
+                else:
+                    sections.append(
+                        f"## Comparación de Precios - '{product_search}'\n"
+                        f"No se encontraron datos de precios para '{product_search}' en el período {label}."
+                    )
+
             elif product_search:
                 try:
-                    prod_data = build_product_purchase_history(
-                        product_search=product_search,
-                        org_ids=org_ids,
-                        date_from=date_from, date_to=date_to,
-                        mes=mes, anio=anio,
-                    )
-                    if prod_data:
-                        product_found = True
-                        sections.append(
-                            f"## Historial de Compras - Producto '{product_search}' ({len(prod_data)} registros)"
+                    # Check if user is asking for suppliers of a product
+                    is_supplier_query = any(w in msg for w in ["proveedores", "proveedor", "quien vende", "quién vende"])
+
+                    if is_supplier_query:
+                        compare_data = build_supplier_price_comparison(
+                            product_search=product_search,
+                            org_ids=org_ids, anio=anio,
+                            date_from=date_from, date_to=date_to,
                         )
-                        sections.append(self._format_table(prod_data))
-                    else:
-                        sections.append(
-                            f"## Búsqueda de Producto '{product_search}'\n"
-                            f"No se encontraron compras para '{product_search}' en el período {label}."
+                        if compare_data:
+                            product_found = True
+                            sections.append(
+                                f"## Proveedores de '{product_search}' ({len(compare_data)} proveedores)"
+                            )
+                            sections.append(self._format_table(compare_data))
+
+                    if not product_found:
+                        prod_data = build_product_purchase_history(
+                            product_search=product_search,
+                            org_ids=org_ids,
+                            date_from=date_from, date_to=date_to,
+                            mes=mes, anio=anio,
                         )
+                        if prod_data:
+                            product_found = True
+                            sections.append(
+                                f"## Historial de Compras - Producto '{product_search}' ({len(prod_data)} registros)"
+                            )
+                            sections.append(self._format_table(prod_data))
+                        else:
+                            # Try without date filter as fallback
+                            prod_data_all = build_product_purchase_history(
+                                product_search=product_search,
+                                org_ids=org_ids,
+                            )
+                            if prod_data_all:
+                                product_found = True
+                                sections.append(
+                                    f"## Historial de Compras - Producto '{product_search}' "
+                                    f"(no hay datos en {label}, mostrando todo el historial: "
+                                    f"{len(prod_data_all)} registros)"
+                                )
+                                sections.append(self._format_table(prod_data_all))
+                            else:
+                                sections.append(
+                                    f"## Búsqueda de Producto '{product_search}'\n"
+                                    f"No se encontraron compras para '{product_search}' "
+                                    f"en ningún período registrado.\n"
+                                    f"Verifica el nombre o código del producto."
+                                )
                 except Exception as exc:
                     logger.warning("Error buscando historial de producto '%s': %s", product_search, exc)
 
-            # General summary: always include unless specific product/inventory data was found
+            # General summary: always include unless specific data was found
             if not product_found:
                 summary = build_supply_purchases(
                     mes=mes, anio=anio, org_ids=org_ids,

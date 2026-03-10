@@ -120,6 +120,23 @@ _PRODUCT_STOP_WORDS = {
 }
 
 
+def _normalize_search_word(w: str) -> str:
+    """Normalize a Spanish word for search: remove accents, de-pluralize."""
+    # Remove accents
+    _accent_map = {
+        'á': 'a', 'é': 'e', 'í': 'i', 'ó': 'o', 'ú': 'u',
+        'ñ': 'n', 'ü': 'u',
+    }
+    normalized = ''.join(_accent_map.get(c, c) for c in w.lower())
+    # De-pluralize: strip trailing 's' for common Spanish plurals
+    if len(normalized) > 3 and normalized.endswith('s') and normalized[-2] in 'aeiou':
+        normalized = normalized[:-1]
+    # Also handle -es plurals (e.g. laminas -> lamina already handled, but cajas -> caja)
+    if len(normalized) > 4 and normalized.endswith('es') and normalized[-3] not in 'aeiou':
+        normalized = normalized[:-2]
+    return normalized
+
+
 def _add_product_search_filter(
     conditions: list[str],
     params: dict,
@@ -129,8 +146,10 @@ def _add_product_search_filter(
     """Add flexible product search conditions on p.name / p.value.
 
     For product codes (e.g. REP-LAMI-0037), uses exact substring ILIKE.
-    For text searches, splits into words and uses AND ILIKE per word
-    with basic Spanish de-pluralisation (cajas→caja, laminas→lamina).
+    For text searches, splits into words and uses a flexible strategy:
+    - If 1-2 words: ALL must match (AND)
+    - If 3+ words: at least 2 must match (OR groups)
+    With accent normalization and de-pluralization.
     """
     # Product code: exact substring match
     if re.search(r'[A-Za-z]{2,}-[A-Za-z]{2,}-\d+', product_search):
@@ -154,21 +173,34 @@ def _add_product_search_filter(
         )
         return
 
-    # De-pluralise: strip trailing 's' for common Spanish plurals
-    clean_words = []
-    for w in words:
-        if len(w) > 3 and w.endswith('s') and w[-2] in 'aeiou':
-            clean_words.append(w[:-1])
-        else:
-            clean_words.append(w)
+    # Normalize words (remove accents + de-pluralize)
+    clean_words = [_normalize_search_word(w) for w in words]
+    # Also keep original words as alternates for ILIKE
+    original_words = list(words)
 
     word_conds = []
     for i, w in enumerate(clean_words):
         pk = f"{prefix}_w{i}"
+        # Use the normalized word for matching
         params[pk] = f"%{w}%"
-        word_conds.append(f"(p.name ILIKE :{pk} OR p.value ILIKE :{pk})")
+        cond = f"(p.name ILIKE :{pk} OR p.value ILIKE :{pk})"
+        # Also try the original word if different
+        if original_words[i] != w:
+            pk_orig = f"{prefix}_wo{i}"
+            params[pk_orig] = f"%{original_words[i]}%"
+            cond = f"(p.name ILIKE :{pk} OR p.value ILIKE :{pk} OR p.name ILIKE :{pk_orig} OR p.value ILIKE :{pk_orig})"
+        word_conds.append(cond)
 
-    conditions.append(f"({' AND '.join(word_conds)})")
+    if len(word_conds) <= 2:
+        # For 1-2 words: ALL must match
+        conditions.append(f"({' AND '.join(word_conds)})")
+    else:
+        # For 3+ words: require first word + at least one other
+        # This avoids "cajas de carton para cereales" failing because
+        # one word doesn't match exactly
+        conditions.append(
+            f"({word_conds[0]} AND ({' OR '.join(word_conds[1:])}))"
+        )
 
 
 def execute_idempiere_query(query: str, params: dict | None = None) -> list[dict]:
@@ -2041,6 +2073,266 @@ def build_product_purchase_history(
             }
             for r in rows
         ]
+    finally:
+        db.close()
+
+
+def build_pending_purchase_orders(
+    mes: int | None = None,
+    anio: int | None = None,
+    org_ids: list[int] | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    currency_ids: list[int] | None = None,
+    product_search: str | None = None,
+) -> dict:
+    """Pending purchase orders from iDempiere c_order (issotrx='N').
+
+    Includes orders in progress (docstatus IN ('DR','IP','CO') that have
+    not been fully invoiced/received).
+    """
+    db = IdempiereSession()
+    try:
+        conditions = [
+            "o.issotrx = 'N'",
+            "o.isactive = 'Y'",
+            "o.docstatus IN ('DR', 'IP', 'CO')",
+        ]
+        params: dict = {}
+        _add_org_filter(conditions, params, org_ids, "o")
+        _add_date_filter(conditions, params, date_from, date_to, mes, anio, "o.dateordered")
+        _add_currency_filter(conditions, params, currency_ids, "o")
+
+        if product_search:
+            conditions.append(
+                "EXISTS (SELECT 1 FROM adempiere.c_orderline ol2 "
+                "JOIN adempiere.m_product p2 ON ol2.m_product_id = p2.m_product_id "
+                "WHERE ol2.c_order_id = o.c_order_id "
+                "AND (p2.name ILIKE :po_prod OR p2.value ILIKE :po_prod))"
+            )
+            params["po_prod"] = f"%{product_search}%"
+
+        where = " AND ".join(conditions)
+
+        # Totals
+        totals_q = text(
+            f"SELECT COUNT(DISTINCT o.c_order_id) AS total_ordenes, "
+            f"COALESCE(SUM(o.grandtotal), 0) AS total_monto "
+            f"FROM adempiere.c_order o WHERE {where}"
+        )
+        row = db.execute(totals_q, params).fetchone()
+        totals = {
+            "total_ordenes": row[0] if row else 0,
+            "total_monto": float(row[1]) if row else 0.0,
+        }
+
+        # By status
+        by_status_q = text(
+            f"SELECT "
+            f"CASE o.docstatus "
+            f"  WHEN 'DR' THEN 'Borrador' "
+            f"  WHEN 'IP' THEN 'En Proceso' "
+            f"  WHEN 'CO' THEN 'Completada' "
+            f"  ELSE o.docstatus END AS estado, "
+            f"COUNT(DISTINCT o.c_order_id) AS ordenes, "
+            f"COALESCE(SUM(o.grandtotal), 0) AS total "
+            f"FROM adempiere.c_order o WHERE {where} "
+            f"GROUP BY o.docstatus ORDER BY total DESC"
+        )
+        by_status = [
+            {"estado": r[0], "ordenes": r[1], "total": float(r[2])}
+            for r in db.execute(by_status_q, params).fetchall()
+        ]
+
+        # By supplier (top 20)
+        by_supplier_q = text(
+            f"SELECT bp.name AS proveedor, "
+            f"COUNT(DISTINCT o.c_order_id) AS ordenes, "
+            f"COALESCE(SUM(o.grandtotal), 0) AS total "
+            f"FROM adempiere.c_order o "
+            f"JOIN adempiere.c_bpartner bp ON o.c_bpartner_id = bp.c_bpartner_id "
+            f"WHERE {where} "
+            f"GROUP BY bp.name ORDER BY total DESC LIMIT 20"
+        )
+        by_supplier = [
+            {"proveedor": r[0], "ordenes": r[1], "total": float(r[2])}
+            for r in db.execute(by_supplier_q, params).fetchall()
+        ]
+
+        # Recent orders detail (last 30)
+        detail_q = text(
+            f"SELECT o.documentno, o.dateordered, "
+            f"bp.name AS proveedor, "
+            f"CASE o.docstatus "
+            f"  WHEN 'DR' THEN 'Borrador' "
+            f"  WHEN 'IP' THEN 'En Proceso' "
+            f"  WHEN 'CO' THEN 'Completada' "
+            f"  ELSE o.docstatus END AS estado, "
+            f"o.grandtotal, "
+            f"COALESCE(org.name, '') AS organizacion "
+            f"FROM adempiere.c_order o "
+            f"JOIN adempiere.c_bpartner bp ON o.c_bpartner_id = bp.c_bpartner_id "
+            f"LEFT JOIN adempiere.ad_org org ON o.ad_org_id = org.ad_org_id "
+            f"WHERE {where} "
+            f"ORDER BY o.dateordered DESC LIMIT 30"
+        )
+        detail = [
+            {
+                "documento": r[0],
+                "fecha": r[1].isoformat() if r[1] else None,
+                "proveedor": r[2],
+                "estado": r[3],
+                "monto": float(r[4]) if r[4] else 0.0,
+                "organizacion": r[5],
+            }
+            for r in db.execute(detail_q, params).fetchall()
+        ]
+
+        return {
+            "anio": anio,
+            "mes": mes,
+            "totales": totals,
+            "por_estado": by_status,
+            "por_proveedor": by_supplier,
+            "detalle_ordenes": detail,
+        }
+    finally:
+        db.close()
+
+
+def build_supplier_price_comparison(
+    product_search: str,
+    org_ids: list[int] | None = None,
+    anio: int | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> list[dict]:
+    """Compare prices from different suppliers for a specific product.
+
+    Returns min, avg, max price per supplier with last purchase date.
+    """
+    db = IdempiereSession()
+    try:
+        conditions = [
+            "i.issotrx = 'N'",
+            "i.docstatus = 'CO'",
+            "i.isactive = 'Y'",
+        ]
+        params: dict = {}
+        _add_org_filter(conditions, params, org_ids, "i")
+        _add_date_filter(conditions, params, date_from, date_to, None, anio, "i.dateinvoiced")
+        _add_product_search_filter(conditions, params, product_search, prefix="cmp")
+
+        where = " AND ".join(conditions)
+
+        q = text(
+            f"SELECT bp.name AS proveedor, "
+            f"p.name AS producto, "
+            f"COUNT(*) AS compras, "
+            f"MIN(il.priceactual) AS precio_minimo, "
+            f"AVG(il.priceactual) AS precio_promedio, "
+            f"MAX(il.priceactual) AS precio_maximo, "
+            f"MAX(i.dateinvoiced) AS ultima_compra, "
+            f"SUM(il.qtyinvoiced) AS cantidad_total "
+            f"FROM adempiere.c_invoice i "
+            f"JOIN adempiere.c_invoiceline il ON i.c_invoice_id = il.c_invoice_id "
+            f"JOIN adempiere.m_product p ON il.m_product_id = p.m_product_id "
+            f"JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id "
+            f"WHERE {where} "
+            f"GROUP BY bp.name, p.name "
+            f"ORDER BY precio_promedio ASC "
+            f"LIMIT 30"
+        )
+        rows = db.execute(q, params).fetchall()
+        return [
+            {
+                "proveedor": r[0],
+                "producto": r[1],
+                "compras": r[2],
+                "precio_minimo": float(r[3]) if r[3] else 0.0,
+                "precio_promedio": float(r[4]) if r[4] else 0.0,
+                "precio_maximo": float(r[5]) if r[5] else 0.0,
+                "ultima_compra": r[6].isoformat() if r[6] else None,
+                "cantidad_total": float(r[7]) if r[7] else 0.0,
+            }
+            for r in rows
+        ]
+    finally:
+        db.close()
+
+
+def build_purchase_payment_status(
+    mes: int | None = None,
+    anio: int | None = None,
+    org_ids: list[int] | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> dict:
+    """Purchase invoice payment status from iDempiere.
+
+    Shows paid vs unpaid purchase invoices (c_invoice where issotrx='N').
+    """
+    db = IdempiereSession()
+    try:
+        conditions = [
+            "i.issotrx = 'N'",
+            "i.docstatus = 'CO'",
+            "i.isactive = 'Y'",
+        ]
+        params: dict = {}
+        _add_org_filter(conditions, params, org_ids, "i")
+        _add_date_filter(conditions, params, date_from, date_to, mes, anio, "i.dateinvoiced")
+
+        where = " AND ".join(conditions)
+
+        q = text(
+            f"SELECT "
+            f"CASE WHEN i.ispaid = 'Y' THEN 'Pagada' ELSE 'Pendiente' END AS estado_pago, "
+            f"COUNT(*) AS facturas, "
+            f"COALESCE(SUM(i.grandtotal), 0) AS total "
+            f"FROM adempiere.c_invoice i WHERE {where} "
+            f"GROUP BY i.ispaid ORDER BY total DESC"
+        )
+        rows = db.execute(q, params).fetchall()
+        summary = [
+            {"estado_pago": r[0], "facturas": r[1], "total": float(r[2])}
+            for r in rows
+        ]
+
+        # Overdue unpaid invoices
+        overdue_conditions = conditions + [
+            "i.ispaid = 'N'",
+            "i.dateinvoiced + COALESCE("
+            "  (SELECT pt.netdays FROM adempiere.c_paymentterm pt "
+            "   WHERE pt.c_paymentterm_id = i.c_paymentterm_id), 30"
+            ") < CURRENT_DATE",
+        ]
+        overdue_where = " AND ".join(overdue_conditions)
+
+        overdue_q = text(
+            f"SELECT bp.name AS proveedor, "
+            f"i.documentno, i.dateinvoiced, i.grandtotal, "
+            f"CURRENT_DATE - i.dateinvoiced AS dias "
+            f"FROM adempiere.c_invoice i "
+            f"JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id "
+            f"WHERE {overdue_where} "
+            f"ORDER BY i.grandtotal DESC LIMIT 20"
+        )
+        overdue = [
+            {
+                "proveedor": r[0],
+                "factura": r[1],
+                "fecha": r[2].isoformat() if r[2] else None,
+                "monto": float(r[3]) if r[3] else 0.0,
+                "dias_desde_factura": r[4],
+            }
+            for r in db.execute(overdue_q, params).fetchall()
+        ]
+
+        return {
+            "resumen_pago": summary,
+            "facturas_vencidas": overdue,
+        }
     finally:
         db.close()
 

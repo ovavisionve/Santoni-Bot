@@ -1053,6 +1053,64 @@ def build_product_purchase_history(
     return []
 
 
+def build_pending_purchase_orders(
+    mes: int | None = None,
+    anio: int | None = None,
+    org_ids: list[int] | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    currency_ids: list[int] | None = None,
+    product_search: str | None = None,
+) -> dict:
+    """Pending purchase orders - routes to demo or iDempiere."""
+    if _is_production():
+        from app.services.idempiere_queries import build_pending_purchase_orders as _prod
+        return _prod(
+            mes=mes, anio=anio, org_ids=org_ids,
+            date_from=date_from, date_to=date_to,
+            currency_ids=currency_ids, product_search=product_search,
+        )
+    return {
+        "anio": anio, "mes": mes,
+        "totales": {"total_ordenes": 0, "total_monto": 0.0},
+        "por_estado": [], "por_proveedor": [], "detalle_ordenes": [],
+    }
+
+
+def build_supplier_price_comparison(
+    product_search: str,
+    org_ids: list[int] | None = None,
+    anio: int | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> list[dict]:
+    """Supplier price comparison - routes to demo or iDempiere."""
+    if _is_production():
+        from app.services.idempiere_queries import build_supplier_price_comparison as _prod
+        return _prod(
+            product_search=product_search, org_ids=org_ids,
+            anio=anio, date_from=date_from, date_to=date_to,
+        )
+    return []
+
+
+def build_purchase_payment_status(
+    mes: int | None = None,
+    anio: int | None = None,
+    org_ids: list[int] | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> dict:
+    """Purchase payment status - routes to demo or iDempiere."""
+    if _is_production():
+        from app.services.idempiere_queries import build_purchase_payment_status as _prod
+        return _prod(
+            mes=mes, anio=anio, org_ids=org_ids,
+            date_from=date_from, date_to=date_to,
+        )
+    return {"resumen_pago": [], "facturas_vencidas": []}
+
+
 # ---------------------------------------------------------------------------
 # Pre-built queries: CONTABILIDAD (Accounting)
 # ---------------------------------------------------------------------------
