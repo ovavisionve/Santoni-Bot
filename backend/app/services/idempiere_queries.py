@@ -46,12 +46,21 @@ def _is_historical_enabled() -> bool:
 
 
 def _get_cutoff_date() -> str:
-    """Get the cutoff date string (YYYY-MM-DD)."""
+    """Get the cutoff date string (YYYY-MM-DD).
+
+    If HISTORICAL_DATA_CUTOFF is 'today' or empty, uses today's date.
+    This means only queries for TODAY go to iDempiere; everything else
+    is served from the local historical cache.
+    """
     try:
         from app.config import get_settings
-        return get_settings().historical_data_cutoff
+        cutoff = get_settings().historical_data_cutoff
+        if cutoff and cutoff.lower() != "today":
+            return cutoff
     except Exception:
-        return "2026-03-01"
+        pass
+    # Default: today's date (only today's queries go to iDempiere)
+    return date.today().isoformat()
 
 
 def _is_before_cutoff(

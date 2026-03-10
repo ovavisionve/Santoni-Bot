@@ -104,6 +104,22 @@ services:
       - nginx_certs:/etc/letsencrypt
       - certbot_webroot:/var/www/certbot
 
+  # ---- Daily Sync (iDempiere → local, runs at midnight) ----
+  # Manual: docker compose run --rm daily-sync
+  # Cron:   0 0 * * * cd /opt/santonibot && docker compose run --rm daily-sync >> /opt/santonibot/logs/daily_sync.log 2>&1
+  daily-sync:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    profiles: ["sync"]
+    env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+    entrypoint: ["python", "scripts/daily_sync.py"]
+
   # ---- Backup (PostgreSQL daily backup) ----
   # Manual: docker compose run --rm backup
   # Cron:   0 2 * * * cd /opt/santonibot && docker compose run --rm backup

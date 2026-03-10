@@ -56,8 +56,9 @@ class Settings(BaseSettings):
     chroma_port: int = 8001
 
     # Historical data: queries before this date use local DB instead of iDempiere
-    # Format: YYYY-MM-DD. Empty string disables historical routing (all queries go to iDempiere)
-    historical_data_cutoff: str = "2026-03-01"
+    # Values: "today" (recommended) = only today goes to iDempiere, everything else local
+    #         "YYYY-MM-DD" = fixed cutoff date
+    historical_data_cutoff: str = "today"
     historical_data_enabled: bool = False  # Enable after running extract_historical_data.py
 
     # Access control
