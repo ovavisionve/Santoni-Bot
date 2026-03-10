@@ -9,17 +9,19 @@ Valida:
   4. Que los follow-ups hereden contexto temporal
   5. Que declare honestamente cuando no tiene datos
 
-Uso:
-  python3 tests/test_admin_conversation_live.py                            # todo
-  python3 tests/test_admin_conversation_live.py --url http://192.168.1.26  # URL custom
-  python3 tests/test_admin_conversation_live.py --grupo ventas             # solo un grupo
-  python3 tests/test_admin_conversation_live.py --rapido                   # sin follow-ups
+Uso desde el servidor (directamente en el host, sin docker exec):
+  cd /opt/santonibot
+  python3 backend/tests/test_admin_conversation_live.py                            # todo (usa localhost:80 por defecto)
+  python3 backend/tests/test_admin_conversation_live.py --url http://192.168.1.26  # URL custom
+  python3 backend/tests/test_admin_conversation_live.py --grupo ventas             # solo un grupo
+  python3 backend/tests/test_admin_conversation_live.py --rapido                   # sin follow-ups
 
-Desde servidor:
+Alternativa via docker exec:
   docker compose exec backend python3 tests/test_admin_conversation_live.py --url http://localhost:8000
 """
 
 import sys
+import os
 import json
 import time
 import re
@@ -461,7 +463,9 @@ def run_tests(base_url, token, test_groups, verbose=True):
         "hallucinations": halluc_count,
         "results": results,
     }
-    report_file = "tests/test_admin_conversation_results.json"
+    # Guardar junto al script, sin importar desde dónde se ejecute
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    report_file = os.path.join(script_dir, "test_admin_conversation_results.json")
     try:
         with open(report_file, "w", encoding="utf-8") as f:
             json.dump(report, f, ensure_ascii=False, indent=2, default=str)
@@ -476,8 +480,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="SantoniBot - Test conversación real del admin (anti-alucinación)"
     )
-    parser.add_argument("--url", default="http://192.168.1.26",
-                        help="Base URL del bot (default: http://192.168.1.26)")
+    parser.add_argument("--url", default="http://localhost",
+                        help="Base URL del bot (default: http://localhost via nginx)")
     parser.add_argument("--grupo", default=None,
                         help="Grupo: ventas, rrhh, finanzas, produccion, compras")
     parser.add_argument("--rapido", action="store_true",
