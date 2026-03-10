@@ -8,7 +8,7 @@ All LLM calls are mocked - no real Groq/Anthropic API calls are made.
 import pytest
 from unittest.mock import patch, AsyncMock, MagicMock, PropertyMock
 
-from app.agents.orchestrator import Orchestrator, CLASSIFICATION_PROMPT
+from app.agents.orchestrator import Orchestrator
 from app.models.user import User, UserRole, Department
 
 
@@ -331,43 +331,3 @@ class TestOrchestratorProcess:
         mock_agent.process.assert_awaited_once()
 
 
-# ---------------------------------------------------------------------------
-# CLASSIFICATION_PROMPT tests
-# ---------------------------------------------------------------------------
-
-class TestClassificationPrompt:
-    """Tests for the classification prompt template."""
-
-    def test_prompt_includes_departments(self):
-        """The prompt should include the user's allowed departments."""
-        formatted = CLASSIFICATION_PROMPT.format(
-            departments="ventas, finanzas",
-            message="test message",
-        )
-        assert "ventas, finanzas" in formatted
-
-    def test_prompt_includes_message(self):
-        """The prompt should include the user's message."""
-        formatted = CLASSIFICATION_PROMPT.format(
-            departments="ventas",
-            message="Cuales son las ventas?",
-        )
-        assert "Cuales son las ventas?" in formatted
-
-    def test_prompt_lists_all_agents(self):
-        """The prompt should list all available agent names."""
-        formatted = CLASSIFICATION_PROMPT.format(
-            departments="ventas", message="test"
-        )
-        expected_agents = [
-            "finanzas",
-            "contabilidad",
-            "ventas",
-            "rrhh",
-            "produccion",
-            "compras_insumos",
-            "compras_productores",
-            "general",
-        ]
-        for agent in expected_agents:
-            assert agent in formatted
