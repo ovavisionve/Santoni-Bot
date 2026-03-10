@@ -13,26 +13,40 @@ branch_labels = None
 depends_on = None
 
 
+def _column_exists(table, column):
+    """Check if a column already exists in a table."""
+    bind = op.get_bind()
+    result = bind.execute(
+        sa.text(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_schema = 'public' AND table_name = :table "
+            "AND column_name = :column"
+        ),
+        {"table": table, "column": column},
+    )
+    return result.fetchone() is not None
+
+
 def upgrade() -> None:
     # Add VENDEDOR to the userrole enum.
     # PostgreSQL requires ALTER TYPE ... ADD VALUE which cannot run inside a
     # transaction block, so we must commit any open transaction first.
-    # Note: the DB was created with create_all() which stored enum NAMES
-    # (UPPERCASE), so we add 'VENDEDOR' in uppercase.
     op.execute("COMMIT")
     op.execute("ALTER TYPE userrole ADD VALUE IF NOT EXISTS 'VENDEDOR'")
 
     # allowed_org_ids: iDempiere org filter (added in org-filtering feature)
-    op.add_column(
-        "users",
-        sa.Column("allowed_org_ids", sa.String(500), nullable=True),
-    )
+    if not _column_exists("users", "allowed_org_ids"):
+        op.add_column(
+            "users",
+            sa.Column("allowed_org_ids", sa.String(500), nullable=True),
+        )
 
     # idempiere_salesrep_id: links vendedor users to their iDempiere salesperson
-    op.add_column(
-        "users",
-        sa.Column("idempiere_salesrep_id", sa.Integer(), nullable=True),
-    )
+    if not _column_exists("users", "idempiere_salesrep_id"):
+        op.add_column(
+            "users",
+            sa.Column("idempiere_salesrep_id", sa.Integer(), nullable=True),
+        )
 
 
 def downgrade() -> None:

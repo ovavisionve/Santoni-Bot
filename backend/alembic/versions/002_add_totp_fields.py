@@ -13,25 +13,43 @@ branch_labels = None
 depends_on = None
 
 
-def upgrade() -> None:
-    op.add_column("users", sa.Column("totp_secret", sa.String(64), nullable=True))
-    op.add_column(
-        "users",
-        sa.Column("totp_enabled", sa.Boolean(), nullable=False, server_default="false"),
-    )
-    op.add_column(
-        "users",
-        sa.Column(
-            "failed_login_attempts",
-            sa.Integer(),
-            nullable=False,
-            server_default="0",
+def _column_exists(table, column):
+    """Check if a column already exists in a table."""
+    bind = op.get_bind()
+    result = bind.execute(
+        sa.text(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_schema = 'public' AND table_name = :table "
+            "AND column_name = :column"
         ),
+        {"table": table, "column": column},
     )
-    op.add_column(
-        "users",
-        sa.Column("locked_until", sa.DateTime(timezone=True), nullable=True),
-    )
+    return result.fetchone() is not None
+
+
+def upgrade() -> None:
+    if not _column_exists("users", "totp_secret"):
+        op.add_column("users", sa.Column("totp_secret", sa.String(64), nullable=True))
+    if not _column_exists("users", "totp_enabled"):
+        op.add_column(
+            "users",
+            sa.Column("totp_enabled", sa.Boolean(), nullable=False, server_default="false"),
+        )
+    if not _column_exists("users", "failed_login_attempts"):
+        op.add_column(
+            "users",
+            sa.Column(
+                "failed_login_attempts",
+                sa.Integer(),
+                nullable=False,
+                server_default="0",
+            ),
+        )
+    if not _column_exists("users", "locked_until"):
+        op.add_column(
+            "users",
+            sa.Column("locked_until", sa.DateTime(timezone=True), nullable=True),
+        )
 
 
 def downgrade() -> None:
