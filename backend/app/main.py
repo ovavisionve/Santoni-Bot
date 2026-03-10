@@ -18,16 +18,21 @@ from app.utils.logger import setup_logging, get_logger
 settings = get_settings()
 logger = setup_logging()
 
+# ─── App version (used for Sentry releases and health checks) ──
+APP_VERSION = "1.1.0"
+
 # ─── Sentry (optional, only if DSN is configured) ──────────────
 if settings.sentry_dsn:
     sentry_sdk.init(
         dsn=settings.sentry_dsn,
         traces_sample_rate=settings.sentry_traces_sample_rate,
+        profiles_sample_rate=settings.sentry_profiles_sample_rate,
         environment=settings.app_env,
-        release=f"santonibot@1.0.0",
+        release=f"santonibot@{APP_VERSION}",
         send_default_pii=False,
+        enable_tracing=True,
     )
-    logger.info("Sentry initialized (env=%s)", settings.app_env)
+    logger.info("Sentry initialized (env=%s, release=santonibot@%s)", settings.app_env, APP_VERSION)
 
 
 @asynccontextmanager
@@ -86,6 +91,31 @@ app.add_middleware(
 
 
 @app.middleware("http")
+async def sentry_user_context(request: Request, call_next):
+    """Set Sentry user context from JWT token when available."""
+    if settings.sentry_dsn:
+        try:
+            auth_header = request.headers.get("authorization", "")
+            if auth_header.startswith("Bearer "):
+                from app.services.auth import decode_token
+                token = auth_header[7:]
+                payload = decode_token(token)
+                if payload:
+                    sentry_sdk.set_user({
+                        "id": str(payload.get("sub", "")),
+                        "username": payload.get("username", ""),
+                        "ip_address": request.client.host if request.client else None,
+                    })
+                    sentry_sdk.set_tag("user.department", payload.get("department", "unknown"))
+        except Exception:
+            pass  # Never break requests for Sentry context
+    response = await call_next(request)
+    if settings.sentry_dsn:
+        sentry_sdk.set_user(None)
+    return response
+
+
+@app.middleware("http")
 async def log_requests(request: Request, call_next):
     req_logger = get_logger("http")
     start = time.time()
@@ -122,7 +152,7 @@ def health_check():
     return {
         "status": "ok",
         "app": settings.app_name,
-        "version": "1.0.0",
+        "version": APP_VERSION,
     }
 
 
@@ -158,6 +188,6 @@ def health_check_detailed(current_user=Depends(get_current_user)):
     return {
         "status": overall,
         "app": settings.app_name,
-        "version": "1.0.0",
+        "version": APP_VERSION,
         "checks": checks,
     }

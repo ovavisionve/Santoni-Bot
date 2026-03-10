@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     # Sentry (optional - leave empty to disable)
     sentry_dsn: str = ""
     sentry_traces_sample_rate: float = 0.2
+    sentry_profiles_sample_rate: float = 0.1
 
     # Internal Database
     postgres_host: str = "db"

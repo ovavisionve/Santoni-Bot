@@ -181,12 +181,24 @@ class BaseAgent(ABC):
 
         # Fetch real data from the database
         try:
-            data_context = self.fetch_data(message, org_ids=org_ids, salesrep_id=salesrep_id, history=history)
+            from app.utils.sentry_utils import set_agent_context, track_query_performance
+            set_agent_context(self.name)
+            with track_query_performance(self.name, f"{self.name}.fetch_data"):
+                data_context = self.fetch_data(message, org_ids=org_ids, salesrep_id=salesrep_id, history=history)
         except Exception as exc:
             logger.error(
                 "Error in %s.fetch_data: %s: %s",
                 self.name, type(exc).__name__, exc, exc_info=True,
             )
+            # Report to Sentry with agent context
+            try:
+                from app.utils.sentry_utils import capture_agent_error
+                capture_agent_error(self.name, exc, {
+                    "message": message,
+                    "department": self.department,
+                })
+            except Exception:
+                pass
             data_context = (
                 f"## Error al consultar datos\n"
                 f"Se produjo un error al consultar la base de datos: {type(exc).__name__}.\n"
@@ -295,6 +307,16 @@ class BaseAgent(ABC):
                 "Hallucination detected in %s (has_data=%s). Replacing response.",
                 self.name, has_data,
             )
+            try:
+                from app.utils.sentry_utils import add_breadcrumb
+                add_breadcrumb(
+                    category="agent",
+                    message=f"Hallucination detected in {self.name}",
+                    level="warning",
+                    data={"agent": self.name, "has_data": has_data},
+                )
+            except Exception:
+                pass
             response_text = self._HALLUCINATION_REPLACEMENT
 
         return {
