@@ -101,14 +101,9 @@ IMPORTANTE SOBRE PERÍODOS:
             "✅ Pagos pendientes a productores (facturas no pagadas)\n"
             "✅ Análisis de precios por producto (min, promedio, max)\n"
             "✅ Productores registrados (nombre, código, ciudad)\n"
-            "\nLimitaciones actuales (información no disponible en estas consultas):\n"
-            "- Humedad e impureza del arroz (campos existen pero reportan 0.0)\n"
-            "- Ubicación detallada de productores (estado, municipio - datos incompletos)\n"
-            "- Datos de guías agrícolas (guidemac, guideproducer, guidesada)\n"
-            "- Peso bruto/neto/tara de las guías\n"
-            "- Filtro por moneda (VES vs USD) en compras a productores\n"
-            "\nPara consultas fuera de este departamento, sugiere al usuario "
-            "consultar el agente apropiado."
+            "\nNota: Los campos de humedad/impureza y datos de guías agrícolas están en proceso "
+            "de integración. Para consultas fuera de compras a productores, redirige al usuario "
+            "al agente correspondiente."
         )
 
     def get_sql_context(self) -> str:

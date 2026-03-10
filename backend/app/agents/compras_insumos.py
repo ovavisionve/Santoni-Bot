@@ -129,11 +129,8 @@ SOBRE INVENTARIO/STOCK:
             "✅ Órdenes de compra pendientes (c_order) por período, estado y proveedor\n"
             "✅ Comparación de precios entre proveedores para un mismo producto\n"
             "✅ Estado de pago de facturas de compra (pagadas vs pendientes)\n"
-            "\nLimitaciones actuales (datos no disponibles en iDempiere):\n"
-            "- Tiempos de entrega (lead times) de proveedores\n"
-            "- Gastos administrativos (nómina, servicios) - eso corresponde al agente de RRHH o Finanzas\n"
-            "\nSi me preguntan algo fuera de compras de insumos, sugiero al usuario consultar "
-            "el agente apropiado (Finanzas, RRHH, etc.)."
+            "\nPara gastos administrativos (nómina, servicios), redirige al usuario "
+            "al agente de RRHH o Finanzas."
         )
 
     def get_sql_context(self) -> str:

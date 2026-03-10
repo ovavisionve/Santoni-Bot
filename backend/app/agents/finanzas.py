@@ -103,15 +103,8 @@ IMPORTANTE SOBRE PERÍODOS:
             "✅ Cuentas por cobrar pendientes (facturas de venta no pagadas) con días de atraso\n"
             "✅ Cuentas por pagar pendientes (facturas de compra no pagadas)\n"
             "✅ Resumen financiero general (bancos + CxC + CxP)\n"
-            "\nLimitaciones actuales (información no disponible en estas consultas):\n"
-            "- Préstamos bancarios ni cuotas vencidas (no existe tabla c_loan accesible)\n"
-            "- Flujo de caja proyectado ni forecast\n"
-            "- Presupuestos ni ejecución presupuestaria\n"
-            "- Indicadores financieros calculados (ratios, liquidez, rentabilidad)\n"
-            "- Movimientos bancarios ni conciliaciones\n"
-            "- Cheques emitidos ni transferencias detalladas\n"
-            "\nPara consultas fuera de este departamento, sugiere al usuario "
-            "consultar el agente apropiado."
+            "\nNota: Para presupuestos, flujo de caja proyectado o indicadores financieros calculados, "
+            "redirige al usuario al departamento correspondiente."
         )
 
     def get_sql_context(self) -> str:

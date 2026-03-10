@@ -222,19 +222,20 @@ class BaseAgent(ABC):
             messages.append(
                 SystemMessage(
                     content=(
-                        "⚠️ INSTRUCCIÓN OBLIGATORIA — SIN DATOS DISPONIBLES ⚠️\n\n"
-                        "No se encontraron datos para esta consulta en la base de datos.\n\n"
+                        "⚠️ INSTRUCCIÓN OBLIGATORIA — LA CONSULTA NO ARROJÓ RESULTADOS ⚠️\n\n"
+                        "La consulta a la base de datos se ejecutó correctamente pero no arrojó "
+                        "resultados para los filtros aplicados (período, producto, organización, etc.).\n\n"
                         "Tu ÚNICA respuesta permitida es:\n"
-                        "1. Informar al usuario que no hay datos disponibles para lo que pidió.\n"
-                        "2. Sugerir alternativas: otro período, otro filtro, o reformular la pregunta.\n\n"
+                        "1. Informar que la consulta no arrojó resultados para ese período/filtro específico.\n"
+                        "2. Sugerir alternativas: otro período, otro filtro, o reformular la pregunta.\n"
+                        "3. NUNCA digas 'no tengo acceso' ni 'no puedo consultar' — SÍ tienes acceso, "
+                        "simplemente no hay registros que coincidan con los filtros.\n\n"
                         "PROHIBIDO TERMINANTEMENTE:\n"
                         "- NO generes tablas con datos numéricos inventados.\n"
                         "- NO inventes nombres de clientes, proveedores, empleados ni productos.\n"
                         "- NO muestres montos, porcentajes ni cifras que no provengan de los datos.\n"
-                        "- NO uses frases como 'datos referenciales' o 'datos estimados' para "
-                        "justificar información inventada.\n"
-                        "- Si generas CUALQUIER tabla con números sin haber recibido datos reales, "
-                        "estarás MINTIENDO al usuario.\n\n"
+                        "- NO digas 'no tengo acceso', 'no puedo consultar', 'no dispongo de esa información'.\n"
+                        "- La base de datos SÍ está conectada y SÍ se ejecutó la consulta.\n\n"
                         + (f"Esquema disponible para referencia:\n{sql_context}" if sql_context else "")
                     )
                 )
@@ -278,13 +279,13 @@ class BaseAgent(ABC):
         return False
 
     _HALLUCINATION_REPLACEMENT = (
-        "No tengo datos disponibles en la base de datos para responder esta consulta.\n\n"
-        "**¿Qué puedes hacer?**\n"
-        "- Intenta con un período diferente (ej: otro mes o año)\n"
+        "La consulta a iDempiere no arrojó resultados para los filtros aplicados.\n\n"
+        "**¿Qué puedes intentar?**\n"
+        "- Prueba con un período diferente (ej: otro mes o año)\n"
         "- Reformula la pregunta con más detalle\n"
-        "- Consulta al administrador si los datos ya fueron cargados en el sistema\n\n"
-        "*Nota: Solo puedo mostrar información que existe en la base de datos de iDempiere. "
-        "No genero datos estimados ni aproximados.*"
+        "- Verifica que los datos del período consultado estén cargados en el sistema\n\n"
+        "*Nota: La conexión a iDempiere está activa. Solo muestro datos reales — "
+        "no genero datos estimados ni aproximados.*"
     )
 
     async def process(
@@ -346,7 +347,7 @@ class BaseAgent(ABC):
     def _format_table(data: list[dict], columns: list[str] | None = None) -> str:
         """Format a list of dicts as a markdown table string for LLM context."""
         if not data:
-            return "Sin datos disponibles."
+            return "La consulta no arrojó resultados para los filtros aplicados."
 
         cols = columns or list(data[0].keys())
         header = "| " + " | ".join(str(c).replace("_", " ").title() for c in cols) + " |"

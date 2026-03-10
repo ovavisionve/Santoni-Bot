@@ -138,13 +138,8 @@ SOBRE NOTAS DE CRÉDITO:
             "✅ Resumen de ventas: totales por zona, región, mes, moneda, distribuidor\n"
             "✅ Resumen de cobranza: totales por método de pago y por cliente\n"
             "✅ Cuentas por cobrar vencidas: facturas impagadas con días de atraso\n"
-            "\nLimitaciones actuales (información no disponible en estas consultas):\n"
-            "- Ventas por producto específico (no hay desglose por producto en mis queries)\n"
-            "- Metas de venta ni comparativo vs presupuesto\n"
-            "- Cotizaciones ni pedidos (solo facturas confirmadas)\n"
-            "- Vendedores internos (solo distribuidores/intermediarios)\n"
-            "\nPara consultas fuera de este departamento, sugiere al usuario "
-            "consultar el agente apropiado."
+            "\nNota: Para metas de venta, presupuestos o cotizaciones, redirige al usuario "
+            "al departamento correspondiente."
         )
 
     def get_sql_context(self) -> str:

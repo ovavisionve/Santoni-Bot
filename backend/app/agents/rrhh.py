@@ -106,18 +106,10 @@ IMPORTANTE SOBRE PERÍODOS:
             "✅ Resumen de nómina por período (totales devengado, deducciones, neto)\n"
             "✅ Indicadores de ausentismo (ocurrencias y monto por concepto de nómina)\n"
             "✅ Rotación de personal (bajas por año)\n"
-            "\nLimitaciones actuales (información no disponible en estas consultas):\n"
-            "- Evaluaciones de desempeño\n"
-            "- Capacitaciones ni formación\n"
-            "- Vacaciones pendientes ni saldos de días\n"
-            "- Historial salarial individual\n"
-            "- Liquidaciones ni prestaciones sociales\n"
             "\nNOTA: Los datos de empleados reflejan el estado ACTUAL en iDempiere. "
-            "No hay un 'snapshot' histórico. Si pregunta 'cuántos empleados había en enero', "
-            "solo puedo mostrar los activos HOY. Pero SÍ puedo filtrar por fecha de ingreso "
-            "(startdate) para ver quién ingresó en un período específico.\n"
-            "\nPara consultas fuera de este departamento, sugiere al usuario "
-            "consultar el agente apropiado."
+            "Para ver ingresos en un período específico, filtra por fecha de ingreso (startdate).\n"
+            "\nPara evaluaciones de desempeño, vacaciones o prestaciones sociales, "
+            "redirige al usuario al departamento correspondiente."
         )
 
     def get_sql_context(self) -> str:

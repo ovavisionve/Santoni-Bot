@@ -75,7 +75,7 @@ IMPORTANTE - CASO DE 0 MOVIMIENTOS:
 - Si los datos muestran movimientos=0, NO digas "no tengo información". La cuenta SÍ existe.
 - Con 0 movimientos, SIEMPRE muestra: saldo_inicial, saldo_final (serán iguales), y explica que no hubo movimientos en el período.
 - Ejemplo: "La cuenta X no registró movimientos en el período consultado. El saldo al inicio y cierre del período es de Bs. 1.234,56."
-- Solo di "no tengo información" si recibes un ERROR indicando que la cuenta no existe.
+- Si recibes un ERROR indicando que la cuenta no existe, informa que el código de cuenta no fue encontrado en el sistema.
 
 FORMATOS DE FECHA SOPORTADOS:
 - Rango con separadores: "01/01/2026 al 31/01/2026" o "01/01/26 al 31/01/26"
@@ -102,14 +102,8 @@ IMPORTANTE SOBRE PERÍODOS:
             "✅ Detalle de cuenta específica por código (ej: 2.01.01.10) con saldo inicial, movimientos y saldo final\n"
             "✅ Desglose diario de movimientos de una cuenta\n"
             "✅ Top cuentas por volumen de movimiento\n"
-            "\nLimitaciones actuales (información no disponible en estas consultas):\n"
-            "- Balanza de comprobación completa (listado de todas las cuentas con saldos)\n"
-            "- Comparativas entre períodos (ej: enero vs febrero)\n"
-            "- Activos fijos ni depreciación\n"
-            "- Impuestos (IVA, ISLR, retenciones) como reporte separado\n"
-            "- Estados financieros formateados (Balance General, Estado de Resultados como PDF)\n"
-            "\nPara consultas fuera de este departamento, sugiere al usuario "
-            "consultar el agente apropiado."
+            "\nNota: Para activos fijos, depreciación o reportes de impuestos separados, "
+            "redirige al usuario al departamento correspondiente."
         )
 
     def get_sql_context(self) -> str:
