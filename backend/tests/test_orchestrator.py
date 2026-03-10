@@ -206,7 +206,7 @@ class TestOrchestratorProcess:
         )
 
         assert "no tienes permisos" in result["response"].lower()
-        assert result["metadata"].get("access_denied") is True
+        assert result["metadata"].get("classification") == "no_access"
 
     @patch("app.agents.orchestrator.create_llm")
     def test_process_admin_has_all_access(self, mock_create_llm):
