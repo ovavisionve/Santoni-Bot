@@ -205,7 +205,7 @@ class TestOrchestratorProcess:
             orch.process("Cuantos empleados hay?", user)
         )
 
-        assert "no tienes acceso" in result["response"].lower()
+        assert "no tienes permisos" in result["response"].lower()
         assert result["metadata"].get("access_denied") is True
 
     @patch("app.agents.orchestrator.create_llm")
