@@ -78,7 +78,7 @@ class TestCreateUser:
                 "email": "nuevo@santoni.com",
                 "username": "nuevo_user",
                 "full_name": "Nuevo Usuario",
-                "password": "nuevo123",
+                "password": "Nuevo123!",
                 "role": "usuario",
                 "department": "produccion",
             },
@@ -103,7 +103,7 @@ class TestCreateUser:
                 "email": "different@santoni.com",
                 "username": "vendedor1",  # Already exists
                 "full_name": "Duplicate User",
-                "password": "pass123",
+                "password": "Pass123!",
                 "role": "usuario",
                 "department": "ventas",
             },
@@ -122,7 +122,7 @@ class TestCreateUser:
                 "email": "vendedor@santoni.com",  # Already exists
                 "username": "different_user",
                 "full_name": "Duplicate Email",
-                "password": "pass123",
+                "password": "Pass123!",
                 "role": "usuario",
                 "department": "ventas",
             },
@@ -141,7 +141,7 @@ class TestCreateUser:
                 "email": "new@santoni.com",
                 "username": "newuser",
                 "full_name": "New User",
-                "password": "pass123",
+                "password": "Pass123!",
                 "role": "superadmin",  # Invalid
                 "department": "ventas",
             },
@@ -160,7 +160,7 @@ class TestCreateUser:
                 "email": "new@santoni.com",
                 "username": "newuser",
                 "full_name": "New User",
-                "password": "pass123",
+                "password": "Pass123!",
                 "role": "usuario",
                 "department": "marketing",  # Invalid
             },
@@ -179,7 +179,7 @@ class TestCreateUser:
                 "email": "new@santoni.com",
                 "username": "newuser",
                 "full_name": "New User",
-                "password": "pass123",
+                "password": "Pass123!",
                 "role": "usuario",
                 "department": "ventas",
             },
@@ -197,7 +197,7 @@ class TestCreateUser:
                 "email": "super@santoni.com",
                 "username": "super_new",
                 "full_name": "New Supervisor",
-                "password": "pass123",
+                "password": "Pass123!",
                 "role": "supervisor",
                 "department": "ventas",
                 "extra_departments": "finanzas,contabilidad",
@@ -250,7 +250,7 @@ class TestUpdateUser:
         response = client.patch(
             f"/api/users/{regular_user.id}",
             headers=admin_headers,
-            json={"full_name": "Carlos Actualizado"},
+            json={"admin_password": "admin123", "full_name": "Carlos Actualizado"},
         )
         assert response.status_code == 200
         assert response.json()["full_name"] == "Carlos Actualizado"
@@ -262,7 +262,7 @@ class TestUpdateUser:
         response = client.patch(
             f"/api/users/{regular_user.id}",
             headers=admin_headers,
-            json={"role": "supervisor"},
+            json={"admin_password": "admin123", "role": "supervisor"},
         )
         assert response.status_code == 200
         assert response.json()["role"] == "supervisor"
@@ -274,7 +274,7 @@ class TestUpdateUser:
         response = client.patch(
             f"/api/users/{regular_user.id}",
             headers=admin_headers,
-            json={"is_active": False},
+            json={"admin_password": "admin123", "is_active": False},
         )
         assert response.status_code == 200
         assert response.json()["is_active"] is False
@@ -286,7 +286,7 @@ class TestUpdateUser:
         response = client.patch(
             "/api/users/99999",
             headers=admin_headers,
-            json={"full_name": "Nobody"},
+            json={"admin_password": "admin123", "full_name": "Nobody"},
         )
         assert response.status_code == 404
 
@@ -297,7 +297,7 @@ class TestUpdateUser:
         response = client.patch(
             f"/api/users/{regular_user.id}",
             headers=admin_headers,
-            json={"role": "superadmin"},
+            json={"admin_password": "admin123", "role": "superadmin"},
         )
         assert response.status_code == 400
 
@@ -308,7 +308,7 @@ class TestUpdateUser:
         response = client.patch(
             f"/api/users/{regular_user.id}",
             headers=regular_headers,
-            json={"full_name": "Hacker"},
+            json={"admin_password": "dummy", "full_name": "Hacker"},
         )
         assert response.status_code == 403
 

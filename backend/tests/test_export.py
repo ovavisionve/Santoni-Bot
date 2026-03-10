@@ -150,23 +150,12 @@ class TestCSVExport:
 # ---------------------------------------------------------------------------
 
 class TestExcelExport:
-    """Tests for Excel export functionality.
+    """Tests for Excel export functionality."""
 
-    NOTE: The production ``export_to_excel`` has a known bug where
-    ``ws.merge_cells("A1:F1")`` creates MergedCell objects that lack
-    ``column_letter``, causing an AttributeError in the auto-width loop
-    when the table has fewer than 6 columns.  Tests that trigger this
-    are marked ``xfail``.
-    """
-
-    @pytest.mark.xfail(
-        reason="Known bug: MergedCell in auto-width loop (export_service.py:163)",
-        raises=AttributeError,
-        strict=True,
-    )
-    def test_excel_with_table_known_bug(self):
-        """Excel export with <6 column table hits MergedCell bug."""
-        export_to_excel(MARKDOWN_WITH_TABLE, agent_used="ventas")
+    def test_excel_with_table(self):
+        """Excel export with table should produce valid Excel bytes."""
+        result = export_to_excel(MARKDOWN_WITH_TABLE, agent_used="ventas")
+        assert isinstance(result, bytes)
 
     def test_excel_plain_text(self):
         """Excel export from plain text should produce valid Excel bytes."""
@@ -210,14 +199,10 @@ class TestExcelExport:
 
         assert "ventas" in flat.lower() or "excelentes" in flat.lower()
 
-    @pytest.mark.xfail(
-        reason="Known bug: MergedCell in auto-width loop (export_service.py:163)",
-        raises=AttributeError,
-        strict=True,
-    )
-    def test_excel_multiple_tables_known_bug(self):
-        """Excel with multiple tables hits MergedCell bug."""
-        export_to_excel(MARKDOWN_MULTIPLE_TABLES)
+    def test_excel_multiple_tables(self):
+        """Excel with multiple tables should produce valid Excel bytes."""
+        result = export_to_excel(MARKDOWN_MULTIPLE_TABLES)
+        assert isinstance(result, bytes)
 
 
 # ---------------------------------------------------------------------------
