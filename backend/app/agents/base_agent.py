@@ -159,6 +159,16 @@ class BaseAgent(ABC):
         )
         messages = [SystemMessage(content=enhanced_prompt)]
 
+        # Data Catalog: inject real schema/stats context from iDempiere (optional)
+        try:
+            from app.services.data_catalog import get_catalog_service
+            catalog = get_catalog_service()
+            catalog_context = catalog.get_department_context(self.department)
+            if catalog_context:
+                messages.append(SystemMessage(content=catalog_context))
+        except Exception as exc:
+            logger.debug("Data catalog unavailable for %s: %s", self.name, exc)
+
         # RAG: retrieve relevant knowledge-base context (optional)
         try:
             from app.services.rag_service import get_rag_service

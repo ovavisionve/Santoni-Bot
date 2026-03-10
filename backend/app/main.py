@@ -8,7 +8,7 @@ from sqlalchemy import text
 
 from app.config import get_settings
 from app.database import engine, Base, SessionLocal
-from app.api.routes import auth, chat, users, admin, export, knowledge, documents, dashboard
+from app.api.routes import auth, chat, users, admin, export, knowledge, documents, dashboard, catalog
 from app.middleware.auth import get_current_user
 from app.utils.migrate import run_startup_migrations
 from app.utils.seed import create_admin_user
@@ -37,8 +37,16 @@ async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     create_admin_user()
     seed_demo_data()
+
+    # Iniciar sincronización automática del catálogo de datos (cada 5 min)
+    from app.services.catalog_sync import start_sync, stop_sync
+    start_sync()
+
     logger.info("SantoniBot ready.")
     yield
+
+    # Detener sincronización del catálogo
+    stop_sync()
     logger.info("SantoniBot shutting down.")
 
 
@@ -106,6 +114,7 @@ app.include_router(export.router, prefix="/api")
 app.include_router(knowledge.router, prefix="/api")
 app.include_router(documents.router, prefix="/api")
 app.include_router(dashboard.router, prefix="/api")
+app.include_router(catalog.router, prefix="/api")
 
 
 @app.get("/api/health")
