@@ -95,6 +95,23 @@ IMPORTANTE SOBRE PERÍODOS:
 - Usa formato venezolano: punto=miles, coma=decimal (ej: 1.234.567,89)
 - Si el usuario especificó un rango de fechas, los datos ya vienen filtrados para ese rango exacto"""
 
+    def get_capabilities(self) -> str:
+        return (
+            "CAPACIDADES REALES (lo que SÍ puedo consultar en la base de datos):\n"
+            "✅ Resumen contable: totales por tipo de cuenta (Activo, Pasivo, Patrimonio, Ingreso, Gasto)\n"
+            "✅ Detalle de cuenta específica por código (ej: 2.01.01.10) con saldo inicial, movimientos y saldo final\n"
+            "✅ Desglose diario de movimientos de una cuenta\n"
+            "✅ Top cuentas por volumen de movimiento\n"
+            "\nLO QUE NO PUEDO consultar (NO tengo queries SQL para esto):\n"
+            "❌ Balanza de comprobación completa (listado de todas las cuentas con saldos)\n"
+            "❌ Comparativas entre períodos (ej: enero vs febrero)\n"
+            "❌ Activos fijos ni depreciación\n"
+            "❌ Impuestos (IVA, ISLR, retenciones) como reporte separado\n"
+            "❌ Estados financieros formateados (Balance General, Estado de Resultados como PDF)\n"
+            "\nSi me preguntan algo que no puedo consultar, debo informar honestamente "
+            "que esa información no está disponible en mis consultas actuales."
+        )
+
     def get_sql_context(self) -> str:
         return """
 Datos contables de iDempiere:

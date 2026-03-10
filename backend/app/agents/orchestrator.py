@@ -14,6 +14,7 @@ from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 from app.config import get_settings
 from app.services.llm_factory import create_llm, is_claude_available
 from app.models.user import User
+from app.agents.base_agent import _build_datetime_context
 from app.agents.finanzas import FinanzasAgent
 from app.agents.contabilidad import ContabilidadAgent
 from app.agents.ventas import VentasAgent
@@ -41,12 +42,31 @@ _KEYWORD_RULES: list[tuple[str, list[str]]] = [
         "compras a productor", "precio del arroz", "precio del maiz",
         "precio del maíz", "tonelada", "kilogramo",
     ]),
-    # Compras de insumos — after compras_productores (which catches "compra de arroz" etc.)
+    # Producción — BEFORE compras_insumos to catch "materia prima", "producto terminado"
+    # and "producción"-related keywords before they fall through to inventory/compras
+    ("produccion", [
+        "produccion", "producción", "producir", "produjo", "producido",
+        "fabricar", "fabricó", "fabricado", "manufactura",
+        "planta", "línea de producción", "linea de produccion",
+        "eficiencia", "oee", "desperdicio", "merma", "scrap",
+        "mantenimiento", "turno", "turnos", "lote", "lotes",
+        "orden de produccion", "orden de producción",
+        "ordenes de produccion", "órdenes de producción",
+        "producto terminado", "empaque", "envasado",
+        "recepcion de materia", "recepción de materia",
+        "despacho de producto", "despachos",
+        "cuanto se produjo", "cuánto se produjo",
+        "arroz blanco", "harina de maiz", "harina de maíz",
+        "materia prima",
+    ]),
+    # Compras de insumos — after produccion (which catches "materia prima", "producto terminado")
     # and before ventas (to prevent "inventario" matching "venta" substring)
     ("compras_insumos", [
         "insumo", "proveedor", "proveedores", "orden de compra",
-        "ordenes de compra", "inventario de material", "inventario",
-        "material", "compra de insumo", "compras insumo", "suministro",
+        "ordenes de compra", "inventario de material",
+        "inventario de insumo", "inventario de repuesto",
+        "inventario", "material",
+        "compra de insumo", "compras insumo", "suministro",
         "tiempo de entrega", "stock", "existencia", "existencias",
         "almacén", "almacen", "almacenes", "bodega",
         "disponible en almacen", "disponible en almacén",
@@ -132,14 +152,6 @@ _KEYWORD_RULES: list[tuple[str, list[str]]] = [
         "rotacion", "rotación",
         "capacitacion", "capacitación",
     ]),
-    # Producción
-    ("produccion", [
-        "produccion", "producción", "producir", "planta",
-        "eficiencia", "oee", "desperdicio", "merma",
-        "mantenimiento", "turno", "turnos", "lote", "lotes",
-        "orden de produccion", "orden de producción",
-        "producto terminado", "empaque", "envasado",
-    ]),
 ]
 
 # Greetings / general patterns
@@ -205,8 +217,16 @@ def classify_by_keywords(
     if last_agent and last_agent in allowed_departments and last_agent != "general":
         return last_agent
 
-    # Fallback 2: if message is a question about data, try ventas as default
+    # Fallback 2: if message is a question about data, check for production-
+    # related words before defaulting to ventas
     if any(w in msg for w in ["cuanto", "cuánto", "dame", "muestra", "reporte"]):
+        # Check if the question is about production/inventory topics
+        if any(w in msg for w in [
+            "produjo", "producido", "producción", "produccion",
+            "fabricó", "fabricado", "desperdicio", "merma",
+        ]):
+            if "produccion" in allowed_departments:
+                return "produccion"
         if "ventas" in allowed_departments:
             return "ventas"
 
@@ -252,8 +272,14 @@ def classify_with_confidence(
     if last_agent and last_agent in allowed_departments and last_agent != "general":
         return last_agent, 0.7, "followup_last_agent"
 
-    # Data question fallback to ventas
+    # Data question fallback — check production keywords before defaulting to ventas
     if any(w in msg for w in ["cuanto", "cuánto", "dame", "muestra", "reporte"]):
+        if any(w in msg for w in [
+            "produjo", "producido", "producción", "produccion",
+            "fabricó", "fabricado", "desperdicio", "merma",
+        ]):
+            if "produccion" in allowed_departments:
+                return "produccion", 0.5, "fallback_produccion"
         if "ventas" in allowed_departments:
             return "ventas", 0.4, "fallback_ventas"
 
@@ -570,6 +596,7 @@ class Orchestrator:
         self, message: str, history: list[tuple[str, str]] | None
     ) -> dict:
         """Handle general queries that don't map to a specific department."""
+        datetime_ctx = _build_datetime_context()
         messages = [
             SystemMessage(
                 content=(
@@ -578,13 +605,10 @@ class Orchestrator:
                     "Si el usuario saluda, preséntate brevemente y menciona que puedes ayudar con consultas "
                     "de Finanzas, Contabilidad, Ventas, RRHH, Producción, Compras de Insumos "
                     "y Compras a Productores. "
+                    f"\n{datetime_ctx}\n"
                     "IMPORTANTE: Si el usuario hace una referencia a algo anterior en la conversación "
                     "(como '¿y por zona?', '¿y del mes pasado?', 'dame más detalle'), "
                     "analiza el historial para entender el contexto completo de lo que pide. "
-                    "Si el usuario pide una COMPARACIÓN (ej: 'compara enero vs febrero', "
-                    "'diferencia entre este mes y el anterior'), estructura la respuesta con: "
-                    "1) Datos del primer período, 2) Datos del segundo período, "
-                    "3) Tabla comparativa con variación absoluta y porcentual. "
                     "REGLA CRÍTICA: NUNCA inventes datos, cifras, fechas de fundación, ni información "
                     "que no esté en los datos proporcionados o en el historial de la conversación. "
                     "Si no tienes la información, di claramente: 'No tengo esa información disponible'. "
@@ -614,11 +638,13 @@ class Orchestrator:
         self, message: str, history: list[tuple[str, str]] | None
     ) -> AsyncIterator[str]:
         """Stream general responses."""
+        datetime_ctx = _build_datetime_context()
         messages = [
             SystemMessage(
                 content=(
                     "Eres SantoniBot, el asistente inteligente de Alimentos Santoni. "
                     "Responde de forma amable y profesional en español. "
+                    f"\n{datetime_ctx}\n"
                     "NUNCA inventes datos, cifras ni fechas. Si no tienes la información, "
                     "di claramente que no la tienes disponible. "
                     "Sé conciso."

@@ -131,6 +131,22 @@ SOBRE NOTAS DE CRÉDITO:
 - Ejemplo: "Venta neta: Bs. 1,500,000 (Facturado: Bs. 1,800,000 - NC: Bs. 300,000)"
 - Las cuentas por cobrar vencidas NO incluyen notas de crédito"""
 
+    def get_capabilities(self) -> str:
+        return (
+            "CAPACIDADES REALES (lo que SÍ puedo consultar en la base de datos):\n"
+            "✅ Top N clientes por ventas netas (por período, zona, moneda, organización, distribuidor)\n"
+            "✅ Resumen de ventas: totales por zona, región, mes, moneda, distribuidor\n"
+            "✅ Resumen de cobranza: totales por método de pago y por cliente\n"
+            "✅ Cuentas por cobrar vencidas: facturas impagadas con días de atraso\n"
+            "\nLO QUE NO PUEDO consultar (NO tengo queries SQL para esto):\n"
+            "❌ Ventas por producto específico (no hay desglose por producto en mis queries)\n"
+            "❌ Metas de venta ni comparativo vs presupuesto\n"
+            "❌ Cotizaciones ni pedidos (solo facturas confirmadas)\n"
+            "❌ Vendedores internos (solo distribuidores/intermediarios)\n"
+            "\nSi me preguntan algo que no puedo consultar, debo informar honestamente "
+            "que esa información no está disponible en mis consultas actuales."
+        )
+
     def get_sql_context(self) -> str:
         return """
 Datos de ventas de iDempiere:

@@ -96,6 +96,29 @@ IMPORTANTE SOBRE PERÍODOS:
 - Si el usuario hace una pregunta amplia sin período, presenta datos disponibles y sugiere: "Si necesitas datos de un período específico, indícame el mes, año o rango de fechas."
 - Si el usuario especificó un rango de fechas, los datos ya vienen filtrados para ese rango exacto"""
 
+    def get_capabilities(self) -> str:
+        return (
+            "CAPACIDADES REALES (lo que SÍ puedo consultar en la base de datos):\n"
+            "✅ Resumen de empleados activos por organización, departamento y cargo\n"
+            "✅ Búsqueda de empleados por cargo (ej: obreros, choferes, gerentes)\n"
+            "✅ Cumpleañeros del mes\n"
+            "✅ Resumen de nómina por período (totales devengado, deducciones, neto)\n"
+            "✅ Indicadores de ausentismo (ocurrencias y monto por concepto de nómina)\n"
+            "✅ Rotación de personal (bajas por año)\n"
+            "\nLO QUE NO PUEDO consultar (NO tengo queries SQL para esto):\n"
+            "❌ Ingresos/contrataciones nuevas por rango de fecha (no tengo query de startdate)\n"
+            "❌ Evaluaciones de desempeño\n"
+            "❌ Capacitaciones ni formación\n"
+            "❌ Vacaciones pendientes ni saldos de días\n"
+            "❌ Historial salarial individual\n"
+            "❌ Liquidaciones ni prestaciones sociales\n"
+            "\nNOTA: Los datos de empleados reflejan el estado ACTUAL en iDempiere. "
+            "No hay un 'snapshot' histórico. Si pregunta 'cuántos empleados había en enero', "
+            "solo puedo mostrar los activos HOY.\n"
+            "\nSi me preguntan algo que no puedo consultar, debo informar honestamente "
+            "que esa información no está disponible en mis consultas actuales."
+        )
+
     def get_sql_context(self) -> str:
         return """
 Datos de RRHH en iDempiere:

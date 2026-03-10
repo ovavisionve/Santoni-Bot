@@ -96,6 +96,24 @@ IMPORTANTE SOBRE PERÍODOS:
 - Si el usuario hace una pregunta amplia sin período, presenta datos del año actual y sugiere: "Si necesitas datos de otro período, indícame el año, mes o rango de fechas."
 - Si el usuario especificó un rango de fechas, los datos ya vienen filtrados para ese rango exacto"""
 
+    def get_capabilities(self) -> str:
+        return (
+            "CAPACIDADES REALES (lo que SÍ puedo consultar en la base de datos):\n"
+            "✅ Saldos bancarios actuales por banco, cuenta, moneda y organización\n"
+            "✅ Cuentas por cobrar pendientes (facturas de venta no pagadas) con días de atraso\n"
+            "✅ Cuentas por pagar pendientes (facturas de compra no pagadas)\n"
+            "✅ Resumen financiero general (bancos + CxC + CxP)\n"
+            "\nLO QUE NO PUEDO consultar (NO tengo queries SQL para esto):\n"
+            "❌ Préstamos bancarios ni cuotas vencidas (no existe tabla c_loan accesible)\n"
+            "❌ Flujo de caja proyectado ni forecast\n"
+            "❌ Presupuestos ni ejecución presupuestaria\n"
+            "❌ Indicadores financieros calculados (ratios, liquidez, rentabilidad)\n"
+            "❌ Movimientos bancarios ni conciliaciones\n"
+            "❌ Cheques emitidos ni transferencias detalladas\n"
+            "\nSi me preguntan algo que no puedo consultar, debo informar honestamente "
+            "que esa información no está disponible en mis consultas actuales."
+        )
+
     def get_sql_context(self) -> str:
         return """
 Datos financieros de iDempiere:

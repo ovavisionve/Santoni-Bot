@@ -93,6 +93,24 @@ IMPORTANTE SOBRE PERÍODOS:
 - Si el usuario hace una pregunta amplia sin período, presenta datos del año actual y sugiere: "Si necesitas datos de otro período, indícame el año, mes o rango de fechas."
 - Si el usuario especificó un rango de fechas, los datos ya vienen filtrados para ese rango exacto"""
 
+    def get_capabilities(self) -> str:
+        return (
+            "CAPACIDADES REALES (lo que SÍ puedo consultar en la base de datos):\n"
+            "✅ Resumen de compras a productores: totales por producto, período\n"
+            "✅ Top 20 productores por volumen y monto\n"
+            "✅ Pagos pendientes a productores (facturas no pagadas)\n"
+            "✅ Análisis de precios por producto (min, promedio, max)\n"
+            "✅ Productores registrados (nombre, código, ciudad)\n"
+            "\nLO QUE NO PUEDO consultar (NO tengo queries SQL para esto):\n"
+            "❌ Humedad e impureza del arroz (campos existen pero reportan 0.0)\n"
+            "❌ Ubicación detallada de productores (estado, municipio - datos incompletos)\n"
+            "❌ Datos de guías agrícolas (guidemac, guideproducer, guidesada)\n"
+            "❌ Peso bruto/neto/tara de las guías\n"
+            "❌ Filtro por moneda (VES vs USD) en compras a productores\n"
+            "\nSi me preguntan algo que no puedo consultar, debo informar honestamente "
+            "que esa información no está disponible en mis consultas actuales."
+        )
+
     def get_sql_context(self) -> str:
         return """
 Datos de compras a productores en iDempiere:

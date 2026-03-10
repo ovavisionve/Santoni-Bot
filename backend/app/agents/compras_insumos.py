@@ -106,6 +106,25 @@ SOBRE INVENTARIO/STOCK:
 - Si el usuario busca un producto específico, los datos ya vienen filtrados por nombre/código
 - La columna 'unidad' muestra la unidad de medida del producto (kg, unidad, litro, etc.)"""
 
+    def get_capabilities(self) -> str:
+        return (
+            "CAPACIDADES REALES (lo que SÍ puedo consultar en la base de datos):\n"
+            "✅ Resumen de compras: total facturas y montos por período, separado por moneda\n"
+            "✅ Top 20 proveedores por volumen de compra\n"
+            "✅ Top 20 productos más comprados por valor\n"
+            "✅ Tendencia mensual de compras\n"
+            "✅ Historial de compras de un producto específico (por nombre o código)\n"
+            "✅ Stock/inventario actual por producto, almacén, organización y categoría\n"
+            "\nLO QUE NO PUEDO consultar (NO tengo queries SQL para esto):\n"
+            "❌ Órdenes de compra pendientes (c_order) - solo consulto facturas confirmadas (c_invoice)\n"
+            "❌ Tiempos de entrega (lead times) de proveedores\n"
+            "❌ Comparación de precios entre proveedores para un mismo producto\n"
+            "❌ Histórico de evolución de precios de un insumo\n"
+            "❌ Estado de pago de facturas de compra (pagadas vs pendientes)\n"
+            "\nSi me preguntan algo que no puedo consultar, debo informar honestamente "
+            "que esa información no está disponible en mis consultas actuales."
+        )
+
     def get_sql_context(self) -> str:
         return """
 Datos de compras de insumos en iDempiere:

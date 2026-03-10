@@ -7,8 +7,10 @@ Supports both full-response (process) and streaming (stream) modes.
 """
 
 import logging
+import re
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
+from datetime import datetime
 
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 
@@ -22,6 +24,34 @@ logger = logging.getLogger("santonibot.agents")
 _MAX_TABLE_ROWS = 50
 _MAX_HISTORY_MESSAGES = 40
 _MAX_TOKENS = 4096
+
+# Days of week in Spanish
+_DIAS_SEMANA = {
+    0: "Lunes", 1: "Martes", 2: "Miércoles", 3: "Jueves",
+    4: "Viernes", 5: "Sábado", 6: "Domingo",
+}
+_MESES_ES = {
+    1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril",
+    5: "Mayo", 6: "Junio", 7: "Julio", 8: "Agosto",
+    9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre",
+}
+
+
+def _build_datetime_context() -> str:
+    """Build a context string with the current date/time for the LLM."""
+    now = datetime.now()
+    dia = _DIAS_SEMANA[now.weekday()]
+    mes = _MESES_ES[now.month]
+    return (
+        f"FECHA Y HORA ACTUAL DEL SISTEMA:\n"
+        f"- Hoy es: {dia} {now.day} de {mes} de {now.year}\n"
+        f"- Hora: {now.strftime('%H:%M')} (Venezuela)\n"
+        f"- Mes actual: {mes} {now.year}\n"
+        f"- Año actual: {now.year}\n"
+        f"\nCuando el usuario diga 'actual', 'hoy', 'este mes', 'del mes', 'este año' "
+        f"se refiere a: {mes} {now.year}.\n"
+        f"NUNCA respondas con datos de otra fecha a menos que el usuario lo pida explícitamente.\n"
+    )
 
 
 class BaseAgent(ABC):
@@ -83,6 +113,13 @@ class BaseAgent(ABC):
         """
         return None
 
+    def get_capabilities(self) -> str:
+        """Return a description of what this agent CAN and CANNOT do.
+
+        Override in subclasses to declare honest capabilities.
+        """
+        return ""
+
     def _build_messages(
         self,
         message: str,
@@ -91,15 +128,34 @@ class BaseAgent(ABC):
         salesrep_id: int | None = None,
     ) -> tuple[list, bool]:
         """Build the LLM message list. Returns (messages, has_data)."""
-        # Enhance system prompt with comparison/context instructions
+        # Build datetime context
+        datetime_ctx = _build_datetime_context()
+
+        # Build capabilities context
+        capabilities = self.get_capabilities()
+        capabilities_block = ""
+        if capabilities:
+            capabilities_block = f"\n\n{capabilities}\n"
+
+        # Enhance system prompt with date, capabilities, and instructions
         enhanced_prompt = (
             self._system_prompt + "\n\n"
+            f"{datetime_ctx}"
+            f"{capabilities_block}\n"
             "INSTRUCCIONES ADICIONALES:\n"
             "- Si el usuario hace una referencia contextual (ej: 'y por zona?', "
             "'dame mas detalle', 'y del mes pasado?'), usa el historial para entender el contexto.\n"
             "- Si pide COMPARACION entre periodos, presenta tabla comparativa "
             "con columnas: Concepto | Periodo 1 | Periodo 2 | Variacion | %.\n"
             "- Formato venezolano: punto=miles, coma=decimal (ej: 1.234.567,89).\n"
+            "\nREGLAS ANTI-INVENCIÓN (OBLIGATORIAS):\n"
+            "- Presenta SOLO los datos que recibes en el contexto. NO agregues datos adicionales.\n"
+            "- Si quieres mostrar un porcentaje, CALCÚLALO de los datos reales (ej: valor/total*100).\n"
+            "- NUNCA digas 'vs mes anterior' o 'comparativo' si NO tienes datos de ambos períodos.\n"
+            "- NUNCA agregues secciones de 'Recomendaciones' o 'Plan de acción' con información inventada.\n"
+            "- NUNCA inventes nombres de clientes, proveedores, empleados, productos ni montos.\n"
+            "- Las únicas sugerencias permitidas son consultas que el sistema realmente puede ejecutar.\n"
+            "- Si los datos muestran un solo período, NO inventes comparativos con otros períodos.\n"
         )
         messages = [SystemMessage(content=enhanced_prompt)]
 
@@ -133,24 +189,34 @@ class BaseAgent(ABC):
                 SystemMessage(
                     content=(
                         "DATOS REALES DE LA BASE DE DATOS:\n"
-                        "Usa estos datos para responder. Sé conciso y directo.\n\n"
+                        "Usa EXCLUSIVAMENTE estos datos para responder. NO agregues información "
+                        "que no esté aquí. Sé conciso y directo.\n\n"
                         f"{data_context}"
                     )
                 )
             )
         else:
             sql_context = self.get_sql_context()
-            if sql_context:
-                messages.append(
-                    SystemMessage(
-                        content=(
-                            "No se encontraron datos para esta consulta. "
-                            "Informa al usuario que el dato no está disponible "
-                            "o pide más detalles.\n\n"
-                            f"Esquema disponible:\n{sql_context}"
-                        )
+            messages.append(
+                SystemMessage(
+                    content=(
+                        "⚠️ INSTRUCCIÓN OBLIGATORIA — SIN DATOS DISPONIBLES ⚠️\n\n"
+                        "No se encontraron datos para esta consulta en la base de datos.\n\n"
+                        "Tu ÚNICA respuesta permitida es:\n"
+                        "1. Informar al usuario que no hay datos disponibles para lo que pidió.\n"
+                        "2. Sugerir alternativas: otro período, otro filtro, o reformular la pregunta.\n\n"
+                        "PROHIBIDO TERMINANTEMENTE:\n"
+                        "- NO generes tablas con datos numéricos inventados.\n"
+                        "- NO inventes nombres de clientes, proveedores, empleados ni productos.\n"
+                        "- NO muestres montos, porcentajes ni cifras que no provengan de los datos.\n"
+                        "- NO uses frases como 'datos referenciales' o 'datos estimados' para "
+                        "justificar información inventada.\n"
+                        "- Si generas CUALQUIER tabla con números sin haber recibido datos reales, "
+                        "estarás MINTIENDO al usuario.\n\n"
+                        + (f"Esquema disponible para referencia:\n{sql_context}" if sql_context else "")
                     )
                 )
+            )
 
         # Add conversation history (limited)
         if history:
@@ -162,6 +228,42 @@ class BaseAgent(ABC):
 
         messages.append(HumanMessage(content=message))
         return messages, data_context is not None
+
+    @staticmethod
+    def _detect_hallucination(response_text: str, has_data: bool) -> bool:
+        """Detect if the LLM likely hallucinated data when no real data was provided.
+
+        Returns True if hallucination is detected (no data but response has tables with numbers).
+        """
+        if has_data:
+            return False
+
+        # Check for markdown tables containing monetary amounts
+        # Pattern: | ... number with thousands/decimals ... |
+        table_with_numbers = re.search(
+            r'\|[^|]*\d{1,3}(?:[.,]\d{3})+(?:[.,]\d{2})?[^|]*\|', response_text
+        )
+        if table_with_numbers:
+            return True
+
+        # Check for tables with dollar/bolivar amounts
+        currency_in_table = re.search(
+            r'\|[^|]*(?:Bs\.?|USD|\$)\s*\d+[^|]*\|', response_text
+        )
+        if currency_in_table:
+            return True
+
+        return False
+
+    _HALLUCINATION_REPLACEMENT = (
+        "No tengo datos disponibles en la base de datos para responder esta consulta.\n\n"
+        "**¿Qué puedes hacer?**\n"
+        "- Intenta con un período diferente (ej: otro mes o año)\n"
+        "- Reformula la pregunta con más detalle\n"
+        "- Consulta al administrador si los datos ya fueron cargados en el sistema\n\n"
+        "*Nota: Solo puedo mostrar información que existe en la base de datos de iDempiere. "
+        "No genero datos estimados ni aproximados.*"
+    )
 
     async def process(
         self,
@@ -175,8 +277,18 @@ class BaseAgent(ABC):
         messages, has_data = self._build_messages(message, history, org_ids, salesrep_id)
         response = await self.llm.ainvoke(messages)
 
+        response_text = response.content
+
+        # Post-response validation: detect hallucination when no data was provided
+        if self._detect_hallucination(response_text, has_data):
+            logger.warning(
+                "Hallucination detected in %s (has_data=%s). Replacing response.",
+                self.name, has_data,
+            )
+            response_text = self._HALLUCINATION_REPLACEMENT
+
         return {
-            "response": response.content,
+            "response": response_text,
             "agent_used": self.name,
             "metadata": {
                 "department": self.department,

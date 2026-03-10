@@ -95,6 +95,28 @@ IMPORTANTE SOBRE PERÍODOS:
 - Si el usuario hace una pregunta amplia sin período, presenta datos del año actual y sugiere: "Si necesitas datos de otro período, indícame el año, mes o rango de fechas."
 - Si el usuario especificó un rango de fechas, los datos ya vienen filtrados para ese rango exacto"""
 
+    def get_capabilities(self) -> str:
+        return (
+            "CAPACIDADES REALES (lo que SÍ puedo consultar en la base de datos):\n"
+            "✅ Resumen de movimientos de inventario: recepciones (V+), despachos (C-), internos (M+/M-)\n"
+            "✅ Cantidades movidas por producto, organización y mes\n"
+            "✅ Listado de documentos de movimiento recientes\n"
+            "✅ Stock/inventario actual (m_storageonhand) por producto, almacén y organización\n"
+            "\nLO QUE NO PUEDO consultar (NO tengo queries SQL para esto):\n"
+            "❌ Órdenes de producción (pp_order) - el módulo de manufactura NO está activo en Santoni\n"
+            "❌ Eficiencia OEE ni indicadores de rendimiento de línea\n"
+            "❌ Desperdicios/merma detallados (no hay tipo de movimiento específico para scrap)\n"
+            "❌ Turnos de producción ni eficiencia por turno\n"
+            "❌ Mantenimientos preventivos ni correctivos\n"
+            "❌ Costos de producción por línea o por producto\n"
+            "❌ Calidad de producto (humedad, granos enteros, etc.)\n"
+            "\nIMPORTANTE: Mis datos provienen de m_inout (movimientos de inventario), "
+            "NO de un módulo de manufactura. Puedo decir cuánto material entró/salió, "
+            "pero NO puedo reportar órdenes de producción, eficiencia ni desperdicios.\n"
+            "\nSi me preguntan algo que no puedo consultar, debo informar honestamente "
+            "que esa información no está disponible en mis consultas actuales."
+        )
+
     def get_sql_context(self) -> str:
         return """
 Datos de producción/inventario en iDempiere:
