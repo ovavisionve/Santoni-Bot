@@ -320,14 +320,18 @@ Datos de RRHH en iDempiere:
                 "contratación", "contratacion", "contrataciones", "contrataron",
                 "nuevo ingreso", "nuevos ingresos",
             ]):
-                data = build_employee_list(
-                    org_ids=org_ids,
-                    date_from=date_from, date_to=date_to,
-                )
-                if data:
-                    date_label = f" - {label}" if date_from else ""
-                    sections.append(f"## Lista de Empleados Activos{date_label} ({len(data)} registros)")
-                    sections.append(self._format_table(data))
+                # Only fetch full list when filtering by date (new hires) or
+                # explicitly asking for "lista" — the summary already has counts.
+                wants_list = "lista" in msg or date_from
+                if wants_list:
+                    data = build_employee_list(
+                        org_ids=org_ids,
+                        date_from=date_from, date_to=date_to,
+                    )
+                    if data:
+                        date_label = f" - {label}" if date_from else ""
+                        sections.append(f"## Lista de Empleados Activos{date_label} ({len(data)} registros)")
+                        sections.append(self._format_table(data))
 
             if any(w in msg for w in [
                 "cumpleaño", "cumpleaños", "cumpleañero", "cumpleañeros",
@@ -373,9 +377,31 @@ Datos de RRHH en iDempiere:
                     mes=mes, anio=anio, org_ids=org_ids,
                     date_from=date_from, date_to=date_to,
                 )
-                sections.append(self._format_summary(
-                    data, f"Indicadores de Ausentismo - {label}",
-                ))
+                # Check if the data has actual records
+                has_records = False
+                if data:
+                    for v in data.values():
+                        if isinstance(v, list) and len(v) > 0:
+                            has_records = True
+                            break
+                        if isinstance(v, (int, float)) and v > 0:
+                            has_records = True
+                            break
+                if has_records:
+                    sections.append(self._format_summary(
+                        data, f"Indicadores de Ausentismo - {label}",
+                    ))
+                else:
+                    org_label = f" en {org_name}" if org_name else ""
+                    sections.append(
+                        f"## Indicadores de Ausentismo - {label}{org_label}\n"
+                        f"No se encontraron registros de ausentismo (inasistencias, permisos, "
+                        f"reposos, licencias) para el período {label}{org_label}.\n"
+                        f"Esto puede deberse a que:\n"
+                        f"- No hay conceptos de ausencia procesados en nómina para ese período\n"
+                        f"- Los datos de nómina aún no han sido cargados\n\n"
+                        f"Puedes intentar con otro período o consultar el total de la empresa."
+                    )
 
             if any(w in msg for w in [
                 "rotación", "rotacion", "baja", "bajas", "egreso", "egresos",

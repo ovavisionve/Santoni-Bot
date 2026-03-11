@@ -1251,8 +1251,8 @@ def build_employee_list(
             for r in rows
         ]
         results.sort(key=lambda x: x["nombre"])
-        # When filtering by cargo, allow more results; otherwise cap at 100
-        limit = 200 if cargo_search else 100
+        # When filtering by cargo, allow more results; otherwise cap at 50
+        limit = 200 if cargo_search else 50
         return results[:limit]
     finally:
         db.close()
@@ -2924,7 +2924,9 @@ def build_inventory_stock(
             for r in db.execute(by_cat_q, params).fetchall()
         ]
 
-        # ── Detail by product (top 50 by quantity) ──
+        # ── Detail by product (top N by quantity) ──
+        # More rows when filtering by product; fewer for full inventory queries
+        detail_limit = 50 if product_search else 30
         detail_q = text(
             f"SELECT p.value AS codigo, p.name AS producto, "
             f"COALESCE(pc.name, 'Sin Categoría') AS categoria, "
@@ -2941,8 +2943,9 @@ def build_inventory_stock(
             f"LEFT JOIN adempiere.c_uom u ON p.c_uom_id = u.c_uom_id "
             f"WHERE {where} "
             f"GROUP BY p.value, p.name, pc.name, w.name, o.name, u.name "
-            f"ORDER BY cantidad DESC LIMIT 50"
+            f"ORDER BY cantidad DESC LIMIT :detail_limit"
         )
+        params["detail_limit"] = detail_limit
         detail = [
             {
                 "codigo": r[0],

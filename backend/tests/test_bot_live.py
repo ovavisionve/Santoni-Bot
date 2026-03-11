@@ -24,7 +24,7 @@ import argparse
 # ── Config ──────────────────────────────────────────────────────────────
 USERNAME = "admin"
 PASSWORD = "SantoniAdmin2026!"
-TIMEOUT  = 120
+TIMEOUT  = 180
 
 # ANSI colors
 G = "\033[92m"  # green
@@ -70,11 +70,24 @@ def login(base_url):
     return token
 
 
+def get_latest_conversation_id(base_url, token):
+    """Fetch the most recent conversation id (useful after a timeout)."""
+    r = api(base_url, "GET", "/api/chat/conversations", token=token)
+    if isinstance(r, list) and r:
+        return r[0].get("id")
+    return None
+
+
 def chat(base_url, token, message, conversation_id=None):
     body = {"message": message, "conversation_id": conversation_id, "file_id": None}
     r = api(base_url, "POST", "/api/chat/", body, token)
     if "_error" in r:
-        return "ERROR", f"HTTP error: {r}", conversation_id, None
+        # On timeout/error, try to recover conversation_id from server
+        # (the server may have created the conversation before timing out)
+        cid = conversation_id
+        if cid is None:
+            cid = get_latest_conversation_id(base_url, token)
+        return "ERROR", f"HTTP error: {r}", cid, None
     agent = r.get("agent_used", "???")
     text = r.get("message", "")
     cid = r.get("conversation_id", conversation_id)
