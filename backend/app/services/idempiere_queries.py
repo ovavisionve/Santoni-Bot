@@ -247,6 +247,52 @@ def _normalize_search_word(w: str) -> str:
     return normalized
 
 
+def _build_product_search_conditions(
+    params: dict,
+    product_search: str,
+    prefix: str = "prod",
+) -> str:
+    """Build WHERE clause for product search on p.name / p.value.
+
+    Returns the condition string (without outer parens or leading AND).
+    """
+    # Product code: exact substring match
+    if re.search(r'[A-Za-z]{2,}-[A-Za-z]{2,}-\d+', product_search):
+        params[f"{prefix}_search"] = f"%{product_search}%"
+        return f"(p.name ILIKE :{prefix}_search OR p.value ILIKE :{prefix}_search)"
+
+    # Text search: split into meaningful words
+    words = [
+        w for w in product_search.lower().split()
+        if w not in _PRODUCT_STOP_WORDS and len(w) >= 2
+    ]
+
+    if not words:
+        # Fallback to exact substring
+        params[f"{prefix}_search"] = f"%{product_search}%"
+        return f"(p.name ILIKE :{prefix}_search OR p.value ILIKE :{prefix}_search)"
+
+    # Normalize words (remove accents + de-pluralize)
+    clean_words = [_normalize_search_word(w) for w in words]
+    original_words = list(words)
+
+    word_conds = []
+    for i, w in enumerate(clean_words):
+        pk = f"{prefix}_w{i}"
+        params[pk] = f"%{w}%"
+        cond = f"(p.name ILIKE :{pk} OR p.value ILIKE :{pk})"
+        if original_words[i] != w:
+            pk_orig = f"{prefix}_wo{i}"
+            params[pk_orig] = f"%{original_words[i]}%"
+            cond = f"(p.name ILIKE :{pk} OR p.value ILIKE :{pk} OR p.name ILIKE :{pk_orig} OR p.value ILIKE :{pk_orig})"
+        word_conds.append(cond)
+
+    if len(word_conds) <= 2:
+        return f"({' AND '.join(word_conds)})"
+    else:
+        return f"({word_conds[0]} AND ({' OR '.join(word_conds[1:])}))"
+
+
 def _add_product_search_filter(
     conditions: list[str],
     params: dict,
@@ -261,56 +307,25 @@ def _add_product_search_filter(
     - If 3+ words: at least 2 must match (OR groups)
     With accent normalization and de-pluralization.
     """
-    # Product code: exact substring match
-    if re.search(r'[A-Za-z]{2,}-[A-Za-z]{2,}-\d+', product_search):
-        params[f"{prefix}_search"] = f"%{product_search}%"
-        conditions.append(
-            f"(p.name ILIKE :{prefix}_search OR p.value ILIKE :{prefix}_search)"
-        )
-        return
+    conditions.append(_build_product_search_conditions(params, product_search, prefix))
 
-    # Text search: split into meaningful words
-    words = [
-        w for w in product_search.lower().split()
-        if w not in _PRODUCT_STOP_WORDS and len(w) >= 2
-    ]
 
-    if not words:
-        # Fallback to exact substring
-        params[f"{prefix}_search"] = f"%{product_search}%"
-        conditions.append(
-            f"(p.name ILIKE :{prefix}_search OR p.value ILIKE :{prefix}_search)"
-        )
-        return
+def _build_product_id_subquery(
+    params: dict,
+    product_search: str,
+    prefix: str = "prod",
+) -> str:
+    """Return a SQL subquery that selects m_product_id matching the search.
 
-    # Normalize words (remove accents + de-pluralize)
-    clean_words = [_normalize_search_word(w) for w in words]
-    # Also keep original words as alternates for ILIKE
-    original_words = list(words)
-
-    word_conds = []
-    for i, w in enumerate(clean_words):
-        pk = f"{prefix}_w{i}"
-        # Use the normalized word for matching
-        params[pk] = f"%{w}%"
-        cond = f"(p.name ILIKE :{pk} OR p.value ILIKE :{pk})"
-        # Also try the original word if different
-        if original_words[i] != w:
-            pk_orig = f"{prefix}_wo{i}"
-            params[pk_orig] = f"%{original_words[i]}%"
-            cond = f"(p.name ILIKE :{pk} OR p.value ILIKE :{pk} OR p.name ILIKE :{pk_orig} OR p.value ILIKE :{pk_orig})"
-        word_conds.append(cond)
-
-    if len(word_conds) <= 2:
-        # For 1-2 words: ALL must match
-        conditions.append(f"({' AND '.join(word_conds)})")
-    else:
-        # For 3+ words: require first word + at least one other
-        # This avoids "cajas de carton para cereales" failing because
-        # one word doesn't match exactly
-        conditions.append(
-            f"({word_conds[0]} AND ({' OR '.join(word_conds[1:])}))"
-        )
+    Used to pre-filter c_invoiceline/c_orderline by product BEFORE the JOIN,
+    so PostgreSQL scans only matching rows instead of the full table.
+    """
+    product_cond = _build_product_search_conditions(params, product_search, prefix)
+    return (
+        f"il.m_product_id IN ("
+        f"SELECT p.m_product_id FROM adempiere.m_product p WHERE {product_cond}"
+        f")"
+    )
 
 
 def execute_idempiere_query(query: str, params: dict | None = None) -> list[dict]:
@@ -2182,8 +2197,9 @@ def build_product_purchase_history(
         _add_org_name_filter(conditions, params, org_name, "i")
         _add_date_filter(conditions, params, date_from, date_to, mes, anio, "i.dateinvoiced")
 
-        # Match by product value (code) or name (word-based for text searches)
-        _add_product_search_filter(conditions, params, product_search, prefix="search")
+        # Pre-filter products by subquery so PG scans only matching invoicelines
+        product_subq = _build_product_id_subquery(params, product_search, prefix="search")
+        conditions.append(product_subq)
 
         where = " AND ".join(conditions)
 
@@ -2366,7 +2382,8 @@ def build_supplier_price_comparison(
         _add_org_filter(conditions, params, org_ids, "i")
         _add_org_name_filter(conditions, params, org_name, "i")
         _add_date_filter(conditions, params, date_from, date_to, None, anio, "i.dateinvoiced")
-        _add_product_search_filter(conditions, params, product_search, prefix="cmp")
+        product_subq = _build_product_id_subquery(params, product_search, prefix="cmp")
+        conditions.append(product_subq)
 
         where = " AND ".join(conditions)
 
