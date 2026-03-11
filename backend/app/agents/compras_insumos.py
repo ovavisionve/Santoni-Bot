@@ -419,8 +419,8 @@ Datos de compras de insumos en iDempiere:
                     # Stop at first user message that doesn't mention currency
                     break
 
-        # Default: VES (bolívares)
-        return self._VES_IDS
+        # Default: show ALL currencies (VES + USD) so no data is hidden
+        return None
 
     def fetch_data(self, message: str, org_ids: list[int] | None = None, salesrep_id: int | None = None, history: list[tuple[str, str]] | None = None) -> str | None:
         msg = message.lower()

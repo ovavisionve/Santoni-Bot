@@ -975,6 +975,8 @@ def build_financial_summary(
     if date_from and date_to:
         mes = None
     db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
+    # Bank balances are current-state data → ALWAYS query live iDempiere
+    db_banks = IdempiereSession()
     try:
         # Bank balances (filtered by org if applicable)
         bank_conditions = ["ba.isactive = 'Y'"]
@@ -1006,7 +1008,7 @@ def build_financial_summary(
                 "saldo": float(r[4]) if r[4] else 0.0,
                 "organizacion": r[5] or "Sin asignar",
             }
-            for r in db.execute(bank_q, bank_params).fetchall()
+            for r in db_banks.execute(bank_q, bank_params).fetchall()
         ]
 
         # Separate totals by currency
@@ -1150,6 +1152,7 @@ def build_financial_summary(
             "cuentas_por_pagar": payables,
         }
     finally:
+        db_banks.close()
         db.close()
 
 
