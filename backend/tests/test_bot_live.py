@@ -291,12 +291,18 @@ TESTS_FINANZAS = [
             ("Cual es el banco con mayor disponibilidad el dia de hoy", "finanzas", BAD_FINANZAS),
         ],
     },
-    # ── Fechas específicas (no encontró datos) ──
+    # ── Ingresos por venta (va a contabilidad, usa fact_acct con cuentas tipo R) ──
     {
-        "name": "FINANZAS: Consultas por fecha",
+        "name": "FINANZAS: Ingresos por venta",
         "queries": [
             ("cuantos fueron los ingresos por venta el dia de ayer",
              "contabilidad", BAD_GENERIC),
+        ],
+    },
+    # ── Liquidaciones bancarias ──
+    {
+        "name": "FINANZAS: Liquidaciones bancarias",
+        "queries": [
             ("cuales fueron las liquidaciones Bancarias del dia 20/02/2026",
              "finanzas", BAD_FINANZAS),
         ],
@@ -332,6 +338,11 @@ TESTS_VENTAS = [
             ("cuanto se vendio en enero 2026", "ventas", BAD_VENTAS),
             ("¿Cuánto se facturó en dólares en febrero 2026?", "ventas", BAD_VENTAS),
             ("dame la cobranza del mes pasado", "ventas", BAD_VENTAS),
+        ],
+    },
+    {
+        "name": "VENTAS: CxC vencidas (va a finanzas)",
+        "queries": [
             ("cuentas por cobrar vencidas", "finanzas", BAD_FINANZAS),
         ],
     },

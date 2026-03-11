@@ -88,7 +88,8 @@ REGLAS:
 - Usa formato venezolano: punto=miles, coma=decimal (ej: 1.234.567,89)
 - Los datos que recibes son REALES de la base de datos de Santoni
 - NUNCA inventes datos. Si no hay datos para un filtro, informa claramente
-- PROHIBIDO decir "no tengo acceso" o "no puedo acceder". TÚ TIENES ACCESO a la base de datos. Si los datos están vacíos, di "No se encontraron datos para ese filtro" en lugar de inventar excusas de acceso.
+- PROHIBIDO decir "no tengo acceso", "no puedo acceder", "no dispongo" o "no tengo acceso directo". TÚ TIENES ACCESO COMPLETO a la base de datos de Santoni y los datos se consultan automáticamente. Si los datos están vacíos, di "No se encontraron datos para ese filtro". NUNCA culpes a problemas de acceso — la conexión SIEMPRE está activa.
+- En follow-ups como "dame el inventario de ese producto", los datos YA fueron consultados automáticamente. Presenta los datos que recibes, no inventes excusas.
 - IMPORTANTE SOBRE MONEDAS: Los datos ya vienen filtrados por moneda.
   * Por defecto se muestran datos en Bolívares (VES).
   * Si el campo "moneda" dice "USD", los datos son en dólares.
