@@ -1545,16 +1545,45 @@ def build_attendance_summary(
 
         if not by_concept:
             totals["nota"] = (
-                "No se encontraron conceptos de ausentismo en nómina para este período. "
+                "RESULTADO: La consulta se ejecutó correctamente pero NO se encontraron "
+                "registros de ausentismo en nómina para este período. "
                 "Los conceptos buscados incluyen: inasistencia, falta, permiso, "
-                "reposo, incapacidad, licencia."
+                "reposo, incapacidad, licencia. "
+                "Esto significa que no hay ausencias registradas, NO que falte acceso a los datos."
             )
 
-        return {
+        # Monthly breakdown (useful for multi-month queries)
+        by_month_q = text(
+            f"SELECT EXTRACT(YEAR FROM hp.dateacct)::int AS anio, "
+            f"EXTRACT(MONTH FROM hp.dateacct)::int AS mes, "
+            f"COUNT(DISTINCT hm.c_bpartner_id) AS empleados_afectados, "
+            f"COALESCE(SUM(ABS(hm.amount)), 0) AS monto_bs, "
+            f"COUNT(*) AS ocurrencias "
+            f"FROM adempiere.hr_process hp "
+            f"JOIN adempiere.hr_movement hm ON hp.hr_process_id = hm.hr_process_id "
+            f"JOIN adempiere.hr_concept hc ON hm.hr_concept_id = hc.hr_concept_id "
+            f"WHERE {where} "
+            f"GROUP BY anio, mes ORDER BY anio, mes"
+        )
+        by_month = [
+            {
+                "anio": r[0],
+                "mes": r[1],
+                "empleados_afectados": r[2],
+                "monto_bs": float(r[3]),
+                "ocurrencias": r[4],
+            }
+            for r in db.execute(by_month_q, params).fetchall()
+        ]
+
+        result = {
             "totales": totals,
             "por_concepto": by_concept,
             "por_organizacion": by_org,
         }
+        if by_month:
+            result["por_mes"] = by_month
+        return result
     finally:
         db.close()
 
