@@ -65,7 +65,7 @@ CAPACIDADES:
 - Estado de pago de facturas de compra (pagadas vs pendientes)
 
 CONTEXTO iDEMPIERE:
-- Facturas de compra: c_invoice (issotrx='N', docstatus='CO') - las facturas de compra tienen issotrx='N'
+- Facturas de compra: c_invoice (issotrx='N', docstatus IN ('CO','CL')) - CO=completada, CL=cerrada (pagada). Ambos estados son válidos.
 - Órdenes de compra: c_order (issotrx='N') - órdenes pendientes, en proceso y completadas
 - Líneas de factura: c_invoiceline (m_product_id, qtyinvoiced, linenetamt)
 - Proveedores: c_bpartner (isvendor='Y') - 26,070 socios de negocio

@@ -201,10 +201,11 @@ Los agentes filtran por organización cuando el usuario lo especifica.
 ## Dataset de Entrenamiento
 
 Se mantiene un dataset de escenarios de entrenamiento/validación para el orchestrator:
-- **300 escenarios** (v2.2) cubriendo los 7 agentes
+- **355 escenarios** (v2.5) cubriendo los 7 agentes
 - Incluye: pregunta, agente esperado, tipo de consulta, follow-ups
-- 70 escenarios de follow-up con herencia de contexto
-- Tipos de error rastreados: routing, herencia temporal, fallback sin datos, errores DB
+- 78 escenarios de follow-up con herencia de contexto
+- Tipos de error rastreados: routing, herencia temporal, fallback sin datos, errores DB,
+  docstatus_incompleto, org_name_no_extraido
 - Usado para medir confidence score y mejorar clasificación
 
 ---
@@ -235,7 +236,7 @@ Se crearon cuestionarios para que cada departamento valide las respuestas del bo
 - **Datos históricos locales (10/Mar 2026)**: Sistema para cachear datos de iDempiere pre-marzo 2026 en DB local (ver sección abajo)
 - Conexión exitosa a iDempiere real (queries de nómina, ventas, compras)
 - Follow-ups inteligentes con herencia de contexto temporal
-- Confidence score + dataset de 351 escenarios (v2.4)
+- Confidence score + dataset de 355 escenarios (v2.5)
 - Separación de compras por moneda (VES/USD)
 - Inventario desde m_storageonhand
 - Corrección de múltiples bugs reportados por usuarios reales
@@ -249,6 +250,14 @@ Se crearon cuestionarios para que cada departamento valide las respuestas del bo
   - Fallback automático sin fecha cuando período específico no tiene datos
   - Búsqueda de productos más flexible (normalización de acentos, OR para 3+ palabras)
   - Fix de texto "no tengo acceso" en capabilities de todos los agentes (causaba falsos positivos en tests)
+- **Fix docstatus + org_name en compras (11/Mar 2026)**:
+  - `docstatus = 'CO'` → `docstatus IN ('CO', 'CL')` en TODAS las queries de idempiere_queries.py
+    (facturas pagadas cambian a 'CL' en iDempiere, se estaban excluyendo)
+  - Extracción de org_name del mensaje en compras_insumos (`_extract_org_name`)
+    para filtrar por organización (ej: "en INPROA SANTONI", "en InproMaiz")
+  - `org_name` propagado a `build_supplier_price_comparison()` y `build_product_purchase_history()`
+  - System prompts de todos los agentes actualizados para reflejar `docstatus IN ('CO','CL')`
+  - Dataset v2.5: 4 nuevos escenarios (352-355), 2 nuevos tipos de error
 
 ### Pendiente:
 - Mapeo completo de todas las tablas iDempiere (algunas queries aún en ajuste)

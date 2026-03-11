@@ -55,7 +55,7 @@ CAPACIDADES:
 
 CONTEXTO iDEMPIERE:
 - Cuentas bancarias: c_bankaccount (saldo actual, tipo, moneda) + c_bank
-- Cobros recibidos: c_payment (isreceipt='Y', docstatus='CO') - 798,150 pagos
+- Cobros recibidos: c_payment (isreceipt='Y', docstatus IN ('CO','CL')) - 798,150 pagos. CO=completado, CL=cerrado.
 - Facturas por cobrar: c_invoice (issotrx='Y', ispaid='N') con c_paymentterm (días de crédito)
 - Facturas por pagar: c_invoice (issotrx='N', ispaid='N')
 - Clientes/proveedores: c_bpartner (26,070 registros)

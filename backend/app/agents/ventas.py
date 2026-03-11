@@ -60,9 +60,9 @@ CAPACIDADES PRINCIPALES:
 8. Cobranza diaria/semanal y comparativo vs metas
 
 CONTEXTO iDEMPIERE:
-- Facturas de venta: c_invoice (issotrx='Y', docstatus='CO') - 447,386 facturas
+- Facturas de venta: c_invoice (issotrx='Y', docstatus IN ('CO','CL')) - 447,386 facturas. CO=completada, CL=cerrada.
 - Líneas de factura: c_invoiceline (m_product_id, qtyinvoiced, linenetamt)
-- Cobros: c_payment (isreceipt='Y', docstatus='CO') - 798,150 pagos
+- Cobros: c_payment (isreceipt='Y', docstatus IN ('CO','CL')) - 798,150 pagos
 - Clientes: c_bpartner (26,070 registros) - campos: ismayorista, isclap, ispublico, codigoventas
 - Zonas: c_salesregion (vinculado via c_bpartner_location, una zona por cliente)
 - Distribuidores: salesrep_id en c_invoice apunta a c_bpartner (son distribuidores/intermediarios, NO vendedores internos)

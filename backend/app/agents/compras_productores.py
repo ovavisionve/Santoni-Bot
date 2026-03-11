@@ -57,7 +57,7 @@ CAPACIDADES:
 - Productores registrados
 
 CONTEXTO iDEMPIERE:
-- Órdenes de compra: c_order (issotrx='N', docstatus='CO') - 277,538 órdenes
+- Órdenes de compra: c_order (issotrx='N', docstatus IN ('CO','CL')) - 277,538 órdenes. CO=completada, CL=cerrada.
 - Líneas de orden: c_orderline (m_product_id, qtyordered, priceactual, linenetamt)
 - Productores: c_bpartner (isagricultor='Y', codigoproductor, codigocompras)
 - Productos: m_product (arroz paddy acondicionado, maíz blanco de consumo)
