@@ -128,10 +128,7 @@ class BaseAgent(ABC):
         org_ids: list[int] | None = None,
         salesrep_id: int | None = None,
     ) -> tuple[list, bool]:
-        """Build the LLM message list. Returns (messages, has_data).
-
-        Runs data catalog, RAG, and fetch_data in parallel for faster responses.
-        """
+        """Build the LLM message list. Returns (messages, has_data)."""
         # Build datetime context
         datetime_ctx = _build_datetime_context()
 
@@ -163,30 +160,11 @@ class BaseAgent(ABC):
         )
         messages = [SystemMessage(content=enhanced_prompt)]
 
-        # --- Run catalog, RAG, and fetch_data in PARALLEL ---
-        # These three operations are independent and each creates its own DB session.
-
-        async def _get_catalog_context() -> str | None:
-            """Get data catalog context (runs in thread)."""
-            try:
-                from app.services.data_catalog import get_catalog_service
-                catalog = get_catalog_service()
-                return catalog.get_department_context(self.department)
-            except Exception as exc:
-                logger.debug("Data catalog unavailable for %s: %s", self.name, exc)
-                return None
-
-        async def _get_rag_context() -> str | None:
-            """Get RAG context (runs in thread)."""
-            try:
-                from app.services.rag_service import get_rag_service
-                rag = get_rag_service()
-                return await asyncio.to_thread(
-                    rag.get_context_for_agent, self.department, message
-                )
-            except Exception as exc:
-                logger.debug("RAG context unavailable for %s: %s", self.name, exc)
-                return None
+        # --- Fetch real data from iDempiere ---
+        # NOTE: Catalog and RAG context were previously injected here but removed
+        # because they add thousands of extra tokens (schema info, profiling,
+        # sample data) that the LLM must process, causing 5-8x slower responses.
+        # The agents already have all necessary context in their system prompts.
 
         async def _get_data_context() -> str | None:
             """Fetch real data from iDempiere (runs in thread)."""
@@ -220,17 +198,7 @@ class BaseAgent(ABC):
                     f"y que intente de nuevo en unos momentos."
                 )
 
-        # Run all three in parallel
-        catalog_context, rag_context, data_context = await asyncio.gather(
-            _get_catalog_context(),
-            _get_rag_context(),
-            _get_data_context(),
-        )
-
-        if catalog_context:
-            messages.append(SystemMessage(content=catalog_context))
-        if rag_context:
-            messages.append(SystemMessage(content=rag_context))
+        data_context = await _get_data_context()
 
         if data_context:
             messages.append(
