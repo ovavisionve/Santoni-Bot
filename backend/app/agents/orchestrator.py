@@ -8,6 +8,7 @@ Performance: Uses keyword-based classification (~0ms) instead of LLM classificat
 import logging
 import re
 from collections.abc import AsyncIterator
+from datetime import datetime
 
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 
@@ -155,9 +156,15 @@ _KEYWORD_RULES: list[tuple[str, list[str]]] = [
     ]),
 ]
 
-# Greetings / general patterns
-_GENERAL_PATTERNS = [
+# Pure greetings — these get an instant canned response (no LLM call)
+_GREETING_ONLY = [
     "hola", "buenos dias", "buenos días", "buenas tardes", "buenas noches",
+    "hey", "saludos", "buen dia", "buen día",
+]
+
+# General patterns (greetings + questions about the bot itself)
+_GENERAL_PATTERNS = [
+    *_GREETING_ONLY,
     "gracias", "ayuda", "que puedes hacer", "qué puedes hacer",
     "quien eres", "quién eres", "como funciona", "cómo funciona",
 ]
@@ -186,6 +193,9 @@ def classify_by_keywords(
 
     # Check greetings / general first
     if any(p in msg for p in _GENERAL_PATTERNS) and len(msg) < 60:
+        # Pure greetings get instant canned response (no LLM)
+        if any(p in msg for p in _GREETING_ONLY):
+            return "greeting"
         return "general"
 
     # Check for accounting codes (e.g. "2.01.01.10") → always contabilidad
@@ -248,7 +258,9 @@ def classify_with_confidence(
 
     # Greetings
     if any(p in msg for p in _GENERAL_PATTERNS) and len(msg) < 60:
-        return "general", 1.0, "saludo_directo"
+        if any(p in msg for p in _GREETING_ONLY):
+            return "greeting", 1.0, "saludo_directo"
+        return "general", 1.0, "pregunta_general"
 
     # Accounting code
     if _has_account_code(msg):
@@ -402,6 +414,18 @@ class Orchestrator:
                 "score_breakdown": breakdown,
             }
 
+        # Handle greetings instantly (no LLM call)
+        if agent_name == "greeting":
+            greeting_response = self._instant_greeting(message)
+            score, breakdown = compute_confidence_score(routing_score, False, "general")
+            return {
+                "response": greeting_response,
+                "agent_used": "general",
+                "metadata": {"classification": "greeting"},
+                "confidence_score": score,
+                "score_breakdown": {**breakdown, "match_type": match_type},
+            }
+
         # Handle general queries
         if agent_name == "general":
             result = await self._handle_general(message, history)
@@ -458,6 +482,10 @@ class Orchestrator:
             yield "Lo siento, no tienes permisos para acceder a la información de ese departamento."
             return
 
+        if agent_name == "greeting":
+            yield self._instant_greeting(message)
+            return
+
         if agent_name == "general":
             async for token in self._stream_general(message, history):
                 yield token
@@ -483,6 +511,41 @@ class Orchestrator:
         """Return (agent_name, confidence_score, match_type) for a message."""
         allowed = user.allowed_departments
         return classify_with_confidence(message, allowed, last_agent=last_agent)
+
+    @staticmethod
+    def _instant_greeting(message: str) -> str:
+        """Return an instant canned greeting response (no LLM call, ~0ms)."""
+        msg = message.lower().strip()
+        now = datetime.now()
+        hora = now.hour
+
+        if hora < 12:
+            saludo = "Buenos días"
+        elif hora < 18:
+            saludo = "Buenas tardes"
+        else:
+            saludo = "Buenas noches"
+
+        # Check if user included a time-based greeting
+        if "buenas noches" in msg:
+            saludo = "Buenas noches"
+        elif "buenas tardes" in msg:
+            saludo = "Buenas tardes"
+        elif "buenos dias" in msg or "buenos días" in msg:
+            saludo = "Buenos días"
+
+        return (
+            f"¡{saludo}! 👋 Soy **SantoniBot**, el asistente inteligente de "
+            f"**Alimentos Santoni, C.A.** Estoy aquí para ayudarte con consultas de:\n\n"
+            f"📊 **Ventas** — facturación, clientes, cobranza, zonas\n"
+            f"💰 **Finanzas** — saldos bancarios, cuentas por cobrar/pagar\n"
+            f"📒 **Contabilidad** — balance, estado de resultados, cuentas contables\n"
+            f"👥 **RRHH** — empleados, nómina, ausentismo, cumpleañeros\n"
+            f"🏭 **Producción** — órdenes, cantidades, desperdicios, inventario\n"
+            f"📦 **Compras de Insumos** — proveedores, órdenes de compra, precios\n"
+            f"🌾 **Compras a Productores** — arroz, maíz, productores, pagos\n\n"
+            f"¿En qué te puedo ayudar hoy?"
+        )
 
     async def _handle_document(
         self,

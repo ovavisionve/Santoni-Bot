@@ -617,11 +617,11 @@ def test_confidence_general_sin_match():
 
 
 def test_confidence_saludo():
-    """Greeting should score 1.0 (confident it's general)"""
+    """Greeting should score 1.0 (confident it's a greeting)"""
     agent, score, match_type = classify_with_confidence(
         "hola", JORGE_DEPARTMENTS,
     )
-    assert agent == "general", f"Expected general, got {agent}"
+    assert agent == "greeting", f"Expected greeting, got {agent}"
     assert score == 1.0, f"Expected 1.0 for greeting, got {score}"
     assert match_type == "saludo_directo"
 

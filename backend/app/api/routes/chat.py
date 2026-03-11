@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from datetime import datetime, timezone
@@ -126,15 +127,18 @@ async def stream_message(
     message_text = data.message
     ip_addr = request.client.host if request.client else None
 
+    # Map "greeting" to "general" for storage/display (greeting is an internal fast-path)
+    stored_agent_name = "general" if agent_name == "greeting" else agent_name
+
     # Check cache before streaming
-    cached = get_cached_response(message_text, agent_name)
+    cached = get_cached_response(message_text, stored_agent_name)
     data_ts = get_data_timestamp()
 
     async def event_generator():
         full_response = []
 
         # First event: metadata (conversation_id, agent, timestamp, routing score)
-        yield f"data: {json.dumps({'type': 'meta', 'conversation_id': conv_id, 'agent': agent_name, 'timestamp': data_ts, 'routing_score': routing_score})}\n\n"
+        yield f"data: {json.dumps({'type': 'meta', 'conversation_id': conv_id, 'agent': stored_agent_name, 'timestamp': data_ts, 'routing_score': routing_score})}\n\n"
 
         # If cached, send the full response as a single token
         if cached:
@@ -159,7 +163,7 @@ async def stream_message(
         # Save to cache (only non-cached, non-error responses)
         complete_text = "".join(full_response)
         if not cached and "Error al consultar" not in complete_text:
-            set_cached_response(message_text, agent_name, complete_text, agent_name)
+            set_cached_response(message_text, stored_agent_name, complete_text, stored_agent_name)
 
         # Save complete response to DB
         try:
@@ -169,7 +173,7 @@ async def stream_message(
                 from app.agents.orchestrator import compute_confidence_score
                 has_data = bool(complete_text) and "Error al consultar" not in complete_text
                 conf_score, score_breakdown = compute_confidence_score(
-                    routing_score, has_data, agent_name,
+                    routing_score, has_data, stored_agent_name,
                 )
                 score_breakdown["match_type"] = match_type
                 meta_dict = {
@@ -181,7 +185,7 @@ async def stream_message(
                     conversation_id=conv_id,
                     role=MessageRole.ASSISTANT,
                     content=complete_text,
-                    agent_used=agent_name,
+                    agent_used=stored_agent_name,
                     confidence_score=conf_score,
                     metadata_json=json.dumps(meta_dict),
                 )
@@ -196,7 +200,7 @@ async def stream_message(
                     action="chat_query",
                     resource="chat",
                     detail=f"Consulta: {message_text}",
-                    agent_used=agent_name,
+                    agent_used=stored_agent_name,
                     ip_address=ip_addr,
                 )
             finally:
@@ -258,12 +262,21 @@ async def send_message(
             logger.info("Document attached: %s (%s)", document.get("filename"), document["type"])
 
     try:
-        result = await orchestrator.process(
-            message=data.message,
-            user=current_user,
-            history=history,
-            document=document,
-            last_agent=last_agent,
+        result = await asyncio.wait_for(
+            orchestrator.process(
+                message=data.message,
+                user=current_user,
+                history=history,
+                document=document,
+                last_agent=last_agent,
+            ),
+            timeout=60,
+        )
+    except asyncio.TimeoutError:
+        logger.error("Chat request timed out after 60s for message: %s", data.message[:80])
+        raise HTTPException(
+            status_code=504,
+            detail="La consulta tardó demasiado. Por favor intenta de nuevo.",
         )
     except Exception as exc:
         logger.error(

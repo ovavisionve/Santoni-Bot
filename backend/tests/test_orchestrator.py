@@ -74,11 +74,11 @@ class TestOrchestratorClassification:
         assert result == "no_access"
 
     def test_classify_general(self):
-        """General greeting should classify as 'general'."""
+        """General greeting should classify as 'greeting'."""
         result = classify_by_keywords(
             "Hola, como estas?", ["ventas"]
         )
-        assert result == "general"
+        assert result == "greeting"
 
     def test_classify_unknown_falls_to_general(self):
         """Unknown query with no keyword match should fallback to 'general'."""

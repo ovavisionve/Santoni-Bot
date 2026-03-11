@@ -61,6 +61,7 @@ def create_llm(
             "model": settings.anthropic_model,
             "temperature": temperature,
             "max_tokens": max_tokens,
+            "default_request_timeout": 45,
         }
         if settings.anthropic_base_url:
             kwargs["anthropic_api_url"] = settings.anthropic_base_url
@@ -82,6 +83,7 @@ def create_llm(
             model=settings.openrouter_model,
             temperature=temperature,
             max_tokens=max_tokens,
+            request_timeout=45,
         )
 
     else:
@@ -93,6 +95,7 @@ def create_llm(
             model=settings.groq_model,
             temperature=temperature,
             max_tokens=max_tokens,
+            request_timeout=45,
         )
 
 
