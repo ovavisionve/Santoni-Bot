@@ -391,7 +391,7 @@ class DataCatalogService:
                     MIN(dateinvoiced) AS primera_factura,
                     MAX(dateinvoiced) AS ultima_factura
                 FROM adempiere.c_invoice
-                WHERE issotrx = 'Y' AND docstatus = 'CO'
+                WHERE issotrx = 'Y' AND docstatus IN ('CO', 'CL')
             """))
             row = r.fetchone()
             if row:
@@ -438,7 +438,7 @@ class DataCatalogService:
                 WHERE isactive = 'Y'
                   AND c_currency_id IN (
                       SELECT DISTINCT c_currency_id FROM adempiere.c_invoice
-                      WHERE docstatus = 'CO' LIMIT 20
+                      WHERE docstatus IN ('CO', 'CL') LIMIT 20
                   )
                 ORDER BY iso_code
             """))
@@ -493,7 +493,7 @@ class DataCatalogService:
                 FROM adempiere.c_invoiceline il
                 JOIN adempiere.m_product p ON il.m_product_id = p.m_product_id
                 JOIN adempiere.c_invoice i ON il.c_invoice_id = i.c_invoice_id
-                WHERE i.docstatus = 'CO' AND i.issotrx = 'Y'
+                WHERE i.docstatus IN ('CO', 'CL') AND i.issotrx = 'Y'
                 GROUP BY p.name
                 ORDER BY veces DESC
                 LIMIT 30
@@ -752,7 +752,14 @@ class DataCatalogService:
         docs_by_dept = self._build_catalog_documents(
             schema, profiles, samples, relationships, dept_stats
         )
-        index_result = self._index_to_chromadb(docs_by_dept)
+        try:
+            index_result = self._index_to_chromadb(docs_by_dept)
+        except Exception as e:
+            logger.warning(
+                "ChromaDB indexación falló (%s). El catálogo en memoria sigue disponible.", e
+            )
+            self._sync_errors.append(f"chromadb_index: {e}")
+            index_result = {"total_docs": 0, "departments_updated": []}
 
         # Guardar catálogo en memoria para consultas rápidas
         self._catalog = {

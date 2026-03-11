@@ -83,6 +83,7 @@ class RAGService:
     def __init__(self) -> None:
         self._client: chromadb.HttpClient | None = None
         self._available: bool = False
+        self._unavailable_warned: bool = False
         self._connect()
 
     # ------------------------------------------------------------------
@@ -99,6 +100,7 @@ class RAGService:
             # Quick heartbeat to validate the connection
             self._client.heartbeat()
             self._available = True
+            self._unavailable_warned = False
             logger.info(
                 "ChromaDB connected at %s:%s",
                 settings.chroma_host,
@@ -107,10 +109,12 @@ class RAGService:
         except Exception as exc:
             self._client = None
             self._available = False
-            logger.warning(
-                "ChromaDB not available (%s). RAG features disabled.",
-                exc,
-            )
+            if not self._unavailable_warned:
+                logger.warning(
+                    "ChromaDB not available (%s). RAG features disabled.",
+                    exc,
+                )
+                self._unavailable_warned = True
 
     def _ensure_connection(self) -> bool:
         """Return True if ChromaDB is reachable, attempting reconnect if needed."""
@@ -139,7 +143,7 @@ class RAGService:
                 name=collection_name,
                 metadata={"department": department},
             )
-        except ChromaError as exc:
+        except (ChromaError, KeyError) as exc:
             logger.error("Error getting collection '%s': %s", collection_name, exc)
             return None
 
