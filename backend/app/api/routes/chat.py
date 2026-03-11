@@ -1,4 +1,3 @@
-import asyncio
 import json
 import logging
 from datetime import datetime, timezone
@@ -262,21 +261,12 @@ async def send_message(
             logger.info("Document attached: %s (%s)", document.get("filename"), document["type"])
 
     try:
-        result = await asyncio.wait_for(
-            orchestrator.process(
-                message=data.message,
-                user=current_user,
-                history=history,
-                document=document,
-                last_agent=last_agent,
-            ),
-            timeout=60,
-        )
-    except asyncio.TimeoutError:
-        logger.error("Chat request timed out after 60s for message: %s", data.message[:80])
-        raise HTTPException(
-            status_code=504,
-            detail="La consulta tardó demasiado. Por favor intenta de nuevo.",
+        result = await orchestrator.process(
+            message=data.message,
+            user=current_user,
+            history=history,
+            document=document,
+            last_agent=last_agent,
         )
     except Exception as exc:
         logger.error(
