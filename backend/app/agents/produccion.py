@@ -106,8 +106,8 @@ IMPORTANTE SOBRE PERÍODOS:
             "\nIMPORTANTE: Los datos provienen de m_inout (movimientos de inventario) y "
             "m_storageonhand (stock actual). Se registran recepciones de materia prima (V+), "
             "despachos de producto terminado (C-), y movimientos internos (M+/M-).\n"
-            "\nPara eficiencia OEE, mantenimientos o calidad de producto, "
-            "redirige al usuario al departamento correspondiente."
+            "\n❌ NO puedo consultar: eficiencia OEE, mantenimientos o calidad de producto. "
+            "Redirige al usuario al departamento correspondiente."
         )
 
     def get_sql_context(self) -> str:

@@ -109,8 +109,8 @@ IMPORTANTE SOBRE PERÍODOS:
             "✅ Rotación de personal (bajas por año)\n"
             "\nNOTA: Los datos de empleados reflejan el estado ACTUAL en iDempiere. "
             "Para ver ingresos en un período específico, filtra por fecha de ingreso (startdate).\n"
-            "\nPara evaluaciones de desempeño, vacaciones o prestaciones sociales, "
-            "redirige al usuario al departamento correspondiente."
+            "\n❌ NO puedo consultar: evaluaciones de desempeño, vacaciones o prestaciones sociales. "
+            "Redirige al usuario al departamento correspondiente."
         )
 
     def get_sql_context(self) -> str:

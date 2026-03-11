@@ -131,8 +131,8 @@ SOBRE INVENTARIO/STOCK:
             "✅ Órdenes de compra pendientes (c_order) por período, estado y proveedor\n"
             "✅ Comparación de precios entre proveedores para un mismo producto\n"
             "✅ Estado de pago de facturas de compra (pagadas vs pendientes)\n"
-            "\nPara gastos administrativos (nómina, servicios), redirige al usuario "
-            "al agente de RRHH o Finanzas."
+            "\n❌ NO puedo consultar: gastos administrativos (nómina, servicios). "
+            "Redirige al usuario al agente de RRHH o Finanzas."
         )
 
     def get_sql_context(self) -> str:

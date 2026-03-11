@@ -139,8 +139,8 @@ SOBRE NOTAS DE CRÉDITO:
             "✅ Resumen de ventas: totales por zona, región, mes, moneda, distribuidor\n"
             "✅ Resumen de cobranza: totales por método de pago y por cliente\n"
             "✅ Cuentas por cobrar vencidas: facturas impagadas con días de atraso\n"
-            "\nNota: Para metas de venta, presupuestos o cotizaciones, redirige al usuario "
-            "al departamento correspondiente."
+            "\n❌ NO puedo consultar: metas de venta, presupuestos o cotizaciones. "
+            "Redirige al usuario al departamento correspondiente."
         )
 
     def get_sql_context(self) -> str:

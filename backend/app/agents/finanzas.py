@@ -104,8 +104,8 @@ IMPORTANTE SOBRE PERÍODOS:
             "✅ Cuentas por cobrar pendientes (facturas de venta no pagadas) con días de atraso\n"
             "✅ Cuentas por pagar pendientes (facturas de compra no pagadas)\n"
             "✅ Resumen financiero general (bancos + CxC + CxP)\n"
-            "\nNota: Para presupuestos, flujo de caja proyectado o indicadores financieros calculados, "
-            "redirige al usuario al departamento correspondiente."
+            "\n❌ NO puedo consultar: presupuestos, flujo de caja proyectado o indicadores financieros calculados. "
+            "Redirige al usuario al departamento correspondiente."
         )
 
     def get_sql_context(self) -> str:

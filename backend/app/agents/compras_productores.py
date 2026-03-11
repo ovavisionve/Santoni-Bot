@@ -103,8 +103,9 @@ IMPORTANTE SOBRE PERÍODOS:
             "✅ Análisis de precios por producto (min, promedio, max)\n"
             "✅ Productores registrados (nombre, código, ciudad)\n"
             "\nNota: Los campos de humedad/impureza y datos de guías agrícolas están en proceso "
-            "de integración. Para consultas fuera de compras a productores, redirige al usuario "
-            "al agente correspondiente."
+            "de integración.\n"
+            "❌ NO puedo consultar temas fuera de compras a productores. "
+            "Redirige al usuario al agente correspondiente."
         )
 
     def get_sql_context(self) -> str:
