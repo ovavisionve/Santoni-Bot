@@ -71,13 +71,14 @@ def _is_before_cutoff(
 ) -> bool:
     """Determine if the query should use the local historical DB.
 
-    Returns True (use local DB) when:
-    - Date range falls entirely before the cutoff date
-    - No date filters specified (local DB has all historical data,
-      faster than remote iDempiere; functions that need live data
-      use IdempiereSession() directly instead of _get_session())
-    Returns False (use iDempiere) when:
-    - Date range extends beyond the cutoff date
+    The local DB has ALL data up to yesterday (synced daily).
+    Only queries that are EXCLUSIVELY for today's date go to iDempiere.
+    Everything else (past dates, ranges, "este mes", no date) → local DB.
+
+    Returns True (use local DB) in almost all cases.
+    Returns False (use iDempiere) ONLY when:
+    - Explicit date range where BOTH from and to are today
+      (i.e. the user asked specifically for "hoy")
     """
     cutoff = _get_cutoff_date()
     try:
@@ -85,29 +86,29 @@ def _is_before_cutoff(
     except (ValueError, TypeError):
         return False
 
-    # Explicit date range
-    if date_to:
+    # Explicit date range: only go to iDempiere if BOTH dates are today
+    if date_from and date_to:
         try:
+            start = datetime.strptime(str(date_from), "%Y-%m-%d").date()
             end = datetime.strptime(str(date_to), "%Y-%m-%d").date()
-            return end < cutoff_date
+            if start >= cutoff_date and end >= cutoff_date:
+                # Both dates are today or future → iDempiere
+                return False
+            # Any part of the range is before today → local DB has it
+            return True
         except (ValueError, TypeError):
             return False
 
-    # Month + year
+    # Month + year: local DB has all data up to yesterday.
+    # "Este mes" (marzo 2026) → local DB has 1-10 marzo, good enough.
     if mes and anio:
-        # End of the specified month
-        if mes == 12:
-            month_end = date(anio + 1, 1, 1)
-        else:
-            month_end = date(anio, mes + 1, 1)
-        return month_end <= cutoff_date
+        return True
 
-    # Only year
+    # Only year → always local
     if anio and not mes:
-        year_end = date(anio + 1, 1, 1)
-        return year_end <= cutoff_date
+        return True
 
-    # No date filters → use local DB (faster, has all historical data).
+    # No date filters → local DB (has all historical data).
     # Functions needing live/current data (inventory, employees, etc.)
     # use IdempiereSession() directly, so they bypass this routing.
     return True
@@ -889,12 +890,12 @@ def build_overdue_receivables(
     org_ids: list[int] | None = None,
     salesrep_id: int | None = None,
 ) -> list[dict]:
-    """Overdue accounts receivable from iDempiere (unpaid sales invoices).
+    """Overdue accounts receivable (unpaid sales invoices).
 
     Uses client_zone CTE for zone info, and filters to recent invoices
     (last 3 years) with amounts > 100 to exclude old residual balances.
     """
-    db = IdempiereSession()
+    db = _get_session()
     try:
         # Build org filter for overdue receivables
         org_clause = ""
@@ -1168,7 +1169,7 @@ def build_employee_summary(org_ids: list[int] | None = None) -> dict:
     from hr_employee.ad_org_id (correctly assigned) instead of c_bpartner.ad_org_id
     (which often points to the wildcard '*' org).
     """
-    db = IdempiereSession()
+    db = _get_session()
     try:
         # Overall counts (unique employees)
         conditions = ["1=1"]
@@ -1986,8 +1987,8 @@ def build_producer_purchases(
 
 
 def build_registered_producers(org_ids: list[int] | None = None) -> list[dict]:
-    """Registered producers (vendors) from iDempiere c_bpartner."""
-    db = IdempiereSession()
+    """Registered producers (vendors) from c_bpartner."""
+    db = _get_session()
     try:
         conditions = [
             "bp.isactive = 'Y'",
@@ -2015,12 +2016,12 @@ def build_registered_producers(org_ids: list[int] | None = None) -> list[dict]:
 def build_producer_pending_payments(
     producto: str | None = None, org_ids: list[int] | None = None,
 ) -> list[dict]:
-    """Pending purchase invoices (not fully paid) from iDempiere.
+    """Pending purchase invoices (not fully paid).
 
     Uses c_invoice (ispaid='N') instead of c_order, since c_order
     does not have a totalpaid column in Santoni's iDempiere.
     """
-    db = IdempiereSession()
+    db = _get_session()
     try:
         conditions = [
             "i.issotrx = 'N'",
@@ -2879,7 +2880,7 @@ def build_inventory_stock(
     category_search: str | None = None,
     warehouse_search: str | None = None,
 ) -> dict:
-    """Inventory stock from iDempiere m_storageonhand.
+    """Inventory stock from m_storageonhand.
 
     m_storageonhand has multiple rows per product (one per lot/batch via
     m_attributesetinstance_id), so we SUM(qtyonhand) grouped by product.
@@ -2888,7 +2889,7 @@ def build_inventory_stock(
         m_storageonhand → m_locator → m_warehouse → ad_org
         m_storageonhand → m_product → m_product_category
     """
-    db = IdempiereSession()
+    db = _get_session()
     try:
         conditions = ["s.isactive = 'Y'", "s.qtyonhand <> 0"]
         params: dict = {}
