@@ -92,6 +92,7 @@ def create_llm(
             model=settings.openrouter_model,
             temperature=temperature,
             max_tokens=max_tokens,
+            request_timeout=60,
             **extra_kwargs,
         )
 
@@ -104,6 +105,7 @@ def create_llm(
             model=settings.groq_model,
             temperature=temperature,
             max_tokens=max_tokens,
+            request_timeout=60,
         )
 
 

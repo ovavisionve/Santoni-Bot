@@ -69,13 +69,15 @@ def _is_before_cutoff(
     mes: int | None = None,
     anio: int | None = None,
 ) -> bool:
-    """Determine if the requested date range falls entirely before the cutoff.
+    """Determine if the query should use the local historical DB.
 
-    Returns True only if ALL requested data is before the cutoff date.
-    Returns False if:
-    - No date filters specified (defaults to current/live data)
-    - Date range extends beyond cutoff
-    - Only year specified and it's the cutoff year
+    Returns True (use local DB) when:
+    - Date range falls entirely before the cutoff date
+    - No date filters specified (local DB has all historical data,
+      faster than remote iDempiere; functions that need live data
+      use IdempiereSession() directly instead of _get_session())
+    Returns False (use iDempiere) when:
+    - Date range extends beyond the cutoff date
     """
     cutoff = _get_cutoff_date()
     try:
@@ -105,8 +107,10 @@ def _is_before_cutoff(
         year_end = date(anio + 1, 1, 1)
         return year_end <= cutoff_date
 
-    # No date filters → use live iDempiere
-    return False
+    # No date filters → use local DB (faster, has all historical data).
+    # Functions needing live/current data (inventory, employees, etc.)
+    # use IdempiereSession() directly, so they bypass this routing.
+    return True
 
 
 def _get_session(

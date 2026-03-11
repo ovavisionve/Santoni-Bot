@@ -27,10 +27,11 @@ IdempiereSession = sessionmaker(
 # Enforce read-only on iDempiere connections
 @event.listens_for(idempiere_engine, "connect")
 def set_idempiere_readonly(dbapi_connection, connection_record):
-    """Set iDempiere connections to read-only at the database level."""
+    """Set iDempiere connections to read-only + statement timeout."""
     try:
         cursor = dbapi_connection.cursor()
         cursor.execute("SET default_transaction_read_only = ON")
+        cursor.execute("SET statement_timeout = '30s'")
         cursor.close()
     except Exception as e:
         logger.warning("Could not set iDempiere read-only mode: %s", e)
