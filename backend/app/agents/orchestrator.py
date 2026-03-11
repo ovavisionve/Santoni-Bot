@@ -8,7 +8,6 @@ Performance: Uses keyword-based classification (~0ms) instead of LLM classificat
 import logging
 import re
 from collections.abc import AsyncIterator
-from datetime import datetime
 
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 
@@ -156,24 +155,11 @@ _KEYWORD_RULES: list[tuple[str, list[str]]] = [
     ]),
 ]
 
-# Pure greetings — these get an instant canned response (no LLM call)
-_GREETING_ONLY = [
-    "hola", "buenos dias", "buenos días", "buenas tardes", "buenas noches",
-    "hey", "saludos", "buen dia", "buen día",
-]
-
-# Thanks — instant canned response
-_THANKS_PATTERNS = ["gracias", "muchas gracias", "genial gracias", "ok gracias", "perfecto gracias"]
-
-# Help / about patterns — instant canned response
-_HELP_PATTERNS = [
-    "ayuda", "que puedes hacer", "qué puedes hacer",
-    "quien eres", "quién eres", "como funciona", "cómo funciona",
-]
-
-# General patterns (all above combined — for classifier detection)
+# Greetings / general patterns
 _GENERAL_PATTERNS = [
-    *_GREETING_ONLY, *_THANKS_PATTERNS, *_HELP_PATTERNS,
+    "hola", "buenos dias", "buenos días", "buenas tardes", "buenas noches",
+    "gracias", "ayuda", "que puedes hacer", "qué puedes hacer",
+    "quien eres", "quién eres", "como funciona", "cómo funciona",
 ]
 
 
@@ -198,14 +184,8 @@ def classify_by_keywords(
     """
     msg = message.lower()
 
-    # Check greetings / general first — all get instant canned responses (no LLM)
+    # Check greetings / general first
     if any(p in msg for p in _GENERAL_PATTERNS) and len(msg) < 60:
-        if any(p in msg for p in _GREETING_ONLY):
-            return "greeting"
-        if any(p in msg for p in _THANKS_PATTERNS):
-            return "thanks"
-        if any(p in msg for p in _HELP_PATTERNS):
-            return "help"
         return "general"
 
     # Check for accounting codes (e.g. "2.01.01.10") → always contabilidad
@@ -266,15 +246,9 @@ def classify_with_confidence(
     """
     msg = message.lower()
 
-    # Greetings / thanks / help — all instant (no LLM)
+    # Greetings
     if any(p in msg for p in _GENERAL_PATTERNS) and len(msg) < 60:
-        if any(p in msg for p in _GREETING_ONLY):
-            return "greeting", 1.0, "saludo_directo"
-        if any(p in msg for p in _THANKS_PATTERNS):
-            return "thanks", 1.0, "agradecimiento"
-        if any(p in msg for p in _HELP_PATTERNS):
-            return "help", 1.0, "pregunta_ayuda"
-        return "general", 1.0, "pregunta_general"
+        return "general", 1.0, "saludo_directo"
 
     # Accounting code
     if _has_account_code(msg):
@@ -428,19 +402,7 @@ class Orchestrator:
                 "score_breakdown": breakdown,
             }
 
-        # Handle greetings / thanks / help instantly (no LLM call)
-        if agent_name in ("greeting", "thanks", "help"):
-            instant_response = self._instant_response(agent_name, message)
-            score, breakdown = compute_confidence_score(routing_score, False, "general")
-            return {
-                "response": instant_response,
-                "agent_used": "general",
-                "metadata": {"classification": agent_name},
-                "confidence_score": score,
-                "score_breakdown": {**breakdown, "match_type": match_type},
-            }
-
-        # Handle general queries (need LLM for open-ended questions)
+        # Handle general queries
         if agent_name == "general":
             result = await self._handle_general(message, history)
             score, breakdown = compute_confidence_score(routing_score, False, "general")
@@ -496,10 +458,6 @@ class Orchestrator:
             yield "Lo siento, no tienes permisos para acceder a la información de ese departamento."
             return
 
-        if agent_name in ("greeting", "thanks", "help"):
-            yield self._instant_response(agent_name, message)
-            return
-
         if agent_name == "general":
             async for token in self._stream_general(message, history):
                 yield token
@@ -525,64 +483,6 @@ class Orchestrator:
         """Return (agent_name, confidence_score, match_type) for a message."""
         allowed = user.allowed_departments
         return classify_with_confidence(message, allowed, last_agent=last_agent)
-
-    _CAPABILITIES_TEXT = (
-        "📊 **Ventas** — facturación, clientes, cobranza, zonas\n"
-        "💰 **Finanzas** — saldos bancarios, cuentas por cobrar/pagar\n"
-        "📒 **Contabilidad** — balance, estado de resultados, cuentas contables\n"
-        "👥 **RRHH** — empleados, nómina, ausentismo, cumpleañeros\n"
-        "🏭 **Producción** — órdenes, cantidades, desperdicios, inventario\n"
-        "📦 **Compras de Insumos** — proveedores, órdenes de compra, precios\n"
-        "🌾 **Compras a Productores** — arroz, maíz, productores, pagos"
-    )
-
-    @classmethod
-    def _instant_response(cls, response_type: str, message: str) -> str:
-        """Return an instant canned response (no LLM call, ~0ms)."""
-        if response_type == "thanks":
-            return (
-                "¡Con gusto! 😊 Si necesitas algo más, no dudes en preguntar. "
-                "Estoy aquí para ayudarte."
-            )
-
-        if response_type == "help":
-            return (
-                "Soy **SantoniBot**, el asistente inteligente de "
-                "**Alimentos Santoni, C.A.** Puedo ayudarte con consultas de:\n\n"
-                f"{cls._CAPABILITIES_TEXT}\n\n"
-                "Solo escribe tu pregunta en lenguaje natural. Por ejemplo:\n"
-                "- *\"¿Cuáles fueron las ventas de enero?\"*\n"
-                "- *\"¿Cuántos empleados hay en planta?\"*\n"
-                "- *\"Dame el balance general de febrero\"*\n\n"
-                "¿En qué te puedo ayudar?"
-            )
-
-        # Default: greeting
-        msg = message.lower().strip()
-        now = datetime.now()
-        hora = now.hour
-
-        if hora < 12:
-            saludo = "Buenos días"
-        elif hora < 18:
-            saludo = "Buenas tardes"
-        else:
-            saludo = "Buenas noches"
-
-        # Check if user included a time-based greeting
-        if "buenas noches" in msg:
-            saludo = "Buenas noches"
-        elif "buenas tardes" in msg:
-            saludo = "Buenas tardes"
-        elif "buenos dias" in msg or "buenos días" in msg:
-            saludo = "Buenos días"
-
-        return (
-            f"¡{saludo}! 👋 Soy **SantoniBot**, el asistente inteligente de "
-            f"**Alimentos Santoni, C.A.** Estoy aquí para ayudarte con consultas de:\n\n"
-            f"{cls._CAPABILITIES_TEXT}\n\n"
-            f"¿En qué te puedo ayudar hoy?"
-        )
 
     async def _handle_document(
         self,

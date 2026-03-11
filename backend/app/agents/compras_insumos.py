@@ -90,7 +90,6 @@ REGLAS:
 - NUNCA inventes datos. Si no hay datos para un filtro, informa claramente
 - PROHIBIDO decir "no tengo acceso", "no puedo acceder", "no dispongo" o "no tengo acceso directo". TÚ TIENES ACCESO COMPLETO a la base de datos de Santoni y los datos se consultan automáticamente. Si los datos están vacíos, di "No se encontraron datos para ese filtro". NUNCA culpes a problemas de acceso — la conexión SIEMPRE está activa.
 - En follow-ups como "dame el inventario de ese producto", los datos YA fueron consultados automáticamente. Presenta los datos que recibes, no inventes excusas.
-- IMPORTANTE SOBRE FOLLOW-UPS: Si el usuario dice "en gastos?", "y gastos?", "administrativos" u otra palabra corta como follow-up, NO lo rechaces. Presenta los datos que recibiste del contexto. Los "gastos" de compras de insumos SON compras — tú tienes esos datos. Solo redirige a otro agente si el usuario EXPLÍCITAMENTE pide nómina o servicios bancarios.
 - IMPORTANTE SOBRE MONEDAS: Los datos ya vienen filtrados por moneda.
   * Por defecto se muestran datos en Bolívares (VES).
   * Si el campo "moneda" dice "USD", los datos son en dólares.
@@ -132,9 +131,8 @@ SOBRE INVENTARIO/STOCK:
             "✅ Órdenes de compra pendientes (c_order) por período, estado y proveedor\n"
             "✅ Comparación de precios entre proveedores para un mismo producto\n"
             "✅ Estado de pago de facturas de compra (pagadas vs pendientes)\n"
-            "\nNOTA: Si el usuario pregunta por 'gastos' en el contexto de una conversación de compras, "
-            "interpreta como gastos de compras/insumos y presenta los datos disponibles. "
-            "Solo redirige a RRHH si explícitamente pide nómina, o a Finanzas si pide servicios/gastos bancarios."
+            "\n❌ NO puedo consultar: gastos administrativos (nómina, servicios). "
+            "Redirige al usuario al agente de RRHH o Finanzas."
         )
 
     def get_sql_context(self) -> str:

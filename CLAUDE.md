@@ -360,34 +360,6 @@ HISTORICAL_DATA_CUTOFF=2026-03-01  # Fecha de corte
 
 ---
 
-## Fix ChromaDB '_type' (11/Mar 2026)
-
-### Problema
-Al arrancar el backend, todas las colecciones de ChromaDB (`santonibot_ventas`, `santonibot_finanzas`,
-etc.) fallan con `KeyError: '_type'`. Esto ocurre por incompatibilidad de metadatos de embedding function
-entre versiones de ChromaDB. El RAG no funciona (0 documentos indexados) pero el bot sigue operativo
-porque el RAG es opcional (graceful degradation).
-
-### Fix aplicado (commit `5b81d9e`)
-En `rag_service.py` → `_get_collection()`: cuando `get_or_create_collection` falla con `KeyError`,
-ahora se elimina la colección corrupta y se recrea limpia automáticamente.
-
-### Punto de rollback
-Si el fix causa problemas, revertir al commit anterior:
-```bash
-git revert 5b81d9e
-# O directamente:
-git reset --hard 3b7e581
-docker compose build --no-cache backend && docker compose up -d
-```
-**Commit seguro pre-fix:** `3b7e581` (fix: agregar get_capabilities de los 7 agentes)
-
-### Plazo
-Si en 1 hora desde el deploy del fix seguimos con problemas de ChromaDB, revertir a `3b7e581`
-y dejar el RAG deshabilitado hasta investigar mejor.
-
----
-
 ## Convenciones de Código
 
 - **Idioma del código**: Variables y funciones en inglés, comentarios y mensajes al usuario en español

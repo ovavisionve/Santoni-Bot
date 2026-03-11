@@ -21,7 +21,7 @@ settings = get_settings()
 logger = logging.getLogger("santonibot.agents")
 
 # Performance limits
-_MAX_TABLE_ROWS = 30
+_MAX_TABLE_ROWS = 50
 _MAX_HISTORY_MESSAGES = 40
 _MAX_TOKENS = 4096
 
@@ -159,9 +159,27 @@ class BaseAgent(ABC):
         )
         messages = [SystemMessage(content=enhanced_prompt)]
 
-        # Fetch real data from iDempiere (sync — runs in the event loop thread)
-        # NOTE: Catalog and RAG context were previously injected here but removed
-        # because they add thousands of extra tokens that slow LLM responses.
+        # Data Catalog: inject real schema/stats context from iDempiere (optional)
+        try:
+            from app.services.data_catalog import get_catalog_service
+            catalog = get_catalog_service()
+            catalog_context = catalog.get_department_context(self.department)
+            if catalog_context:
+                messages.append(SystemMessage(content=catalog_context))
+        except Exception as exc:
+            logger.debug("Data catalog unavailable for %s: %s", self.name, exc)
+
+        # RAG: retrieve relevant knowledge-base context (optional)
+        try:
+            from app.services.rag_service import get_rag_service
+            rag = get_rag_service()
+            rag_context = rag.get_context_for_agent(self.department, message)
+            if rag_context:
+                messages.append(SystemMessage(content=rag_context))
+        except Exception as exc:
+            logger.debug("RAG context unavailable for %s: %s", self.name, exc)
+
+        # Fetch real data from the database
         try:
             from app.utils.sentry_utils import set_agent_context, track_query_performance
             set_agent_context(self.name)
@@ -172,6 +190,7 @@ class BaseAgent(ABC):
                 "Error in %s.fetch_data: %s: %s",
                 self.name, type(exc).__name__, exc, exc_info=True,
             )
+            # Report to Sentry with agent context
             try:
                 from app.utils.sentry_utils import capture_agent_error
                 capture_agent_error(self.name, exc, {

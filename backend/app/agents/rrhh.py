@@ -124,47 +124,6 @@ Datos de RRHH en iDempiere:
 - c_bpartner: Datos de empleados (isemployee='Y', name, value)
 """
 
-    # Organisation name mapping (keyword → exact iDempiere name)
-    _ORG_MAP = [
-        ("inpromaiz", "InproMaiz"),
-        ("inpro maiz", "InproMaiz"),
-        ("inproa santoni", "INPROA SANTONI"),
-        ("inproa", "INPROA SANTONI"),
-        ("santoni service", "Santoni Service"),
-        ("agropecuaria", "AGROPECUARIA R.R."),
-        ("aga agricola", "AGA AGRICOLA"),
-        ("aga agrícola", "AGA AGRICOLA"),
-        ("agroinproa", "AGROINPROA"),
-        ("inversiones aga", "INVERSIONES AGA"),
-    ]
-
-    @classmethod
-    def _extract_org_name(cls, msg: str) -> str | None:
-        msg_lower = msg.lower()
-        for kw, val in cls._ORG_MAP:
-            if kw in msg_lower:
-                return val
-        return None
-
-    @staticmethod
-    def _resolve_org_name_to_ids(org_name: str) -> list[int] | None:
-        """Resolve an organisation name to its ad_org_id(s) via DB lookup."""
-        try:
-            from app.database import IdempiereSession
-            from sqlalchemy import text
-            db = IdempiereSession()
-            try:
-                result = db.execute(
-                    text("SELECT ad_org_id FROM adempiere.ad_org WHERE name ILIKE :name"),
-                    {"name": f"%{org_name}%"},
-                ).fetchall()
-                return [r[0] for r in result] if result else None
-            finally:
-                db.close()
-        except Exception as exc:
-            logger.debug("Could not resolve org_name '%s': %s", org_name, exc)
-            return None
-
     # Job title keywords that indicate a cargo-specific query.
     # When any of these appear, extract the surrounding words as the cargo search term.
     _CARGO_KEYWORDS = [
@@ -252,14 +211,6 @@ Datos de RRHH en iDempiere:
         msg = message.lower()
         sections = []
 
-        # Extract organisation from message (overrides user profile org_ids)
-        org_name = self._extract_org_name(message)
-        if org_name:
-            resolved = self._resolve_org_name_to_ids(org_name)
-            if resolved:
-                org_ids = resolved
-                sections.append(f"*Filtrando por organización: {org_name}*")
-
         # Extract dates
         date_from, date_to = extract_date_range(message)
         mes, anio = extract_month_year(message)
@@ -320,18 +271,14 @@ Datos de RRHH en iDempiere:
                 "contratación", "contratacion", "contrataciones", "contrataron",
                 "nuevo ingreso", "nuevos ingresos",
             ]):
-                # Only fetch full list when filtering by date (new hires) or
-                # explicitly asking for "lista" — the summary already has counts.
-                wants_list = "lista" in msg or date_from
-                if wants_list:
-                    data = build_employee_list(
-                        org_ids=org_ids,
-                        date_from=date_from, date_to=date_to,
-                    )
-                    if data:
-                        date_label = f" - {label}" if date_from else ""
-                        sections.append(f"## Lista de Empleados Activos{date_label} ({len(data)} registros)")
-                        sections.append(self._format_table(data))
+                data = build_employee_list(
+                    org_ids=org_ids,
+                    date_from=date_from, date_to=date_to,
+                )
+                if data:
+                    date_label = f" - {label}" if date_from else ""
+                    sections.append(f"## Lista de Empleados Activos{date_label} ({len(data)} registros)")
+                    sections.append(self._format_table(data))
 
             if any(w in msg for w in [
                 "cumpleaño", "cumpleaños", "cumpleañero", "cumpleañeros",
@@ -377,31 +324,9 @@ Datos de RRHH en iDempiere:
                     mes=mes, anio=anio, org_ids=org_ids,
                     date_from=date_from, date_to=date_to,
                 )
-                # Check if the data has actual records
-                has_records = False
-                if data:
-                    for v in data.values():
-                        if isinstance(v, list) and len(v) > 0:
-                            has_records = True
-                            break
-                        if isinstance(v, (int, float)) and v > 0:
-                            has_records = True
-                            break
-                if has_records:
-                    sections.append(self._format_summary(
-                        data, f"Indicadores de Ausentismo - {label}",
-                    ))
-                else:
-                    org_label = f" en {org_name}" if org_name else ""
-                    sections.append(
-                        f"## Indicadores de Ausentismo - {label}{org_label}\n"
-                        f"No se encontraron registros de ausentismo (inasistencias, permisos, "
-                        f"reposos, licencias) para el período {label}{org_label}.\n"
-                        f"Esto puede deberse a que:\n"
-                        f"- No hay conceptos de ausencia procesados en nómina para ese período\n"
-                        f"- Los datos de nómina aún no han sido cargados\n\n"
-                        f"Puedes intentar con otro período o consultar el total de la empresa."
-                    )
+                sections.append(self._format_summary(
+                    data, f"Indicadores de Ausentismo - {label}",
+                ))
 
             if any(w in msg for w in [
                 "rotación", "rotacion", "baja", "bajas", "egreso", "egresos",

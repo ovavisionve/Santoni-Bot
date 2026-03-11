@@ -18,7 +18,6 @@ idempiere_engine = create_engine(
     pool_pre_ping=True,
     pool_size=5,
     max_overflow=10,
-    connect_args={"options": "-c statement_timeout=120000"},  # 120s timeout per query
 )
 IdempiereSession = sessionmaker(
     autocommit=False, autoflush=False, bind=idempiere_engine

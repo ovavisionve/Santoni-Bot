@@ -247,52 +247,6 @@ def _normalize_search_word(w: str) -> str:
     return normalized
 
 
-def _build_product_search_conditions(
-    params: dict,
-    product_search: str,
-    prefix: str = "prod",
-) -> str:
-    """Build WHERE clause for product search on p.name / p.value.
-
-    Returns the condition string (without outer parens or leading AND).
-    """
-    # Product code: exact substring match
-    if re.search(r'[A-Za-z]{2,}-[A-Za-z]{2,}-\d+', product_search):
-        params[f"{prefix}_search"] = f"%{product_search}%"
-        return f"(p.name ILIKE :{prefix}_search OR p.value ILIKE :{prefix}_search)"
-
-    # Text search: split into meaningful words
-    words = [
-        w for w in product_search.lower().split()
-        if w not in _PRODUCT_STOP_WORDS and len(w) >= 2
-    ]
-
-    if not words:
-        # Fallback to exact substring
-        params[f"{prefix}_search"] = f"%{product_search}%"
-        return f"(p.name ILIKE :{prefix}_search OR p.value ILIKE :{prefix}_search)"
-
-    # Normalize words (remove accents + de-pluralize)
-    clean_words = [_normalize_search_word(w) for w in words]
-    original_words = list(words)
-
-    word_conds = []
-    for i, w in enumerate(clean_words):
-        pk = f"{prefix}_w{i}"
-        params[pk] = f"%{w}%"
-        cond = f"(p.name ILIKE :{pk} OR p.value ILIKE :{pk})"
-        if original_words[i] != w:
-            pk_orig = f"{prefix}_wo{i}"
-            params[pk_orig] = f"%{original_words[i]}%"
-            cond = f"(p.name ILIKE :{pk} OR p.value ILIKE :{pk} OR p.name ILIKE :{pk_orig} OR p.value ILIKE :{pk_orig})"
-        word_conds.append(cond)
-
-    if len(word_conds) <= 2:
-        return f"({' AND '.join(word_conds)})"
-    else:
-        return f"({word_conds[0]} AND ({' OR '.join(word_conds[1:])}))"
-
-
 def _add_product_search_filter(
     conditions: list[str],
     params: dict,
@@ -307,25 +261,56 @@ def _add_product_search_filter(
     - If 3+ words: at least 2 must match (OR groups)
     With accent normalization and de-pluralization.
     """
-    conditions.append(_build_product_search_conditions(params, product_search, prefix))
+    # Product code: exact substring match
+    if re.search(r'[A-Za-z]{2,}-[A-Za-z]{2,}-\d+', product_search):
+        params[f"{prefix}_search"] = f"%{product_search}%"
+        conditions.append(
+            f"(p.name ILIKE :{prefix}_search OR p.value ILIKE :{prefix}_search)"
+        )
+        return
 
+    # Text search: split into meaningful words
+    words = [
+        w for w in product_search.lower().split()
+        if w not in _PRODUCT_STOP_WORDS and len(w) >= 2
+    ]
 
-def _build_product_id_subquery(
-    params: dict,
-    product_search: str,
-    prefix: str = "prod",
-) -> str:
-    """Return a SQL subquery that selects m_product_id matching the search.
+    if not words:
+        # Fallback to exact substring
+        params[f"{prefix}_search"] = f"%{product_search}%"
+        conditions.append(
+            f"(p.name ILIKE :{prefix}_search OR p.value ILIKE :{prefix}_search)"
+        )
+        return
 
-    Used to pre-filter c_invoiceline/c_orderline by product BEFORE the JOIN,
-    so PostgreSQL scans only matching rows instead of the full table.
-    """
-    product_cond = _build_product_search_conditions(params, product_search, prefix)
-    return (
-        f"il.m_product_id IN ("
-        f"SELECT p.m_product_id FROM adempiere.m_product p WHERE {product_cond}"
-        f")"
-    )
+    # Normalize words (remove accents + de-pluralize)
+    clean_words = [_normalize_search_word(w) for w in words]
+    # Also keep original words as alternates for ILIKE
+    original_words = list(words)
+
+    word_conds = []
+    for i, w in enumerate(clean_words):
+        pk = f"{prefix}_w{i}"
+        # Use the normalized word for matching
+        params[pk] = f"%{w}%"
+        cond = f"(p.name ILIKE :{pk} OR p.value ILIKE :{pk})"
+        # Also try the original word if different
+        if original_words[i] != w:
+            pk_orig = f"{prefix}_wo{i}"
+            params[pk_orig] = f"%{original_words[i]}%"
+            cond = f"(p.name ILIKE :{pk} OR p.value ILIKE :{pk} OR p.name ILIKE :{pk_orig} OR p.value ILIKE :{pk_orig})"
+        word_conds.append(cond)
+
+    if len(word_conds) <= 2:
+        # For 1-2 words: ALL must match
+        conditions.append(f"({' AND '.join(word_conds)})")
+    else:
+        # For 3+ words: require first word + at least one other
+        # This avoids "cajas de carton para cereales" failing because
+        # one word doesn't match exactly
+        conditions.append(
+            f"({word_conds[0]} AND ({' OR '.join(word_conds[1:])}))"
+        )
 
 
 def execute_idempiere_query(query: str, params: dict | None = None) -> list[dict]:
@@ -1251,8 +1236,8 @@ def build_employee_list(
             for r in rows
         ]
         results.sort(key=lambda x: x["nombre"])
-        # When filtering by cargo, allow more results; otherwise cap at 50
-        limit = 200 if cargo_search else 50
+        # When filtering by cargo, allow more results; otherwise cap at 100
+        limit = 200 if cargo_search else 100
         return results[:limit]
     finally:
         db.close()
@@ -1560,45 +1545,16 @@ def build_attendance_summary(
 
         if not by_concept:
             totals["nota"] = (
-                "RESULTADO: La consulta se ejecutó correctamente pero NO se encontraron "
-                "registros de ausentismo en nómina para este período. "
+                "No se encontraron conceptos de ausentismo en nómina para este período. "
                 "Los conceptos buscados incluyen: inasistencia, falta, permiso, "
-                "reposo, incapacidad, licencia. "
-                "Esto significa que no hay ausencias registradas, NO que falte acceso a los datos."
+                "reposo, incapacidad, licencia."
             )
 
-        # Monthly breakdown (useful for multi-month queries)
-        by_month_q = text(
-            f"SELECT EXTRACT(YEAR FROM hp.dateacct)::int AS anio, "
-            f"EXTRACT(MONTH FROM hp.dateacct)::int AS mes, "
-            f"COUNT(DISTINCT hm.c_bpartner_id) AS empleados_afectados, "
-            f"COALESCE(SUM(ABS(hm.amount)), 0) AS monto_bs, "
-            f"COUNT(*) AS ocurrencias "
-            f"FROM adempiere.hr_process hp "
-            f"JOIN adempiere.hr_movement hm ON hp.hr_process_id = hm.hr_process_id "
-            f"JOIN adempiere.hr_concept hc ON hm.hr_concept_id = hc.hr_concept_id "
-            f"WHERE {where} "
-            f"GROUP BY anio, mes ORDER BY anio, mes"
-        )
-        by_month = [
-            {
-                "anio": r[0],
-                "mes": r[1],
-                "empleados_afectados": r[2],
-                "monto_bs": float(r[3]),
-                "ocurrencias": r[4],
-            }
-            for r in db.execute(by_month_q, params).fetchall()
-        ]
-
-        result = {
+        return {
             "totales": totals,
             "por_concepto": by_concept,
             "por_organizacion": by_org,
         }
-        if by_month:
-            result["por_mes"] = by_month
-        return result
     finally:
         db.close()
 
@@ -2197,9 +2153,8 @@ def build_product_purchase_history(
         _add_org_name_filter(conditions, params, org_name, "i")
         _add_date_filter(conditions, params, date_from, date_to, mes, anio, "i.dateinvoiced")
 
-        # Pre-filter products by subquery so PG scans only matching invoicelines
-        product_subq = _build_product_id_subquery(params, product_search, prefix="search")
-        conditions.append(product_subq)
+        # Match by product value (code) or name (word-based for text searches)
+        _add_product_search_filter(conditions, params, product_search, prefix="search")
 
         where = " AND ".join(conditions)
 
@@ -2382,8 +2337,7 @@ def build_supplier_price_comparison(
         _add_org_filter(conditions, params, org_ids, "i")
         _add_org_name_filter(conditions, params, org_name, "i")
         _add_date_filter(conditions, params, date_from, date_to, None, anio, "i.dateinvoiced")
-        product_subq = _build_product_id_subquery(params, product_search, prefix="cmp")
-        conditions.append(product_subq)
+        _add_product_search_filter(conditions, params, product_search, prefix="cmp")
 
         where = " AND ".join(conditions)
 
@@ -2514,7 +2468,7 @@ def build_accounting_summary(
     db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
     try:
         conditions = [
-            "fa.postingtype = 'A'",  # Actual postings only (not budget/statistical)
+            "fa.isactive = 'Y'",
         ]
         params: dict = {}
         _add_org_filter(conditions, params, org_ids, "fa")
@@ -2563,7 +2517,7 @@ def build_accounting_summary(
         # Use correct sign convention: A=debit-normal, L/O=credit-normal
         balance_conds = [
             "ev.accounttype IN ('A', 'L', 'O')",
-            "fa.postingtype = 'A'",  # Actual postings only (not budget/statistical)
+            "fa.isactive = 'Y'",
         ]
         balance_params: dict = {}
         _add_org_filter(balance_conds, balance_params, org_ids, "fa")
@@ -2673,7 +2627,7 @@ def build_account_detail(
         is_credit_normal = acct_type in ("L", "O", "R")
 
         # 2. Build date conditions
-        period_conditions = ["fa.postingtype = 'A'", "fa.account_id = :acct_id"]
+        period_conditions = ["fa.isactive = 'Y'", "fa.account_id = :acct_id"]
         period_params: dict = {"acct_id": acct_id}
         _add_org_filter(period_conditions, period_params, org_ids, "fa")
         _add_currency_filter(period_conditions, period_params, currency_ids, "fa")
@@ -2722,7 +2676,7 @@ def build_account_detail(
         saldo_inicial = 0.0
         if date_from:
             opening_conds = [
-                "fa.postingtype = 'A'",  # Actual postings only (not budget/statistical)
+                "fa.isactive = 'Y'",
                 "fa.account_id = :acct_id",
                 "fa.dateacct < :date_from",
             ]
@@ -2738,7 +2692,7 @@ def build_account_detail(
             saldo_inicial = float(r[0]) if r else 0.0
         elif mes and anio:
             opening_conds = [
-                "fa.postingtype = 'A'",  # Actual postings only (not budget/statistical)
+                "fa.isactive = 'Y'",
                 "fa.account_id = :acct_id",
                 "fa.dateacct < :opening_date",
             ]
@@ -2802,7 +2756,7 @@ def build_account_detail(
             curr_q = text(
                 "SELECT DISTINCT c.iso_code FROM adempiere.fact_acct fa "
                 "JOIN adempiere.c_currency c ON fa.c_currency_id = c.c_currency_id "
-                "WHERE fa.account_id = :acct_id AND fa.postingtype = 'A' LIMIT 3"
+                "WHERE fa.account_id = :acct_id AND fa.isactive = 'Y' LIMIT 3"
             )
             curr_rows = db.execute(curr_q, {"acct_id": acct_id}).fetchall()
             if curr_rows:
@@ -2924,9 +2878,7 @@ def build_inventory_stock(
             for r in db.execute(by_cat_q, params).fetchall()
         ]
 
-        # ── Detail by product (top N by quantity) ──
-        # More rows when filtering by product; fewer for full inventory queries
-        detail_limit = 50 if product_search else 30
+        # ── Detail by product (top 50 by quantity) ──
         detail_q = text(
             f"SELECT p.value AS codigo, p.name AS producto, "
             f"COALESCE(pc.name, 'Sin Categoría') AS categoria, "
@@ -2943,9 +2895,8 @@ def build_inventory_stock(
             f"LEFT JOIN adempiere.c_uom u ON p.c_uom_id = u.c_uom_id "
             f"WHERE {where} "
             f"GROUP BY p.value, p.name, pc.name, w.name, o.name, u.name "
-            f"ORDER BY cantidad DESC LIMIT :detail_limit"
+            f"ORDER BY cantidad DESC LIMIT 50"
         )
-        params["detail_limit"] = detail_limit
         detail = [
             {
                 "codigo": r[0],
