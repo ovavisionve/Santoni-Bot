@@ -1045,6 +1045,7 @@ def build_product_purchase_history(
     date_to: str | None = None,
     mes: int | None = None,
     anio: int | None = None,
+    org_name: str | None = None,
 ) -> list[dict]:
     """Product purchase history - routes to demo or iDempiere."""
     if _is_production():
@@ -1052,6 +1053,7 @@ def build_product_purchase_history(
         return _prod(
             product_search=product_search, org_ids=org_ids,
             date_from=date_from, date_to=date_to, mes=mes, anio=anio,
+            org_name=org_name,
         )
     return []
 
@@ -1086,6 +1088,7 @@ def build_supplier_price_comparison(
     anio: int | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    org_name: str | None = None,
 ) -> list[dict]:
     """Supplier price comparison - routes to demo or iDempiere."""
     if _is_production():
@@ -1093,6 +1096,7 @@ def build_supplier_price_comparison(
         return _prod(
             product_search=product_search, org_ids=org_ids,
             anio=anio, date_from=date_from, date_to=date_to,
+            org_name=org_name,
         )
     return []
 

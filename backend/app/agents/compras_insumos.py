@@ -200,6 +200,28 @@ Datos de compras de insumos en iDempiere:
         "proveedores que venden", "alternativas de proveedor",
     ]
 
+    # Organization name mapping (keyword → iDempiere org name)
+    _ORG_MAP = [
+        ("inpromaiz", "InproMaiz"),
+        ("inpro maiz", "InproMaiz"),
+        ("inproa santoni", "INPROA SANTONI"),
+        ("inproa", "INPROA SANTONI"),
+        ("santoni service", "Santoni Service"),
+        ("agropecuaria", "AGROPECUARIA"),
+        ("aga agricola", "AGA AGRICOLA"),
+        ("aga agrícola", "AGA AGRICOLA"),
+        ("agroinproa", "AGROINPROA"),
+        ("inversiones aga", "INVERSIONES AGA"),
+    ]
+
+    @classmethod
+    def _extract_org_name(cls, msg: str) -> str | None:
+        msg_lower = msg.lower()
+        for kw, val in cls._ORG_MAP:
+            if kw in msg_lower:
+                return val
+        return None
+
     # Keywords that indicate payment status query
     _PAYMENT_KEYWORDS = [
         "estado de pago", "pagada", "pagadas", "pendiente de pago",
@@ -426,6 +448,17 @@ Datos de compras de insumos en iDempiere:
 
         label = build_period_label(date_from, date_to, mes, anio)
 
+        # Extract organization name from message (e.g. "en la empresa INPROA SANTONI")
+        org_name = self._extract_org_name(message)
+        if not org_name and history:
+            for role, content in reversed(history):
+                if role != "user":
+                    continue
+                o = self._extract_org_name(content)
+                if o:
+                    org_name = o
+                    break
+
         # Detect currency preference
         currency_ids = self._detect_currency(message, history)
 
@@ -482,6 +515,7 @@ Datos de compras de insumos en iDempiere:
                     product_search=product_search,
                     org_ids=org_ids, anio=anio,
                     date_from=date_from, date_to=date_to,
+                    org_name=org_name,
                 )
                 if compare_data:
                     product_found = True
@@ -505,6 +539,7 @@ Datos de compras de insumos en iDempiere:
                             product_search=product_search,
                             org_ids=org_ids, anio=anio,
                             date_from=date_from, date_to=date_to,
+                            org_name=org_name,
                         )
                         if compare_data:
                             product_found = True
@@ -519,6 +554,7 @@ Datos de compras de insumos en iDempiere:
                             org_ids=org_ids,
                             date_from=date_from, date_to=date_to,
                             mes=mes, anio=anio,
+                            org_name=org_name,
                         )
                         if prod_data:
                             product_found = True
@@ -531,6 +567,7 @@ Datos de compras de insumos en iDempiere:
                             prod_data_all = build_product_purchase_history(
                                 product_search=product_search,
                                 org_ids=org_ids,
+                                org_name=org_name,
                             )
                             if prod_data_all:
                                 product_found = True

@@ -10,7 +10,7 @@ They need validation after connecting to Santoni's actual iDempiere instance
 Convention:
 - issotrx = 'Y' → Sales transaction (venta)
 - issotrx = 'N' → Purchase transaction (compra)
-- docstatus = 'CO' → Completed document
+- docstatus IN ('CO', 'CL') → Completed or Closed document
 - isactive = 'Y' → Active record
 
 Historical data routing (Mar 2026+):
@@ -430,7 +430,7 @@ def build_sales_summary(
     try:
         conditions = [
             "i.issotrx = 'Y'",
-            "i.docstatus = 'CO'",
+            "i.docstatus IN ('CO', 'CL')",
             "i.isactive = 'Y'",
         ]
         params: dict = {}
@@ -638,7 +638,7 @@ def build_collection_summary(
     try:
         conditions = [
             "p.isreceipt = 'Y'",
-            "p.docstatus = 'CO'",
+            "p.docstatus IN ('CO', 'CL')",
             "p.isactive = 'Y'",
         ]
         params: dict = {}
@@ -738,7 +738,7 @@ def build_top_clients(
     try:
         conditions = [
             "i.issotrx = 'Y'",
-            "i.docstatus = 'CO'",
+            "i.docstatus IN ('CO', 'CL')",
             "i.isactive = 'Y'",
         ]
         params: dict = {"limit": limit}
@@ -850,7 +850,7 @@ def build_overdue_receivables(
             "LEFT JOIN client_zone cz ON bp.c_bpartner_id = cz.c_bpartner_id "
             "LEFT JOIN adempiere.c_paymentterm pterm ON i.c_paymentterm_id = pterm.c_paymentterm_id "
             "JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id "
-            "WHERE i.issotrx = 'Y' AND i.docstatus = 'CO' AND i.ispaid = 'N' "
+            "WHERE i.issotrx = 'Y' AND i.docstatus IN ('CO', 'CL') AND i.ispaid = 'N' "
             "AND i.isactive = 'Y' "
             "AND dt.docbasetype = 'ARI' "
             "AND i.dateinvoiced >= (CURRENT_DATE - INTERVAL '3 years') "
@@ -946,7 +946,7 @@ def build_financial_summary(
         cur_label = _currency_label("i")
         ar_conditions = [
             "i.issotrx = 'Y'",
-            "i.docstatus = 'CO'",
+            "i.docstatus IN ('CO', 'CL')",
             "i.ispaid = 'N'",
             "i.isactive = 'Y'",
         ]
@@ -975,7 +975,7 @@ def build_financial_summary(
         # Overdue receivables - also by currency
         overdue_conds = [
             "i.issotrx = 'Y'",
-            "i.docstatus = 'CO'",
+            "i.docstatus IN ('CO', 'CL')",
             "i.ispaid = 'N'",
             "i.isactive = 'Y'",
             "(i.dateinvoiced + CASE WHEN COALESCE(pt.netdays, 0) = 0 THEN 30 ELSE pt.netdays END) < CURRENT_DATE",
@@ -1003,7 +1003,7 @@ def build_financial_summary(
         # Accounts payable (unpaid purchase invoices) - separated by currency
         ap_conditions = [
             "i.issotrx = 'N'",
-            "i.docstatus = 'CO'",
+            "i.docstatus IN ('CO', 'CL')",
             "i.ispaid = 'N'",
             "i.isactive = 'Y'",
         ]
@@ -1032,7 +1032,7 @@ def build_financial_summary(
         # Overdue payables - also by currency
         overdue_ap_conds = [
             "i.issotrx = 'N'",
-            "i.docstatus = 'CO'",
+            "i.docstatus IN ('CO', 'CL')",
             "i.ispaid = 'N'",
             "i.isactive = 'Y'",
             "(i.dateinvoiced + CASE WHEN COALESCE(pt.netdays, 0) = 0 THEN 30 ELSE pt.netdays END) < CURRENT_DATE",
@@ -1366,7 +1366,7 @@ def build_payroll_summary(
     db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
     try:
         conditions = [
-            "hp.docstatus = 'CO'",
+            "hp.docstatus IN ('CO', 'CL')",
             "hp.isactive = 'Y'",
         ]
         params: dict = {}
@@ -1449,7 +1449,7 @@ def build_attendance_summary(
     db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
     try:
         conditions = [
-            "hp.docstatus = 'CO'",
+            "hp.docstatus IN ('CO', 'CL')",
             "hp.isactive = 'Y'",
         ]
         params: dict = {}
@@ -1653,7 +1653,7 @@ def build_production_summary(
     """
     db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
     try:
-        conditions = ["io.isactive = 'Y'", "io.docstatus = 'CO'"]
+        conditions = ["io.isactive = 'Y'", "io.docstatus IN ('CO', 'CL')"]
         params: dict = {}
         _add_org_filter(conditions, params, org_ids, "io")
         _add_date_filter(conditions, params, date_from, date_to, mes, anio, "io.movementdate")
@@ -1752,7 +1752,7 @@ def build_production_orders(
     """Recent material movement documents from iDempiere m_inout."""
     db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
     try:
-        conditions = ["io.isactive = 'Y'", "io.docstatus = 'CO'"]
+        conditions = ["io.isactive = 'Y'", "io.docstatus IN ('CO', 'CL')"]
         params: dict = {}
         _add_org_filter(conditions, params, org_ids, "io")
         _add_date_filter(conditions, params, date_from, date_to, mes, anio, "io.movementdate")
@@ -1808,7 +1808,7 @@ def build_producer_purchases(
     try:
         conditions = [
             "o.issotrx = 'N'",
-            "o.docstatus = 'CO'",
+            "o.docstatus IN ('CO', 'CL')",
             "o.isactive = 'Y'",
         ]
         params: dict = {}
@@ -1941,7 +1941,7 @@ def build_producer_pending_payments(
     try:
         conditions = [
             "i.issotrx = 'N'",
-            "i.docstatus = 'CO'",
+            "i.docstatus IN ('CO', 'CL')",
             "i.ispaid = 'N'",
             "i.isactive = 'Y'",
             "i.dateinvoiced >= (CURRENT_DATE - INTERVAL '2 years')",
@@ -1990,7 +1990,7 @@ def build_producer_price_analysis(
     try:
         conditions = [
             "o.issotrx = 'N'",
-            "o.docstatus = 'CO'",
+            "o.docstatus IN ('CO', 'CL')",
             "o.isactive = 'Y'",
         ]
         params: dict = {}
@@ -2042,7 +2042,7 @@ def build_supply_purchases(
     try:
         conditions = [
             "i.issotrx = 'N'",
-            "i.docstatus = 'CO'",
+            "i.docstatus IN ('CO', 'CL')",
             "i.isactive = 'Y'",
         ]
         params: dict = {}
@@ -2134,6 +2134,7 @@ def build_product_purchase_history(
     date_to: str | None = None,
     mes: int | None = None,
     anio: int | None = None,
+    org_name: str | None = None,
 ) -> list[dict]:
     """Purchase history for a specific product from iDempiere.
 
@@ -2144,11 +2145,12 @@ def build_product_purchase_history(
     try:
         conditions = [
             "i.issotrx = 'N'",
-            "i.docstatus = 'CO'",
+            "i.docstatus IN ('CO', 'CL')",
             "i.isactive = 'Y'",
         ]
         params: dict = {}
         _add_org_filter(conditions, params, org_ids, "i")
+        _add_org_name_filter(conditions, params, org_name, "i")
         _add_date_filter(conditions, params, date_from, date_to, mes, anio, "i.dateinvoiced")
 
         # Match by product value (code) or name (word-based for text searches)
@@ -2318,6 +2320,7 @@ def build_supplier_price_comparison(
     anio: int | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    org_name: str | None = None,
 ) -> list[dict]:
     """Compare prices from different suppliers for a specific product.
 
@@ -2327,11 +2330,12 @@ def build_supplier_price_comparison(
     try:
         conditions = [
             "i.issotrx = 'N'",
-            "i.docstatus = 'CO'",
+            "i.docstatus IN ('CO', 'CL')",
             "i.isactive = 'Y'",
         ]
         params: dict = {}
         _add_org_filter(conditions, params, org_ids, "i")
+        _add_org_name_filter(conditions, params, org_name, "i")
         _add_date_filter(conditions, params, date_from, date_to, None, anio, "i.dateinvoiced")
         _add_product_search_filter(conditions, params, product_search, prefix="cmp")
 
@@ -2388,7 +2392,7 @@ def build_purchase_payment_status(
     try:
         conditions = [
             "i.issotrx = 'N'",
-            "i.docstatus = 'CO'",
+            "i.docstatus IN ('CO', 'CL')",
             "i.isactive = 'Y'",
         ]
         params: dict = {}
