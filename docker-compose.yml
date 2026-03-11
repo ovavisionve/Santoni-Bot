@@ -19,7 +19,7 @@ services:
 
   # ---- ChromaDB (Vector Database) ----
   chromadb:
-    image: chromadb/chroma:latest
+    image: chromadb/chroma:0.5.23
     restart: unless-stopped
     volumes:
       - chroma_data:/chroma/chroma
