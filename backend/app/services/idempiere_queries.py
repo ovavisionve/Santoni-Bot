@@ -2497,7 +2497,7 @@ def build_accounting_summary(
     db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
     try:
         conditions = [
-            "fa.isactive = 'Y'",
+            "fa.postingtype = 'A'",  # Actual postings only (not budget/statistical)
         ]
         params: dict = {}
         _add_org_filter(conditions, params, org_ids, "fa")
@@ -2546,7 +2546,7 @@ def build_accounting_summary(
         # Use correct sign convention: A=debit-normal, L/O=credit-normal
         balance_conds = [
             "ev.accounttype IN ('A', 'L', 'O')",
-            "fa.isactive = 'Y'",
+            "fa.postingtype = 'A'",  # Actual postings only (not budget/statistical)
         ]
         balance_params: dict = {}
         _add_org_filter(balance_conds, balance_params, org_ids, "fa")
@@ -2656,7 +2656,7 @@ def build_account_detail(
         is_credit_normal = acct_type in ("L", "O", "R")
 
         # 2. Build date conditions
-        period_conditions = ["fa.isactive = 'Y'", "fa.account_id = :acct_id"]
+        period_conditions = ["fa.postingtype = 'A'", "fa.account_id = :acct_id"]
         period_params: dict = {"acct_id": acct_id}
         _add_org_filter(period_conditions, period_params, org_ids, "fa")
         _add_currency_filter(period_conditions, period_params, currency_ids, "fa")
@@ -2705,7 +2705,7 @@ def build_account_detail(
         saldo_inicial = 0.0
         if date_from:
             opening_conds = [
-                "fa.isactive = 'Y'",
+                "fa.postingtype = 'A'",  # Actual postings only (not budget/statistical)
                 "fa.account_id = :acct_id",
                 "fa.dateacct < :date_from",
             ]
@@ -2721,7 +2721,7 @@ def build_account_detail(
             saldo_inicial = float(r[0]) if r else 0.0
         elif mes and anio:
             opening_conds = [
-                "fa.isactive = 'Y'",
+                "fa.postingtype = 'A'",  # Actual postings only (not budget/statistical)
                 "fa.account_id = :acct_id",
                 "fa.dateacct < :opening_date",
             ]
@@ -2785,7 +2785,7 @@ def build_account_detail(
             curr_q = text(
                 "SELECT DISTINCT c.iso_code FROM adempiere.fact_acct fa "
                 "JOIN adempiere.c_currency c ON fa.c_currency_id = c.c_currency_id "
-                "WHERE fa.account_id = :acct_id AND fa.isactive = 'Y' LIMIT 3"
+                "WHERE fa.account_id = :acct_id AND fa.postingtype = 'A' LIMIT 3"
             )
             curr_rows = db.execute(curr_q, {"acct_id": acct_id}).fetchall()
             if curr_rows:
