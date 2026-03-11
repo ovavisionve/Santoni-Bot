@@ -41,12 +41,12 @@ class Settings(BaseSettings):
     idempiere_db_password: str = ""
 
     # AI Providers
-    # ai_provider: "groq" (free, limited), "openrouter" (cheap, recommended), or "anthropic" (Claude)
-    ai_provider: str = "groq"
+    # ai_provider: "openrouter" (recommended), "groq" (free but limited), or "anthropic" (Claude)
+    ai_provider: str = "openrouter"
     groq_api_key: str = ""
     groq_model: str = "llama-3.3-70b-versatile"
     openrouter_api_key: str = ""
-    openrouter_model: str = "google/gemini-2.0-flash-001"
+    openrouter_model: str = "deepseek/deepseek-chat-v3-0324"
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-3-5-sonnet-20241022"
     anthropic_base_url: str = ""  # Proxy URL for Claude API (e.g., Cloudflare Worker)
