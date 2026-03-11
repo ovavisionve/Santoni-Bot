@@ -6,6 +6,7 @@ system prompt, data fetching, and query processing logic.
 Supports both full-response (process) and streaming (stream) modes.
 """
 
+import asyncio
 import logging
 import re
 from abc import ABC, abstractmethod
@@ -120,14 +121,17 @@ class BaseAgent(ABC):
         """
         return ""
 
-    def _build_messages(
+    async def _build_messages(
         self,
         message: str,
         history: list[tuple[str, str]] | None = None,
         org_ids: list[int] | None = None,
         salesrep_id: int | None = None,
     ) -> tuple[list, bool]:
-        """Build the LLM message list. Returns (messages, has_data)."""
+        """Build the LLM message list. Returns (messages, has_data).
+
+        Runs data catalog, RAG, and fetch_data in parallel for faster responses.
+        """
         # Build datetime context
         datetime_ctx = _build_datetime_context()
 
@@ -159,52 +163,74 @@ class BaseAgent(ABC):
         )
         messages = [SystemMessage(content=enhanced_prompt)]
 
-        # Data Catalog: inject real schema/stats context from iDempiere (optional)
-        try:
-            from app.services.data_catalog import get_catalog_service
-            catalog = get_catalog_service()
-            catalog_context = catalog.get_department_context(self.department)
-            if catalog_context:
-                messages.append(SystemMessage(content=catalog_context))
-        except Exception as exc:
-            logger.debug("Data catalog unavailable for %s: %s", self.name, exc)
+        # --- Run catalog, RAG, and fetch_data in PARALLEL ---
+        # These three operations are independent and each creates its own DB session.
 
-        # RAG: retrieve relevant knowledge-base context (optional)
-        try:
-            from app.services.rag_service import get_rag_service
-            rag = get_rag_service()
-            rag_context = rag.get_context_for_agent(self.department, message)
-            if rag_context:
-                messages.append(SystemMessage(content=rag_context))
-        except Exception as exc:
-            logger.debug("RAG context unavailable for %s: %s", self.name, exc)
-
-        # Fetch real data from the database
-        try:
-            from app.utils.sentry_utils import set_agent_context, track_query_performance
-            set_agent_context(self.name)
-            with track_query_performance(self.name, f"{self.name}.fetch_data"):
-                data_context = self.fetch_data(message, org_ids=org_ids, salesrep_id=salesrep_id, history=history)
-        except Exception as exc:
-            logger.error(
-                "Error in %s.fetch_data: %s: %s",
-                self.name, type(exc).__name__, exc, exc_info=True,
-            )
-            # Report to Sentry with agent context
+        async def _get_catalog_context() -> str | None:
+            """Get data catalog context (runs in thread)."""
             try:
-                from app.utils.sentry_utils import capture_agent_error
-                capture_agent_error(self.name, exc, {
-                    "message": message,
-                    "department": self.department,
-                })
-            except Exception:
-                pass
-            data_context = (
-                f"## Error al consultar datos\n"
-                f"Se produjo un error al consultar la base de datos: {type(exc).__name__}.\n"
-                f"Informa al usuario que hubo un problema de conexión con la base de datos "
-                f"y que intente de nuevo en unos momentos."
-            )
+                from app.services.data_catalog import get_catalog_service
+                catalog = get_catalog_service()
+                return catalog.get_department_context(self.department)
+            except Exception as exc:
+                logger.debug("Data catalog unavailable for %s: %s", self.name, exc)
+                return None
+
+        async def _get_rag_context() -> str | None:
+            """Get RAG context (runs in thread)."""
+            try:
+                from app.services.rag_service import get_rag_service
+                rag = get_rag_service()
+                return await asyncio.to_thread(
+                    rag.get_context_for_agent, self.department, message
+                )
+            except Exception as exc:
+                logger.debug("RAG context unavailable for %s: %s", self.name, exc)
+                return None
+
+        async def _get_data_context() -> str | None:
+            """Fetch real data from iDempiere (runs in thread)."""
+            try:
+                from app.utils.sentry_utils import set_agent_context, track_query_performance
+                set_agent_context(self.name)
+                with track_query_performance(self.name, f"{self.name}.fetch_data"):
+                    return await asyncio.to_thread(
+                        self.fetch_data, message,
+                        org_ids=org_ids,
+                        salesrep_id=salesrep_id,
+                        history=history,
+                    )
+            except Exception as exc:
+                logger.error(
+                    "Error in %s.fetch_data: %s: %s",
+                    self.name, type(exc).__name__, exc, exc_info=True,
+                )
+                try:
+                    from app.utils.sentry_utils import capture_agent_error
+                    capture_agent_error(self.name, exc, {
+                        "message": message,
+                        "department": self.department,
+                    })
+                except Exception:
+                    pass
+                return (
+                    f"## Error al consultar datos\n"
+                    f"Se produjo un error al consultar la base de datos: {type(exc).__name__}.\n"
+                    f"Informa al usuario que hubo un problema de conexión con la base de datos "
+                    f"y que intente de nuevo en unos momentos."
+                )
+
+        # Run all three in parallel
+        catalog_context, rag_context, data_context = await asyncio.gather(
+            _get_catalog_context(),
+            _get_rag_context(),
+            _get_data_context(),
+        )
+
+        if catalog_context:
+            messages.append(SystemMessage(content=catalog_context))
+        if rag_context:
+            messages.append(SystemMessage(content=rag_context))
 
         if data_context:
             messages.append(
@@ -328,7 +354,7 @@ class BaseAgent(ABC):
         salesrep_id: int | None = None,
     ) -> dict:
         """Process a user message and return a complete response."""
-        messages, has_data = self._build_messages(message, history, org_ids, salesrep_id)
+        messages, has_data = await self._build_messages(message, history, org_ids, salesrep_id)
         response = await self.llm.ainvoke(messages)
 
         response_text = response.content
@@ -369,7 +395,7 @@ class BaseAgent(ABC):
         salesrep_id: int | None = None,
     ) -> AsyncIterator[str]:
         """Stream response tokens for real-time display."""
-        messages, _ = self._build_messages(message, history, org_ids, salesrep_id)
+        messages, _ = await self._build_messages(message, history, org_ids, salesrep_id)
         async for chunk in self.llm.astream(messages):
             if chunk.content:
                 yield chunk.content
