@@ -47,6 +47,7 @@ class Settings(BaseSettings):
     groq_model: str = "llama-3.3-70b-versatile"
     openrouter_api_key: str = ""
     openrouter_model: str = "deepseek/deepseek-chat-v3-0324"
+    openrouter_provider: str = ""  # Force specific provider (e.g., "NovitaAI")
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-3-5-sonnet-20241022"
     anthropic_base_url: str = ""  # Proxy URL for Claude API (e.g., Cloudflare Worker)
