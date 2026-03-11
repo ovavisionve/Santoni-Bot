@@ -53,7 +53,7 @@ class Settings(BaseSettings):
 
     # ChromaDB
     chroma_host: str = "chromadb"
-    chroma_port: int = 8001
+    chroma_port: int = 8000
 
     # Historical data: queries before this date use local DB instead of iDempiere
     # Values: "today" (recommended) = only today goes to iDempiere, everything else local
