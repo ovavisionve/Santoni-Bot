@@ -144,8 +144,22 @@ class RAGService:
                 metadata={"department": department},
             )
         except (ChromaError, KeyError) as exc:
-            logger.error("Error getting collection '%s': %s", collection_name, exc)
-            return None
+            logger.warning(
+                "Colección '%s' corrupta o incompatible (%s), recreando...",
+                collection_name, exc,
+            )
+            try:
+                self._client.delete_collection(name=collection_name)
+                return self._client.get_or_create_collection(
+                    name=collection_name,
+                    metadata={"department": department},
+                )
+            except Exception as exc2:
+                logger.error(
+                    "No se pudo recrear colección '%s': %s",
+                    collection_name, exc2,
+                )
+                return None
 
     # ------------------------------------------------------------------
     # Public API
