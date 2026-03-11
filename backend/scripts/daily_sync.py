@@ -277,6 +277,16 @@ def main():
         help="Fecha a sincronizar (YYYY-MM-DD). Default: ayer.",
     )
     parser.add_argument(
+        "--from-date",
+        default=None,
+        help="Fecha inicio de rango (YYYY-MM-DD). Requiere --to-date.",
+    )
+    parser.add_argument(
+        "--to-date",
+        default=None,
+        help="Fecha fin de rango (YYYY-MM-DD). Requiere --from-date.",
+    )
+    parser.add_argument(
         "--skip-reference",
         action="store_true",
         help="Omitir actualización de tablas de referencia (más rápido).",
@@ -288,11 +298,26 @@ def main():
     )
     args = parser.parse_args()
 
-    target_date = args.date or (date.today() - timedelta(days=1)).isoformat()
+    # Support date range for backfilling gaps
+    if args.from_date and args.to_date:
+        d_start = datetime.strptime(args.from_date, "%Y-%m-%d").date()
+        d_end = datetime.strptime(args.to_date, "%Y-%m-%d").date()
+        if d_start > d_end:
+            logger.error("--from-date debe ser <= --to-date")
+            sys.exit(1)
+        dates_to_sync = []
+        d = d_start
+        while d <= d_end:
+            dates_to_sync.append(d.isoformat())
+            d += timedelta(days=1)
+        logger.info("Sincronizando RANGO: %s → %s (%d días)", args.from_date, args.to_date, len(dates_to_sync))
+    else:
+        target_date = args.date or (date.today() - timedelta(days=1)).isoformat()
+        dates_to_sync = [target_date]
 
     logger.info("=" * 60)
-    logger.info("SINCRONIZACION DIARIA iDEMPIERE → LOCAL")
-    logger.info("Fecha objetivo: %s", target_date)
+    logger.info("SINCRONIZACION iDEMPIERE → LOCAL")
+    logger.info("Fechas a sincronizar: %s", ", ".join(dates_to_sync) if len(dates_to_sync) <= 3 else f"{dates_to_sync[0]} → {dates_to_sync[-1]} ({len(dates_to_sync)} días)")
     logger.info("=" * 60)
 
     start = time.time()
@@ -315,63 +340,67 @@ def main():
         logger.error("Error conectando a DB local: %s", e)
         sys.exit(1)
 
-    total_rows = 0
+    grand_total = 0
 
-    # ── 1. Reference tables (new products, clients, etc.) ──
+    # ── 1. Reference tables (once, not per day) ──
     if not args.skip_reference:
         logger.info("\n-- TABLAS DE REFERENCIA --")
         for table in REFERENCE_TABLES:
             try:
                 count = sync_reference_table(idempiere_engine, local_engine, table)
                 logger.info("  %s: %s rows", table, f"{count:,}")
-                total_rows += count
+                grand_total += count
             except Exception as e:
                 logger.error("  %s: ERROR - %s", table, e)
-
-    # ── 2. Transaction tables (only target date) ──
-    logger.info("\n-- TRANSACCIONES DEL %s --", target_date)
 
     # Map parent tables to their date columns for child sync
     parent_date_map = {t: dc for t, dc in TRANSACTION_TABLES}
 
-    for table, date_col in TRANSACTION_TABLES:
-        try:
-            count = sync_transaction_day(
-                idempiere_engine, local_engine, table, date_col, target_date
-            )
-            logger.info("  %s: %s rows", table, f"{count:,}")
-            total_rows += count
-        except Exception as e:
-            logger.error("  %s: ERROR - %s", table, e)
+    # ── 2. Transaction + child tables (per day) ──
+    for target_date in dates_to_sync:
+        day_rows = 0
+        logger.info("\n-- TRANSACCIONES DEL %s --", target_date)
 
-    # ── 3. Child tables ──
-    logger.info("\n-- TABLAS HIJAS --")
-    for child_table, fk_col, parent_table in CHILD_TABLES:
-        parent_date_col = parent_date_map.get(parent_table)
-        if not parent_date_col:
-            continue
-        try:
-            count = sync_child_table(
-                idempiere_engine, local_engine, child_table,
-                fk_col, parent_table, parent_date_col, target_date
-            )
-            logger.info("  %s: %s rows", child_table, f"{count:,}")
-            total_rows += count
-        except Exception as e:
-            logger.error("  %s: ERROR - %s", child_table, e)
+        for table, date_col in TRANSACTION_TABLES:
+            try:
+                count = sync_transaction_day(
+                    idempiere_engine, local_engine, table, date_col, target_date
+                )
+                logger.info("  %s: %s rows", table, f"{count:,}")
+                day_rows += count
+            except Exception as e:
+                logger.error("  %s: ERROR - %s", table, e)
 
-    # ── 4. Snapshots (current inventory, allocations) ──
+        # Child tables for this day
+        for child_table, fk_col, parent_table in CHILD_TABLES:
+            parent_date_col = parent_date_map.get(parent_table)
+            if not parent_date_col:
+                continue
+            try:
+                count = sync_child_table(
+                    idempiere_engine, local_engine, child_table,
+                    fk_col, parent_table, parent_date_col, target_date
+                )
+                logger.info("  %s: %s rows", child_table, f"{count:,}")
+                day_rows += count
+            except Exception as e:
+                logger.error("  %s: ERROR - %s", child_table, e)
+
+        logger.info("  → %s: %s rows totales", target_date, f"{day_rows:,}")
+        grand_total += day_rows
+
+    # ── 3. Snapshots (once, not per day) ──
     if not args.skip_snapshots:
         logger.info("\n-- SNAPSHOTS --")
         for table in SNAPSHOT_TABLES:
             try:
                 count = sync_snapshot_table(idempiere_engine, local_engine, table)
                 logger.info("  %s: %s rows", table, f"{count:,}")
-                total_rows += count
+                grand_total += count
             except Exception as e:
                 logger.error("  %s: ERROR - %s", table, e)
 
-    # ── 5. Metadata ──
+    # ── 4. Metadata ──
     duration = int(time.time() - start)
     try:
         with local_engine.begin() as conn:
@@ -380,19 +409,19 @@ def main():
                 (cutoff_date, tables_extracted, total_rows, duration_seconds, notes)
                 VALUES (:cutoff, :tables, :rows, :duration, :notes)
             """), {
-                "cutoff": target_date,
+                "cutoff": dates_to_sync[-1],
                 "tables": [t for t, _ in TRANSACTION_TABLES] + [t for t, _, _ in CHILD_TABLES],
-                "rows": total_rows,
+                "rows": grand_total,
                 "duration": duration,
-                "notes": f"Daily sync for {target_date} at {datetime.now().isoformat()}",
+                "notes": f"Sync {dates_to_sync[0]}→{dates_to_sync[-1]} ({len(dates_to_sync)} days) at {datetime.now().isoformat()}",
             })
     except Exception as e:
         logger.warning("No se pudo guardar metadata: %s", e)
 
     logger.info("\n" + "=" * 60)
     logger.info("SINCRONIZACION COMPLETADA")
-    logger.info("  Fecha: %s", target_date)
-    logger.info("  Rows totales: %s", f"{total_rows:,}")
+    logger.info("  Fechas: %s → %s (%d días)", dates_to_sync[0], dates_to_sync[-1], len(dates_to_sync))
+    logger.info("  Rows totales: %s", f"{grand_total:,}")
     logger.info("  Duracion: %dm %ds", duration // 60, duration % 60)
     logger.info("=" * 60)
 
