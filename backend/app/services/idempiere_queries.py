@@ -19,6 +19,7 @@ Historical data routing (Mar 2026+):
 - This avoids hitting iDempiere for historical data.
 """
 
+import functools
 import logging
 import re
 from datetime import date, datetime
@@ -71,47 +72,123 @@ def _is_before_cutoff(
 ) -> bool:
     """Determine if the query should use the local historical DB.
 
-    The local DB has ALL data up to yesterday (synced daily).
-    Only queries that are EXCLUSIVELY for today's date go to iDempiere.
-    Everything else (past dates, ranges, "este mes", no date) → local DB.
+    The local DB contains ALL historical data (updated daily).
+    Returns True (use local DB) for ALL queries, EXCEPT when the
+    query is explicitly for today only (date_from == date_to == today).
 
-    Returns True (use local DB) in almost all cases.
-    Returns False (use iDempiere) ONLY when:
-    - Explicit date range where BOTH from and to are today
-      (i.e. the user asked specifically for "hoy")
+    For queries that include today in their range (e.g. "este mes"),
+    the build functions handle dual queries: local DB for historical
+    data + iDempiere for today's data, merged automatically.
     """
-    cutoff = _get_cutoff_date()
-    try:
-        cutoff_date = datetime.strptime(cutoff, "%Y-%m-%d").date()
-    except (ValueError, TypeError):
+    today = date.today().isoformat()
+
+    # Only "today-only" queries go to iDempiere
+    if date_from and date_to and date_from == today and date_to == today:
         return False
 
-    # Explicit date range: only go to iDempiere if BOTH dates are today
+    # Everything else → local DB (has all historical data, updated daily)
+    return True
+
+
+def _includes_today(
+    date_from: str | None = None,
+    date_to: str | None = None,
+    mes: int | None = None,
+    anio: int | None = None,
+) -> bool:
+    """Check if the query period includes today's date.
+
+    Used to determine if a dual query (local + iDempiere for today) is needed.
+    """
+    today = date.today()
+
     if date_from and date_to:
         try:
-            start = datetime.strptime(str(date_from), "%Y-%m-%d").date()
             end = datetime.strptime(str(date_to), "%Y-%m-%d").date()
-            if start >= cutoff_date and end >= cutoff_date:
-                # Both dates are today or future → iDempiere
-                return False
-            # Any part of the range is before today → local DB has it
-            return True
+            return end >= today
         except (ValueError, TypeError):
             return False
 
-    # Month + year: local DB has all data up to yesterday.
-    # "Este mes" (marzo 2026) → local DB has 1-10 marzo, good enough.
     if mes and anio:
-        return True
+        return mes == today.month and anio == today.year
 
-    # Only year → always local
-    if anio and not mes:
-        return True
+    # No date filter → doesn't specifically include today
+    return False
 
-    # No date filters → local DB (has all historical data).
-    # Functions needing live/current data (inventory, employees, etc.)
-    # use IdempiereSession() directly, so they bypass this routing.
-    return True
+
+def _merge_aggregated_results(base: dict, supplement: dict) -> dict:
+    """Merge supplement query results into base results.
+
+    - Numeric values: summed
+    - Lists: concatenated
+    - Strings/other: keep base value
+    """
+    if not supplement:
+        return base
+    merged = dict(base)
+    for key, val in supplement.items():
+        if key not in merged:
+            merged[key] = val
+        elif isinstance(val, (int, float)) and isinstance(merged[key], (int, float)):
+            merged[key] = merged[key] + val
+        elif isinstance(val, list) and isinstance(merged[key], list):
+            merged[key] = merged[key] + val
+        # Strings/other: keep base value (e.g. "moneda" label)
+    return merged
+
+
+def _with_today_supplement(build_func):
+    """Decorator that adds dual-query support to build functions.
+
+    When historical routing is active and the query period includes today:
+    1. The build function runs normally on the local (historical) DB
+    2. It runs again on iDempiere for TODAY only
+    3. Results are merged (sums for numbers, concat for lists)
+
+    This ensures the user gets complete data: historical from local DB
+    (fast) + today's live data from iDempiere.
+    """
+    @functools.wraps(build_func)
+    def wrapper(**kwargs):
+        _supplementing = kwargs.pop('_supplementing', False)
+        result = build_func(**kwargs)
+
+        if (
+            not _supplementing
+            and _is_historical_enabled()
+            and _check_historical_schema()
+            and _includes_today(
+                kwargs.get('date_from'), kwargs.get('date_to'),
+                kwargs.get('mes'), kwargs.get('anio'),
+            )
+        ):
+            try:
+                today_str = date.today().isoformat()
+                today_kwargs = dict(kwargs)
+                today_kwargs['date_from'] = today_str
+                today_kwargs['date_to'] = today_str
+                today_kwargs['mes'] = None
+                today_kwargs['anio'] = None
+                today_kwargs['_supplementing'] = True
+                today_data = wrapper(**today_kwargs)
+
+                if isinstance(result, dict) and isinstance(today_data, dict):
+                    result = _merge_aggregated_results(result, today_data)
+                elif isinstance(result, list) and isinstance(today_data, list):
+                    result = result + today_data
+
+                logger.info(
+                    "Dual query: supplemented %s with today's live iDempiere data",
+                    build_func.__name__,
+                )
+            except Exception as e:
+                logger.warning(
+                    "Could not supplement %s with today's data: %s",
+                    build_func.__name__, e,
+                )
+
+        return result
+    return wrapper
 
 
 _historical_available: bool | None = None  # cached after first check
@@ -490,6 +567,7 @@ def _add_salesrep_filter(conditions: list, params: dict, salesrep_id: int | None
         params["salesrep_id"] = salesrep_id
 
 
+@_with_today_supplement
 def build_sales_summary(
     zona: str | None = None,
     vendedor: str | None = None,
@@ -702,6 +780,7 @@ def build_sales_summary(
         db.close()
 
 
+@_with_today_supplement
 def build_collection_summary(
     zona: str | None = None,
     vendedor: str | None = None,
@@ -794,6 +873,7 @@ def build_collection_summary(
         db.close()
 
 
+@_with_today_supplement
 def build_top_clients(
     limit: int = 20,
     zona: str | None = None,
@@ -971,7 +1051,12 @@ def build_financial_summary(
     date_from: str | None = None,
     date_to: str | None = None,
 ) -> dict:
-    """Financial summary from iDempiere: bank balances, receivables, payables."""
+    """Financial summary from iDempiere: bank balances, receivables, payables.
+
+    NOTE: Not decorated with @_with_today_supplement because:
+    - Bank balances are current-state data (always from iDempiere directly)
+    - Receivables/payables have nested dicts that don't merge cleanly
+    """
     # If date_from/date_to provided, nullify mes (range takes priority)
     if date_from and date_to:
         mes = None
@@ -1247,6 +1332,7 @@ def build_employee_summary(org_ids: list[int] | None = None) -> dict:
         db.close()
 
 
+@_with_today_supplement
 def build_employee_list(
     org_ids: list[int] | None = None,
     cargo_search: str | None = None,
@@ -1439,6 +1525,7 @@ def build_birthday_list(
         db.close()
 
 
+@_with_today_supplement
 def build_payroll_summary(
     mes: int | None = None,
     anio: int | None = None,
@@ -1518,6 +1605,7 @@ def build_payroll_summary(
         db.close()
 
 
+@_with_today_supplement
 def build_attendance_summary(
     mes: int | None = None,
     anio: int | None = None,
@@ -1643,6 +1731,7 @@ def build_attendance_summary(
         db.close()
 
 
+@_with_today_supplement
 def build_turnover_summary(
     anio: int | None = None,
     org_ids: list[int] | None = None,
@@ -1719,6 +1808,7 @@ def build_turnover_summary(
 # PRODUCCION (Production)
 # ---------------------------------------------------------------------------
 
+@_with_today_supplement
 def build_production_summary(
     mes: int | None = None,
     anio: int | None = None,
@@ -1826,6 +1916,7 @@ def build_production_summary(
         db.close()
 
 
+@_with_today_supplement
 def build_production_orders(
     mes: int | None = None,
     anio: int | None = None,
@@ -1879,6 +1970,7 @@ def build_production_orders(
 # COMPRAS PRODUCTORES (Producer Purchases)
 # ---------------------------------------------------------------------------
 
+@_with_today_supplement
 def build_producer_purchases(
     producto: str | None = None,
     mes: int | None = None,
@@ -2063,6 +2155,7 @@ def build_producer_pending_payments(
         db.close()
 
 
+@_with_today_supplement
 def build_producer_price_analysis(
     anio: int | None = None,
     org_ids: list[int] | None = None,
@@ -2113,6 +2206,7 @@ def build_producer_price_analysis(
 # COMPRAS INSUMOS (Supply Purchases)
 # ---------------------------------------------------------------------------
 
+@_with_today_supplement
 def build_supply_purchases(
     mes: int | None = None,
     anio: int | None = None,
@@ -2211,6 +2305,7 @@ def build_supply_purchases(
         db.close()
 
 
+@_with_today_supplement
 def build_product_purchase_history(
     product_search: str,
     org_ids: list[int] | None = None,
@@ -2275,6 +2370,7 @@ def build_product_purchase_history(
         db.close()
 
 
+@_with_today_supplement
 def build_pending_purchase_orders(
     mes: int | None = None,
     anio: int | None = None,
@@ -2398,6 +2494,7 @@ def build_pending_purchase_orders(
         db.close()
 
 
+@_with_today_supplement
 def build_supplier_price_comparison(
     product_search: str,
     org_ids: list[int] | None = None,
@@ -2461,6 +2558,7 @@ def build_supplier_price_comparison(
         db.close()
 
 
+@_with_today_supplement
 def build_purchase_payment_status(
     mes: int | None = None,
     anio: int | None = None,
@@ -2541,6 +2639,7 @@ def build_purchase_payment_status(
 # CONTABILIDAD (Accounting)
 # ---------------------------------------------------------------------------
 
+@_with_today_supplement
 def build_accounting_summary(
     mes: int | None = None,
     anio: int | None = None,
@@ -2659,6 +2758,7 @@ def build_accounting_summary(
         db.close()
 
 
+@_with_today_supplement
 def build_account_detail(
     account_code: str,
     date_from: str | None = None,
