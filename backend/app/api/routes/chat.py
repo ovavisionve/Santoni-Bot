@@ -127,8 +127,8 @@ async def stream_message(
     message_text = data.message
     ip_addr = request.client.host if request.client else None
 
-    # Map "greeting" to "general" for storage/display (greeting is an internal fast-path)
-    stored_agent_name = "general" if agent_name == "greeting" else agent_name
+    # Map instant-response types to "general" for storage/display
+    stored_agent_name = "general" if agent_name in ("greeting", "thanks", "help") else agent_name
 
     # Check cache before streaming
     cached = get_cached_response(message_text, stored_agent_name)

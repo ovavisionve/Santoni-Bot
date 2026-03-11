@@ -162,11 +162,18 @@ _GREETING_ONLY = [
     "hey", "saludos", "buen dia", "buen día",
 ]
 
-# General patterns (greetings + questions about the bot itself)
-_GENERAL_PATTERNS = [
-    *_GREETING_ONLY,
-    "gracias", "ayuda", "que puedes hacer", "qué puedes hacer",
+# Thanks — instant canned response
+_THANKS_PATTERNS = ["gracias", "muchas gracias", "genial gracias", "ok gracias", "perfecto gracias"]
+
+# Help / about patterns — instant canned response
+_HELP_PATTERNS = [
+    "ayuda", "que puedes hacer", "qué puedes hacer",
     "quien eres", "quién eres", "como funciona", "cómo funciona",
+]
+
+# General patterns (all above combined — for classifier detection)
+_GENERAL_PATTERNS = [
+    *_GREETING_ONLY, *_THANKS_PATTERNS, *_HELP_PATTERNS,
 ]
 
 
@@ -191,11 +198,14 @@ def classify_by_keywords(
     """
     msg = message.lower()
 
-    # Check greetings / general first
+    # Check greetings / general first — all get instant canned responses (no LLM)
     if any(p in msg for p in _GENERAL_PATTERNS) and len(msg) < 60:
-        # Pure greetings get instant canned response (no LLM)
         if any(p in msg for p in _GREETING_ONLY):
             return "greeting"
+        if any(p in msg for p in _THANKS_PATTERNS):
+            return "thanks"
+        if any(p in msg for p in _HELP_PATTERNS):
+            return "help"
         return "general"
 
     # Check for accounting codes (e.g. "2.01.01.10") → always contabilidad
@@ -256,10 +266,14 @@ def classify_with_confidence(
     """
     msg = message.lower()
 
-    # Greetings
+    # Greetings / thanks / help — all instant (no LLM)
     if any(p in msg for p in _GENERAL_PATTERNS) and len(msg) < 60:
         if any(p in msg for p in _GREETING_ONLY):
             return "greeting", 1.0, "saludo_directo"
+        if any(p in msg for p in _THANKS_PATTERNS):
+            return "thanks", 1.0, "agradecimiento"
+        if any(p in msg for p in _HELP_PATTERNS):
+            return "help", 1.0, "pregunta_ayuda"
         return "general", 1.0, "pregunta_general"
 
     # Accounting code
@@ -414,19 +428,19 @@ class Orchestrator:
                 "score_breakdown": breakdown,
             }
 
-        # Handle greetings instantly (no LLM call)
-        if agent_name == "greeting":
-            greeting_response = self._instant_greeting(message)
+        # Handle greetings / thanks / help instantly (no LLM call)
+        if agent_name in ("greeting", "thanks", "help"):
+            instant_response = self._instant_response(agent_name, message)
             score, breakdown = compute_confidence_score(routing_score, False, "general")
             return {
-                "response": greeting_response,
+                "response": instant_response,
                 "agent_used": "general",
-                "metadata": {"classification": "greeting"},
+                "metadata": {"classification": agent_name},
                 "confidence_score": score,
                 "score_breakdown": {**breakdown, "match_type": match_type},
             }
 
-        # Handle general queries
+        # Handle general queries (need LLM for open-ended questions)
         if agent_name == "general":
             result = await self._handle_general(message, history)
             score, breakdown = compute_confidence_score(routing_score, False, "general")
@@ -482,8 +496,8 @@ class Orchestrator:
             yield "Lo siento, no tienes permisos para acceder a la información de ese departamento."
             return
 
-        if agent_name == "greeting":
-            yield self._instant_greeting(message)
+        if agent_name in ("greeting", "thanks", "help"):
+            yield self._instant_response(agent_name, message)
             return
 
         if agent_name == "general":
@@ -512,9 +526,38 @@ class Orchestrator:
         allowed = user.allowed_departments
         return classify_with_confidence(message, allowed, last_agent=last_agent)
 
-    @staticmethod
-    def _instant_greeting(message: str) -> str:
-        """Return an instant canned greeting response (no LLM call, ~0ms)."""
+    _CAPABILITIES_TEXT = (
+        "📊 **Ventas** — facturación, clientes, cobranza, zonas\n"
+        "💰 **Finanzas** — saldos bancarios, cuentas por cobrar/pagar\n"
+        "📒 **Contabilidad** — balance, estado de resultados, cuentas contables\n"
+        "👥 **RRHH** — empleados, nómina, ausentismo, cumpleañeros\n"
+        "🏭 **Producción** — órdenes, cantidades, desperdicios, inventario\n"
+        "📦 **Compras de Insumos** — proveedores, órdenes de compra, precios\n"
+        "🌾 **Compras a Productores** — arroz, maíz, productores, pagos"
+    )
+
+    @classmethod
+    def _instant_response(cls, response_type: str, message: str) -> str:
+        """Return an instant canned response (no LLM call, ~0ms)."""
+        if response_type == "thanks":
+            return (
+                "¡Con gusto! 😊 Si necesitas algo más, no dudes en preguntar. "
+                "Estoy aquí para ayudarte."
+            )
+
+        if response_type == "help":
+            return (
+                "Soy **SantoniBot**, el asistente inteligente de "
+                "**Alimentos Santoni, C.A.** Puedo ayudarte con consultas de:\n\n"
+                f"{cls._CAPABILITIES_TEXT}\n\n"
+                "Solo escribe tu pregunta en lenguaje natural. Por ejemplo:\n"
+                "- *\"¿Cuáles fueron las ventas de enero?\"*\n"
+                "- *\"¿Cuántos empleados hay en planta?\"*\n"
+                "- *\"Dame el balance general de febrero\"*\n\n"
+                "¿En qué te puedo ayudar?"
+            )
+
+        # Default: greeting
         msg = message.lower().strip()
         now = datetime.now()
         hora = now.hour
@@ -537,13 +580,7 @@ class Orchestrator:
         return (
             f"¡{saludo}! 👋 Soy **SantoniBot**, el asistente inteligente de "
             f"**Alimentos Santoni, C.A.** Estoy aquí para ayudarte con consultas de:\n\n"
-            f"📊 **Ventas** — facturación, clientes, cobranza, zonas\n"
-            f"💰 **Finanzas** — saldos bancarios, cuentas por cobrar/pagar\n"
-            f"📒 **Contabilidad** — balance, estado de resultados, cuentas contables\n"
-            f"👥 **RRHH** — empleados, nómina, ausentismo, cumpleañeros\n"
-            f"🏭 **Producción** — órdenes, cantidades, desperdicios, inventario\n"
-            f"📦 **Compras de Insumos** — proveedores, órdenes de compra, precios\n"
-            f"🌾 **Compras a Productores** — arroz, maíz, productores, pagos\n\n"
+            f"{cls._CAPABILITIES_TEXT}\n\n"
             f"¿En qué te puedo ayudar hoy?"
         )
 
