@@ -45,6 +45,19 @@ async def lifespan(app: FastAPI):
     print(f"[SantoniBot] {_env_msg}", flush=True)
     logger.info("SantoniBot starting up...")
     logger.info(_env_msg)
+
+    # Warn about historical data configuration
+    if settings.historical_data_enabled:
+        _hist_msg = (
+            f"═══ HISTORICAL_DATA_ENABLED=true, CUTOFF={settings.historical_data_cutoff} ═══ "
+            f"Queries con fechas antes del cutoff irán a la DB LOCAL (schema adempiere). "
+            f"Si la DB local está vacía, se hará fallback a iDempiere automáticamente."
+        )
+        print(f"[SantoniBot] {_hist_msg}", flush=True)
+        logger.info(_hist_msg)
+    else:
+        logger.info("Historical data routing DISABLED — all queries go to iDempiere.")
+
     run_startup_migrations()
     Base.metadata.create_all(bind=engine)
     create_admin_user()

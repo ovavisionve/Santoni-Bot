@@ -113,6 +113,71 @@ def _is_before_cutoff(
     return True
 
 
+_historical_available: bool | None = None  # cached after first check
+
+
+def _check_historical_schema() -> bool:
+    """Check if the local adempiere schema exists and has data.
+
+    Result is cached so we only hit the DB once per process lifetime.
+    """
+    global _historical_available
+    if _historical_available is not None:
+        return _historical_available
+
+    try:
+        session = HistoricalSession()
+        try:
+            # Check that the schema exists and has at least one reference table with rows
+            result = session.execute(
+                text(
+                    "SELECT EXISTS ("
+                    "  SELECT 1 FROM information_schema.tables "
+                    "  WHERE table_schema = 'adempiere' AND table_name = 'c_invoice'"
+                    ")"
+                )
+            )
+            schema_exists = result.scalar()
+            if not schema_exists:
+                logger.warning(
+                    "Historical schema 'adempiere' or table 'c_invoice' not found in local DB. "
+                    "Falling back to iDempiere for ALL queries. "
+                    "Run extract_historical_data.py to populate local data."
+                )
+                _historical_available = False
+                return False
+
+            # Check there's actual data (not just empty tables)
+            result = session.execute(
+                text("SELECT COUNT(*) FROM adempiere.c_invoice LIMIT 1")
+            )
+            row_count = result.scalar()
+            if not row_count:
+                logger.warning(
+                    "Historical table adempiere.c_invoice exists but is EMPTY. "
+                    "Falling back to iDempiere. Run extract_historical_data.py."
+                )
+                _historical_available = False
+                return False
+
+            logger.info(
+                "Historical data verified: adempiere.c_invoice has data. "
+                "Historical routing is active."
+            )
+            _historical_available = True
+            return True
+        finally:
+            session.close()
+    except Exception as exc:
+        logger.warning(
+            "Could not verify historical data schema: %s. "
+            "Falling back to iDempiere for ALL queries.",
+            exc,
+        )
+        _historical_available = False
+        return False
+
+
 def _get_session(
     date_from: str | None = None,
     date_to: str | None = None,
@@ -123,13 +188,24 @@ def _get_session(
 
     Returns HistoricalSession (local DB) for queries entirely before cutoff,
     IdempiereSession (live) otherwise.
+
+    Safety: if historical routing is enabled but the local schema is empty
+    or missing, falls back to iDempiere to avoid returning empty results.
     """
-    if _is_historical_enabled() and _is_before_cutoff(date_from, date_to, mes, anio):
+    if (
+        _is_historical_enabled()
+        and _is_before_cutoff(date_from, date_to, mes, anio)
+        and _check_historical_schema()
+    ):
         logger.info(
             "Using HISTORICAL (local) DB for date_from=%s, date_to=%s, mes=%s, anio=%s",
             date_from, date_to, mes, anio,
         )
         return HistoricalSession()
+    logger.info(
+        "Using LIVE iDempiere DB for date_from=%s, date_to=%s, mes=%s, anio=%s",
+        date_from, date_to, mes, anio,
+    )
     return IdempiereSession()
 
 
