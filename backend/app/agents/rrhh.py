@@ -124,6 +124,47 @@ Datos de RRHH en iDempiere:
 - c_bpartner: Datos de empleados (isemployee='Y', name, value)
 """
 
+    # Organisation name mapping (keyword → exact iDempiere name)
+    _ORG_MAP = [
+        ("inpromaiz", "InproMaiz"),
+        ("inpro maiz", "InproMaiz"),
+        ("inproa santoni", "INPROA SANTONI"),
+        ("inproa", "INPROA SANTONI"),
+        ("santoni service", "Santoni Service"),
+        ("agropecuaria", "AGROPECUARIA R.R."),
+        ("aga agricola", "AGA AGRICOLA"),
+        ("aga agrícola", "AGA AGRICOLA"),
+        ("agroinproa", "AGROINPROA"),
+        ("inversiones aga", "INVERSIONES AGA"),
+    ]
+
+    @classmethod
+    def _extract_org_name(cls, msg: str) -> str | None:
+        msg_lower = msg.lower()
+        for kw, val in cls._ORG_MAP:
+            if kw in msg_lower:
+                return val
+        return None
+
+    @staticmethod
+    def _resolve_org_name_to_ids(org_name: str) -> list[int] | None:
+        """Resolve an organisation name to its ad_org_id(s) via DB lookup."""
+        try:
+            from app.database import IdempiereSession
+            from sqlalchemy import text
+            db = IdempiereSession()
+            try:
+                result = db.execute(
+                    text("SELECT ad_org_id FROM adempiere.ad_org WHERE name ILIKE :name"),
+                    {"name": f"%{org_name}%"},
+                ).fetchall()
+                return [r[0] for r in result] if result else None
+            finally:
+                db.close()
+        except Exception as exc:
+            logger.debug("Could not resolve org_name '%s': %s", org_name, exc)
+            return None
+
     # Job title keywords that indicate a cargo-specific query.
     # When any of these appear, extract the surrounding words as the cargo search term.
     _CARGO_KEYWORDS = [
@@ -210,6 +251,14 @@ Datos de RRHH en iDempiere:
     def fetch_data(self, message: str, org_ids: list[int] | None = None, salesrep_id: int | None = None, history: list[tuple[str, str]] | None = None) -> str | None:
         msg = message.lower()
         sections = []
+
+        # Extract organisation from message (overrides user profile org_ids)
+        org_name = self._extract_org_name(message)
+        if org_name:
+            resolved = self._resolve_org_name_to_ids(org_name)
+            if resolved:
+                org_ids = resolved
+                sections.append(f"*Filtrando por organización: {org_name}*")
 
         # Extract dates
         date_from, date_to = extract_date_range(message)
