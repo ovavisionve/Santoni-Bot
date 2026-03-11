@@ -201,11 +201,11 @@ Los agentes filtran por organización cuando el usuario lo especifica.
 ## Dataset de Entrenamiento
 
 Se mantiene un dataset de escenarios de entrenamiento/validación para el orchestrator:
-- **355 escenarios** (v2.5) cubriendo los 7 agentes
+- **356 escenarios** (v2.5) cubriendo los 7 agentes
 - Incluye: pregunta, agente esperado, tipo de consulta, follow-ups
 - 78 escenarios de follow-up con herencia de contexto
 - Tipos de error rastreados: routing, herencia temporal, fallback sin datos, errores DB,
-  docstatus_incompleto, org_name_no_extraido
+  docstatus_incompleto, org_name_no_extraido, no_access_text
 - Usado para medir confidence score y mejorar clasificación
 
 ---
@@ -257,7 +257,9 @@ Se crearon cuestionarios para que cada departamento valide las respuestas del bo
     para filtrar por organización (ej: "en INPROA SANTONI", "en InproMaiz")
   - `org_name` propagado a `build_supplier_price_comparison()` y `build_product_purchase_history()`
   - System prompts de todos los agentes actualizados para reflejar `docstatus IN ('CO','CL')`
-  - Dataset v2.5: 4 nuevos escenarios (352-355), 2 nuevos tipos de error
+  - Regla PROHIBIDO "no tengo acceso" agregada al system prompt de los 7 agentes
+    (antes solo la tenía compras_insumos; finanzas decía "no tengo acceso" para préstamos)
+  - Dataset v2.5: 5 nuevos escenarios (352-356), 3 nuevos tipos de error
 
 ### Pendiente:
 - Mapeo completo de todas las tablas iDempiere (algunas queries aún en ajuste)

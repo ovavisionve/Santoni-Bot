@@ -1,15 +1,15 @@
 {
   "version": "2.5",
   "created": "2026-03-11",
-  "description": "Dataset de entrenamiento v2.5: Fix docstatus IN ('CO','CL') para incluir facturas cerradas/pagadas en todas las queries. Extracción de org_name del mensaje en compras_insumos (filtro por organización como ventas). Escenarios de cajas de cartón (inventario vs compras). Escenarios de último proveedor por código de producto y organización.",
+  "description": "Dataset de entrenamiento v2.5: Fix docstatus IN ('CO','CL') para incluir facturas cerradas/pagadas en todas las queries. Extracción de org_name del mensaje en compras_insumos. Regla PROHIBIDO 'no tengo acceso' en system prompt de los 7 agentes. Escenarios: último proveedor por código+org, cajas de cartón inventario vs compras, préstamos en finanzas.",
   "stats": {
-    "total_entries": 355,
+    "total_entries": 356,
     "por_agente": {
       "compras_insumos": 85,
       "rrhh": 65,
       "ventas": 58,
       "produccion": 43,
-      "finanzas": 35,
+      "finanzas": 36,
       "compras_productores": 27,
       "general": 20,
       "contabilidad": 21
@@ -19,7 +19,7 @@
       "conversacion_real": 89,
       "patron_comun": 41,
       "cuestionario_validacion": 39,
-      "correccion_bug": 51,
+      "correccion_bug": 52,
       "excel_compras": 12,
       "nuevas_capacidades": 16
     },
@@ -6395,6 +6395,24 @@
         "notas": "Verifica que org_name='InproMaiz' se extrae correctamente y filtra por organización."
       },
       "categoria": "historial_producto"
+    },
+    {
+      "id": 356,
+      "pregunta": "Cuotas de préstamos que vencen hoy",
+      "agente_esperado": "finanzas",
+      "departamento_usuario": "finanzas",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": {},
+      "es_followup": false,
+      "fuente": "correccion_bug",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "finanzas",
+        "exito": false,
+        "error": "no_access_text",
+        "notas": "LLM decía 'no tengo acceso directo a préstamos'. Fix: agregar regla PROHIBIDO decir 'no tengo acceso' en system prompt de TODOS los 7 agentes (antes solo compras_insumos la tenía)."
+      },
+      "categoria": "prestamos"
     }
   ],
   "tipos_error": {
@@ -6423,7 +6441,8 @@
     "routing_produccion_a_finanzas": "Pregunta de producción fue ruteada a finanzas por el fallback 'cuánto→ventas'",
     "fecha_incorrecta": "El bot respondió con datos de otra fecha (ej: julio 2024) cuando se preguntó por 'actual'",
     "docstatus_incompleto": "Query solo incluía docstatus='CO' y excluía facturas cerradas ('CL') que son pagadas/completadas",
-    "org_name_no_extraido": "Agente no extraía nombre de organización del mensaje del usuario (ej: 'en INPROA SANTONI')"
+    "org_name_no_extraido": "Agente no extraía nombre de organización del mensaje del usuario (ej: 'en INPROA SANTONI')",
+    "no_access_text": "LLM generó texto 'no tengo acceso' cuando debía decir 'no se encontraron datos'. Requiere regla PROHIBIDO en system prompt."
   },
   "categorias": [
     "asistencia",
