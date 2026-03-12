@@ -15,6 +15,7 @@ from app.config import get_settings
 from app.services.llm_factory import create_llm, is_claude_available
 from app.models.user import User
 from app.agents.base_agent import _build_datetime_context
+from app.services.window_capability_map import CAPABILITIES
 from app.agents.finanzas import FinanzasAgent
 from app.agents.contabilidad import ContabilidadAgent
 from app.agents.ventas import VentasAgent
@@ -238,6 +239,68 @@ def classify_by_keywords(
     return "general"
 
 
+def classify_with_capabilities(
+    message: str,
+    capability_ids: set[str] | None,
+    allowed_departments: list[str],
+    last_agent: str | None = None,
+) -> tuple[str, str | None, float, str]:
+    """Classify using granular capability keywords.
+
+    Returns (agent_name, capability_id, confidence_score, match_type).
+    If capability_ids is None, user has access to all capabilities (admin).
+    """
+    msg = message.lower()
+
+    # Greetings
+    if any(p in msg for p in _GENERAL_PATTERNS) and len(msg) < 60:
+        return "general", None, 1.0, "saludo_directo"
+
+    # Accounting code → contabilidad_cuenta
+    if _has_account_code(msg):
+        cap_id = "contabilidad_cuenta"
+        if capability_ids is None or cap_id in capability_ids:
+            return "contabilidad", cap_id, 1.0, "codigo_contable"
+        return "no_access", cap_id, 0.9, "codigo_contable_sin_acceso"
+
+    # Scan ALL capabilities by their keywords (most specific first)
+    # Score each capability by how many keywords match
+    matches: list[tuple[str, str, int]] = []  # (agent, cap_id, match_count)
+    for cap in CAPABILITIES.values():
+        match_count = sum(1 for kw in cap.keywords if kw in msg)
+        if match_count > 0:
+            matches.append((cap.agent, cap.id, match_count))
+
+    # Sort by match count (most matches = best fit)
+    matches.sort(key=lambda x: x[2], reverse=True)
+
+    # Try each match in order
+    hit_no_access = False
+    for agent_name, cap_id, _count in matches:
+        if capability_ids is None or cap_id in capability_ids:
+            if agent_name in allowed_departments:
+                return agent_name, cap_id, 1.0, "capability_match"
+            hit_no_access = True
+        else:
+            hit_no_access = True
+
+    if hit_no_access:
+        if last_agent and last_agent in allowed_departments and last_agent != "general":
+            return last_agent, None, 0.6, "capability_bloqueado_fallback"
+        return "no_access", None, 0.8, "capability_sin_acceso"
+
+    # Fallback to last agent for follow-ups
+    if last_agent and last_agent in allowed_departments and last_agent != "general":
+        return last_agent, None, 0.7, "followup_last_agent"
+
+    # Generic data question fallback
+    if any(w in msg for w in ["cuanto", "cuánto", "dame", "muestra", "reporte"]):
+        if "ventas" in allowed_departments:
+            return "ventas", None, 0.4, "fallback_ventas"
+
+    return "general", None, 0.3, "sin_match"
+
+
 def classify_with_confidence(
     message: str,
     allowed_departments: list[str],
@@ -381,15 +444,27 @@ class Orchestrator:
             return await self._handle_document(message, document, history)
 
         allowed = user.allowed_departments
+        user_caps = user.capability_ids  # set[str] | None
 
-        # Classify the query with confidence scoring
-        agent_name, routing_score, match_type = classify_with_confidence(
-            message, allowed, last_agent=last_agent,
-        )
-        logger.info(
-            "Classified '%s' → %s (score=%.1f, type=%s)",
-            message[:60], agent_name, routing_score, match_type,
-        )
+        # Use capability-based routing if user has capabilities synced
+        if user_caps is not None or user.ad_user_id is not None:
+            agent_name, cap_id, routing_score, match_type = classify_with_capabilities(
+                message, user_caps, allowed, last_agent=last_agent,
+            )
+            logger.info(
+                "Classified '%s' → %s [cap=%s] (score=%.1f, type=%s)",
+                message[:60], agent_name, cap_id, routing_score, match_type,
+            )
+        else:
+            # Legacy: keyword-only routing for users without iDempiere link
+            agent_name, routing_score, match_type = classify_with_confidence(
+                message, allowed, last_agent=last_agent,
+            )
+            cap_id = None
+            logger.info(
+                "Classified '%s' → %s (score=%.1f, type=%s)",
+                message[:60], agent_name, routing_score, match_type,
+            )
 
         # Handle access denied
         if agent_name == "no_access":
@@ -455,7 +530,14 @@ class Orchestrator:
     ) -> AsyncIterator[str]:
         """Stream response tokens via the appropriate agent."""
         allowed = user.allowed_departments
-        agent_name = await self.classify(message, allowed, last_agent=last_agent)
+        user_caps = user.capability_ids
+
+        if user_caps is not None or user.ad_user_id is not None:
+            agent_name, _cap_id, _score, _mt = classify_with_capabilities(
+                message, user_caps, allowed, last_agent=last_agent,
+            )
+        else:
+            agent_name = await self.classify(message, allowed, last_agent=last_agent)
         logger.info("Stream classified '%s' → %s", message[:60], agent_name)
 
         if agent_name == "no_access":
@@ -486,6 +568,12 @@ class Orchestrator:
     ) -> tuple[str, float, str]:
         """Return (agent_name, confidence_score, match_type) for a message."""
         allowed = user.allowed_departments
+        user_caps = user.capability_ids
+        if user_caps is not None or user.ad_user_id is not None:
+            agent_name, _cap_id, score, match_type = classify_with_capabilities(
+                message, user_caps, allowed, last_agent=last_agent,
+            )
+            return agent_name, score, match_type
         return classify_with_confidence(message, allowed, last_agent=last_agent)
 
     async def _handle_document(

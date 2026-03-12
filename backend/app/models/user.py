@@ -61,6 +61,12 @@ class User(Base):
     ad_user_id: Mapped[int | None] = mapped_column(
         Integer, nullable=True, unique=True, index=True
     )
+    # Granular capabilities synced from iDempiere window access
+    # Comma-separated capability IDs, e.g. "ventas_facturacion,ventas_cxc,contabilidad_balance"
+    # NULL = all capabilities (for admins)
+    allowed_capabilities: Mapped[str | None] = mapped_column(
+        String(2000), nullable=True
+    )
     # iDempiere salesrep ID (c_bpartner_id of the salesperson)
     # Used for VENDEDOR role to filter sales data to their own
     idempiere_salesrep_id: Mapped[int | None] = mapped_column(
@@ -103,6 +109,15 @@ class User(Base):
                 d.strip() for d in self.extra_departments.split(",") if d.strip()
             )
         return deps
+
+    @property
+    def capability_ids(self) -> set[str] | None:
+        """Return the set of allowed capability IDs, or None for all."""
+        if self.role == UserRole.ADMINISTRADOR:
+            return None  # admin = all capabilities
+        if not self.allowed_capabilities:
+            return None  # no restrictions set yet
+        return {c.strip() for c in self.allowed_capabilities.split(",") if c.strip()}
 
     @property
     def org_ids(self) -> list[int] | None:

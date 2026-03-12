@@ -20,6 +20,7 @@ from app.services.idempiere_role_sync import (
     list_idempiere_users,
     preview_role_mapping,
 )
+from app.services.window_capability_map import get_all_capabilities
 
 router = APIRouter(prefix="/admin", tags=["Administración"])
 
@@ -917,6 +918,15 @@ def _diagnose_low_confidence(
 # ──────────────────────────────────────────────────────────────
 
 
+@router.get("/capabilities")
+def list_capabilities(
+    admin: User = Depends(require_admin),
+):
+    """List all bot capabilities (query types) and their keywords."""
+    caps = get_all_capabilities()
+    return {"total": len(caps), "capabilities": caps}
+
+
 @router.get("/idempiere-users")
 def get_idempiere_users_list(
     admin: User = Depends(require_admin),
@@ -978,6 +988,7 @@ def sync_single_user_roles(
         "ad_user_id": result.ad_user_id,
         "status": result.status,
         "detail": result.detail,
+        "capabilities_count": result.capabilities_count,
         "departments": {
             "before": result.departments_before,
             "after": result.departments_after,
@@ -1024,6 +1035,7 @@ def sync_all_users_roles(
                 "ad_user_id": r.ad_user_id,
                 "status": r.status,
                 "detail": r.detail,
+                "capabilities_count": r.capabilities_count,
                 "departments_after": r.departments_after,
                 "org_ids_after": r.org_ids_after,
             }

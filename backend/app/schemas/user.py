@@ -86,6 +86,7 @@ class UserResponse(BaseModel):
     extra_departments: str | None
     allowed_org_ids: str | None = None
     ad_user_id: int | None = None
+    allowed_capabilities: str | None = None
     idempiere_salesrep_id: int | None = None
     sensitivity_level: int = 0
     is_active: bool

@@ -17,6 +17,13 @@ from sqlalchemy.orm import Session
 
 from app.database import IdempiereSession
 from app.models.user import User, Department, UserRole
+from app.services.window_capability_map import (
+    CAPABILITIES,
+    get_capabilities_for_windows,
+    get_capabilities_for_tables,
+    get_agents_for_capabilities,
+    get_all_keywords_for_capabilities,
+)
 
 logger = logging.getLogger("santonibot.role_sync")
 
@@ -93,6 +100,7 @@ class SyncResult(NamedTuple):
     departments_after: str
     org_ids_before: str | None
     org_ids_after: str | None
+    capabilities_count: int
     status: str  # "synced", "no_ad_user_id", "no_roles_found", "error"
     detail: str
 
@@ -140,6 +148,40 @@ def _get_user_org_ids(ide_session, ad_user_id: int) -> list[int]:
     return [row[0] for row in rows]
 
 
+def _get_user_window_names(ide_session, ad_user_id: int) -> list[str]:
+    """Query iDempiere for the window names accessible via user's roles."""
+    rows = ide_session.execute(text("""
+        SELECT DISTINCT w.name
+        FROM adempiere.ad_user_roles ur
+        JOIN adempiere.ad_window_access wa ON ur.ad_role_id = wa.ad_role_id
+        JOIN adempiere.ad_window w ON wa.ad_window_id = w.ad_window_id
+        WHERE ur.ad_user_id = :uid
+          AND ur.isactive = 'Y'
+          AND wa.isactive = 'Y'
+          AND w.isactive = 'Y'
+        ORDER BY w.name
+    """), {"uid": ad_user_id}).fetchall()
+    return [row[0] for row in rows]
+
+
+def _get_user_table_names(ide_session, ad_user_id: int) -> list[str]:
+    """Query iDempiere for the table names accessible via user's window→tab access."""
+    rows = ide_session.execute(text("""
+        SELECT DISTINCT t.tablename
+        FROM adempiere.ad_user_roles ur
+        JOIN adempiere.ad_window_access wa ON ur.ad_role_id = wa.ad_role_id
+        JOIN adempiere.ad_tab tab ON tab.ad_window_id = wa.ad_window_id
+        JOIN adempiere.ad_table t ON tab.ad_table_id = t.ad_table_id
+        WHERE ur.ad_user_id = :uid
+          AND ur.isactive = 'Y'
+          AND wa.isactive = 'Y'
+          AND tab.isactive = 'Y'
+          AND t.isactive = 'Y'
+        ORDER BY t.tablename
+    """), {"uid": ad_user_id}).fetchall()
+    return [row[0] for row in rows]
+
+
 def _get_idempiere_user_name(ide_session, ad_user_id: int) -> str | None:
     """Get the name of an iDempiere user by ID."""
     row = ide_session.execute(text(
@@ -163,6 +205,7 @@ def sync_user_permissions(db: Session, user: User) -> SyncResult:
             departments_after=_format_departments(user),
             org_ids_before=user.allowed_org_ids,
             org_ids_after=user.allowed_org_ids,
+            capabilities_count=0,
             status="no_ad_user_id",
             detail="Usuario no vinculado a iDempiere (ad_user_id vacío)",
         )
@@ -183,6 +226,7 @@ def sync_user_permissions(db: Session, user: User) -> SyncResult:
                 departments_after=departments_before,
                 org_ids_before=org_ids_before,
                 org_ids_after=org_ids_before,
+                capabilities_count=0,
                 status="no_roles_found",
                 detail=f"No se encontraron roles activos para ad_user_id={user.ad_user_id}",
             )
@@ -194,35 +238,50 @@ def sync_user_permissions(db: Session, user: User) -> SyncResult:
         # 3. Get org access
         org_ids = _get_user_org_ids(ide, user.ad_user_id)
 
-        # 4. Update user record
+        # 4. Get window access → capabilities (GRANULAR PERMISSIONS)
+        window_names = _get_user_window_names(ide, user.ad_user_id)
+        table_names = _get_user_table_names(ide, user.ad_user_id)
+
+        # Compute capabilities from both windows and tables
+        caps_from_windows = get_capabilities_for_windows(window_names)
+        caps_from_tables = get_capabilities_for_tables(table_names)
+        all_capabilities = caps_from_windows | caps_from_tables
+
         if is_admin_level:
-            # User has admin-level iDempiere role → give admin bot role
+            # Admin gets ALL capabilities
+            all_capabilities = set(CAPABILITIES.keys())
+
+        # Derive departments from capabilities (more precise than role name matching)
+        cap_agents = get_agents_for_capabilities(all_capabilities)
+        if cap_agents:
+            # Use capability-derived departments (more precise)
+            mapped_depts = cap_agents
+
+        # 5. Update user record
+        if is_admin_level:
             user.role = UserRole.ADMINISTRADOR
-            user.allowed_org_ids = None  # all orgs
+            user.allowed_org_ids = None
             user.extra_departments = None
-            # sensitivity: max
             user.sensitivity_level = 2
+            user.allowed_capabilities = None  # NULL = all capabilities
         elif mapped_depts:
             dept_list = sorted(mapped_depts)
-            # Primary department = first one
             primary = dept_list[0]
             extras = dept_list[1:]
 
             user.department = Department(primary)
             user.extra_departments = ",".join(extras) if extras else None
 
-            # Org IDs from iDempiere role-org mapping
             if org_ids:
                 user.allowed_org_ids = ",".join(str(o) for o in org_ids)
-            # else: keep existing (don't remove if iDempiere has no org restrictions)
 
-            # Sensitivity = max of all departments
             user.sensitivity_level = max(
                 _DEPT_SENSITIVITY.get(d, 0) for d in dept_list
             )
 
-            # If user currently has a role lower than supervisor and has 2+ depts,
-            # upgrade to supervisor (multi-department access)
+            # Store granular capabilities
+            user.allowed_capabilities = ",".join(sorted(all_capabilities)) if all_capabilities else None
+
             if len(dept_list) > 1 and user.role == UserRole.USUARIO:
                 user.role = UserRole.SUPERVISOR
 
@@ -232,8 +291,10 @@ def sync_user_permissions(db: Session, user: User) -> SyncResult:
         org_ids_after = user.allowed_org_ids
 
         logger.info(
-            "Synced user %s (ad_user_id=%s): roles=%s → depts=%s, orgs=%s",
-            user.username, user.ad_user_id, role_names, departments_after, org_ids_after,
+            "Synced user %s (ad_user_id=%s): roles=%s → depts=%s, "
+            "capabilities=%d, windows=%d, tables=%d, orgs=%s",
+            user.username, user.ad_user_id, role_names, departments_after,
+            len(all_capabilities), len(window_names), len(table_names), org_ids_after,
         )
 
         return SyncResult(
@@ -244,8 +305,13 @@ def sync_user_permissions(db: Session, user: User) -> SyncResult:
             departments_after=departments_after,
             org_ids_before=org_ids_before,
             org_ids_after=org_ids_after,
+            capabilities_count=len(all_capabilities),
             status="synced",
-            detail=f"Roles iDempiere: {', '.join(role_names)}",
+            detail=(
+                f"Roles: {', '.join(role_names)} | "
+                f"Ventanas: {len(window_names)} | "
+                f"Capacidades: {len(all_capabilities)}"
+            ),
         )
 
     except Exception as e:
@@ -259,6 +325,7 @@ def sync_user_permissions(db: Session, user: User) -> SyncResult:
             departments_after=departments_before,
             org_ids_before=org_ids_before,
             org_ids_after=org_ids_before,
+            capabilities_count=0,
             status="error",
             detail=str(e),
         )
@@ -315,6 +382,7 @@ def list_idempiere_users() -> list[dict]:
 def preview_role_mapping(ad_user_id: int) -> dict:
     """Preview what permissions would be assigned for a given iDempiere user.
 
+    Shows roles, windows, capabilities, departments, and organizations.
     Useful for the admin to verify before linking a bot user.
     """
     ide = IdempiereSession()
@@ -322,6 +390,8 @@ def preview_role_mapping(ad_user_id: int) -> dict:
         ide_name = _get_idempiere_user_name(ide, ad_user_id)
         role_names = _get_user_roles(ide, ad_user_id)
         org_ids = _get_user_org_ids(ide, ad_user_id)
+        window_names = _get_user_window_names(ide, ad_user_id)
+        table_names = _get_user_table_names(ide, ad_user_id)
 
         # Get org names for display
         org_names = []
@@ -334,18 +404,47 @@ def preview_role_mapping(ad_user_id: int) -> dict:
             ), params).fetchall()
             org_names = [{"id": r[0], "name": r[1]} for r in rows]
 
+        # Compute capabilities
+        caps_from_windows = get_capabilities_for_windows(window_names)
+        caps_from_tables = get_capabilities_for_tables(table_names)
+        all_caps = caps_from_windows | caps_from_tables
+
         mapped_depts = _map_roles_to_departments(role_names)
         is_admin = mapped_depts == {d.value for d in Department}
+
+        if is_admin:
+            all_caps = set(CAPABILITIES.keys())
+
+        # Derive departments from capabilities
+        cap_agents = get_agents_for_capabilities(all_caps)
+        if cap_agents:
+            mapped_depts = cap_agents
 
         max_sensitivity = max(
             (_DEPT_SENSITIVITY.get(d, 0) for d in mapped_depts), default=0
         )
 
+        # Build capability detail list
+        cap_details = []
+        for cap_id in sorted(all_caps):
+            cap = CAPABILITIES.get(cap_id)
+            if cap:
+                cap_details.append({
+                    "id": cap.id,
+                    "agent": cap.agent,
+                    "display_name": cap.display_name,
+                    "keywords_count": len(cap.keywords),
+                })
+
         return {
             "ad_user_id": ad_user_id,
             "idempiere_name": ide_name,
             "idempiere_roles": role_names,
+            "idempiere_windows": len(window_names),
+            "idempiere_tables": len(table_names),
             "mapped_departments": sorted(mapped_depts),
+            "capabilities": cap_details,
+            "capabilities_count": len(all_caps),
             "is_admin_level": is_admin,
             "organizations": org_names,
             "org_ids": org_ids,
