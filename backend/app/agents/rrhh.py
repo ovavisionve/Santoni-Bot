@@ -60,6 +60,7 @@ CAPACIDADES:
 - Historial de procesos de nómina
 - Indicadores de ausentismo: conceptos de ausencia en nómina (inasistencia, falta, permiso, reposo, incapacidad, licencia)
 - NOTA AUSENTISMO: Los datos de ausentismo provienen de conceptos de nómina y se expresan en cantidad de OCURRENCIAS y MONTO en Bs. No se dispone de horas-hombre en el sistema de nómina de iDempiere.
+- Vacaciones: los datos de vacaciones están en hr_movement como conceptos de nómina (buscar conceptos que contengan "vacacion" o "bono vacacional"). Se puede consultar quiénes tomaron vacaciones, días disfrutados y montos pagados por período.
 
 CONTEXTO iDEMPIERE:
 - Empleados: hr_employee (vinculado a c_bpartner via c_bpartner_id, con hr_department_id y hr_job_id)
@@ -110,10 +111,12 @@ IMPORTANTE SOBRE PERÍODOS:
             "✅ Rotación de personal (bajas por año)\n"
             "\nNOTA: Los datos de empleados reflejan el estado ACTUAL en iDempiere. "
             "Para ver ingresos en un período específico, filtra por fecha de ingreso (startdate).\n"
-            "\n❌ Consultas NO disponibles: evaluaciones de desempeño, control vacacional detallado o prestaciones sociales "
-            "(estos datos no están registrados en las tablas consultadas de iDempiere). "
+            "\n✅ Vacaciones: datos de vacaciones disponibles en conceptos de nómina (hr_movement). "
+            "Se puede consultar quiénes tomaron vacaciones, días y montos por período.\n"
+            "\n❌ Consultas NO disponibles: evaluaciones de desempeño o prestaciones sociales "
+            "(no están en las tablas consultadas). "
             "Indica al usuario que esos datos deben solicitarse al departamento de Talento Humano. "
-            "NUNCA digas 'no tengo acceso' — di 'esa información no está disponible en el sistema' y sugiere alternativas."
+            "NUNCA digas 'no tengo acceso' — di 'esa información no está disponible en el sistema'."
         )
 
     def get_sql_context(self) -> str:
