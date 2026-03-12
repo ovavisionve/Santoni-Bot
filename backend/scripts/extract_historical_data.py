@@ -299,10 +299,11 @@ def copy_transaction_table(
             batch_data.append(record)
 
         with local_engine.begin() as dst_conn:
-            dst_conn.execute(
-                text(f"INSERT INTO adempiere.{table_name} ({cols_sql}) VALUES ({placeholders})"),
-                batch_data,
-            )
+            insert_sql = f"INSERT INTO adempiere.{table_name} ({cols_sql}) VALUES ({placeholders})"
+            # Tables with duplicate source rows need ON CONFLICT handling
+            if table_name == "m_storageonhand":
+                insert_sql += " ON CONFLICT (m_product_id, m_locator_id, m_attributesetinstance_id) DO UPDATE SET qtyonhand = EXCLUDED.qtyonhand"
+            dst_conn.execute(text(insert_sql), batch_data)
 
         total += len(rows)
         offset += batch_size
