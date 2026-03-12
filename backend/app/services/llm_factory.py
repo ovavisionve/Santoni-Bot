@@ -76,13 +76,22 @@ def create_llm(
         from langchain_openai import ChatOpenAI
 
         logger.info("Using OpenRouter (%s) for %s", settings.openrouter_model, purpose)
-        return ChatOpenAI(
+        extra_body = {}
+        if settings.openrouter_providers:
+            providers = [p.strip() for p in settings.openrouter_providers.split(",") if p.strip()]
+            if providers:
+                extra_body["provider"] = {"order": providers, "allow_fallbacks": False}
+                logger.info("OpenRouter providers restricted to: %s", providers)
+        kwargs_or = dict(
             openai_api_key=settings.openrouter_api_key,
             base_url="https://openrouter.ai/api/v1",
             model=settings.openrouter_model,
             temperature=temperature,
             max_tokens=max_tokens,
         )
+        if extra_body:
+            kwargs_or["model_kwargs"] = {"extra_body": extra_body}
+        return ChatOpenAI(**kwargs_or)
 
     else:
         from langchain_groq import ChatGroq
