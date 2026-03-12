@@ -37,10 +37,13 @@ _KEYWORD_RULES: list[tuple[str, list[str]]] = [
     # Compras a productores (before generic "compra")
     ("compras_productores", [
         "productor", "productores", "arroz paddy", "maiz blanco",
-        "arroz acondicionado", "guia de compra", "guias de compra",
+        "arroz acondicionado", "maiz acondicionado", "maíz acondicionado",
+        "guia de compra", "guias de compra",
         "compra de arroz", "compra de maiz", "compra de maíz",
         "compras a productor", "precio del arroz", "precio del maiz",
         "precio del maíz", "tonelada", "kilogramo",
+        "recepcion de maiz", "recepción de maíz", "recepcion de arroz", "recepción de arroz",
+        "buque", "narvi", "maiz seco", "maíz seco",
     ]),
     # Producción — BEFORE compras_insumos to catch "materia prima", "producto terminado"
     # and "producción"-related keywords before they fall through to inventory/compras
