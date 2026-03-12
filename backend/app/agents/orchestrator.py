@@ -138,6 +138,7 @@ _KEYWORD_RULES: list[tuple[str, list[str]]] = [
         "ausentismo", "ausentimos", "ausencia", "ausencias", "falta", "faltas",
         "evaluacion", "evaluación",
         "cumpleaño", "cumpleaños", "cumpleañero", "cumpleañeros",
+        "nacido", "nacidos", "nacimiento", "fecha de nacimiento",
         "salario", "sueldo", "sueldos", "salarios",
         "recurso humano", "recursos humanos",
         "rrhh", "talento humano",
