@@ -457,6 +457,287 @@ def preview_role_mapping(ad_user_id: int) -> dict:
         ide.close()
 
 
+def bulk_import_idempiere_users(db: Session) -> dict:
+    """Import ALL iDempiere users with roles into the bot as inactive users.
+
+    Groups by person name to deduplicate (same person may have multiple
+    ad_user_ids across iDempiere clients).  Picks the ad_user_id with the
+    most roles as the primary.  Skips users already in the bot (by ad_user_id
+    or generated username).
+
+    Returns summary with created, skipped, error counts.
+    """
+    from app.services.auth import hash_password
+    import unicodedata
+    import secrets
+    import string
+
+    ide = IdempiereSession()
+    try:
+        # Fetch all users with at least one active role
+        rows = ide.execute(text("""
+            SELECT u.ad_user_id, u.name, u.email,
+                   string_agg(DISTINCT r.name, ', ' ORDER BY r.name) AS roles,
+                   COUNT(DISTINCT r.ad_role_id) AS role_count
+            FROM adempiere.ad_user u
+            JOIN adempiere.ad_user_roles ur
+                ON ur.ad_user_id = u.ad_user_id AND ur.isactive = 'Y'
+            JOIN adempiere.ad_role r
+                ON r.ad_role_id = ur.ad_role_id AND r.isactive = 'Y'
+            WHERE u.isactive = 'Y'
+              AND u.ad_user_id > 0
+              AND u.name NOT IN ('System', 'SuperUser', 'GardenAdmin', 'GardenUser')
+            GROUP BY u.ad_user_id, u.name, u.email
+            ORDER BY u.name
+        """)).fetchall()
+    finally:
+        ide.close()
+
+    # Group by normalized name → pick best ad_user_id
+    from collections import defaultdict
+    people: dict[str, list[dict]] = defaultdict(list)
+    for row in rows:
+        ad_user_id, name, email, roles, role_count = row
+        norm_name = _normalize_name(name)
+        if not norm_name or len(norm_name) < 2:
+            continue
+        people[norm_name].append({
+            "ad_user_id": ad_user_id,
+            "name": name,
+            "email": email,
+            "roles": roles,
+            "role_count": role_count,
+        })
+
+    # Get existing ad_user_ids and usernames to skip
+    existing_ad_ids = {
+        r[0] for r in db.query(User.ad_user_id).filter(
+            User.ad_user_id.isnot(None)
+        ).all()
+    }
+    existing_usernames = {
+        r[0].lower() for r in db.query(User.username).all()
+    }
+    existing_emails = {
+        r[0].lower() for r in db.query(User.email).all()
+    }
+
+    created = []
+    skipped = []
+    errors = []
+    default_password = hash_password("SantoniTemp2026!")
+
+    for norm_name, entries in people.items():
+        # Pick the entry with the most roles
+        best = max(entries, key=lambda e: e["role_count"])
+        ad_user_id = best["ad_user_id"]
+        full_name = best["name"].strip()
+        email = best["email"]
+
+        # Skip if ad_user_id already linked
+        if ad_user_id in existing_ad_ids:
+            skipped.append({
+                "name": full_name,
+                "ad_user_id": ad_user_id,
+                "reason": "ad_user_id ya vinculado",
+            })
+            continue
+
+        # Also check if ANY of this person's ad_user_ids are already linked
+        all_ids = {e["ad_user_id"] for e in entries}
+        if all_ids & existing_ad_ids:
+            skipped.append({
+                "name": full_name,
+                "ad_user_id": ad_user_id,
+                "reason": "persona ya tiene otro ad_user_id vinculado",
+            })
+            continue
+
+        # Generate username
+        username = _generate_username(full_name)
+
+        # If username matches an existing user WITHOUT ad_user_id, link them
+        existing_user = db.query(User).filter(
+            User.username == username,
+            User.ad_user_id.is_(None),
+        ).first()
+        if existing_user:
+            existing_user.ad_user_id = ad_user_id
+            existing_ad_ids.add(ad_user_id)
+            db.flush()
+            created.append({
+                "id": existing_user.id,
+                "username": username,
+                "full_name": full_name,
+                "ad_user_id": ad_user_id,
+                "roles": best["roles"],
+                "department": existing_user.department.value,
+                "linked_existing": True,
+            })
+            continue
+
+        # Ensure username uniqueness
+        base_username = username
+        counter = 1
+        while username.lower() in existing_usernames:
+            username = f"{base_username}{counter}"
+            counter += 1
+        existing_usernames.add(username.lower())
+
+        # Generate email if missing
+        if not email or email.lower() in existing_emails:
+            email = f"{username}@santonibot.local"
+        # Ensure email uniqueness
+        base_email = email
+        counter = 1
+        while email.lower() in existing_emails:
+            name_part, domain = base_email.rsplit("@", 1)
+            email = f"{name_part}{counter}@{domain}"
+            counter += 1
+        existing_emails.add(email.lower())
+
+        # Determine initial department from roles
+        role_names = [r.strip() for r in best["roles"].split(",")]
+        mapped_depts = _map_roles_to_departments(role_names)
+        is_admin = mapped_depts == {d.value for d in Department}
+
+        if is_admin:
+            dept = Department.VENTAS  # placeholder, will be overridden by sync
+            bot_role = UserRole.ADMINISTRADOR
+        elif mapped_depts:
+            dept_list = sorted(mapped_depts)
+            dept = Department(dept_list[0])
+            bot_role = UserRole.SUPERVISOR if len(dept_list) > 1 else UserRole.USUARIO
+        else:
+            dept = Department.VENTAS  # fallback
+            bot_role = UserRole.USUARIO
+
+        try:
+            user = User(
+                email=email,
+                username=username,
+                full_name=full_name,
+                hashed_password=default_password,
+                role=bot_role,
+                department=dept,
+                extra_departments=",".join(sorted(mapped_depts - {dept.value})) if len(mapped_depts) > 1 else None,
+                ad_user_id=ad_user_id,
+                is_active=False,
+                sensitivity_level=0,
+            )
+            db.add(user)
+            db.flush()  # get user.id
+
+            # Track the ad_user_id as existing
+            existing_ad_ids.add(ad_user_id)
+
+            created.append({
+                "id": user.id,
+                "username": username,
+                "full_name": full_name,
+                "ad_user_id": ad_user_id,
+                "roles": best["roles"],
+                "department": dept.value,
+            })
+        except Exception as e:
+            db.rollback()
+            errors.append({
+                "name": full_name,
+                "ad_user_id": ad_user_id,
+                "error": str(e),
+            })
+            logger.error("Error creating user %s: %s", full_name, e)
+
+    # Commit all created users
+    if created:
+        db.commit()
+
+    # Now sync permissions for all newly created users
+    synced_count = 0
+    sync_errors = 0
+    for entry in created:
+        try:
+            user = db.query(User).filter(User.id == entry["id"]).first()
+            if user:
+                result = sync_user_permissions(db, user)
+                if result.status == "synced":
+                    synced_count += 1
+                    entry["capabilities_count"] = result.capabilities_count
+                    entry["department"] = result.departments_after
+                else:
+                    entry["sync_status"] = result.status
+        except Exception as e:
+            sync_errors += 1
+            logger.error("Error syncing imported user %s: %s", entry["username"], e)
+
+    return {
+        "total_idempiere_users_with_roles": len(rows),
+        "unique_people": len(people),
+        "created": len(created),
+        "skipped": len(skipped),
+        "errors": len(errors),
+        "synced": synced_count,
+        "sync_errors": sync_errors,
+        "default_password": "SantoniTemp2026!",
+        "note": "Todos los usuarios importados están INACTIVOS. Active desde el panel admin.",
+        "created_users": created[:50],  # limit response size
+        "skipped_users": skipped[:50],
+        "error_details": errors,
+    }
+
+
+def _normalize_name(name: str) -> str:
+    """Normalize a name for deduplication: lowercase, strip accents, remove non-alpha."""
+    import unicodedata
+    name = name.strip().upper()
+    # Remove accents
+    nfkd = unicodedata.normalize("NFKD", name)
+    ascii_name = "".join(c for c in nfkd if not unicodedata.combining(c))
+    # Keep only letters and spaces
+    clean = "".join(c for c in ascii_name if c.isalpha() or c == " ")
+    return " ".join(clean.split())  # normalize whitespace
+
+
+def _generate_username(full_name: str) -> str:
+    """Generate a username from a full name: first initial + last name.
+
+    Examples:
+      JOHAN ALVAREZ → jalvarez
+      EMELIN SALAS → esalas
+      LENNY MERCEDES SILVA DE GIRALDO → lsilva
+      AdminMaiz → adminmaiz
+    """
+    import unicodedata
+    # Remove accents
+    nfkd = unicodedata.normalize("NFKD", full_name.strip())
+    ascii_name = "".join(c for c in nfkd if not unicodedata.combining(c))
+    # Keep only letters and spaces
+    clean = "".join(c for c in ascii_name if c.isalpha() or c == " ")
+    parts = clean.split()
+
+    if not parts:
+        return "user"
+
+    # Filter out common connectors
+    skip_words = {"DE", "DEL", "LA", "LAS", "LOS", "EL", "Y"}
+
+    if len(parts) == 1:
+        return parts[0].lower()
+
+    first_initial = parts[0][0].lower()
+
+    # Find first "last name" (skip given names — take from position 1+,
+    # skipping connectors)
+    # Heuristic: if name has 2 parts, use second. If 3+, try second as last name.
+    # If it's a connector, try third.
+    for part in parts[1:]:
+        if part.upper() not in skip_words:
+            return f"{first_initial}{part.lower()}"
+
+    # Fallback: just first initial + second word
+    return f"{first_initial}{parts[1].lower()}"
+
+
 def _format_departments(user: User) -> str:
     """Format user's departments as readable string."""
     deps = [user.department.value] if user.department else []

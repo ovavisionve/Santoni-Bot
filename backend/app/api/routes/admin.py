@@ -19,6 +19,7 @@ from app.services.idempiere_role_sync import (
     sync_all_user_permissions,
     list_idempiere_users,
     preview_role_mapping,
+    bulk_import_idempiere_users,
 )
 from app.services.window_capability_map import get_all_capabilities
 
@@ -1042,3 +1043,38 @@ def sync_all_users_roles(
             for r in results
         ],
     }
+
+
+@router.post("/bulk-import")
+def bulk_import_users(
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Import ALL iDempiere users with roles into the bot (inactive).
+
+    - Deduplicates by person name (same person with multiple ad_user_ids)
+    - Picks the ad_user_id with the most roles as primary
+    - Generates usernames (first initial + last name)
+    - Creates all users as INACTIVE with temp password
+    - Syncs permissions from iDempiere automatically
+    - Skips users already in the bot
+
+    After import, activate users from the admin panel as needed.
+    """
+    try:
+        result = bulk_import_idempiere_users(db)
+
+        log_action(
+            db,
+            user_id=admin.id,
+            action="bulk_import",
+            resource="security",
+            detail=(
+                f"Importación masiva: {result['created']} creados, "
+                f"{result['skipped']} omitidos, {result['errors']} errores"
+            ),
+        )
+
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error en importación: {e}")
