@@ -19,7 +19,6 @@ Historical data routing (Mar 2026+):
 - This avoids hitting iDempiere for historical data.
 """
 
-import functools
 import logging
 import re
 from datetime import date, datetime
@@ -70,190 +69,44 @@ def _is_before_cutoff(
     mes: int | None = None,
     anio: int | None = None,
 ) -> bool:
-    """Determine if the query should use the local historical DB.
+    """Determine if the requested date range falls entirely before the cutoff.
 
-    The local DB contains ALL historical data (updated daily).
-    Returns True (use local DB) for ALL queries, EXCEPT when the
-    query is explicitly for today only (date_from == date_to == today).
-
-    For queries that include today in their range (e.g. "este mes"),
-    the build functions handle dual queries: local DB for historical
-    data + iDempiere for today's data, merged automatically.
+    Returns True only if ALL requested data is before the cutoff date.
+    Returns False if:
+    - No date filters specified (defaults to current/live data)
+    - Date range extends beyond cutoff
+    - Only year specified and it's the cutoff year
     """
-    today = date.today().isoformat()
-
-    # Only "today-only" queries go to iDempiere
-    if date_from and date_to and date_from == today and date_to == today:
+    cutoff = _get_cutoff_date()
+    try:
+        cutoff_date = datetime.strptime(cutoff, "%Y-%m-%d").date()
+    except (ValueError, TypeError):
         return False
 
-    # Everything else → local DB (has all historical data, updated daily)
-    return True
-
-
-def _includes_today(
-    date_from: str | None = None,
-    date_to: str | None = None,
-    mes: int | None = None,
-    anio: int | None = None,
-) -> bool:
-    """Check if the query period includes today's date.
-
-    Used to determine if a dual query (local + iDempiere for today) is needed.
-    """
-    today = date.today()
-
-    if date_from and date_to:
+    # Explicit date range
+    if date_to:
         try:
             end = datetime.strptime(str(date_to), "%Y-%m-%d").date()
-            return end >= today
+            return end < cutoff_date
         except (ValueError, TypeError):
             return False
 
+    # Month + year
     if mes and anio:
-        return mes == today.month and anio == today.year
+        # End of the specified month
+        if mes == 12:
+            month_end = date(anio + 1, 1, 1)
+        else:
+            month_end = date(anio, mes + 1, 1)
+        return month_end <= cutoff_date
 
-    # No date filter → doesn't specifically include today
+    # Only year
+    if anio and not mes:
+        year_end = date(anio + 1, 1, 1)
+        return year_end <= cutoff_date
+
+    # No date filters → use live iDempiere
     return False
-
-
-def _merge_aggregated_results(base: dict, supplement: dict) -> dict:
-    """Merge supplement query results into base results.
-
-    - Numeric values: summed
-    - Lists: concatenated
-    - Strings/other: keep base value
-    """
-    if not supplement:
-        return base
-    merged = dict(base)
-    for key, val in supplement.items():
-        if key not in merged:
-            merged[key] = val
-        elif isinstance(val, (int, float)) and isinstance(merged[key], (int, float)):
-            merged[key] = merged[key] + val
-        elif isinstance(val, list) and isinstance(merged[key], list):
-            merged[key] = merged[key] + val
-        # Strings/other: keep base value (e.g. "moneda" label)
-    return merged
-
-
-def _with_today_supplement(build_func):
-    """Decorator that adds dual-query support to build functions.
-
-    When historical routing is active and the query period includes today:
-    1. The build function runs normally on the local (historical) DB
-    2. It runs again on iDempiere for TODAY only
-    3. Results are merged (sums for numbers, concat for lists)
-
-    This ensures the user gets complete data: historical from local DB
-    (fast) + today's live data from iDempiere.
-    """
-    @functools.wraps(build_func)
-    def wrapper(**kwargs):
-        _supplementing = kwargs.pop('_supplementing', False)
-        result = build_func(**kwargs)
-
-        if (
-            not _supplementing
-            and _is_historical_enabled()
-            and _check_historical_schema()
-            and _includes_today(
-                kwargs.get('date_from'), kwargs.get('date_to'),
-                kwargs.get('mes'), kwargs.get('anio'),
-            )
-        ):
-            try:
-                today_str = date.today().isoformat()
-                today_kwargs = dict(kwargs)
-                today_kwargs['date_from'] = today_str
-                today_kwargs['date_to'] = today_str
-                today_kwargs['mes'] = None
-                today_kwargs['anio'] = None
-                today_kwargs['_supplementing'] = True
-                today_data = wrapper(**today_kwargs)
-
-                if isinstance(result, dict) and isinstance(today_data, dict):
-                    result = _merge_aggregated_results(result, today_data)
-                elif isinstance(result, list) and isinstance(today_data, list):
-                    result = result + today_data
-
-                logger.info(
-                    "Dual query: supplemented %s with today's live iDempiere data",
-                    build_func.__name__,
-                )
-            except Exception as e:
-                logger.warning(
-                    "Could not supplement %s with today's data: %s",
-                    build_func.__name__, e,
-                )
-
-        return result
-    return wrapper
-
-
-_historical_available: bool | None = None  # cached after first check
-
-
-def _check_historical_schema() -> bool:
-    """Check if the local adempiere schema exists and has data.
-
-    Result is cached so we only hit the DB once per process lifetime.
-    """
-    global _historical_available
-    if _historical_available is not None:
-        return _historical_available
-
-    try:
-        session = HistoricalSession()
-        try:
-            # Check that the schema exists and has at least one reference table with rows
-            result = session.execute(
-                text(
-                    "SELECT EXISTS ("
-                    "  SELECT 1 FROM information_schema.tables "
-                    "  WHERE table_schema = 'adempiere' AND table_name = 'c_invoice'"
-                    ")"
-                )
-            )
-            schema_exists = result.scalar()
-            if not schema_exists:
-                logger.warning(
-                    "Historical schema 'adempiere' or table 'c_invoice' not found in local DB. "
-                    "Falling back to iDempiere for ALL queries. "
-                    "Run extract_historical_data.py to populate local data."
-                )
-                _historical_available = False
-                return False
-
-            # Check there's actual data (not just empty tables)
-            result = session.execute(
-                text("SELECT COUNT(*) FROM adempiere.c_invoice LIMIT 1")
-            )
-            row_count = result.scalar()
-            if not row_count:
-                logger.warning(
-                    "Historical table adempiere.c_invoice exists but is EMPTY. "
-                    "Falling back to iDempiere. Run extract_historical_data.py."
-                )
-                _historical_available = False
-                return False
-
-            logger.info(
-                "Historical data verified: adempiere.c_invoice has data. "
-                "Historical routing is active."
-            )
-            _historical_available = True
-            return True
-        finally:
-            session.close()
-    except Exception as exc:
-        logger.warning(
-            "Could not verify historical data schema: %s. "
-            "Falling back to iDempiere for ALL queries.",
-            exc,
-        )
-        _historical_available = False
-        return False
 
 
 def _get_session(
@@ -266,24 +119,13 @@ def _get_session(
 
     Returns HistoricalSession (local DB) for queries entirely before cutoff,
     IdempiereSession (live) otherwise.
-
-    Safety: if historical routing is enabled but the local schema is empty
-    or missing, falls back to iDempiere to avoid returning empty results.
     """
-    if (
-        _is_historical_enabled()
-        and _is_before_cutoff(date_from, date_to, mes, anio)
-        and _check_historical_schema()
-    ):
+    if _is_historical_enabled() and _is_before_cutoff(date_from, date_to, mes, anio):
         logger.info(
             "Using HISTORICAL (local) DB for date_from=%s, date_to=%s, mes=%s, anio=%s",
             date_from, date_to, mes, anio,
         )
         return HistoricalSession()
-    logger.info(
-        "Using LIVE iDempiere DB for date_from=%s, date_to=%s, mes=%s, anio=%s",
-        date_from, date_to, mes, anio,
-    )
     return IdempiereSession()
 
 
@@ -567,7 +409,6 @@ def _add_salesrep_filter(conditions: list, params: dict, salesrep_id: int | None
         params["salesrep_id"] = salesrep_id
 
 
-@_with_today_supplement
 def build_sales_summary(
     zona: str | None = None,
     vendedor: str | None = None,
@@ -780,7 +621,6 @@ def build_sales_summary(
         db.close()
 
 
-@_with_today_supplement
 def build_collection_summary(
     zona: str | None = None,
     vendedor: str | None = None,
@@ -873,7 +713,6 @@ def build_collection_summary(
         db.close()
 
 
-@_with_today_supplement
 def build_top_clients(
     limit: int = 20,
     zona: str | None = None,
@@ -970,12 +809,12 @@ def build_overdue_receivables(
     org_ids: list[int] | None = None,
     salesrep_id: int | None = None,
 ) -> list[dict]:
-    """Overdue accounts receivable (unpaid sales invoices).
+    """Overdue accounts receivable from iDempiere (unpaid sales invoices).
 
     Uses client_zone CTE for zone info, and filters to recent invoices
     (last 3 years) with amounts > 100 to exclude old residual balances.
     """
-    db = _get_session()
+    db = IdempiereSession()
     try:
         # Build org filter for overdue receivables
         org_clause = ""
@@ -1051,18 +890,11 @@ def build_financial_summary(
     date_from: str | None = None,
     date_to: str | None = None,
 ) -> dict:
-    """Financial summary from iDempiere: bank balances, receivables, payables.
-
-    NOTE: Not decorated with @_with_today_supplement because:
-    - Bank balances are current-state data (always from iDempiere directly)
-    - Receivables/payables have nested dicts that don't merge cleanly
-    """
+    """Financial summary from iDempiere: bank balances, receivables, payables."""
     # If date_from/date_to provided, nullify mes (range takes priority)
     if date_from and date_to:
         mes = None
     db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
-    # Bank balances are current-state data → ALWAYS query live iDempiere
-    db_banks = IdempiereSession()
     try:
         # Bank balances (filtered by org if applicable)
         bank_conditions = ["ba.isactive = 'Y'"]
@@ -1094,7 +926,7 @@ def build_financial_summary(
                 "saldo": float(r[4]) if r[4] else 0.0,
                 "organizacion": r[5] or "Sin asignar",
             }
-            for r in db_banks.execute(bank_q, bank_params).fetchall()
+            for r in db.execute(bank_q, bank_params).fetchall()
         ]
 
         # Separate totals by currency
@@ -1238,7 +1070,6 @@ def build_financial_summary(
             "cuentas_por_pagar": payables,
         }
     finally:
-        db_banks.close()
         db.close()
 
 
@@ -1254,7 +1085,7 @@ def build_employee_summary(org_ids: list[int] | None = None) -> dict:
     from hr_employee.ad_org_id (correctly assigned) instead of c_bpartner.ad_org_id
     (which often points to the wildcard '*' org).
     """
-    db = _get_session()
+    db = IdempiereSession()
     try:
         # Overall counts (unique employees)
         conditions = ["1=1"]
@@ -1332,7 +1163,6 @@ def build_employee_summary(org_ids: list[int] | None = None) -> dict:
         db.close()
 
 
-@_with_today_supplement
 def build_employee_list(
     org_ids: list[int] | None = None,
     cargo_search: str | None = None,
@@ -1525,7 +1355,6 @@ def build_birthday_list(
         db.close()
 
 
-@_with_today_supplement
 def build_payroll_summary(
     mes: int | None = None,
     anio: int | None = None,
@@ -1605,7 +1434,6 @@ def build_payroll_summary(
         db.close()
 
 
-@_with_today_supplement
 def build_attendance_summary(
     mes: int | None = None,
     anio: int | None = None,
@@ -1731,7 +1559,6 @@ def build_attendance_summary(
         db.close()
 
 
-@_with_today_supplement
 def build_turnover_summary(
     anio: int | None = None,
     org_ids: list[int] | None = None,
@@ -1808,7 +1635,6 @@ def build_turnover_summary(
 # PRODUCCION (Production)
 # ---------------------------------------------------------------------------
 
-@_with_today_supplement
 def build_production_summary(
     mes: int | None = None,
     anio: int | None = None,
@@ -1916,7 +1742,6 @@ def build_production_summary(
         db.close()
 
 
-@_with_today_supplement
 def build_production_orders(
     mes: int | None = None,
     anio: int | None = None,
@@ -1970,7 +1795,6 @@ def build_production_orders(
 # COMPRAS PRODUCTORES (Producer Purchases)
 # ---------------------------------------------------------------------------
 
-@_with_today_supplement
 def build_producer_purchases(
     producto: str | None = None,
     mes: int | None = None,
@@ -2079,8 +1903,8 @@ def build_producer_purchases(
 
 
 def build_registered_producers(org_ids: list[int] | None = None) -> list[dict]:
-    """Registered producers (vendors) from c_bpartner."""
-    db = _get_session()
+    """Registered producers (vendors) from iDempiere c_bpartner."""
+    db = IdempiereSession()
     try:
         conditions = [
             "bp.isactive = 'Y'",
@@ -2108,12 +1932,12 @@ def build_registered_producers(org_ids: list[int] | None = None) -> list[dict]:
 def build_producer_pending_payments(
     producto: str | None = None, org_ids: list[int] | None = None,
 ) -> list[dict]:
-    """Pending purchase invoices (not fully paid).
+    """Pending purchase invoices (not fully paid) from iDempiere.
 
     Uses c_invoice (ispaid='N') instead of c_order, since c_order
     does not have a totalpaid column in Santoni's iDempiere.
     """
-    db = _get_session()
+    db = IdempiereSession()
     try:
         conditions = [
             "i.issotrx = 'N'",
@@ -2155,7 +1979,6 @@ def build_producer_pending_payments(
         db.close()
 
 
-@_with_today_supplement
 def build_producer_price_analysis(
     anio: int | None = None,
     org_ids: list[int] | None = None,
@@ -2206,7 +2029,6 @@ def build_producer_price_analysis(
 # COMPRAS INSUMOS (Supply Purchases)
 # ---------------------------------------------------------------------------
 
-@_with_today_supplement
 def build_supply_purchases(
     mes: int | None = None,
     anio: int | None = None,
@@ -2305,7 +2127,6 @@ def build_supply_purchases(
         db.close()
 
 
-@_with_today_supplement
 def build_product_purchase_history(
     product_search: str,
     org_ids: list[int] | None = None,
@@ -2370,7 +2191,6 @@ def build_product_purchase_history(
         db.close()
 
 
-@_with_today_supplement
 def build_pending_purchase_orders(
     mes: int | None = None,
     anio: int | None = None,
@@ -2494,7 +2314,6 @@ def build_pending_purchase_orders(
         db.close()
 
 
-@_with_today_supplement
 def build_supplier_price_comparison(
     product_search: str,
     org_ids: list[int] | None = None,
@@ -2558,7 +2377,6 @@ def build_supplier_price_comparison(
         db.close()
 
 
-@_with_today_supplement
 def build_purchase_payment_status(
     mes: int | None = None,
     anio: int | None = None,
@@ -2639,7 +2457,6 @@ def build_purchase_payment_status(
 # CONTABILIDAD (Accounting)
 # ---------------------------------------------------------------------------
 
-@_with_today_supplement
 def build_accounting_summary(
     mes: int | None = None,
     anio: int | None = None,
@@ -2758,7 +2575,6 @@ def build_accounting_summary(
         db.close()
 
 
-@_with_today_supplement
 def build_account_detail(
     account_code: str,
     date_from: str | None = None,
@@ -2980,7 +2796,7 @@ def build_inventory_stock(
     category_search: str | None = None,
     warehouse_search: str | None = None,
 ) -> dict:
-    """Inventory stock from m_storageonhand.
+    """Inventory stock from iDempiere m_storageonhand.
 
     m_storageonhand has multiple rows per product (one per lot/batch via
     m_attributesetinstance_id), so we SUM(qtyonhand) grouped by product.
@@ -2989,7 +2805,7 @@ def build_inventory_stock(
         m_storageonhand → m_locator → m_warehouse → ad_org
         m_storageonhand → m_product → m_product_category
     """
-    db = _get_session()
+    db = IdempiereSession()
     try:
         conditions = ["s.isactive = 'Y'", "s.qtyonhand <> 0"]
         params: dict = {}

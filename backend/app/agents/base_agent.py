@@ -48,9 +48,8 @@ def _build_datetime_context() -> str:
         f"- Hora: {now.strftime('%H:%M')} (Venezuela)\n"
         f"- Mes actual: {mes} {now.year}\n"
         f"- Año actual: {now.year}\n"
-        f"\nCuando el usuario diga 'actual', 'este mes', 'del mes', 'este año' "
-        f"se refiere a: {mes} {now.year} (desde el 1 hasta hoy {now.day}/{now.month:02d}/{now.year}).\n"
-        f"'Hoy' se refiere únicamente al día {now.day}/{now.month:02d}/{now.year}.\n"
+        f"\nCuando el usuario diga 'actual', 'hoy', 'este mes', 'del mes', 'este año' "
+        f"se refiere a: {mes} {now.year}.\n"
         f"NUNCA respondas con datos de otra fecha a menos que el usuario lo pida explícitamente.\n"
     )
 

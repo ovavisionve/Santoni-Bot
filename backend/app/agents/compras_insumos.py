@@ -131,8 +131,8 @@ SOBRE INVENTARIO/STOCK:
             "✅ Órdenes de compra pendientes (c_order) por período, estado y proveedor\n"
             "✅ Comparación de precios entre proveedores para un mismo producto\n"
             "✅ Estado de pago de facturas de compra (pagadas vs pendientes)\n"
-            "\n❌ NO puedo consultar: gastos de nómina ni servicios públicos. "
-            "Para esos temas, redirige al usuario al agente de RRHH o Finanzas."
+            "\n❌ NO puedo consultar: gastos administrativos (nómina, servicios). "
+            "Redirige al usuario al agente de RRHH o Finanzas."
         )
 
     def get_sql_context(self) -> str:
@@ -419,8 +419,8 @@ Datos de compras de insumos en iDempiere:
                     # Stop at first user message that doesn't mention currency
                     break
 
-        # Default: show ALL currencies (VES + USD) so no data is hidden
-        return None
+        # Default: VES (bolívares)
+        return self._VES_IDS
 
     def fetch_data(self, message: str, org_ids: list[int] | None = None, salesrep_id: int | None = None, history: list[tuple[str, str]] | None = None) -> str | None:
         msg = message.lower()

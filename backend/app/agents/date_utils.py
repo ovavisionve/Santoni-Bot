@@ -206,20 +206,11 @@ def build_period_label(
     mes: int | None = None,
     anio: int | None = None,
 ) -> str:
-    """Build a human-readable label for the period being queried.
-
-    For the current month, appends "(hasta DD/MM)" to clarify that
-    "este mes" means up to today, not the entire month.
-    """
+    """Build a human-readable label for the period being queried."""
     if date_from and date_to:
         return f"{date_from} al {date_to}"
     if mes and anio:
-        now = datetime.now()
-        label = f"{MESES_NOMBRES.get(mes, str(mes))} {anio}"
-        # Current month: clarify it's up to today
-        if mes == now.month and anio == now.year:
-            label += f" (hasta {now.day:02d}/{now.month:02d})"
-        return label
+        return f"{MESES_NOMBRES.get(mes, str(mes))} {anio}"
     if anio:
         return f"Año {anio}"
     return "Todos los periodos"
