@@ -215,8 +215,17 @@ def sync_user_permissions(db: Session, user: User) -> SyncResult:
 
     ide = IdempiereSession()
     try:
-        # 1. Get iDempiere role names
-        role_names = _get_user_roles(ide, user.ad_user_id)
+        # Use ALL ad_user_ids for this person (multi-org combined permissions)
+        all_user_ids = user.all_idempiere_user_ids
+        if not all_user_ids:
+            all_user_ids = [user.ad_user_id]
+
+        # 1. Get iDempiere role names from ALL ad_user_ids
+        role_names: list[str] = []
+        for uid in all_user_ids:
+            role_names.extend(_get_user_roles(ide, uid))
+        role_names = sorted(set(role_names))  # deduplicate
+
         if not role_names:
             return SyncResult(
                 user_id=user.id,
@@ -228,19 +237,27 @@ def sync_user_permissions(db: Session, user: User) -> SyncResult:
                 org_ids_after=org_ids_before,
                 capabilities_count=0,
                 status="no_roles_found",
-                detail=f"No se encontraron roles activos para ad_user_id={user.ad_user_id}",
+                detail=f"No se encontraron roles activos para ad_user_ids={all_user_ids}",
             )
 
         # 2. Map roles → departments
         mapped_depts = _map_roles_to_departments(role_names)
         is_admin_level = mapped_depts == {d.value for d in Department}
 
-        # 3. Get org access
-        org_ids = _get_user_org_ids(ide, user.ad_user_id)
+        # 3. Get org access from ALL ad_user_ids
+        org_ids: list[int] = []
+        for uid in all_user_ids:
+            org_ids.extend(_get_user_org_ids(ide, uid))
+        org_ids = sorted(set(org_ids))
 
-        # 4. Get window access → capabilities (GRANULAR PERMISSIONS)
-        window_names = _get_user_window_names(ide, user.ad_user_id)
-        table_names = _get_user_table_names(ide, user.ad_user_id)
+        # 4. Get window/table access from ALL ad_user_ids (COMBINED PERMISSIONS)
+        window_names: list[str] = []
+        table_names: list[str] = []
+        for uid in all_user_ids:
+            window_names.extend(_get_user_window_names(ide, uid))
+            table_names.extend(_get_user_table_names(ide, uid))
+        window_names = sorted(set(window_names))
+        table_names = sorted(set(table_names))
 
         # Compute capabilities from both windows and tables
         caps_from_windows = get_capabilities_for_windows(window_names)
@@ -291,9 +308,9 @@ def sync_user_permissions(db: Session, user: User) -> SyncResult:
         org_ids_after = user.allowed_org_ids
 
         logger.info(
-            "Synced user %s (ad_user_id=%s): roles=%s → depts=%s, "
+            "Synced user %s (ad_user_ids=%s): roles=%s → depts=%s, "
             "capabilities=%d, windows=%d, tables=%d, orgs=%s",
-            user.username, user.ad_user_id, role_names, departments_after,
+            user.username, all_user_ids, role_names, departments_after,
             len(all_capabilities), len(window_names), len(table_names), org_ids_after,
         )
 
@@ -308,7 +325,7 @@ def sync_user_permissions(db: Session, user: User) -> SyncResult:
             capabilities_count=len(all_capabilities),
             status="synced",
             detail=(
-                f"Roles: {', '.join(role_names)} | "
+                f"Roles: {', '.join(role_names)} ({len(all_user_ids)} ad_user_ids) | "
                 f"Ventanas: {len(window_names)} | "
                 f"Capacidades: {len(all_capabilities)}"
             ),
@@ -556,6 +573,9 @@ def bulk_import_idempiere_users(db: Session) -> dict:
         # Generate username
         username = _generate_username(full_name)
 
+        # Build comma-separated list of ALL ad_user_ids for this person
+        all_ids_str = ",".join(str(e["ad_user_id"]) for e in entries)
+
         # If username matches an existing user WITHOUT ad_user_id, link them
         existing_user = db.query(User).filter(
             User.username == username,
@@ -563,6 +583,7 @@ def bulk_import_idempiere_users(db: Session) -> dict:
         ).first()
         if existing_user:
             existing_user.ad_user_id = ad_user_id
+            existing_user.all_ad_user_ids = all_ids_str
             existing_ad_ids.add(ad_user_id)
             db.flush()
             created.append({
@@ -570,6 +591,7 @@ def bulk_import_idempiere_users(db: Session) -> dict:
                 "username": username,
                 "full_name": full_name,
                 "ad_user_id": ad_user_id,
+                "all_ad_user_ids": all_ids_str,
                 "roles": best["roles"],
                 "department": existing_user.department.value,
                 "linked_existing": True,
@@ -622,6 +644,7 @@ def bulk_import_idempiere_users(db: Session) -> dict:
                 department=dept,
                 extra_departments=",".join(sorted(mapped_depts - {dept.value})) if len(mapped_depts) > 1 else None,
                 ad_user_id=ad_user_id,
+                all_ad_user_ids=all_ids_str,
                 is_active=False,
                 sensitivity_level=0,
             )

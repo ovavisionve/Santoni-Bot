@@ -61,6 +61,12 @@ class User(Base):
     ad_user_id: Mapped[int | None] = mapped_column(
         Integer, nullable=True, unique=True, index=True
     )
+    # ALL iDempiere ad_user_ids for this person (comma-separated)
+    # Same person may have different user records across iDempiere clients
+    # Sync queries permissions from ALL of them and combines
+    all_ad_user_ids: Mapped[str | None] = mapped_column(
+        String(1000), nullable=True
+    )
     # Granular capabilities synced from iDempiere window access
     # Comma-separated capability IDs, e.g. "ventas_facturacion,ventas_cxc,contabilidad_balance"
     # NULL = all capabilities (for admins)
@@ -118,6 +124,19 @@ class User(Base):
         if not self.allowed_capabilities:
             return None  # no restrictions set yet
         return {c.strip() for c in self.allowed_capabilities.split(",") if c.strip()}
+
+    @property
+    def all_idempiere_user_ids(self) -> list[int]:
+        """Return all iDempiere ad_user_ids for this person."""
+        ids = set()
+        if self.ad_user_id:
+            ids.add(self.ad_user_id)
+        if self.all_ad_user_ids:
+            for x in self.all_ad_user_ids.split(","):
+                x = x.strip()
+                if x.isdigit():
+                    ids.add(int(x))
+        return sorted(ids)
 
     @property
     def org_ids(self) -> list[int] | None:
