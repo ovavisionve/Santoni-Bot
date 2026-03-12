@@ -46,6 +46,14 @@ def create_user(
     # Vendedor role is locked to ventas department
     dept = "ventas" if data.role == "vendedor" else data.department
 
+    # Check ad_user_id uniqueness if provided
+    if data.ad_user_id:
+        if db.query(User).filter(User.ad_user_id == data.ad_user_id).first():
+            raise HTTPException(
+                status_code=400,
+                detail=f"ad_user_id {data.ad_user_id} ya está vinculado a otro usuario",
+            )
+
     user = User(
         email=data.email,
         username=data.username,
@@ -55,6 +63,7 @@ def create_user(
         department=Department(dept),
         extra_departments=data.extra_departments,
         allowed_org_ids=data.allowed_org_ids,
+        ad_user_id=data.ad_user_id,
         idempiere_salesrep_id=data.idempiere_salesrep_id,
         sensitivity_level=data.sensitivity_level,
     )
@@ -176,6 +185,19 @@ def update_user(
     if "email" in update_data and update_data["email"] != user.email:
         if db.query(User).filter(User.email == update_data["email"]).first():
             raise HTTPException(status_code=400, detail="Email ya registrado")
+
+    # Check ad_user_id uniqueness if changed
+    if "ad_user_id" in update_data and update_data["ad_user_id"] != user.ad_user_id:
+        if update_data["ad_user_id"] is not None:
+            existing = db.query(User).filter(
+                User.ad_user_id == update_data["ad_user_id"],
+                User.id != user_id,
+            ).first()
+            if existing:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"ad_user_id {update_data['ad_user_id']} ya vinculado a {existing.username}",
+                )
 
     for key, value in update_data.items():
         setattr(user, key, value)

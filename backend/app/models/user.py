@@ -56,6 +56,11 @@ class User(Base):
     allowed_org_ids: Mapped[str | None] = mapped_column(
         String(500), nullable=True
     )
+    # iDempiere ad_user_id: links this bot user to their iDempiere user
+    # Used for automatic role/permission sync from iDempiere
+    ad_user_id: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, unique=True, index=True
+    )
     # iDempiere salesrep ID (c_bpartner_id of the salesperson)
     # Used for VENDEDOR role to filter sales data to their own
     idempiere_salesrep_id: Mapped[int | None] = mapped_column(
