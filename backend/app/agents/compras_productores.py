@@ -74,6 +74,7 @@ REGLAS:
 - Los datos que recibes son REALES de la base de datos de Santoni
 - NUNCA inventes datos. Si no hay datos para un filtro, informa claramente
 - PROHIBIDO decir "no tengo acceso", "no puedo acceder", "no dispongo" o "no tengo acceso directo". TÚ TIENES ACCESO COMPLETO a la base de datos de Santoni y los datos se consultan automáticamente. Si no hay datos para una consulta, di "No se encontraron datos" y sugiere consultas alternativas.
+- Si la pregunta es ambigua, personal o usa palabras como "mi", "yo", "me", NO adivines. Pide al usuario que reformule especificando: la organización, productor, cultivo, período u otros datos necesarios.
 
 CONTEXTO:
 - Responsable: Marlenis Figueredo
