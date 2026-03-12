@@ -75,21 +75,22 @@ REFERENCE_TABLES = [
     "c_period",
 ]
 
-# Transaction tables: (table_name, date_column, parent_table, parent_fk)
+# Transaction tables: (table_name, date_column, parent_table, parent_fk, primary_key)
 # parent_table/parent_fk: for child tables, filter by parent's date
+# primary_key: used for ORDER BY to ensure stable LIMIT/OFFSET pagination
 TRANSACTION_TABLES = [
-    ("c_invoice", "dateinvoiced", None, None),
-    ("c_invoiceline", None, "c_invoice", "c_invoice_id"),
-    ("c_payment", "datetrx", None, None),
-    ("c_allocationline", None, None, None),  # copied fully, small table
-    ("c_order", "dateordered", None, None),
-    ("c_orderline", None, "c_order", "c_order_id"),
-    ("m_inout", "movementdate", None, None),
-    ("m_inoutline", None, "m_inout", "m_inout_id"),
-    ("fact_acct", "dateacct", None, None),
-    ("hr_process", "dateacct", None, None),
-    ("hr_movement", None, "hr_process", "hr_process_id"),
-    ("m_storageonhand", None, None, None),  # snapshot, copy fully
+    ("c_invoice", "dateinvoiced", None, None, "c_invoice_id"),
+    ("c_invoiceline", None, "c_invoice", "c_invoice_id", "c_invoiceline_id"),
+    ("c_payment", "datetrx", None, None, "c_payment_id"),
+    ("c_allocationline", None, None, None, "c_allocationline_id"),
+    ("c_order", "dateordered", None, None, "c_order_id"),
+    ("c_orderline", None, "c_order", "c_order_id", "c_orderline_id"),
+    ("m_inout", "movementdate", None, None, "m_inout_id"),
+    ("m_inoutline", None, "m_inout", "m_inout_id", "m_inoutline_id"),
+    ("fact_acct", "dateacct", None, None, "fact_acct_id"),
+    ("hr_process", "dateacct", None, None, "hr_process_id"),
+    ("hr_movement", None, "hr_process", "hr_process_id", "hr_movement_id"),
+    ("m_storageonhand", None, None, None, "m_product_id"),
 ]
 
 
@@ -234,6 +235,7 @@ def copy_transaction_table(
     parent_fk: str | None,
     cutoff: str,
     batch_size: int,
+    primary_key: str | None = None,
 ) -> int:
     """Copy rows from a transaction table, filtered by date or parent."""
     local_cols = get_local_table_columns(local_engine, table_name)
@@ -256,7 +258,7 @@ def copy_transaction_table(
     elif parent_table and parent_fk:
         # Get parent IDs that are before cutoff
         parent_date_col = None
-        for t_name, d_col, _, _ in TRANSACTION_TABLES:
+        for t_name, d_col, _, _, _ in TRANSACTION_TABLES:
             if t_name == parent_table:
                 parent_date_col = d_col
                 break
@@ -269,6 +271,9 @@ def copy_transaction_table(
             params["cutoff"] = cutoff
     # else: copy all rows (small tables like c_allocationline, m_storageonhand)
 
+    # ORDER BY primary key for stable LIMIT/OFFSET pagination (prevents duplicates)
+    order_clause = f"ORDER BY {primary_key}" if primary_key else ""
+
     total = 0
     offset = 0
 
@@ -279,7 +284,7 @@ def copy_transaction_table(
     # Read and insert in batches to handle large tables (fact_acct: 7.7M rows)
     while True:
         with idempiere_engine.connect() as src_conn:
-            q = f"SELECT {cols_sql} FROM adempiere.{table_name} {where_clause} LIMIT :batch OFFSET :off"
+            q = f"SELECT {cols_sql} FROM adempiere.{table_name} {where_clause} {order_clause} LIMIT :batch OFFSET :off"
             params["batch"] = batch_size
             params["off"] = offset
             result = src_conn.execute(text(q), params)
@@ -401,7 +406,7 @@ def main():
     # ── Step 2: Transaction tables ──────────────────────────────────────
 
     logger.info("\n── TABLAS TRANSACCIONALES (datos < %s) ──", cutoff)
-    for table, date_col, parent, parent_fk in TRANSACTION_TABLES:
+    for table, date_col, parent, parent_fk, pk in TRANSACTION_TABLES:
         if args.tables and table not in args.tables:
             continue
         if args.skip_fact_acct and table == "fact_acct":
@@ -412,6 +417,7 @@ def main():
             count = copy_transaction_table(
                 idempiere_engine, local_engine, table,
                 date_col, parent, parent_fk, cutoff, batch_size,
+                primary_key=pk,
             )
             elapsed = time.time() - t0
             logger.info("  ✓ %s: %s rows (%.1fs)", table, f"{count:,}", elapsed)
