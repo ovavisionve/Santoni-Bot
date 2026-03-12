@@ -131,7 +131,8 @@ SOBRE INVENTARIO/STOCK:
             "✅ Órdenes de compra pendientes (c_order) por período, estado y proveedor\n"
             "✅ Comparación de precios entre proveedores para un mismo producto\n"
             "✅ Estado de pago de facturas de compra (pagadas vs pendientes)\n"
-            "\n❌ NO puedo consultar: gastos administrativos (nómina, servicios). "
+            "✅ Gastos operativos registrados como facturas de compra (AP)\n"
+            "\n❌ NO puedo consultar: nómina ni servicios públicos. "
             "Redirige al usuario al agente de RRHH o Finanzas."
         )
 

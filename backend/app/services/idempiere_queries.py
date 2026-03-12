@@ -1453,7 +1453,7 @@ def build_attendance_summary(
             "hp.isactive = 'Y'",
         ]
         params: dict = {}
-        _add_org_filter(conditions, params, org_ids, "hp")
+        _add_org_filter(conditions, params, org_ids, "hm")
         _add_date_filter(conditions, params, date_from, date_to, mes, anio, "hp.dateacct")
 
         # Filter concepts related to absence / attendance
@@ -1478,8 +1478,8 @@ def build_attendance_summary(
             f"COUNT(DISTINCT hm.c_bpartner_id) AS empleados_afectados, "
             f"COALESCE(SUM(ABS(hm.amount)), 0) AS monto_bs, "
             f"COUNT(*) AS registros "
-            f"FROM adempiere.hr_process hp "
-            f"JOIN adempiere.hr_movement hm ON hp.hr_process_id = hm.hr_process_id "
+            f"FROM adempiere.hr_movement hm "
+            f"JOIN adempiere.hr_process hp ON hp.hr_process_id = hm.hr_process_id "
             f"JOIN adempiere.hr_concept hc ON hm.hr_concept_id = hc.hr_concept_id "
             f"WHERE {where} "
             f"GROUP BY hc.name ORDER BY registros DESC LIMIT 20"
@@ -1500,8 +1500,8 @@ def build_attendance_summary(
             f"COUNT(DISTINCT hm.c_bpartner_id) AS empleados_afectados, "
             f"COALESCE(SUM(ABS(hm.amount)), 0) AS monto_bs, "
             f"COUNT(*) AS registros "
-            f"FROM adempiere.hr_process hp "
-            f"JOIN adempiere.hr_movement hm ON hp.hr_process_id = hm.hr_process_id "
+            f"FROM adempiere.hr_movement hm "
+            f"JOIN adempiere.hr_process hp ON hp.hr_process_id = hm.hr_process_id "
             f"JOIN adempiere.hr_concept hc ON hm.hr_concept_id = hc.hr_concept_id "
             f"LEFT JOIN adempiere.ad_org o ON hm.ad_org_id = o.ad_org_id "
             f"WHERE {where} "

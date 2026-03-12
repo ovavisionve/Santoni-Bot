@@ -320,13 +320,21 @@ Datos de RRHH en iDempiere:
                 "falta", "faltas", "permiso", "reposo", "incapacidad",
                 "licencia", "asistencia",
             ]):
-                data = build_attendance_summary(
-                    mes=mes, anio=anio, org_ids=org_ids,
-                    date_from=date_from, date_to=date_to,
-                )
-                sections.append(self._format_summary(
-                    data, f"Indicadores de Ausentismo - {label}",
-                ))
+                try:
+                    data = build_attendance_summary(
+                        mes=mes, anio=anio, org_ids=org_ids,
+                        date_from=date_from, date_to=date_to,
+                    )
+                    sections.append(self._format_summary(
+                        data, f"Indicadores de Ausentismo - {label}",
+                    ))
+                except Exception as exc:
+                    logger.error("Error en ausentismo: %s: %s", type(exc).__name__, exc, exc_info=True)
+                    sections.append(
+                        f"## Indicadores de Ausentismo - {label}\n"
+                        f"No se pudieron obtener los datos de ausentismo para este período. "
+                        f"Error: {type(exc).__name__}. Intenta con otro período o consulta específica."
+                    )
 
             if any(w in msg for w in [
                 "rotación", "rotacion", "baja", "bajas", "egreso", "egresos",
