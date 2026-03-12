@@ -80,7 +80,7 @@ def create_llm(
         if settings.openrouter_providers:
             providers = [p.strip() for p in settings.openrouter_providers.split(",") if p.strip()]
             if providers:
-                extra_body["provider"] = {"order": providers, "allow_fallbacks": False}
+                extra_body["provider"] = {"order": providers, "allow_fallbacks": True}
                 logger.info("OpenRouter providers restricted to: %s", providers)
         kwargs_or = dict(
             openai_api_key=settings.openrouter_api_key,
