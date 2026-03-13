@@ -1953,16 +1953,29 @@ def build_production_runs(
                 )
         where = " AND ".join(conditions)
 
-        # 1. Totals
+        # 1. Totals (use productionline isendproduct='Y' for real qty,
+        #    because m_production.productionqty is negative in Santoni's iDempiere)
         totals_q = text(
             f"SELECT COUNT(*) AS total_producciones, "
-            f"COALESCE(SUM(pr.productionqty), 0) AS qty_total "
+            f"COALESCE((SELECT SUM(prl.movementqty) "
+            f"  FROM adempiere.m_productionline prl "
+            f"  JOIN adempiere.m_production pr2 ON prl.m_production_id = pr2.m_production_id "
+            f"  WHERE prl.isendproduct = 'Y' AND prl.movementqty > 0 "
+            f"  AND pr2.m_production_id IN (SELECT pr3.m_production_id FROM adempiere.m_production pr3 WHERE {where})"
+            f"), 0) AS qty_terminada, "
+            f"COALESCE((SELECT SUM(ABS(prl.movementqty)) "
+            f"  FROM adempiere.m_productionline prl "
+            f"  JOIN adempiere.m_production pr2 ON prl.m_production_id = pr2.m_production_id "
+            f"  WHERE (prl.isendproduct = 'N' OR prl.movementqty < 0) "
+            f"  AND pr2.m_production_id IN (SELECT pr3.m_production_id FROM adempiere.m_production pr3 WHERE {where})"
+            f"), 0) AS qty_consumida "
             f"FROM adempiere.m_production pr WHERE {where}"
         )
         row = db.execute(totals_q, params).fetchone()
         totals = {
             "total_producciones": row[0] if row else 0,
-            "cantidad_total_producida": float(row[1]) if row else 0.0,
+            "cantidad_producto_terminado": float(row[1]) if row else 0.0,
+            "cantidad_insumos_consumidos": float(row[2]) if row else 0.0,
         }
 
         # 2. Top finished products (isendproduct = 'Y', qty > 0)
@@ -2003,44 +2016,58 @@ def build_production_runs(
             for r in db.execute(by_insumo_q, params).fetchall()
         ]
 
-        # 4. By month
+        # 4. By month (qty from finished products in productionline)
         by_month_q = text(
             f"SELECT EXTRACT(MONTH FROM pr.movementdate)::int AS mes, "
-            f"COUNT(*) AS producciones, "
-            f"COALESCE(SUM(pr.productionqty), 0) AS qty "
-            f"FROM adempiere.m_production pr WHERE {where} "
+            f"COUNT(DISTINCT pr.m_production_id) AS producciones, "
+            f"COALESCE(SUM(CASE WHEN prl.isendproduct = 'Y' AND prl.movementqty > 0 "
+            f"  THEN prl.movementqty ELSE 0 END), 0) AS qty_terminada, "
+            f"COALESCE(SUM(CASE WHEN prl.isendproduct = 'N' OR prl.movementqty < 0 "
+            f"  THEN ABS(prl.movementqty) ELSE 0 END), 0) AS qty_consumida "
+            f"FROM adempiere.m_production pr "
+            f"JOIN adempiere.m_productionline prl ON pr.m_production_id = prl.m_production_id "
+            f"WHERE {where} "
             f"GROUP BY EXTRACT(MONTH FROM pr.movementdate) ORDER BY mes"
         )
         by_month = [
-            {"mes": r[0], "producciones": r[1], "cantidad": float(r[2])}
+            {"mes": r[0], "producciones": r[1],
+             "cantidad_terminada": float(r[2]), "cantidad_consumida": float(r[3])}
             for r in db.execute(by_month_q, params).fetchall()
         ]
 
-        # 5. By organization
+        # 5. By organization (qty from finished products in productionline)
         by_org_q = text(
             f"SELECT org.name AS organizacion, "
-            f"COUNT(*) AS producciones, "
-            f"COALESCE(SUM(pr.productionqty), 0) AS qty "
+            f"COUNT(DISTINCT pr.m_production_id) AS producciones, "
+            f"COALESCE(SUM(CASE WHEN prl.isendproduct = 'Y' AND prl.movementqty > 0 "
+            f"  THEN prl.movementqty ELSE 0 END), 0) AS qty_terminada, "
+            f"COALESCE(SUM(CASE WHEN prl.isendproduct = 'N' OR prl.movementqty < 0 "
+            f"  THEN ABS(prl.movementqty) ELSE 0 END), 0) AS qty_consumida "
             f"FROM adempiere.m_production pr "
+            f"JOIN adempiere.m_productionline prl ON pr.m_production_id = prl.m_production_id "
             f"JOIN adempiere.ad_org org ON pr.ad_org_id = org.ad_org_id "
             f"WHERE {where} "
             f"GROUP BY org.name ORDER BY producciones DESC"
         )
         by_org = [
-            {"organizacion": r[0], "producciones": r[1], "cantidad": float(r[2])}
+            {"organizacion": r[0], "producciones": r[1],
+             "cantidad_terminada": float(r[2]), "cantidad_consumida": float(r[3])}
             for r in db.execute(by_org_q, params).fetchall()
         ]
 
-        # 6. Daily breakdown (anti-hallucination)
+        # 6. Daily breakdown (anti-hallucination, qty from productionline)
         by_date_q = text(
             f"SELECT pr.movementdate::date AS fecha, "
-            f"COUNT(*) AS producciones, "
-            f"COALESCE(SUM(pr.productionqty), 0) AS qty "
-            f"FROM adempiere.m_production pr WHERE {where} "
+            f"COUNT(DISTINCT pr.m_production_id) AS producciones, "
+            f"COALESCE(SUM(CASE WHEN prl.isendproduct = 'Y' AND prl.movementqty > 0 "
+            f"  THEN prl.movementqty ELSE 0 END), 0) AS qty_terminada "
+            f"FROM adempiere.m_production pr "
+            f"JOIN adempiere.m_productionline prl ON pr.m_production_id = prl.m_production_id "
+            f"WHERE {where} "
             f"GROUP BY pr.movementdate::date ORDER BY fecha DESC LIMIT 31"
         )
         by_date = [
-            {"fecha": str(r[0]), "producciones": r[1], "cantidad": float(r[2])}
+            {"fecha": str(r[0]), "producciones": r[1], "cantidad_terminada": float(r[2])}
             for r in db.execute(by_date_q, params).fetchall()
         ]
 
