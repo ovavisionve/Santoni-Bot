@@ -1898,8 +1898,7 @@ def build_producer_purchases(
         _add_date_filter(conditions, params, date_from, date_to, mes, anio, "o.dateordered")
 
         if producto:
-            conditions.append("LOWER(p.name) LIKE :producto")
-            params["producto"] = f"%{producto.lower()}%"
+            _add_product_search_filter(conditions, params, producto, prefix="pprod")
 
         where = " AND ".join(conditions)
 
@@ -2061,8 +2060,7 @@ def build_producer_pending_payments(
         _add_currency_filter(conditions, params, currency_ids, "i")
 
         if producto:
-            conditions.append("LOWER(p.name) LIKE :producto")
-            params["producto"] = f"%{producto.lower()}%"
+            _add_product_search_filter(conditions, params, producto, prefix="pend_prod")
 
         if producer_name:
             conditions.append("LOWER(bp.name) LIKE :producer_name")
