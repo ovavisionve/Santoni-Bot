@@ -1183,7 +1183,7 @@ def build_employee_list(
     """
     db = _get_session(date_from=date_from, date_to=date_to)
     try:
-        conditions = ["e.isactive = 'Y'"]
+        conditions = ["e.isactive = 'Y'", "bp.isactive = 'Y'"]
         params: dict = {}
         _add_org_filter(conditions, params, org_ids, "e")
 
