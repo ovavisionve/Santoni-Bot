@@ -1810,6 +1810,25 @@ def build_production_summary(
             for r in db.execute(by_org_q, params).fetchall()
         ]
 
+        # By date (daily breakdown — prevents LLM from inventing dates)
+        by_date_q = text(
+            f"SELECT io.movementdate::date AS fecha, "
+            f"COUNT(*) AS movimientos, "
+            f"SUM(CASE WHEN io.movementtype = 'V+' THEN 1 ELSE 0 END) AS recepciones, "
+            f"SUM(CASE WHEN io.movementtype = 'C-' THEN 1 ELSE 0 END) AS despachos "
+            f"FROM adempiere.m_inout io WHERE {where} "
+            f"GROUP BY io.movementdate::date ORDER BY fecha DESC LIMIT 31"
+        )
+        by_date = [
+            {
+                "fecha": str(r[0]),
+                "movimientos": r[1],
+                "recepciones": r[2],
+                "despachos": r[3],
+            }
+            for r in db.execute(by_date_q, params).fetchall()
+        ]
+
         return {
             "anio": anio,
             "mes": mes,
@@ -1817,6 +1836,7 @@ def build_production_summary(
             "por_producto": by_product,
             "por_mes": by_month,
             "por_organizacion": by_org,
+            "por_fecha": by_date,
         }
     finally:
         db.close()

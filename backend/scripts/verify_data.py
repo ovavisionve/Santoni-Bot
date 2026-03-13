@@ -253,144 +253,123 @@ def check_cuentas_por_cobrar(db):
 
 
 def check_produccion(db):
-    """Verificar movimientos de inventario (producción)."""
+    """Verificar movimientos de inventario (producción).
+
+    Usa la misma lógica que build_production_summary: m_inout con movementtype.
+    """
     header("VERIFICACIÓN: PRODUCCIÓN / MOVIMIENTOS DE INVENTARIO")
 
     today = datetime.now().strftime("%Y-%m-%d")
     yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
 
-    subheader(f"Movimientos de inventario HOY ({today})")
+    # Totales de marzo 2026 por tipo de movimiento (misma query que el agente)
+    subheader("Marzo 2026 - Totales por tipo de movimiento")
     q = text("""
-        SELECT mt.name AS tipo_movimiento,
-               COUNT(*) AS documentos,
-               COALESCE(SUM(ABS(ml.movementqty)), 0) AS qty_total
+        SELECT
+            SUM(CASE WHEN io.movementtype = 'V+' THEN 1 ELSE 0 END) AS recepciones_mp,
+            SUM(CASE WHEN io.movementtype = 'C-' THEN 1 ELSE 0 END) AS despachos_pt,
+            SUM(CASE WHEN io.movementtype IN ('M+','M-') THEN 1 ELSE 0 END) AS mov_internos,
+            COUNT(*) AS total
         FROM adempiere.m_inout io
-        JOIN adempiere.m_inoutline ml ON io.m_inout_id = ml.m_inout_id
-        LEFT JOIN adempiere.c_doctype dt ON io.c_doctype_id = dt.c_doctype_id
-        LEFT JOIN adempiere.m_movement_type mt ON dt.docbasetype = mt.value
-        WHERE io.movementdate::date = :today
-          AND io.docstatus IN ('CO', 'CL')
-        GROUP BY mt.name ORDER BY documentos DESC
-    """)
-    try:
-        rows = [{"tipo": r[0], "documentos": r[1], "qty": float(r[2])} for r in db.execute(q, {"today": today}).fetchall()]
-        if rows:
-            table(rows)
-        else:
-            print(f"  {Colors.YELLOW}Sin movimientos hoy{Colors.RESET}")
-    except Exception:
-        db.rollback()
-        print(f"  {Colors.DIM}(tabla m_movement_type no existe, saltando){Colors.RESET}")
-
-    # Simpler query using docbasetype
-    subheader(f"M_INOUT hoy ({today}) por docbasetype")
-    q = text("""
-        SELECT dt.docbasetype,
-               dt.name AS tipo_doc,
-               COUNT(DISTINCT io.m_inout_id) AS documentos,
-               COUNT(ml.m_inoutline_id) AS lineas,
-               COALESCE(SUM(ABS(ml.movementqty)), 0) AS qty_total
-        FROM adempiere.m_inout io
-        JOIN adempiere.m_inoutline ml ON io.m_inout_id = ml.m_inout_id
-        JOIN adempiere.c_doctype dt ON io.c_doctype_id = dt.c_doctype_id
-        WHERE io.movementdate::date = :today
-          AND io.docstatus IN ('CO', 'CL')
-        GROUP BY dt.docbasetype, dt.name ORDER BY documentos DESC
-    """)
-    rows = [{"base": r[0], "tipo": r[1], "docs": r[2], "lineas": r[3], "qty": float(r[4])} for r in db.execute(q, {"today": today}).fetchall()]
-    if rows:
-        table(rows)
-    else:
-        print(f"  {Colors.YELLOW}Sin movimientos m_inout hoy{Colors.RESET}")
-
-    subheader(f"M_INOUT ayer ({yesterday}) por docbasetype")
-    q2 = text("""
-        SELECT dt.docbasetype,
-               dt.name AS tipo_doc,
-               COUNT(DISTINCT io.m_inout_id) AS documentos,
-               COUNT(ml.m_inoutline_id) AS lineas,
-               COALESCE(SUM(ABS(ml.movementqty)), 0) AS qty_total
-        FROM adempiere.m_inout io
-        JOIN adempiere.m_inoutline ml ON io.m_inout_id = ml.m_inout_id
-        JOIN adempiere.c_doctype dt ON io.c_doctype_id = dt.c_doctype_id
-        WHERE io.movementdate::date = :yesterday
-          AND io.docstatus IN ('CO', 'CL')
-        GROUP BY dt.docbasetype, dt.name ORDER BY documentos DESC
-    """)
-    rows = [{"base": r[0], "tipo": r[1], "docs": r[2], "lineas": r[3], "qty": float(r[4])} for r in db.execute(q2, {"yesterday": yesterday}).fetchall()]
-    if rows:
-        table(rows)
-    else:
-        print(f"  {Colors.YELLOW}Sin movimientos m_inout ayer{Colors.RESET}")
-
-    subheader("M_INOUT marzo 2026 por docbasetype")
-    q3 = text("""
-        SELECT dt.docbasetype,
-               dt.name AS tipo_doc,
-               COUNT(DISTINCT io.m_inout_id) AS documentos,
-               COUNT(ml.m_inoutline_id) AS lineas,
-               COALESCE(SUM(ABS(ml.movementqty)), 0) AS qty_total
-        FROM adempiere.m_inout io
-        JOIN adempiere.m_inoutline ml ON io.m_inout_id = ml.m_inout_id
-        JOIN adempiere.c_doctype dt ON io.c_doctype_id = dt.c_doctype_id
-        WHERE EXTRACT(MONTH FROM io.movementdate) = 3
+        WHERE io.isactive = 'Y' AND io.docstatus IN ('CO', 'CL')
+          AND EXTRACT(MONTH FROM io.movementdate) = 3
           AND EXTRACT(YEAR FROM io.movementdate) = 2026
-          AND io.docstatus IN ('CO', 'CL')
-        GROUP BY dt.docbasetype, dt.name ORDER BY documentos DESC
     """)
-    rows = [{"base": r[0], "tipo": r[1], "docs": r[2], "lineas": r[3], "qty": float(r[4])} for r in db.execute(q3).fetchall()]
-    if rows:
-        table(rows)
-    else:
-        print(f"  {Colors.YELLOW}Sin movimientos m_inout en marzo 2026{Colors.RESET}")
+    r = db.execute(q).fetchone()
+    row("Recepciones MP (V+)", r[0])
+    row("Despachos PT (C-)", r[1])
+    row("Movimientos internos (M+/M-)", r[2])
+    row("TOTAL movimientos", r[3])
 
+    # Hoy
+    subheader(f"HOY ({today}) por tipo de movimiento")
+    q_today = text("""
+        SELECT
+            SUM(CASE WHEN io.movementtype = 'V+' THEN 1 ELSE 0 END) AS recepciones,
+            SUM(CASE WHEN io.movementtype = 'C-' THEN 1 ELSE 0 END) AS despachos,
+            COUNT(*) AS total
+        FROM adempiere.m_inout io
+        WHERE io.isactive = 'Y' AND io.docstatus IN ('CO', 'CL')
+          AND io.movementdate::date = :today
+    """)
+    r = db.execute(q_today, {"today": today}).fetchone()
+    row("Recepciones hoy", r[0])
+    row("Despachos hoy", r[1])
+    row("Total hoy", r[2])
+
+    # Ayer
+    subheader(f"AYER ({yesterday}) por tipo de movimiento")
+    q_ayer = text("""
+        SELECT
+            SUM(CASE WHEN io.movementtype = 'V+' THEN 1 ELSE 0 END) AS recepciones,
+            SUM(CASE WHEN io.movementtype = 'C-' THEN 1 ELSE 0 END) AS despachos,
+            COUNT(*) AS total
+        FROM adempiere.m_inout io
+        WHERE io.isactive = 'Y' AND io.docstatus IN ('CO', 'CL')
+          AND io.movementdate::date = :yesterday
+    """)
+    r = db.execute(q_ayer, {"yesterday": yesterday}).fetchone()
+    row("Recepciones ayer", r[0])
+    row("Despachos ayer", r[1])
+    row("Total ayer", r[2])
+
+    # Desglose por fecha marzo 2026
     subheader("Fechas con movimientos en marzo 2026")
-    q4 = text("""
+    q_dates = text("""
         SELECT io.movementdate::date AS fecha,
-               COUNT(DISTINCT io.m_inout_id) AS documentos
+               SUM(CASE WHEN io.movementtype = 'V+' THEN 1 ELSE 0 END) AS recepciones,
+               SUM(CASE WHEN io.movementtype = 'C-' THEN 1 ELSE 0 END) AS despachos,
+               COUNT(*) AS total
         FROM adempiere.m_inout io
-        WHERE EXTRACT(MONTH FROM io.movementdate) = 3
+        WHERE io.isactive = 'Y' AND io.docstatus IN ('CO', 'CL')
+          AND EXTRACT(MONTH FROM io.movementdate) = 3
           AND EXTRACT(YEAR FROM io.movementdate) = 2026
-          AND io.docstatus IN ('CO', 'CL')
-        GROUP BY io.movementdate::date
-        ORDER BY fecha
+        GROUP BY io.movementdate::date ORDER BY fecha
     """)
-    rows = [{"fecha": str(r[0]), "documentos": r[1]} for r in db.execute(q4).fetchall()]
+    rows = [{"fecha": str(r[0]), "recepciones": r[1], "despachos": r[2], "total": r[3]}
+            for r in db.execute(q_dates).fetchall()]
     if rows:
         table(rows)
-        row("TOTAL docs marzo", sum(r["documentos"] for r in rows))
+        row("TOTAL docs marzo", sum(r["total"] for r in rows))
+        row("Días con movimientos", len(rows))
     else:
         print(f"  {Colors.YELLOW}Sin movimientos en marzo 2026{Colors.RESET}")
 
-    # Check pp_order (production orders)
-    subheader("PP_ORDER (Órdenes de producción) - ¿existe la tabla?")
-    q5 = text("""
-        SELECT COUNT(*) FROM information_schema.tables
-        WHERE table_schema = 'adempiere' AND table_name = 'pp_order'
+    # Top productos marzo
+    subheader("Top 10 productos movidos en marzo 2026")
+    q_prods = text("""
+        SELECT p.name AS producto,
+               SUM(CASE WHEN io.movementtype = 'V+' THEN iol.movementqty ELSE 0 END) AS recibido_kg,
+               SUM(CASE WHEN io.movementtype = 'C-' THEN iol.movementqty ELSE 0 END) AS despachado_kg
+        FROM adempiere.m_inout io
+        JOIN adempiere.m_inoutline iol ON io.m_inout_id = iol.m_inout_id
+        JOIN adempiere.m_product p ON iol.m_product_id = p.m_product_id
+        WHERE io.isactive = 'Y' AND io.docstatus IN ('CO', 'CL')
+          AND EXTRACT(MONTH FROM io.movementdate) = 3
+          AND EXTRACT(YEAR FROM io.movementdate) = 2026
+        GROUP BY p.name ORDER BY (SUM(ABS(iol.movementqty))) DESC LIMIT 10
     """)
-    exists = db.execute(q5).fetchone()[0]
-    if exists:
-        q6 = text("""
-            SELECT COUNT(*) AS total,
-                   MIN(dateordered::date) AS primera,
-                   MAX(dateordered::date) AS ultima
-            FROM adempiere.pp_order
-            WHERE docstatus IN ('CO', 'CL')
-        """)
-        r = db.execute(q6).fetchone()
-        row("Total órdenes de producción", r[0])
-        row("Primera orden", r[1])
-        row("Última orden", r[2])
+    rows = [{"producto": r[0], "recibido_kg": float(r[1]), "despachado_kg": float(r[2])}
+            for r in db.execute(q_prods).fetchall()]
+    table(rows)
 
-        q7 = text("""
-            SELECT COUNT(*) FROM adempiere.pp_order
-            WHERE EXTRACT(YEAR FROM dateordered) = 2026
-              AND docstatus IN ('CO', 'CL')
+    # PP_ORDER check
+    subheader("PP_ORDER (Órdenes de producción) - ¿existe la tabla?")
+    try:
+        q5 = text("""
+            SELECT COUNT(*) FROM information_schema.tables
+            WHERE table_schema = 'adempiere' AND table_name = 'pp_order'
         """)
-        r2 = db.execute(q7).fetchone()
-        row("Órdenes en 2026", r2[0])
-    else:
-        print(f"  {Colors.YELLOW}La tabla pp_order NO existe en iDempiere{Colors.RESET}")
+        exists = db.execute(q5).fetchone()[0]
+        if exists:
+            q6 = text("SELECT COUNT(*) FROM adempiere.pp_order WHERE docstatus IN ('CO', 'CL')")
+            r = db.execute(q6).fetchone()
+            row("Total órdenes de producción completadas", r[0])
+        else:
+            print(f"  {Colors.YELLOW}La tabla pp_order NO existe en iDempiere{Colors.RESET}")
+    except Exception:
+        db.rollback()
+        print(f"  {Colors.YELLOW}Error consultando pp_order{Colors.RESET}")
 
     # Check m_production as alternative
     subheader("M_PRODUCTION (Producción alternativa) - ¿existe?")
