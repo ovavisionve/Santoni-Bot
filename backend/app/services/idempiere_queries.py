@@ -1942,10 +1942,11 @@ def build_producer_purchases(
             for r in db.execute(by_product_q, params).fetchall()
         ]
 
-        # By producer (top 20)
+        # By producer (top 20) with location data
         by_producer_q = text(
             f"SELECT bp.name AS nombre, "
-            f"'' AS estado, '' AS municipio, "
+            f"COALESCE(reg.name, '') AS estado, "
+            f"COALESCE(ci.name, loc.city, '') AS municipio, "
             f"COUNT(DISTINCT o.c_order_id) AS guias, "
             f"COALESCE(SUM(ol.qtyordered), 0) AS peso_neto_kg, "
             f"COALESCE(SUM(ol.linenetamt), 0) AS monto_total "
@@ -1953,8 +1954,14 @@ def build_producer_purchases(
             f"JOIN adempiere.c_orderline ol ON o.c_order_id = ol.c_order_id "
             f"JOIN adempiere.m_product p ON ol.m_product_id = p.m_product_id "
             f"JOIN adempiere.c_bpartner bp ON o.c_bpartner_id = bp.c_bpartner_id "
+            f"LEFT JOIN adempiere.c_bpartner_location bpl "
+            f"  ON bp.c_bpartner_id = bpl.c_bpartner_id AND bpl.isactive = 'Y' "
+            f"LEFT JOIN adempiere.c_location loc "
+            f"  ON bpl.c_location_id = loc.c_location_id "
+            f"LEFT JOIN adempiere.c_city ci ON loc.c_city_id = ci.c_city_id "
+            f"LEFT JOIN adempiere.c_region reg ON loc.c_region_id = reg.c_region_id "
             f"WHERE {where} "
-            f"GROUP BY bp.name "
+            f"GROUP BY bp.name, reg.name, ci.name, loc.city "
             f"ORDER BY monto_total DESC LIMIT 20"
         )
         by_producer = [
@@ -1981,26 +1988,47 @@ def build_producer_purchases(
 
 
 def build_registered_producers(org_ids: list[int] | None = None) -> list[dict]:
-    """Registered producers (vendors) from iDempiere c_bpartner."""
+    """Registered agricultural producers from iDempiere c_bpartner.
+
+    Filters by codigoproductor IS NOT NULL (Santoni's custom field that
+    identifies agricultural producers) instead of just isvendor='Y' which
+    would return all 26,000+ vendors.
+    Also joins to location tables for estado/municipio data.
+    """
     db = IdempiereSession()
     try:
         conditions = [
             "bp.isactive = 'Y'",
             "bp.isvendor = 'Y'",
+            "bp.codigoproductor IS NOT NULL",
+            "bp.codigoproductor != ''",
         ]
         params: dict = {}
+        _add_org_filter(conditions, params, org_ids, "bp")
 
         q = text(
-            f"SELECT bp.name AS productor, bp.value AS codigo, "
-            f"COALESCE(bpl.city, '') AS ciudad "
+            f"SELECT DISTINCT ON (bp.c_bpartner_id) "
+            f"bp.name AS productor, "
+            f"COALESCE(bp.codigoproductor, bp.value) AS codigo, "
+            f"COALESCE(ci.name, loc.city, '') AS ciudad, "
+            f"COALESCE(reg.name, '') AS estado "
             f"FROM adempiere.c_bpartner bp "
             f"LEFT JOIN adempiere.c_bpartner_location bpl "
             f"  ON bp.c_bpartner_id = bpl.c_bpartner_id AND bpl.isactive = 'Y' "
+            f"LEFT JOIN adempiere.c_location loc "
+            f"  ON bpl.c_location_id = loc.c_location_id "
+            f"LEFT JOIN adempiere.c_city ci ON loc.c_city_id = ci.c_city_id "
+            f"LEFT JOIN adempiere.c_region reg ON loc.c_region_id = reg.c_region_id "
             f"WHERE {' AND '.join(conditions)} "
-            f"ORDER BY bp.name LIMIT 50"
+            f"ORDER BY bp.c_bpartner_id, bp.name LIMIT 100"
         )
         return [
-            {"productor": r[0], "codigo": r[1], "ciudad": r[2]}
+            {
+                "productor": r[0],
+                "codigo": r[1],
+                "ciudad": r[2],
+                "estado": r[3],
+            }
             for r in db.execute(q, params).fetchall()
         ]
     finally:
