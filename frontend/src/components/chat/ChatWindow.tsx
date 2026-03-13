@@ -6,10 +6,20 @@ import ChatMessage from "./ChatMessage";
 import { Send, Menu, Keyboard, Paperclip, X, FileText, LayoutDashboard, Settings } from "lucide-react";
 import Link from "next/link";
 
+interface AgentInfo {
+  name: string;
+  display_name: string;
+  icon: string;
+  description: string;
+}
+
 interface ChatWindowProps {
   messages: Message[];
   user: User;
   isLoading: boolean;
+  agents: AgentInfo[];
+  selectedAgent: string | null;
+  onSelectAgent: (agentName: string) => void;
   onSendMessage: (content: string, file?: File) => Promise<void>;
   onToggleSidebar: () => void;
 }
@@ -84,6 +94,9 @@ export default function ChatWindow({
   messages,
   user,
   isLoading,
+  agents,
+  selectedAgent,
+  onSelectAgent,
   onSendMessage,
   onToggleSidebar,
 }: ChatWindowProps) {
@@ -150,7 +163,13 @@ export default function ChatWindow({
   };
 
   const suggestions =
-    DEPARTMENT_SUGGESTIONS[user.department] || DEFAULT_SUGGESTIONS;
+    (selectedAgent && DEPARTMENT_SUGGESTIONS[selectedAgent])
+      || DEPARTMENT_SUGGESTIONS[user.department]
+      || DEFAULT_SUGGESTIONS;
+
+  const activeAgentLabel = selectedAgent
+    ? agents.find(a => a.name === selectedAgent)?.display_name || selectedAgent
+    : null;
 
   const isBusy = sending || isLoading;
   const charCount = input.length;
@@ -194,6 +213,30 @@ export default function ChatWindow({
         </div>
       </div>
 
+      {/* Agent Selector */}
+      {agents.length > 0 && (
+        <div className="border-b border-gray-200 bg-gray-50 px-4 py-2 shrink-0">
+          <div className="flex items-center gap-1.5 overflow-x-auto hide-scrollbar">
+            {agents.map((agent) => (
+              <button
+                key={agent.name}
+                onClick={() => onSelectAgent(agent.name)}
+                className={`
+                  px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all
+                  ${selectedAgent === agent.name
+                    ? "bg-santoni-600 text-white shadow-sm"
+                    : "bg-white text-gray-600 hover:bg-santoni-50 hover:text-santoni-700 border border-gray-200"
+                  }
+                `}
+                title={agent.description}
+              >
+                {agent.display_name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Messages */}
       <div className="flex-1 overflow-y-auto chat-scroll p-4 space-y-4">
         {messages.length === 0 && (
@@ -206,8 +249,9 @@ export default function ChatWindow({
                 Bienvenido a SantoniBot
               </h2>
               <p className="text-gray-500 mb-6">
-                Haz una consulta sobre tu departamento. Estas son algunas
-                sugerencias:
+                {activeAgentLabel
+                  ? `Estás consultando: ${activeAgentLabel}. Algunas sugerencias:`
+                  : "Selecciona un agente arriba y haz tu consulta:"}
               </p>
               <div className="grid grid-cols-2 gap-2 text-sm">
                 {suggestions.map((suggestion) => (

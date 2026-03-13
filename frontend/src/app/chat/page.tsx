@@ -24,6 +24,13 @@ function generateAutoTitle(content: string): string {
   return truncated + "...";
 }
 
+interface AgentInfo {
+  name: string;
+  display_name: string;
+  icon: string;
+  description: string;
+}
+
 export default function ChatPage() {
   const router = useRouter();
   const { user, loading, logout, inactivityWarning, resetActivity } = useAuth();
@@ -36,6 +43,10 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Agent selector state
+  const [agents, setAgents] = useState<AgentInfo[]>([]);
+  const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
 
   // Track whether this is the first exchange in a new conversation
   const isNewConversationRef = useRef(true);
@@ -50,8 +61,23 @@ export default function ChatPage() {
   useEffect(() => {
     if (user) {
       loadConversations();
+      loadAgents();
     }
   }, [user]);
+
+  const loadAgents = async () => {
+    try {
+      const data = await api.getAgents();
+      setAgents(data);
+      // Auto-select the first agent (user's primary department)
+      if (data.length > 0 && !selectedAgent) {
+        const primary = data.find(a => a.name === user?.department) || data[0];
+        setSelectedAgent(primary.name);
+      }
+    } catch {
+      // ignore - agents endpoint might not be available
+    }
+  };
 
   const loadConversations = async () => {
     try {
@@ -175,6 +201,7 @@ export default function ChatPage() {
             },
           },
           activeConversationId ?? undefined,
+          selectedAgent ?? undefined,
         );
 
         // Update message with real DB id + agent + timestamp
@@ -194,7 +221,8 @@ export default function ChatPage() {
         const response = await api.sendMessage(
           content,
           activeConversationId ?? undefined,
-          fileId
+          fileId,
+          selectedAgent ?? undefined,
         );
 
         if (!activeConversationId) {
@@ -334,6 +362,9 @@ export default function ChatPage() {
         messages={messages}
         user={user}
         isLoading={isLoading}
+        agents={agents}
+        selectedAgent={selectedAgent}
+        onSelectAgent={setSelectedAgent}
         onSendMessage={handleSendMessage}
         onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
       />

@@ -24,13 +24,37 @@ from app.services.cache import (
     get_data_timestamp,
 )
 from app.middleware.access_control import enforce_access_controls
-from app.agents.orchestrator import Orchestrator
+from app.agents.orchestrator import Orchestrator, compute_confidence_score
 
 logger = logging.getLogger("santonibot.chat")
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
 
 orchestrator = Orchestrator()
+
+# Valid agent names that can be selected directly
+_VALID_AGENTS = {
+    "ventas", "finanzas", "contabilidad", "rrhh",
+    "produccion", "compras_insumos", "compras_productores",
+}
+
+# Agent display info for the selector
+_AGENT_INFO = [
+    {"name": "ventas", "display_name": "Ventas", "icon": "ShoppingCart",
+     "description": "Facturación, clientes, cobranza, zonas"},
+    {"name": "finanzas", "display_name": "Finanzas", "icon": "DollarSign",
+     "description": "Bancos, cuentas por cobrar/pagar"},
+    {"name": "contabilidad", "display_name": "Contabilidad", "icon": "Calculator",
+     "description": "Balance, estados financieros, libro mayor"},
+    {"name": "rrhh", "display_name": "RRHH", "icon": "Users",
+     "description": "Empleados, nómina, vacaciones, ausentismo"},
+    {"name": "produccion", "display_name": "Producción", "icon": "Factory",
+     "description": "Órdenes de producción, inventario"},
+    {"name": "compras_insumos", "display_name": "Compras Insumos", "icon": "Package",
+     "description": "Proveedores, órdenes de compra, stock"},
+    {"name": "compras_productores", "display_name": "Compras Productores", "icon": "Wheat",
+     "description": "Arroz, maíz, productores, pagos"},
+]
 
 
 def _get_or_create_conversation(
@@ -118,7 +142,21 @@ async def stream_message(
 
     history = _get_history(db, conversation.id)
     last_agent = _get_last_agent(db, conversation.id)
-    agent_name, routing_score, match_type = await orchestrator.get_stream_agent_name(data.message, current_user, last_agent=last_agent)
+
+    # Direct agent selection: if agent_name is provided and valid, skip orchestrator
+    if data.agent_name and data.agent_name in _VALID_AGENTS:
+        # Verify user has access to this agent's department
+        if data.agent_name not in current_user.allowed_departments:
+            from fastapi.responses import JSONResponse
+            return JSONResponse(
+                status_code=403,
+                content={"detail": f"No tienes acceso al agente de {data.agent_name}"},
+            )
+        agent_name = data.agent_name
+        routing_score = 1.0
+        match_type = "direct_selection"
+    else:
+        agent_name, routing_score, match_type = await orchestrator.get_stream_agent_name(data.message, current_user, last_agent=last_agent)
 
     # Send initial metadata
     conv_id = conversation.id
@@ -142,14 +180,27 @@ async def stream_message(
             yield f"data: {json.dumps({'type': 'token', 'content': cached['response']})}\n\n"
         else:
             try:
-                async for token in orchestrator.stream(
-                    message=message_text,
-                    user=current_user,
-                    history=history,
-                    last_agent=last_agent,
-                ):
-                    full_response.append(token)
-                    yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
+                # Direct agent selection: call agent directly, skip orchestrator routing
+                if data.agent_name and data.agent_name in _VALID_AGENTS and agent_name in orchestrator.agents:
+                    agent = orchestrator.agents[agent_name]
+                    async for token in agent.stream(
+                        message=message_text,
+                        history=history,
+                        user_departments=current_user.allowed_departments,
+                        org_ids=current_user.org_ids,
+                        salesrep_id=current_user.idempiere_salesrep_id,
+                    ):
+                        full_response.append(token)
+                        yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
+                else:
+                    async for token in orchestrator.stream(
+                        message=message_text,
+                        user=current_user,
+                        history=history,
+                        last_agent=last_agent,
+                    ):
+                        full_response.append(token)
+                        yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
             except Exception as exc:
                 logger.error("Streaming error: %s: %s", type(exc).__name__, exc, exc_info=True)
                 error_msg = f"Error al consultar el modelo de IA: {type(exc).__name__}"
@@ -165,8 +216,6 @@ async def stream_message(
         try:
             save_db = SessionLocal()
             try:
-                # Compute confidence score for streamed response
-                from app.agents.orchestrator import compute_confidence_score
                 has_data = bool(complete_text) and "Error al consultar" not in complete_text
                 conf_score, score_breakdown = compute_confidence_score(
                     routing_score, has_data, agent_name,
@@ -258,13 +307,34 @@ async def send_message(
             logger.info("Document attached: %s (%s)", document.get("filename"), document["type"])
 
     try:
-        result = await orchestrator.process(
-            message=data.message,
-            user=current_user,
-            history=history,
-            document=document,
-            last_agent=last_agent,
-        )
+        # Direct agent selection: bypass orchestrator
+        if data.agent_name and data.agent_name in _VALID_AGENTS and not document:
+            if data.agent_name not in current_user.allowed_departments:
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"No tienes acceso al agente de {data.agent_name}",
+                )
+            agent = orchestrator.agents[data.agent_name]
+            result = await agent.process(
+                message=data.message,
+                history=history,
+                user_departments=current_user.allowed_departments,
+                org_ids=current_user.org_ids,
+                salesrep_id=current_user.idempiere_salesrep_id,
+            )
+            score, breakdown = compute_confidence_score(1.0, result.get("metadata", {}).get("has_data", False), data.agent_name)
+            result["confidence_score"] = score
+            result["score_breakdown"] = {**breakdown, "match_type": "direct_selection"}
+        else:
+            result = await orchestrator.process(
+                message=data.message,
+                user=current_user,
+                history=history,
+                document=document,
+                last_agent=last_agent,
+            )
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.error(
             "Error processing chat message: %s: %s",
@@ -314,6 +384,18 @@ async def send_message(
         agent_used=result.get("agent_used"),
         metadata=result.get("metadata"),
     )
+
+
+@router.get("/agents")
+def list_agents(
+    current_user: User = Depends(get_current_user),
+):
+    """Return agents available for the current user based on their permissions."""
+    allowed = current_user.allowed_departments
+    return [
+        agent for agent in _AGENT_INFO
+        if agent["name"] in allowed
+    ]
 
 
 @router.get("/conversations", response_model=list[ConversationListItem])

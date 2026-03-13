@@ -283,6 +283,19 @@ class BaseAgent(ABC):
         messages.append(HumanMessage(content=message))
         return messages, data_context is not None
 
+    # Phrases that indicate the LLM is refusing to use provided data
+    _NO_ACCESS_PHRASES = [
+        "no tengo acceso",
+        "no puedo acceder",
+        "no dispongo",
+        "no tengo acceso directo",
+        "no cuento con acceso",
+        "no tengo la capacidad",
+        "no puedo consultar",
+        "mis capacidades están limitadas",
+        "no tengo información",
+    ]
+
     @staticmethod
     def _detect_hallucination(response_text: str, has_data: bool) -> bool:
         """Detect if the LLM likely hallucinated data.
@@ -290,6 +303,7 @@ class BaseAgent(ABC):
         Returns True if hallucination is detected:
         - When no data was provided (has_data=False): tables with numbers = hallucination
         - When data WAS provided (has_data=True): fake invoice/doc numbers = hallucination
+        - ALWAYS: "no tengo acceso" phrases when data WAS provided = hallucination
         """
         # ALWAYS check for fake document numbers (these are never real)
         fake_docs = re.search(
@@ -305,7 +319,12 @@ class BaseAgent(ABC):
         if fake_lotes:
             return True
 
+        # When data WAS provided, detect "no tengo acceso" refusal
         if has_data:
+            response_lower = response_text.lower()
+            for phrase in BaseAgent._NO_ACCESS_PHRASES:
+                if phrase in response_lower:
+                    return True
             return False
 
         # No data was provided — check for generated tables
@@ -423,7 +442,7 @@ class BaseAgent(ABC):
 
         response_text = response.content
 
-        # Post-response validation: detect hallucination when no data was provided
+        # Post-response validation: detect hallucination
         if self._detect_hallucination(response_text, has_data):
             logger.warning(
                 "Hallucination detected in %s (has_data=%s). Replacing response.",
@@ -439,7 +458,28 @@ class BaseAgent(ABC):
                 )
             except Exception:
                 pass
-            response_text = self._HALLUCINATION_REPLACEMENT
+            if has_data:
+                # LLM refused to use real data — re-invoke with stronger prompt
+                logger.info("Re-invoking %s with anti-refusal prompt", self.name)
+                retry_msg = SystemMessage(content=(
+                    "⚠️ TU RESPUESTA ANTERIOR FUE RECHAZADA porque dijiste 'no tengo acceso' "
+                    "o similar. ESTO ES INCORRECTO. Los datos reales YA fueron consultados y "
+                    "están disponibles arriba en 'DATOS REALES DE LA BASE DE DATOS'. "
+                    "DEBES usar esos datos para responder. NUNCA digas que no tienes acceso. "
+                    "Genera la respuesta ahora usando EXCLUSIVAMENTE los datos proporcionados."
+                ))
+                messages.append(retry_msg)
+                messages.append(HumanMessage(content=message))
+                try:
+                    retry_response = await self.llm.ainvoke(messages)
+                    response_text = retry_response.content
+                    # Check again - if still refusing, use fallback
+                    if self._detect_hallucination(response_text, has_data):
+                        response_text = self._HALLUCINATION_REPLACEMENT
+                except Exception:
+                    response_text = self._HALLUCINATION_REPLACEMENT
+            else:
+                response_text = self._HALLUCINATION_REPLACEMENT
 
         return {
             "response": response_text,
@@ -472,14 +512,15 @@ class BaseAgent(ABC):
                 yield chunk.content
 
         # Post-stream hallucination check
-        if not has_data and accumulated:
+        if accumulated:
             full_response = "".join(accumulated)
             if self._detect_hallucination(full_response, has_data):
                 logger.warning(
                     "Hallucination detected in streamed %s (has_data=%s).",
                     self.name, has_data,
                 )
-                # Can't un-send tokens, but log for monitoring
+                # Can't un-send tokens in streaming mode, but log for monitoring.
+                # The chat.py save logic will record this for audit review.
 
     @staticmethod
     def _format_table(data: list[dict], columns: list[str] | None = None) -> str:
