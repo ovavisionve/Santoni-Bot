@@ -654,12 +654,14 @@ def build_registered_producers(org_ids: list[int] | None = None) -> list[dict]:
 
 
 def build_producer_pending_payments(
-    producto: str | None = None, org_ids: list[int] | None = None,
+    producto: str | None = None,
+    org_ids: list[int] | None = None,
+    producer_name: str | None = None,
 ) -> list[dict]:
     """Pending producer payments - routes to demo or iDempiere."""
     if _is_production():
         from app.services.idempiere_queries import build_producer_pending_payments as _prod
-        return _prod(producto=producto, org_ids=org_ids)
+        return _prod(producto=producto, org_ids=org_ids, producer_name=producer_name)
 
     db = SessionLocal()
     try:

@@ -158,14 +158,17 @@ Datos de compras de insumos en iDempiere:
 
     # Keywords that indicate the user wants USD
     _USD_KEYWORDS = [
-        "dólares", "dolares", "dólar", "dolar", "usd",
+        "dólares", "dolares", "dólar", "dolar", "usd", "dol",
         "en dólares", "en dolares", "en dólar", "en dolar",
+        "en usd", "en dol", "moneda dol", "moneda usd",
+        "moneda dólar", "moneda dolares",
     ]
 
     # Keywords that indicate the user wants VES
     _VES_KEYWORDS = [
         "bolívares", "bolivares", "bolívar", "bolivar", "ves",
-        "en bolívares", "en bolivares",
+        "en bolívares", "en bolivares", "en ves",
+        "moneda ves", "moneda bolivar", "moneda bolívares",
     ]
 
     # Words that indicate a general query (not a specific product search)
@@ -421,8 +424,8 @@ Datos de compras de insumos en iDempiere:
                     # Stop at first user message that doesn't mention currency
                     break
 
-        # Default: VES (bolívares)
-        return self._VES_IDS
+        # Default: show all currencies (no filter)
+        return None
 
     def fetch_data(self, message: str, org_ids: list[int] | None = None, salesrep_id: int | None = None, history: list[tuple[str, str]] | None = None) -> str | None:
         msg = message.lower()

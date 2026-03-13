@@ -45,12 +45,16 @@ _KEYWORD_RULES: list[tuple[str, list[str]]] = [
         "precio del maíz", "tonelada", "kilogramo",
         "recepcion de maiz", "recepción de maíz", "recepcion de arroz", "recepción de arroz",
         "buque", "narvi", "maiz seco", "maíz seco",
-        # Debt/payment queries related to agricultural products
+        # Debt/payment queries related to agricultural products and producers
         "pagar de maiz", "pagar de maíz", "pagar de arroz",
         "deuda de maiz", "deuda de maíz", "deuda de arroz",
+        "deuda de productor", "deuda de productores", "deuda productor",
+        "pago a productor", "pago a productores", "pagos a productor",
+        "pagos pendientes a productor", "pagos pendientes a productores",
         "monto de maiz", "monto de maíz", "monto de arroz",
         "monto a pagar de maiz", "monto a pagar de maíz",
         "por pagar de maiz", "por pagar de maíz", "por pagar de arroz",
+        "por pagar a productor", "por pagar a productores",
     ]),
     # Producción — BEFORE compras_insumos to catch "materia prima", "producto terminado"
     # and "producción"-related keywords before they fall through to inventory/compras

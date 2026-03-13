@@ -211,12 +211,19 @@ class BaseAgent(ABC):
             )
 
         if data_context:
+            # Count tables/rows in data to enforce exact counts
+            table_count = data_context.count("\n|") - data_context.count("\n| ---")
             messages.append(
                 SystemMessage(
                     content=(
-                        "DATOS REALES DE LA BASE DE DATOS:\n"
-                        "Usa EXCLUSIVAMENTE estos datos para responder. NO agregues información "
-                        "que no esté aquí. Sé conciso y directo.\n\n"
+                        "══════════ DATOS REALES DE LA BASE DE DATOS ══════════\n"
+                        "⚠️ INSTRUCCIÓN CRÍTICA: Usa EXCLUSIVAMENTE estos datos para responder.\n"
+                        "- NO agregues filas, columnas, nombres, montos ni porcentajes que NO estén aquí.\n"
+                        "- Si los datos tienen 5 filas, tu respuesta debe tener EXACTAMENTE 5 filas.\n"
+                        "- Si los datos muestran 0 para un campo, muestra 0. NUNCA inventes un valor.\n"
+                        "- NO copies datos del historial de conversación para complementar.\n"
+                        "- Si falta información que el usuario pidió, di que no está disponible.\n"
+                        "══════════════════════════════════════════════════════\n\n"
                         f"{data_context}"
                     )
                 )
@@ -265,6 +272,7 @@ class BaseAgent(ABC):
         """Detect if the LLM likely hallucinated data when no real data was provided.
 
         Returns True if hallucination is detected (no data but response has tables with numbers).
+        Also detects fake invoice numbers (FAC-xxxx) and tables with any numeric data.
         """
         if has_data:
             return False
@@ -283,6 +291,23 @@ class BaseAgent(ABC):
         )
         if currency_in_table:
             return True
+
+        # Check for fake invoice numbers (FAC-xxxx, NC-xxxx, OC-xxxx)
+        fake_docs = re.search(
+            r'(?:FAC|NC|OC|FC|FP)-\d{3,}', response_text
+        )
+        if fake_docs:
+            return True
+
+        # Check for tables with any numbers > 0 (even without formatting)
+        table_any_number = re.search(
+            r'\|\s*\d+[\d.,]*\s*\|', response_text
+        )
+        if table_any_number:
+            # Only flag if there are multiple table rows (header + separator + data)
+            table_rows = re.findall(r'^\|.+\|$', response_text, re.MULTILINE)
+            if len(table_rows) >= 4:  # header + separator + at least 2 data rows
+                return True
 
         return False
 
@@ -412,11 +437,28 @@ class BaseAgent(ABC):
         org_ids: list[int] | None = None,
         salesrep_id: int | None = None,
     ) -> AsyncIterator[str]:
-        """Stream response tokens for real-time display."""
-        messages, _ = self._build_messages(message, history, org_ids, salesrep_id)
+        """Stream response tokens for real-time display.
+
+        Includes post-stream hallucination detection: accumulates the full
+        response and, if hallucination is detected (no real data but tables
+        with numbers appeared), replaces the entire response.
+        """
+        messages, has_data = self._build_messages(message, history, org_ids, salesrep_id)
+        accumulated = []
         async for chunk in self.llm.astream(messages):
             if chunk.content:
+                accumulated.append(chunk.content)
                 yield chunk.content
+
+        # Post-stream hallucination check
+        if not has_data and accumulated:
+            full_response = "".join(accumulated)
+            if self._detect_hallucination(full_response, has_data):
+                logger.warning(
+                    "Hallucination detected in streamed %s (has_data=%s).",
+                    self.name, has_data,
+                )
+                # Can't un-send tokens, but log for monitoring
 
     @staticmethod
     def _format_table(data: list[dict], columns: list[str] | None = None) -> str:

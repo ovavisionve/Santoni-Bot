@@ -130,6 +130,34 @@ Datos de compras a productores en iDempiere:
             return "maiz"
         return None
 
+    @staticmethod
+    def _extract_producer_name(msg: str) -> str | None:
+        """Extract a producer name from the message.
+
+        Handles patterns like:
+        - 'productor Jose Luis Perez'
+        - 'deuda de Jose Luis Perez'
+        - 'pago a Juan Garcia'
+        """
+        import re
+        msg_lower = msg.lower()
+        # Pattern: "productor <name>" or "a productor <name>"
+        for pattern in [
+            r'(?:productor|proveedor)\s+([A-ZÁÉÍÓÚÑa-záéíóúñ][A-ZÁÉÍÓÚÑa-záéíóúñ\s]{3,})',
+            r'(?:deuda|pago|pagos|pendiente)\s+(?:de|a|del|al)\s+(?:productor\s+)?([A-ZÁÉÍÓÚÑa-záéíóúñ][A-ZÁÉÍÓÚÑa-záéíóúñ\s]{3,})',
+        ]:
+            m = re.search(pattern, msg, re.IGNORECASE)
+            if m:
+                name = m.group(1).strip()
+                # Remove trailing common words
+                for stop in ["en ", "del ", "de ", "este ", "por ", "para "]:
+                    idx = name.lower().find(stop)
+                    if idx > 3:
+                        name = name[:idx].strip()
+                if len(name) >= 4:
+                    return name
+        return None
+
     _SECTION_KEYWORDS: dict[str, list[str]] = {
         "productores": ["productor", "registrad", "cuántos", "cuantos"],
         "pendientes": ["pago", "pendiente", "deuda", "deb"],
@@ -183,6 +211,7 @@ Datos de compras a productores en iDempiere:
             anio = None
 
         producto = self._extract_producto(message)
+        producer_name = self._extract_producer_name(message)
 
         # Follow-up: carry over context from history
         hist_ctx: dict = {}
@@ -235,9 +264,15 @@ Datos de compras a productores en iDempiere:
                 except Exception as exc:
                     logger.warning("Error consultando productores registrados: %s", exc)
 
+            # If user asks about a specific producer's debt, always include pendientes
+            if producer_name and not include_pendientes:
+                include_pendientes = True
+
             if include_pendientes:
                 try:
-                    pending = build_producer_pending_payments(producto=producto, org_ids=org_ids)
+                    pending = build_producer_pending_payments(
+                        producto=producto, org_ids=org_ids, producer_name=producer_name,
+                    )
                     if pending:
                         total_pendiente = sum(d.get("monto_total", 0) for d in pending)
                         sections.append(

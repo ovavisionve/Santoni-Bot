@@ -1790,14 +1790,12 @@ def build_producer_purchases(
             "total_monto": float(row[2]) if row else 0.0,
         }
 
-        # By product
+        # By product (no humedad/impureza — not available in c_order standard fields)
         by_product_q = text(
             f"SELECT p.name AS producto, "
             f"COUNT(DISTINCT o.c_order_id) AS guias, "
             f"COALESCE(SUM(ol.qtyordered), 0) AS peso_neto_kg, "
-            f"COALESCE(SUM(ol.linenetamt), 0) AS monto_total, "
-            f"0.0 AS humedad_promedio, "
-            f"0.0 AS impureza_promedio "
+            f"COALESCE(SUM(ol.linenetamt), 0) AS monto_total "
             f"FROM adempiere.c_order o "
             f"JOIN adempiere.c_orderline ol ON o.c_order_id = ol.c_order_id "
             f"JOIN adempiere.m_product p ON ol.m_product_id = p.m_product_id "
@@ -1810,8 +1808,6 @@ def build_producer_purchases(
                 "guias": r[1],
                 "peso_neto_kg": float(r[2]),
                 "monto_total": float(r[3]),
-                "humedad_promedio": float(r[4]),
-                "impureza_promedio": float(r[5]),
             }
             for r in db.execute(by_product_q, params).fetchall()
         ]
@@ -1882,12 +1878,15 @@ def build_registered_producers(org_ids: list[int] | None = None) -> list[dict]:
 
 
 def build_producer_pending_payments(
-    producto: str | None = None, org_ids: list[int] | None = None,
+    producto: str | None = None,
+    org_ids: list[int] | None = None,
+    producer_name: str | None = None,
 ) -> list[dict]:
     """Pending purchase invoices (not fully paid) from iDempiere.
 
     Uses c_invoice (ispaid='N') instead of c_order, since c_order
     does not have a totalpaid column in Santoni's iDempiere.
+    Supports filtering by producer name (ILIKE) for specific producer debt queries.
     """
     db = IdempiereSession()
     try:
@@ -1904,6 +1903,10 @@ def build_producer_pending_payments(
         if producto:
             conditions.append("LOWER(p.name) LIKE :producto")
             params["producto"] = f"%{producto.lower()}%"
+
+        if producer_name:
+            conditions.append("LOWER(bp.name) LIKE :producer_name")
+            params["producer_name"] = f"%{producer_name.lower()}%"
 
         where = " AND ".join(conditions)
 

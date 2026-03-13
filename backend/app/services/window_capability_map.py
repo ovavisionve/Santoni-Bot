@@ -447,8 +447,11 @@ _reg(Capability(
     display_name="Pagos pendientes a productores",
     keywords=(
         "pagos pendientes productores", "deuda productores",
+        "deuda de productor", "deuda de productores", "deuda productor",
         "pendiente de pago a productor", "le debemos a productores",
         "pagar a productor", "pagar a productores",
+        "pago a productor", "pagos a productor",
+        "por pagar a productor", "por pagar a productores",
         "deuda de maiz", "deuda de maíz", "deuda de arroz",
         "pagar de maiz", "pagar de maíz", "pagar de arroz",
         "monto a pagar de maiz", "monto a pagar de maíz",
