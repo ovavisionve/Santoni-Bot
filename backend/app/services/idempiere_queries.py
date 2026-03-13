@@ -1243,92 +1243,37 @@ def build_employee_list(
         db.close()
 
 
-def _find_birthday_column(db) -> tuple[str, str] | None:
-    """Auto-detect which table/column holds birthday data in iDempiere.
-
-    Searches c_bpartner, lve_c_bpartner, and hr_employee for date columns
-    whose name contains 'birth', 'nac', 'cumple', or 'fecha_nac'.
-    Returns (table_alias_expr, column_expr) or None if not found.
-    Caches the result for the process lifetime.
-    """
-    if hasattr(_find_birthday_column, "_cached"):
-        return _find_birthday_column._cached
-
-    candidates = [
-        # (table, join_expr, column_patterns)
-        ("c_bpartner", None, ["birthday", "birthdate", "fecha_nacimiento", "fechanacimiento"]),
-        (
-            "lve_c_bpartner",
-            "LEFT JOIN adempiere.lve_c_bpartner lbp ON bp.c_bpartner_id = lbp.c_bpartner_id",
-            ["birthday", "birthdate", "fecha_nacimiento", "fechanacimiento",
-             "fecha_nac", "fechanac", "nacimiento"],
-        ),
-    ]
-
-    for tbl, join_expr, patterns in candidates:
-        q = text(
-            "SELECT column_name FROM information_schema.columns "
-            "WHERE table_schema = 'adempiere' AND table_name = :tbl "
-            "AND data_type IN ('date', 'timestamp without time zone', "
-            "'timestamp with time zone') "
-            "ORDER BY column_name"
-        )
-        cols = [r[0] for r in db.execute(q, {"tbl": tbl}).fetchall()]
-        for col in cols:
-            col_lower = col.lower()
-            if any(p in col_lower for p in patterns):
-                if tbl == "c_bpartner":
-                    result = (None, f"bp.{col}")
-                else:
-                    alias = "lbp"
-                    result = (join_expr, f"{alias}.{col}")
-                _find_birthday_column._cached = result
-                return result
-
-    _find_birthday_column._cached = None
-    return None
-
-
 def build_birthday_list(
     mes: int | None = None,
     org_ids: list[int] | None = None,
 ) -> list[dict]:
     """List employees whose birthday falls in the given month.
 
-    Auto-detects the birthday column across c_bpartner and lve_c_bpartner.
-    Returns empty list if no birthday column exists in the database.
+    Uses ad_user.birthday joined through c_bpartner to hr_employee.
     """
     db = _get_session(mes=mes)
     try:
-        bday_info = _find_birthday_column(db)
-        if bday_info is None:
-            return []
-
-        extra_join, bday_col = bday_info
-
-        conditions = ["e.isactive = 'Y'", f"{bday_col} IS NOT NULL"]
+        conditions = ["e.isactive = 'Y'", "u.birthday IS NOT NULL"]
         params: dict = {}
         _add_org_filter(conditions, params, org_ids, "e")
 
         if mes:
-            conditions.append(f"EXTRACT(MONTH FROM {bday_col}) = :mes")
+            conditions.append("EXTRACT(MONTH FROM u.birthday) = :mes")
             params["mes"] = mes
 
         where = " AND ".join(conditions)
 
-        extra_join_clause = f"\n{extra_join} " if extra_join else ""
-
         q = text(
             f"SELECT DISTINCT ON (bp.c_bpartner_id) "
             f"bp.name AS nombre, "
-            f"EXTRACT(DAY FROM {bday_col})::int AS dia, "
-            f"EXTRACT(MONTH FROM {bday_col})::int AS mes, "
+            f"EXTRACT(DAY FROM u.birthday)::int AS dia, "
+            f"EXTRACT(MONTH FROM u.birthday)::int AS mes, "
             f"COALESCE(d.name, '') AS departamento, "
             f"COALESCE(o.name, '') AS organizacion, "
             f"COALESCE(j.name, '') AS cargo "
             f"FROM adempiere.hr_employee e "
             f"JOIN adempiere.c_bpartner bp ON e.c_bpartner_id = bp.c_bpartner_id "
-            f"{extra_join_clause}"
+            f"JOIN adempiere.ad_user u ON u.c_bpartner_id = bp.c_bpartner_id "
             f"LEFT JOIN adempiere.ad_org o ON e.ad_org_id = o.ad_org_id "
             f"LEFT JOIN adempiere.hr_department d ON e.hr_department_id = d.hr_department_id "
             f"LEFT JOIN adempiere.hr_job j ON e.hr_job_id = j.hr_job_id "
