@@ -1169,6 +1169,7 @@ def build_employee_summary(org_ids: list[int] | None = None) -> dict:
 def build_employee_list(
     org_ids: list[int] | None = None,
     cargo_search: str | None = None,
+    name_search: str | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
 ) -> list[dict]:
@@ -1179,6 +1180,7 @@ def build_employee_list(
     Joins hr_department and hr_job for richer employee info.
 
     If cargo_search is provided, filters by job title using ILIKE.
+    If name_search is provided, filters by employee name using ILIKE.
     If date_from/date_to provided, filters by startdate (fecha de ingreso).
     """
     db = _get_session(date_from=date_from, date_to=date_to)
@@ -1186,6 +1188,15 @@ def build_employee_list(
         conditions = ["e.isactive = 'Y'", "bp.isactive = 'Y'"]
         params: dict = {}
         _add_org_filter(conditions, params, org_ids, "e")
+
+        if name_search:
+            # Split into words and require ALL words to appear in the name
+            # e.g. "Eduardo Pérez" → bp.name ILIKE '%Eduardo%' AND bp.name ILIKE '%Pérez%'
+            words = name_search.strip().split()
+            for i, word in enumerate(words):
+                key = f"name_w{i}"
+                conditions.append(f"bp.name ILIKE :{key}")
+                params[key] = f"%{word}%"
 
         if cargo_search:
             # Split into words and require ALL words to appear (handles plural/singular)
@@ -1239,8 +1250,8 @@ def build_employee_list(
             for r in rows
         ]
         results.sort(key=lambda x: x["nombre"])
-        # When filtering by cargo, allow more results; otherwise cap at 100
-        limit = 200 if cargo_search else 100
+        # When filtering by cargo or name, allow more results; otherwise cap at 100
+        limit = 200 if (cargo_search or name_search) else 100
         return results[:limit]
     finally:
         db.close()
@@ -1256,7 +1267,7 @@ def build_birthday_list(
     """
     db = _get_session(mes=mes)
     try:
-        conditions = ["e.isactive = 'Y'", "bday.birthday IS NOT NULL"]
+        conditions = ["e.isactive = 'Y'", "bp.isactive = 'Y'", "bday.birthday IS NOT NULL"]
         params: dict = {}
         _add_org_filter(conditions, params, org_ids, "e")
 

@@ -54,6 +54,7 @@ Tu especialidad es la gestión del talento humano y consultas de nómina.
 CAPACIDADES:
 - Listado y resumen de empleados por organización/departamento/cargo
 - Búsqueda de empleados por cargo/puesto (ej: "cuantos obreros integrales", "lista de gerentes")
+- Búsqueda de empleados por nombre o apellido (ej: "quiénes se llaman Eduardo", "empleados de apellido Pérez")
 - Los datos incluyen desglose por cargo (por_cargo) con conteos exactos
 - Cumpleañeros del mes (fecha de cumpleaños de empleados)
 - Consultas de nómina por período (quincenas, mensuales)
@@ -105,6 +106,7 @@ IMPORTANTE SOBRE PERÍODOS:
             "CAPACIDADES REALES (lo que SÍ puedo consultar en la base de datos):\n"
             "✅ Resumen de empleados activos por organización, departamento y cargo\n"
             "✅ Búsqueda de empleados por cargo (ej: obreros, choferes, gerentes)\n"
+            "✅ Búsqueda de empleados por nombre o apellido (ej: se llaman Eduardo, apellido Pérez)\n"
             "✅ Empleados que ingresaron en un rango de fechas (filtro por startdate)\n"
             "✅ Cumpleañeros del mes\n"
             "✅ Resumen de nómina por período (totales devengado, deducciones, neto)\n"
@@ -130,6 +132,37 @@ Datos de RRHH en iDempiere:
 - hr_payroll: Definiciones de nómina (name)
 - c_bpartner: Datos de empleados (isemployee='Y', name, value)
 """
+
+    # Name search trigger phrases
+    _NAME_TRIGGERS = [
+        "se llaman ", "se llama ", "llamados ", "llamado ", "llamada ",
+        "de nombre ", "nombre ", "con nombre ",
+        "apellido ", "con apellido ", "de apellido ",
+    ]
+
+    def _extract_name_search(self, msg: str) -> str | None:
+        """Extract a name/surname search term from the message.
+
+        Detects phrases like 'se llaman Eduardo', 'apellido Pérez',
+        'con nombre María', etc.
+        Returns the search term or None.
+        """
+        msg_lower = msg.lower()
+        for trigger in self._NAME_TRIGGERS:
+            pos = msg_lower.find(trigger)
+            if pos == -1:
+                continue
+            rest = msg[pos + len(trigger):].strip()
+            # Take until common stop words or punctuation
+            for stop in [" en ", " de la ", " del ", " hay", " tiene",
+                         " activo", " trabaj", " cuándo", " cuando", "?", ".", ","]:
+                idx = rest.lower().find(stop)
+                if idx != -1:
+                    rest = rest[:idx]
+            result = rest.strip()
+            if result and len(result) >= 2:
+                return result
+        return None
 
     # Job title keywords that indicate a cargo-specific query.
     # When any of these appear, extract the surrounding words as the cargo search term.
@@ -247,12 +280,31 @@ Datos de RRHH en iDempiere:
             # Follow-up with dates but no cargo keyword → check history
             cargo_search = self._extract_cargo_from_history(history)
 
-        try:
-            # Employee summary (always included)
-            summary = build_employee_summary(org_ids=org_ids)
-            sections.append(self._format_summary(summary, "Resumen de Personal"))
+        # Detect name search
+        name_search = self._extract_name_search(message)
 
-            if cargo_search:
+        try:
+            # Employee summary (always included unless searching by name)
+            if not name_search:
+                summary = build_employee_summary(org_ids=org_ids)
+                sections.append(self._format_summary(summary, "Resumen de Personal"))
+
+            if name_search:
+                # Name-specific query: search employees by name/surname
+                data = build_employee_list(
+                    org_ids=org_ids, name_search=name_search,
+                )
+                if data:
+                    sections.append(
+                        f"## Empleados con nombre/apellido '{name_search.upper()}' ({len(data)} encontrados)"
+                    )
+                    sections.append(self._format_table(data))
+                else:
+                    sections.append(
+                        f"## Búsqueda por nombre: '{name_search}'\n"
+                        f"No se encontraron empleados activos con ese nombre o apellido."
+                    )
+            elif cargo_search:
                 # Cargo-specific query: filter employee list by job title
                 date_label = f" (ingresados {label})" if date_from else ""
                 data = build_employee_list(

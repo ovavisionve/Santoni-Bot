@@ -897,6 +897,7 @@ def build_birthday_list(
 def build_employee_list(
     org_ids: list[int] | None = None,
     cargo_search: str | None = None,
+    name_search: str | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
 ) -> list[dict]:
@@ -905,6 +906,7 @@ def build_employee_list(
         from app.services.idempiere_queries import build_employee_list as _prod
         return _prod(
             org_ids=org_ids, cargo_search=cargo_search,
+            name_search=name_search,
             date_from=date_from, date_to=date_to,
         )
 
