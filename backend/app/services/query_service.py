@@ -437,11 +437,12 @@ def build_production_summary(
     org_ids: list[int] | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    org_name: str | None = None,
 ) -> dict:
     """Production summary - routes to demo or iDempiere."""
     if _is_production():
         from app.services.idempiere_queries import build_production_summary as _prod
-        return _prod(mes=mes, anio=anio, org_ids=org_ids, date_from=date_from, date_to=date_to)
+        return _prod(mes=mes, anio=anio, org_ids=org_ids, date_from=date_from, date_to=date_to, org_name=org_name)
 
     db = SessionLocal()
     try:
@@ -520,11 +521,12 @@ def build_production_orders(
     org_ids: list[int] | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    org_name: str | None = None,
 ) -> list[dict]:
     """Manufacturing orders - routes to demo or iDempiere."""
     if _is_production():
         from app.services.idempiere_queries import build_production_orders as _prod
-        return _prod(mes=mes, anio=anio, org_ids=org_ids, date_from=date_from, date_to=date_to)
+        return _prod(mes=mes, anio=anio, org_ids=org_ids, date_from=date_from, date_to=date_to, org_name=org_name)
 
     # Demo fallback
     return []

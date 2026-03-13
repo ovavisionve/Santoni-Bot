@@ -335,6 +335,64 @@ def check_produccion(db):
     else:
         print(f"  {Colors.YELLOW}Sin movimientos en marzo 2026{Colors.RESET}")
 
+    # Hoy por organización
+    subheader(f"HOY ({today}) por organización")
+    q_today_org = text("""
+        SELECT o.name AS organizacion,
+               SUM(CASE WHEN io.movementtype = 'V+' THEN 1 ELSE 0 END) AS recepciones,
+               SUM(CASE WHEN io.movementtype = 'C-' THEN 1 ELSE 0 END) AS despachos,
+               COUNT(*) AS total
+        FROM adempiere.m_inout io
+        JOIN adempiere.ad_org o ON io.ad_org_id = o.ad_org_id
+        WHERE io.isactive = 'Y' AND io.docstatus IN ('CO', 'CL')
+          AND io.movementdate::date = :today
+        GROUP BY o.name ORDER BY total DESC
+    """)
+    rows = [{"organizacion": r[0], "recepciones": r[1], "despachos": r[2], "total": r[3]}
+            for r in db.execute(q_today_org, {"today": today}).fetchall()]
+    if rows:
+        table(rows)
+    else:
+        print(f"  {Colors.YELLOW}Sin movimientos hoy{Colors.RESET}")
+
+    # InproMaiz hoy
+    subheader(f"InproMaiz HOY ({today})")
+    q_inpro_today = text("""
+        SELECT SUM(CASE WHEN io.movementtype = 'V+' THEN 1 ELSE 0 END) AS recepciones,
+               SUM(CASE WHEN io.movementtype = 'C-' THEN 1 ELSE 0 END) AS despachos,
+               COUNT(*) AS total
+        FROM adempiere.m_inout io
+        JOIN adempiere.ad_org o ON io.ad_org_id = o.ad_org_id
+        WHERE io.isactive = 'Y' AND io.docstatus IN ('CO', 'CL')
+          AND io.movementdate::date = :today
+          AND o.name ILIKE '%InproMaiz%'
+    """)
+    r = db.execute(q_inpro_today, {"today": today}).fetchone()
+    row("Recepciones InproMaiz hoy", r[0] or 0)
+    row("Despachos InproMaiz hoy", r[1] or 0)
+    row("Total InproMaiz hoy", r[2] or 0)
+
+    # InproMaiz últimos 7 días
+    subheader("InproMaiz últimos 7 días")
+    q_inpro_7d = text("""
+        SELECT io.movementdate::date AS fecha,
+               SUM(CASE WHEN io.movementtype = 'V+' THEN 1 ELSE 0 END) AS recepciones,
+               SUM(CASE WHEN io.movementtype = 'C-' THEN 1 ELSE 0 END) AS despachos,
+               COUNT(*) AS total
+        FROM adempiere.m_inout io
+        JOIN adempiere.ad_org o ON io.ad_org_id = o.ad_org_id
+        WHERE io.isactive = 'Y' AND io.docstatus IN ('CO', 'CL')
+          AND io.movementdate::date >= (CURRENT_DATE - INTERVAL '7 days')::date
+          AND o.name ILIKE '%InproMaiz%'
+        GROUP BY io.movementdate::date ORDER BY fecha DESC
+    """)
+    rows = [{"fecha": str(r[0]), "recepciones": r[1], "despachos": r[2], "total": r[3]}
+            for r in db.execute(q_inpro_7d).fetchall()]
+    if rows:
+        table(rows)
+    else:
+        print(f"  {Colors.YELLOW}Sin movimientos InproMaiz últimos 7 días{Colors.RESET}")
+
     # Top productos marzo
     subheader("Top 10 productos movidos en marzo 2026")
     q_prods = text("""
