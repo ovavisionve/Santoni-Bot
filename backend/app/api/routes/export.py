@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
@@ -8,7 +10,32 @@ from app.models.user import User
 from app.models.conversation import Message
 from app.services.export_service import export_to_csv, export_to_excel, export_to_pdf, export_to_docx
 
+logger = logging.getLogger("santonibot.export")
+
 router = APIRouter(prefix="/export", tags=["Exportación"])
+
+_FORMAT_CONFIG = {
+    "csv": {
+        "fn": export_to_csv,
+        "media": "text/csv",
+        "ext": "csv",
+    },
+    "excel": {
+        "fn": export_to_excel,
+        "media": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "ext": "xlsx",
+    },
+    "pdf": {
+        "fn": export_to_pdf,
+        "media": "application/pdf",
+        "ext": "pdf",
+    },
+    "docx": {
+        "fn": export_to_docx,
+        "media": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "ext": "docx",
+    },
+}
 
 
 @router.get("/message/{message_id}")
@@ -18,7 +45,7 @@ def export_message(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Export a specific assistant message in CSV, Excel, or PDF format."""
+    """Export a specific assistant message in CSV, Excel, PDF, or Word format."""
     message = (
         db.query(Message)
         .filter(Message.id == message_id)
@@ -44,39 +71,29 @@ def export_message(
     content = message.content
     agent = message.agent_used
 
-    if format == "csv":
-        data = export_to_csv(content, agent)
-        return Response(
-            content=data,
-            media_type="text/csv",
-            headers={
-                "Content-Disposition": f'attachment; filename="santonibot_reporte.csv"'
-            },
+    if not content or not content.strip():
+        raise HTTPException(status_code=400, detail="El mensaje no tiene contenido para exportar")
+
+    cfg = _FORMAT_CONFIG.get(format)
+    if not cfg:
+        raise HTTPException(status_code=400, detail=f"Formato no soportado: {format}")
+
+    try:
+        data = cfg["fn"](content, agent)
+    except Exception as exc:
+        logger.error(
+            "Error generando export %s para mensaje %d: %s: %s",
+            format, message_id, type(exc).__name__, exc, exc_info=True,
         )
-    elif format == "excel":
-        data = export_to_excel(content, agent)
-        return Response(
-            content=data,
-            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={
-                "Content-Disposition": f'attachment; filename="santonibot_reporte.xlsx"'
-            },
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error al generar el archivo {format}: {type(exc).__name__}",
         )
-    elif format == "pdf":
-        data = export_to_pdf(content, agent)
-        return Response(
-            content=data,
-            media_type="application/pdf",
-            headers={
-                "Content-Disposition": f'attachment; filename="santonibot_reporte.pdf"'
-            },
-        )
-    elif format == "docx":
-        data = export_to_docx(content, agent)
-        return Response(
-            content=data,
-            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            headers={
-                "Content-Disposition": f'attachment; filename="santonibot_reporte.docx"'
-            },
-        )
+
+    return Response(
+        content=data,
+        media_type=cfg["media"],
+        headers={
+            "Content-Disposition": f'attachment; filename="santonibot_reporte.{cfg["ext"]}"'
+        },
+    )

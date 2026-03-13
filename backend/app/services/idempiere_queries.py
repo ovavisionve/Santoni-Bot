@@ -3324,6 +3324,7 @@ def build_inventory_stock(
     product_search: str | None = None,
     category_search: str | None = None,
     warehouse_search: str | None = None,
+    org_name: str | None = None,
 ) -> dict:
     """Inventory stock from iDempiere m_storageonhand.
 
@@ -3340,7 +3341,9 @@ def build_inventory_stock(
         params: dict = {}
 
         # Org filter on warehouse org
-        if org_ids:
+        if org_name:
+            _add_org_name_filter(conditions, params, org_name, "w")
+        elif org_ids:
             placeholders = ", ".join(f":org_{i}" for i in range(len(org_ids)))
             conditions.append(f"w.ad_org_id IN ({placeholders})")
             for i, org_id in enumerate(org_ids):

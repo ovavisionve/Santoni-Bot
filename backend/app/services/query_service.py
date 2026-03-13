@@ -1298,6 +1298,7 @@ def build_inventory_stock(
     product_search: str | None = None,
     category_search: str | None = None,
     warehouse_search: str | None = None,
+    org_name: str | None = None,
 ) -> dict:
     """Inventory stock - routes to demo or iDempiere."""
     if _is_production():
@@ -1305,6 +1306,7 @@ def build_inventory_stock(
         return _prod(
             org_ids=org_ids, product_search=product_search,
             category_search=category_search, warehouse_search=warehouse_search,
+            org_name=org_name,
         )
 
     # Demo fallback

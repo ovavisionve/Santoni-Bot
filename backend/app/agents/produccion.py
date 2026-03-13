@@ -79,6 +79,13 @@ REGLAS:
 - Cuando hables de "despachos" te refieres a producto terminado que sale
 - Cuando hables de "producciones" te refieres a órdenes de producción completadas en m_production
 
+ANTI-ALUCINACIÓN (MUY IMPORTANTE):
+- SOLO presenta datos que aparezcan EXPLÍCITAMENTE en el contexto de datos que recibes
+- Si ves "Total Producciones: 0" o "La consulta no arrojó resultados", responde "No se encontraron datos para ese filtro" — NUNCA inventes cifras, nombres de productos ni cantidades
+- Los nombres de productos REALES en iDempiere son como "ARROZ SANTONI PREMIUN 900GR X 24UND", "HARINA DE MAIZ BLANCO () MASANTONI 900GR", "CHICHA TONI 12UNID DE 250Gr", "NUTRI TONI 12UNID DE 400GR" — NO los simplifiques ni inventes nombres genéricos como "Arroz Santoni Blanco" o "Harina de Maíz Santoni"
+- Si los datos muestran un "Error al consultar", informa del error y pide al usuario que intente de nuevo — NUNCA completes con datos imaginados
+- Cada tabla incluye un conteo "[N filas reales]". No agregues filas ni modifiques cantidades
+
 CONTEXTO OPERATIVO:
 - 2 plantas en Agua Blanca, Estado Portuguesa
 - Productos principales: Arroz Santoni (varios tipos), Harina de Maíz Santoni, Choco Toni, Nutri Toni
@@ -194,23 +201,49 @@ Datos de producción en iDempiere:
     def _extract_product_search(cls, msg: str) -> str | None:
         """Extract product name from message for production queries."""
         msg_lower = msg.lower()
-        # Common product patterns
-        patterns = [
-            "de ", "del producto ", "del ", "producto ",
+        # Look for product names after key phrases (order matters: longer first)
+        _PATTERNS = [
+            "producción de ", "produccion de ", "fabricación de ",
+            "fabricacion de ", "receta de la ", "receta del ",
+            "receta de ", "bom de ", "bom del ",
+            "ingredientes del ", "ingredientes de la ",
+            "ingredientes de ", "ingredientes lleva el ",
+            "ingredientes lleva la ", "ingredientes lleva ",
+            "componentes del ", "componentes de la ",
+            "componentes de ", "qué lleva el ", "que lleva el ",
+            "qué lleva la ", "que lleva la ",
+            "qué tiene el ", "que tiene el ",
+            "cómo se hace el ", "como se hace el ",
+            "cómo se hace la ", "como se hace la ",
+            "stock de ", "stock del ", "stock actual de ",
+            "inventario de ", "inventario del ",
+            "producción del ", "produccion del ",
         ]
-        # Look for product names after key phrases
-        for pattern in ["producción de ", "produccion de ", "fabricación de ",
-                        "fabricacion de ", "receta de ", "bom de ",
-                        "ingredientes de ", "componentes de "]:
+        for pattern in _PATTERNS:
             if pattern in msg_lower:
                 after = msg_lower.split(pattern, 1)[1].strip()
                 # Take first meaningful chunk (up to punctuation or common stop words)
-                for stop in ["?", ".", ",", " en ", " de ", " para ", " del ", " durante "]:
+                for stop in ["?", ".", ",", " en ", " para ", " durante "]:
                     if stop in after:
                         after = after.split(stop, 1)[0].strip()
                 if after and len(after) > 2:
                     return after
         return None
+
+    @staticmethod
+    def _row_count_marker(data: dict) -> str:
+        """Add explicit row count markers to prevent LLM hallucination."""
+        counts = []
+        for key, value in data.items():
+            if isinstance(value, list):
+                counts.append(f"[{key}: {len(value)} filas reales]")
+            elif isinstance(value, dict) and "total_producciones" in value:
+                counts.append(f"[total_producciones: {value['total_producciones']}]")
+            elif isinstance(value, dict) and "total_movimientos" in value:
+                counts.append(f"[total_movimientos: {value['total_movimientos']}]")
+            elif isinstance(value, dict) and "total_boms" in value:
+                counts.append(f"[total_boms: {value['total_boms']}]")
+        return "**Conteo verificado:** " + ", ".join(counts) if counts else ""
 
     def fetch_data(self, message: str, org_ids: list[int] | None = None, salesrep_id: int | None = None, history: list[tuple[str, str]] | None = None) -> str | None:
         msg = message.lower()
@@ -293,6 +326,7 @@ Datos de producción en iDempiere:
                     org_name=org_name, product_search=product_search,
                 )
                 sections.append(self._format_summary(prod_data, f"Producciones - {label}"))
+                sections.append(self._row_count_marker(prod_data))
 
             # 2. BOMs / recipes
             if wants_bom:
@@ -302,6 +336,7 @@ Datos de producción en iDempiere:
                     org_name=org_name,
                 )
                 sections.append(self._format_summary(bom_data, "Recetas / Bill of Materials (BOM)"))
+                sections.append(self._row_count_marker(bom_data))
 
             # 3. Warehouse movements (m_movement)
             if wants_movements:
@@ -311,6 +346,7 @@ Datos de producción en iDempiere:
                     org_name=org_name,
                 )
                 sections.append(self._format_summary(mov_data, f"Movimientos entre Almacenes - {label}"))
+                sections.append(self._row_count_marker(mov_data))
 
             # 4. Material movements (m_inout) — recepciones/despachos
             if wants_documents:
@@ -320,6 +356,7 @@ Datos de producción en iDempiere:
                     org_name=org_name,
                 )
                 sections.append(self._format_summary(summary, f"Movimientos de Inventario - {label}"))
+                sections.append(self._row_count_marker(summary))
 
                 data = build_production_orders(
                     mes=mes, anio=anio, org_ids=org_ids,
@@ -327,15 +364,22 @@ Datos de producción en iDempiere:
                     org_name=org_name,
                 )
                 if data:
-                    sections.append(f"## Documentos de Movimiento Recientes ({len(data)} registros)")
+                    sections.append(f"## Documentos de Movimiento Recientes [{len(data)} filas reales]")
                     sections.append(self._format_table(data))
+                else:
+                    sections.append("## Documentos de Movimiento Recientes [0 filas reales]")
 
             # 5. Inventory / stock
             if wants_inventory:
-                inv_data = build_inventory_stock(org_ids=org_ids)
+                inv_data = build_inventory_stock(
+                    org_ids=org_ids,
+                    product_search=product_search,
+                    org_name=org_name,
+                )
                 sections.append(self._format_summary(
                     inv_data, "Inventario / Stock Actual",
                 ))
+                sections.append(self._row_count_marker(inv_data))
 
         except Exception as exc:
             logger.error("Error consultando datos de producción: %s: %s", type(exc).__name__, exc, exc_info=True)
