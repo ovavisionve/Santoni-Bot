@@ -554,6 +554,382 @@ def check_nomina(db):
     row("Neto a pagar (Bs.)", float(r[2]) - float(r[3]))
 
 
+def check_m_production(db):
+    """Verificar producciones reales desde m_production + m_productionline."""
+    header("VERIFICACIÓN: M_PRODUCTION (PRODUCCIONES REALES)")
+
+    # Estructura de la tabla
+    subheader("Estructura m_productionline (columnas clave)")
+    try:
+        q = text("""
+            SELECT column_name, data_type
+            FROM information_schema.columns
+            WHERE table_schema = 'adempiere' AND table_name = 'm_productionline'
+              AND column_name IN ('isendproduct', 'movementqty', 'm_product_id',
+                                  'm_production_id', 'm_locator_id', 'line')
+            ORDER BY column_name
+        """)
+        rows = [{"columna": r[0], "tipo": r[1]} for r in db.execute(q).fetchall()]
+        table(rows)
+        has_isendproduct = any(r["columna"] == "isendproduct" for r in rows)
+        if not has_isendproduct:
+            print(f"  {Colors.RED}¡ALERTA! Columna 'isendproduct' NO encontrada en m_productionline{Colors.RESET}")
+    except Exception as exc:
+        db.rollback()
+        print(f"  {Colors.RED}Error: {exc}{Colors.RESET}")
+
+    # Totales generales
+    subheader("Totales generales m_production")
+    q = text("""
+        SELECT COUNT(*) AS total,
+               SUM(CASE WHEN docstatus IN ('CO', 'CL') THEN 1 ELSE 0 END) AS completadas,
+               MIN(movementdate::date) AS primera,
+               MAX(movementdate::date) AS ultima,
+               COALESCE(SUM(CASE WHEN docstatus IN ('CO', 'CL') THEN productionqty ELSE 0 END), 0) AS qty_total
+        FROM adempiere.m_production
+    """)
+    r = db.execute(q).fetchone()
+    row("Total registros", r[0])
+    row("Completadas (CO/CL)", r[1])
+    row("Primer registro", r[2])
+    row("Último registro", r[3])
+    row("Qty total (completadas)", r[4])
+
+    # Marzo 2026
+    subheader("Marzo 2026 - Producciones")
+    q = text("""
+        SELECT COUNT(*) AS producciones,
+               COALESCE(SUM(productionqty), 0) AS qty
+        FROM adempiere.m_production
+        WHERE docstatus IN ('CO', 'CL') AND isactive = 'Y'
+          AND EXTRACT(MONTH FROM movementdate) = 3
+          AND EXTRACT(YEAR FROM movementdate) = 2026
+    """)
+    r = db.execute(q).fetchone()
+    row("Producciones marzo 2026", r[0])
+    row("Cantidad producida", r[1])
+
+    # Top productos terminados (isendproduct = 'Y')
+    subheader("Top 10 productos terminados (isendproduct='Y') - 2026")
+    try:
+        q = text("""
+            SELECT p.name AS producto,
+                   COUNT(DISTINCT pr.m_production_id) AS producciones,
+                   COALESCE(SUM(prl.movementqty), 0) AS qty
+            FROM adempiere.m_production pr
+            JOIN adempiere.m_productionline prl ON pr.m_production_id = prl.m_production_id
+            JOIN adempiere.m_product p ON prl.m_product_id = p.m_product_id
+            WHERE pr.docstatus IN ('CO', 'CL') AND pr.isactive = 'Y'
+              AND EXTRACT(YEAR FROM pr.movementdate) = 2026
+              AND prl.isendproduct = 'Y' AND prl.movementqty > 0
+            GROUP BY p.name ORDER BY qty DESC LIMIT 10
+        """)
+        rows = [{"producto": r[0], "producciones": r[1], "qty": float(r[2])} for r in db.execute(q).fetchall()]
+        table(rows)
+    except Exception as exc:
+        db.rollback()
+        print(f"  {Colors.RED}Error con isendproduct: {exc}{Colors.RESET}")
+        print(f"  {Colors.YELLOW}Intentando con movementqty > 0...{Colors.RESET}")
+        q = text("""
+            SELECT p.name AS producto,
+                   COUNT(DISTINCT pr.m_production_id) AS producciones,
+                   COALESCE(SUM(prl.movementqty), 0) AS qty
+            FROM adempiere.m_production pr
+            JOIN adempiere.m_productionline prl ON pr.m_production_id = prl.m_production_id
+            JOIN adempiere.m_product p ON prl.m_product_id = p.m_product_id
+            WHERE pr.docstatus IN ('CO', 'CL') AND pr.isactive = 'Y'
+              AND EXTRACT(YEAR FROM pr.movementdate) = 2026
+              AND prl.movementqty > 0
+            GROUP BY p.name ORDER BY qty DESC LIMIT 10
+        """)
+        rows = [{"producto": r[0], "producciones": r[1], "qty": float(r[2])} for r in db.execute(q).fetchall()]
+        table(rows)
+
+    # Top insumos consumidos (isendproduct = 'N' o qty < 0)
+    subheader("Top 10 insumos consumidos (isendproduct='N') - 2026")
+    try:
+        q = text("""
+            SELECT p.name AS insumo,
+                   COALESCE(SUM(ABS(prl.movementqty)), 0) AS qty_consumida
+            FROM adempiere.m_production pr
+            JOIN adempiere.m_productionline prl ON pr.m_production_id = prl.m_production_id
+            JOIN adempiere.m_product p ON prl.m_product_id = p.m_product_id
+            WHERE pr.docstatus IN ('CO', 'CL') AND pr.isactive = 'Y'
+              AND EXTRACT(YEAR FROM pr.movementdate) = 2026
+              AND (prl.isendproduct = 'N' OR prl.movementqty < 0)
+            GROUP BY p.name ORDER BY qty_consumida DESC LIMIT 10
+        """)
+        rows = [{"insumo": r[0], "qty_consumida": float(r[1])} for r in db.execute(q).fetchall()]
+        table(rows)
+    except Exception as exc:
+        db.rollback()
+        print(f"  {Colors.RED}Error: {exc}{Colors.RESET}")
+
+    # Por organización
+    subheader("Por organización - 2026")
+    q = text("""
+        SELECT org.name AS organizacion,
+               COUNT(*) AS producciones,
+               COALESCE(SUM(pr.productionqty), 0) AS qty
+        FROM adempiere.m_production pr
+        JOIN adempiere.ad_org org ON pr.ad_org_id = org.ad_org_id
+        WHERE pr.docstatus IN ('CO', 'CL') AND pr.isactive = 'Y'
+          AND EXTRACT(YEAR FROM pr.movementdate) = 2026
+        GROUP BY org.name ORDER BY producciones DESC
+    """)
+    rows = [{"organizacion": r[0], "producciones": r[1], "qty": float(r[2])} for r in db.execute(q).fetchall()]
+    table(rows)
+
+
+def check_bom(db):
+    """Verificar BOMs / recetas desde pp_product_bom."""
+    header("VERIFICACIÓN: PP_PRODUCT_BOM (RECETAS / BILL OF MATERIALS)")
+
+    # Check table exists
+    subheader("¿Existen las tablas?")
+    q = text("""
+        SELECT table_name, (SELECT COUNT(*) FROM information_schema.columns c
+                            WHERE c.table_schema = t.table_schema AND c.table_name = t.table_name) AS columnas
+        FROM information_schema.tables t
+        WHERE table_schema = 'adempiere'
+          AND table_name IN ('pp_product_bom', 'pp_product_bomline')
+        ORDER BY table_name
+    """)
+    rows = [{"tabla": r[0], "columnas": r[1]} for r in db.execute(q).fetchall()]
+    table(rows)
+    if len(rows) < 2:
+        print(f"  {Colors.RED}¡Tablas BOM no encontradas! No se puede continuar.{Colors.RESET}")
+        return
+
+    # Totals
+    subheader("Totales BOMs")
+    q = text("""
+        SELECT COUNT(*) AS total_boms,
+               SUM(CASE WHEN isactive = 'Y' THEN 1 ELSE 0 END) AS activas
+        FROM adempiere.pp_product_bom
+    """)
+    r = db.execute(q).fetchone()
+    row("Total BOMs", r[0])
+    row("BOMs activas", r[1])
+
+    # Total bomlines
+    q = text("SELECT COUNT(*) FROM adempiere.pp_product_bomline WHERE isactive = 'Y'")
+    r = db.execute(q).fetchone()
+    row("Total componentes (activos)", r[0])
+
+    # Sample BOMs with component count
+    subheader("Top 15 BOMs por número de componentes")
+    q = text("""
+        SELECT b.name AS bom_nombre, p.name AS producto, org.name AS organizacion,
+               (SELECT COUNT(*) FROM adempiere.pp_product_bomline bl
+                WHERE bl.pp_product_bom_id = b.pp_product_bom_id AND bl.isactive = 'Y') AS componentes
+        FROM adempiere.pp_product_bom b
+        JOIN adempiere.m_product p ON b.m_product_id = p.m_product_id
+        JOIN adempiere.ad_org org ON b.ad_org_id = org.ad_org_id
+        WHERE b.isactive = 'Y'
+        ORDER BY componentes DESC LIMIT 15
+    """)
+    rows = [{"bom": r[0], "producto": r[1], "org": r[2], "componentes": r[3]}
+            for r in db.execute(q).fetchall()]
+    table(rows)
+
+    # Sample BOM detail: first BOM with most components
+    if rows:
+        subheader(f"Ejemplo detalle BOM: {rows[0]['bom']}")
+        q = text("""
+            SELECT p.name AS componente, bl.qtybom AS cantidad,
+                   COALESCE(u.name, '-') AS unidad, bl.componenttype AS tipo
+            FROM adempiere.pp_product_bomline bl
+            JOIN adempiere.m_product p ON bl.m_product_id = p.m_product_id
+            LEFT JOIN adempiere.c_uom u ON bl.c_uom_id = u.c_uom_id
+            JOIN adempiere.pp_product_bom b ON bl.pp_product_bom_id = b.pp_product_bom_id
+            WHERE b.name = :bom_name AND bl.isactive = 'Y'
+            ORDER BY bl.line
+        """)
+        comps = [{"componente": r[0], "cantidad": float(r[1]) if r[1] else 0,
+                  "unidad": r[2], "tipo": r[3]}
+                 for r in db.execute(q, {"bom_name": rows[0]["bom"]}).fetchall()]
+        table(comps)
+
+    # BOMs por organización
+    subheader("BOMs por organización")
+    q = text("""
+        SELECT org.name AS organizacion, COUNT(*) AS boms
+        FROM adempiere.pp_product_bom b
+        JOIN adempiere.ad_org org ON b.ad_org_id = org.ad_org_id
+        WHERE b.isactive = 'Y'
+        GROUP BY org.name ORDER BY boms DESC
+    """)
+    rows = [{"organizacion": r[0], "boms": r[1]} for r in db.execute(q).fetchall()]
+    table(rows)
+
+
+def check_m_movement(db):
+    """Verificar movimientos entre almacenes desde m_movement."""
+    header("VERIFICACIÓN: M_MOVEMENT (MOVIMIENTOS ENTRE ALMACENES)")
+
+    # Check table exists
+    subheader("Totales m_movement")
+    q = text("""
+        SELECT COUNT(*) AS total,
+               SUM(CASE WHEN docstatus IN ('CO', 'CL') THEN 1 ELSE 0 END) AS completados,
+               MIN(movementdate::date) AS primera,
+               MAX(movementdate::date) AS ultima
+        FROM adempiere.m_movement
+    """)
+    r = db.execute(q).fetchone()
+    row("Total registros", r[0])
+    row("Completados (CO/CL)", r[1])
+    row("Primer registro", r[2])
+    row("Último registro", r[3])
+
+    # 2026
+    subheader("Año 2026 - Movimientos entre almacenes")
+    q = text("""
+        SELECT COUNT(*) AS movimientos
+        FROM adempiere.m_movement
+        WHERE docstatus IN ('CO', 'CL') AND isactive = 'Y'
+          AND EXTRACT(YEAR FROM movementdate) = 2026
+    """)
+    r = db.execute(q).fetchone()
+    row("Movimientos 2026", r[0])
+
+    # Marzo 2026
+    q = text("""
+        SELECT COUNT(*) AS movimientos
+        FROM adempiere.m_movement
+        WHERE docstatus IN ('CO', 'CL') AND isactive = 'Y'
+          AND EXTRACT(MONTH FROM movementdate) = 3
+          AND EXTRACT(YEAR FROM movementdate) = 2026
+    """)
+    r = db.execute(q).fetchone()
+    row("Movimientos marzo 2026", r[0])
+
+    # Top productos movidos 2026
+    subheader("Top 10 productos movidos entre almacenes - 2026")
+    q = text("""
+        SELECT p.name AS producto,
+               SUM(ABS(ml.movementqty)) AS qty_movida,
+               COUNT(DISTINCT mv.m_movement_id) AS movimientos
+        FROM adempiere.m_movement mv
+        JOIN adempiere.m_movementline ml ON mv.m_movement_id = ml.m_movement_id
+        JOIN adempiere.m_product p ON ml.m_product_id = p.m_product_id
+        WHERE mv.docstatus IN ('CO', 'CL') AND mv.isactive = 'Y'
+          AND EXTRACT(YEAR FROM mv.movementdate) = 2026
+        GROUP BY p.name ORDER BY qty_movida DESC LIMIT 10
+    """)
+    rows = [{"producto": r[0], "qty_movida": float(r[1]), "movimientos": r[2]}
+            for r in db.execute(q).fetchall()]
+    table(rows)
+
+    # Flujo almacén origen → destino
+    subheader("Flujo almacén origen → destino (top 10) - 2026")
+    q = text("""
+        SELECT w_from.name AS origen, w_to.name AS destino,
+               COUNT(DISTINCT mv.m_movement_id) AS movimientos,
+               SUM(ABS(ml.movementqty)) AS qty
+        FROM adempiere.m_movement mv
+        JOIN adempiere.m_movementline ml ON mv.m_movement_id = ml.m_movement_id
+        JOIN adempiere.m_locator l_from ON ml.m_locator_id = l_from.m_locator_id
+        JOIN adempiere.m_warehouse w_from ON l_from.m_warehouse_id = w_from.m_warehouse_id
+        JOIN adempiere.m_locator l_to ON ml.m_locatorto_id = l_to.m_locator_id
+        JOIN adempiere.m_warehouse w_to ON l_to.m_warehouse_id = w_to.m_warehouse_id
+        WHERE mv.docstatus IN ('CO', 'CL') AND mv.isactive = 'Y'
+          AND EXTRACT(YEAR FROM mv.movementdate) = 2026
+        GROUP BY w_from.name, w_to.name ORDER BY qty DESC LIMIT 10
+    """)
+    rows = [{"origen": r[0], "destino": r[1], "movimientos": r[2], "qty": float(r[3])}
+            for r in db.execute(q).fetchall()]
+    table(rows)
+
+    # Por organización
+    subheader("Por organización - 2026")
+    q = text("""
+        SELECT org.name AS organizacion, COUNT(*) AS movimientos
+        FROM adempiere.m_movement mv
+        JOIN adempiere.ad_org org ON mv.ad_org_id = org.ad_org_id
+        WHERE mv.docstatus IN ('CO', 'CL') AND mv.isactive = 'Y'
+          AND EXTRACT(YEAR FROM mv.movementdate) = 2026
+        GROUP BY org.name ORDER BY movimientos DESC
+    """)
+    rows = [{"organizacion": r[0], "movimientos": r[1]} for r in db.execute(q).fetchall()]
+    table(rows)
+
+
+def check_stock_arroz_paddy(db):
+    """Verificar stock actual de arroz paddy y producto '01-0' - comparar con respuesta del bot."""
+    header("VERIFICACIÓN: STOCK ARROZ PADDY + PRODUCTO '01-0'")
+
+    # El bot reportó: 40,750,455.69 kg de Arroz Paddy Acondicionado
+    subheader("Stock actual: productos con 'arroz' y 'paddy' en nombre")
+    q = text("""
+        SELECT p.name AS producto, p.value AS codigo,
+               w.name AS almacen, org.name AS organizacion,
+               COALESCE(SUM(s.qtyonhand), 0) AS stock_kg
+        FROM adempiere.m_storageonhand s
+        JOIN adempiere.m_locator l ON s.m_locator_id = l.m_locator_id
+        JOIN adempiere.m_warehouse w ON l.m_warehouse_id = w.m_warehouse_id
+        JOIN adempiere.m_product p ON s.m_product_id = p.m_product_id
+        JOIN adempiere.ad_org org ON l.ad_org_id = org.ad_org_id
+        WHERE LOWER(p.name) LIKE '%arroz%paddy%'
+          AND s.qtyonhand <> 0
+        GROUP BY p.name, p.value, w.name, org.name
+        ORDER BY stock_kg DESC
+    """)
+    rows = [{"producto": r[0], "codigo": r[1], "almacen": r[2], "org": r[3], "stock_kg": float(r[4])}
+            for r in db.execute(q).fetchall()]
+    table(rows)
+    if rows:
+        total_paddy = sum(r["stock_kg"] for r in rows)
+        row("TOTAL stock arroz paddy (kg)", total_paddy)
+        row("TOTAL stock arroz paddy (ton)", total_paddy / 1000)
+        print(f"\n  {Colors.CYAN}Bot reportó: 40,750,455.69 kg{Colors.RESET}")
+
+    # Producto "01-0": búsqueda exacta y flexible
+    subheader("Producto '01-0': búsqueda en m_product")
+    q = text("""
+        SELECT p.m_product_id, p.value AS codigo, p.name AS nombre, p.isactive
+        FROM adempiere.m_product p
+        WHERE p.value LIKE '%01-0%' OR p.name LIKE '%01-0%'
+        ORDER BY p.value LIMIT 20
+    """)
+    rows = [{"id": r[0], "codigo": r[1], "nombre": r[2], "activo": r[3]}
+            for r in db.execute(q).fetchall()]
+    if rows:
+        table(rows)
+    else:
+        print(f"  {Colors.YELLOW}No se encontró ningún producto con código/nombre '01-0'{Colors.RESET}")
+
+    # Búsqueda más amplia: productos que empiecen con "01"
+    subheader("Productos con código que empiece con '01' (primeros 20)")
+    q = text("""
+        SELECT p.value AS codigo, p.name AS nombre,
+               COALESCE((SELECT SUM(s.qtyonhand) FROM adempiere.m_storageonhand s
+                         WHERE s.m_product_id = p.m_product_id), 0) AS stock
+        FROM adempiere.m_product p
+        WHERE p.value LIKE '01%' AND p.isactive = 'Y'
+        ORDER BY p.value LIMIT 20
+    """)
+    rows = [{"codigo": r[0], "nombre": r[1], "stock": float(r[2])} for r in db.execute(q).fetchall()]
+    table(rows)
+
+    # Stock total por categoría (arroz-related products with stock)
+    subheader("Stock actual: todos los productos con 'arroz' (resumen)")
+    q = text("""
+        SELECT p.name AS producto, p.value AS codigo,
+               COALESCE(SUM(s.qtyonhand), 0) AS stock_kg
+        FROM adempiere.m_storageonhand s
+        JOIN adempiere.m_product p ON s.m_product_id = p.m_product_id
+        WHERE LOWER(p.name) LIKE '%arroz%'
+          AND s.qtyonhand <> 0
+        GROUP BY p.name, p.value
+        ORDER BY stock_kg DESC LIMIT 20
+    """)
+    rows = [{"producto": r[0], "codigo": r[1], "stock_kg": float(r[2])}
+            for r in db.execute(q).fetchall()]
+    table(rows)
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -565,6 +941,10 @@ ALL_CHECKS = {
     "cxp": check_cuentas_por_pagar,
     "cxc": check_cuentas_por_cobrar,
     "produccion": check_produccion,
+    "produccion_real": check_m_production,
+    "bom": check_bom,
+    "movimientos_almacen": check_m_movement,
+    "stock_paddy": check_stock_arroz_paddy,
     "vacaciones": check_vacaciones,
     "cumpleaneros": check_cumpleaneros,
     "nomina": check_nomina,
