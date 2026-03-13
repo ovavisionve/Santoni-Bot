@@ -1253,27 +1253,34 @@ def build_birthday_list(
     """
     db = _get_session(mes=mes)
     try:
-        conditions = ["e.isactive = 'Y'", "u.birthday IS NOT NULL"]
+        conditions = ["e.isactive = 'Y'", "bday.birthday IS NOT NULL"]
         params: dict = {}
         _add_org_filter(conditions, params, org_ids, "e")
 
         if mes:
-            conditions.append("EXTRACT(MONTH FROM u.birthday) = :mes")
+            conditions.append("EXTRACT(MONTH FROM bday.birthday) = :mes")
             params["mes"] = mes
 
         where = " AND ".join(conditions)
 
+        # Use LATERAL subquery to pick exactly one birthday per c_bpartner
+        # (avoids duplicates when a partner has multiple ad_user rows)
         q = text(
             f"SELECT DISTINCT ON (bp.c_bpartner_id) "
             f"bp.name AS nombre, "
-            f"EXTRACT(DAY FROM u.birthday)::int AS dia, "
-            f"EXTRACT(MONTH FROM u.birthday)::int AS mes, "
+            f"EXTRACT(DAY FROM bday.birthday)::int AS dia, "
+            f"EXTRACT(MONTH FROM bday.birthday)::int AS mes, "
             f"COALESCE(d.name, '') AS departamento, "
             f"COALESCE(o.name, '') AS organizacion, "
             f"COALESCE(j.name, '') AS cargo "
             f"FROM adempiere.hr_employee e "
             f"JOIN adempiere.c_bpartner bp ON e.c_bpartner_id = bp.c_bpartner_id "
-            f"JOIN adempiere.ad_user u ON u.c_bpartner_id = bp.c_bpartner_id "
+            f"JOIN LATERAL ("
+            f"  SELECT u.birthday FROM adempiere.ad_user u "
+            f"  WHERE u.c_bpartner_id = bp.c_bpartner_id "
+            f"  AND u.birthday IS NOT NULL "
+            f"  ORDER BY u.ad_user_id LIMIT 1"
+            f") bday ON TRUE "
             f"LEFT JOIN adempiere.ad_org o ON e.ad_org_id = o.ad_org_id "
             f"LEFT JOIN adempiere.hr_department d ON e.hr_department_id = d.hr_department_id "
             f"LEFT JOIN adempiere.hr_job j ON e.hr_job_id = j.hr_job_id "
