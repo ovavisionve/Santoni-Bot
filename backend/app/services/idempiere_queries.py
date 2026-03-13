@@ -1912,6 +1912,352 @@ def build_production_orders(
 
 
 # ---------------------------------------------------------------------------
+# PRODUCCIÓN REAL (m_production + m_productionline)
+# ---------------------------------------------------------------------------
+
+
+def build_production_runs(
+    mes: int | None = None,
+    anio: int | None = None,
+    org_ids: list[int] | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    org_name: str | None = None,
+    product_search: str | None = None,
+) -> dict:
+    """Production runs from m_production + m_productionline.
+
+    m_production has 35,960+ completed records in Santoni.
+    Each production has lines: one 'header' line (isendproduct='Y', qty positive)
+    for the finished product, and component lines (isendproduct='N', qty negative)
+    for consumed raw materials.
+    """
+    db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
+    try:
+        conditions = ["pr.isactive = 'Y'", "pr.docstatus IN ('CO', 'CL')"]
+        params: dict = {}
+        _add_org_name_filter(conditions, params, org_name, "pr")
+        if not org_name:
+            _add_org_filter(conditions, params, org_ids, "pr")
+        _add_date_filter(conditions, params, date_from, date_to, mes, anio, "pr.movementdate")
+        if product_search:
+            # Build product filter separately, then wrap in subquery
+            prod_conds: list[str] = []
+            _add_product_search_filter(prod_conds, params, product_search, prefix="prprod")
+            if prod_conds:
+                conditions.append(
+                    f"pr.m_production_id IN ("
+                    f"SELECT prl2.m_production_id FROM adempiere.m_productionline prl2 "
+                    f"JOIN adempiere.m_product p ON prl2.m_product_id = p.m_product_id "
+                    f"WHERE {prod_conds[0]})"
+                )
+        where = " AND ".join(conditions)
+
+        # 1. Totals
+        totals_q = text(
+            f"SELECT COUNT(*) AS total_producciones, "
+            f"COALESCE(SUM(pr.productionqty), 0) AS qty_total "
+            f"FROM adempiere.m_production pr WHERE {where}"
+        )
+        row = db.execute(totals_q, params).fetchone()
+        totals = {
+            "total_producciones": row[0] if row else 0,
+            "cantidad_total_producida": float(row[1]) if row else 0.0,
+        }
+
+        # 2. Top finished products (isendproduct = 'Y', qty > 0)
+        by_product_q = text(
+            f"SELECT p.name AS producto, "
+            f"COUNT(DISTINCT pr.m_production_id) AS producciones, "
+            f"COALESCE(SUM(prl.movementqty), 0) AS qty_producida "
+            f"FROM adempiere.m_production pr "
+            f"JOIN adempiere.m_productionline prl ON pr.m_production_id = prl.m_production_id "
+            f"JOIN adempiere.m_product p ON prl.m_product_id = p.m_product_id "
+            f"WHERE {where} AND prl.isendproduct = 'Y' AND prl.movementqty > 0 "
+            f"GROUP BY p.name ORDER BY qty_producida DESC LIMIT 20"
+        )
+        by_product = [
+            {
+                "producto": r[0],
+                "producciones": r[1],
+                "cantidad_producida": float(r[2]),
+            }
+            for r in db.execute(by_product_q, params).fetchall()
+        ]
+
+        # 3. Top consumed raw materials (isendproduct = 'N' or qty < 0)
+        by_insumo_q = text(
+            f"SELECT p.name AS insumo, "
+            f"COALESCE(SUM(ABS(prl.movementqty)), 0) AS qty_consumida "
+            f"FROM adempiere.m_production pr "
+            f"JOIN adempiere.m_productionline prl ON pr.m_production_id = prl.m_production_id "
+            f"JOIN adempiere.m_product p ON prl.m_product_id = p.m_product_id "
+            f"WHERE {where} AND (prl.isendproduct = 'N' OR prl.movementqty < 0) "
+            f"GROUP BY p.name ORDER BY qty_consumida DESC LIMIT 20"
+        )
+        by_insumo = [
+            {
+                "insumo": r[0],
+                "cantidad_consumida": float(r[1]),
+            }
+            for r in db.execute(by_insumo_q, params).fetchall()
+        ]
+
+        # 4. By month
+        by_month_q = text(
+            f"SELECT EXTRACT(MONTH FROM pr.movementdate)::int AS mes, "
+            f"COUNT(*) AS producciones, "
+            f"COALESCE(SUM(pr.productionqty), 0) AS qty "
+            f"FROM adempiere.m_production pr WHERE {where} "
+            f"GROUP BY EXTRACT(MONTH FROM pr.movementdate) ORDER BY mes"
+        )
+        by_month = [
+            {"mes": r[0], "producciones": r[1], "cantidad": float(r[2])}
+            for r in db.execute(by_month_q, params).fetchall()
+        ]
+
+        # 5. By organization
+        by_org_q = text(
+            f"SELECT org.name AS organizacion, "
+            f"COUNT(*) AS producciones, "
+            f"COALESCE(SUM(pr.productionqty), 0) AS qty "
+            f"FROM adempiere.m_production pr "
+            f"JOIN adempiere.ad_org org ON pr.ad_org_id = org.ad_org_id "
+            f"WHERE {where} "
+            f"GROUP BY org.name ORDER BY producciones DESC"
+        )
+        by_org = [
+            {"organizacion": r[0], "producciones": r[1], "cantidad": float(r[2])}
+            for r in db.execute(by_org_q, params).fetchall()
+        ]
+
+        # 6. Daily breakdown (anti-hallucination)
+        by_date_q = text(
+            f"SELECT pr.movementdate::date AS fecha, "
+            f"COUNT(*) AS producciones, "
+            f"COALESCE(SUM(pr.productionqty), 0) AS qty "
+            f"FROM adempiere.m_production pr WHERE {where} "
+            f"GROUP BY pr.movementdate::date ORDER BY fecha DESC LIMIT 31"
+        )
+        by_date = [
+            {"fecha": str(r[0]), "producciones": r[1], "cantidad": float(r[2])}
+            for r in db.execute(by_date_q, params).fetchall()
+        ]
+
+        return {
+            "anio": anio,
+            "mes": mes,
+            "totales": totals,
+            "productos_terminados": by_product,
+            "insumos_consumidos": by_insumo,
+            "por_mes": by_month,
+            "por_organizacion": by_org,
+            "por_fecha": by_date,
+        }
+    finally:
+        db.close()
+
+
+def build_bom_info(
+    product_search: str | None = None,
+    org_ids: list[int] | None = None,
+    org_name: str | None = None,
+) -> dict:
+    """Bill of Materials (BOM) / recipes from pp_product_bom + pp_product_bomline.
+
+    229 BOMs defined in Santoni (Arroz Santoni, Harina, Choco Toni, etc.)
+    Always queries live iDempiere (BOMs are reference data, not temporal).
+    """
+    db = IdempiereSession()
+    try:
+        conditions = ["b.isactive = 'Y'"]
+        params: dict = {}
+        _add_org_name_filter(conditions, params, org_name, "b")
+        if not org_name:
+            _add_org_filter(conditions, params, org_ids, "b")
+        if product_search:
+            _add_product_search_filter(conditions, params, product_search, prefix="bomprod")
+        where = " AND ".join(conditions)
+
+        # List BOMs with line counts
+        bom_q = text(
+            f"SELECT b.pp_product_bom_id, b.name AS bom_nombre, "
+            f"p.name AS producto, org.name AS organizacion, "
+            f"(SELECT COUNT(*) FROM adempiere.pp_product_bomline bl "
+            f" WHERE bl.pp_product_bom_id = b.pp_product_bom_id) AS num_componentes "
+            f"FROM adempiere.pp_product_bom b "
+            f"JOIN adempiere.m_product p ON b.m_product_id = p.m_product_id "
+            f"JOIN adempiere.ad_org org ON b.ad_org_id = org.ad_org_id "
+            f"WHERE {where} "
+            f"ORDER BY b.name LIMIT 30"
+        )
+        boms = []
+        for r in db.execute(bom_q, params).fetchall():
+            bom_id = r[0]
+            bom_entry = {
+                "bom_nombre": r[1],
+                "producto": r[2],
+                "organizacion": r[3],
+                "num_componentes": r[4],
+            }
+
+            # Get components for this BOM
+            comp_q = text(
+                "SELECT p.name AS componente, "
+                "bl.qtybom AS cantidad, "
+                "COALESCE(u.name, '-') AS unidad, "
+                "bl.componenttype "
+                "FROM adempiere.pp_product_bomline bl "
+                "JOIN adempiere.m_product p ON bl.m_product_id = p.m_product_id "
+                "LEFT JOIN adempiere.c_uom u ON bl.c_uom_id = u.c_uom_id "
+                "WHERE bl.pp_product_bom_id = :bom_id AND bl.isactive = 'Y' "
+                "ORDER BY bl.line"
+            )
+            components = [
+                {
+                    "componente": c[0],
+                    "cantidad": float(c[1]) if c[1] else 0,
+                    "unidad": c[2],
+                    "tipo": c[3] or "CO",
+                }
+                for c in db.execute(comp_q, {"bom_id": bom_id}).fetchall()
+            ]
+            bom_entry["componentes"] = components
+            boms.append(bom_entry)
+
+        return {
+            "total_boms": len(boms),
+            "boms": boms,
+        }
+    finally:
+        db.close()
+
+
+def build_warehouse_movements(
+    mes: int | None = None,
+    anio: int | None = None,
+    org_ids: list[int] | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    org_name: str | None = None,
+) -> dict:
+    """Internal warehouse movements from m_movement + m_movementline.
+
+    6,014+ completed movements in Santoni (transfers between warehouses/silos).
+    """
+    db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
+    try:
+        conditions = ["mv.isactive = 'Y'", "mv.docstatus IN ('CO', 'CL')"]
+        params: dict = {}
+        _add_org_name_filter(conditions, params, org_name, "mv")
+        if not org_name:
+            _add_org_filter(conditions, params, org_ids, "mv")
+        _add_date_filter(conditions, params, date_from, date_to, mes, anio, "mv.movementdate")
+        where = " AND ".join(conditions)
+
+        # 1. Totals
+        totals_q = text(
+            f"SELECT COUNT(*) AS total_movimientos "
+            f"FROM adempiere.m_movement mv WHERE {where}"
+        )
+        row = db.execute(totals_q, params).fetchone()
+        totals = {
+            "total_movimientos": row[0] if row else 0,
+        }
+
+        # 2. Top products moved
+        by_product_q = text(
+            f"SELECT p.name AS producto, "
+            f"SUM(ABS(ml.movementqty)) AS qty_movida, "
+            f"COUNT(DISTINCT mv.m_movement_id) AS movimientos "
+            f"FROM adempiere.m_movement mv "
+            f"JOIN adempiere.m_movementline ml ON mv.m_movement_id = ml.m_movement_id "
+            f"JOIN adempiere.m_product p ON ml.m_product_id = p.m_product_id "
+            f"WHERE {where} "
+            f"GROUP BY p.name ORDER BY qty_movida DESC LIMIT 20"
+        )
+        by_product = [
+            {
+                "producto": r[0],
+                "cantidad_movida": float(r[1]),
+                "movimientos": r[2],
+            }
+            for r in db.execute(by_product_q, params).fetchall()
+        ]
+
+        # 3. Movement flow: origin warehouse → destination warehouse
+        by_warehouse_q = text(
+            f"SELECT w_from.name AS almacen_origen, "
+            f"w_to.name AS almacen_destino, "
+            f"COUNT(DISTINCT mv.m_movement_id) AS movimientos, "
+            f"SUM(ABS(ml.movementqty)) AS qty_total "
+            f"FROM adempiere.m_movement mv "
+            f"JOIN adempiere.m_movementline ml ON mv.m_movement_id = ml.m_movement_id "
+            f"JOIN adempiere.m_locator l_from ON ml.m_locator_id = l_from.m_locator_id "
+            f"JOIN adempiere.m_warehouse w_from ON l_from.m_warehouse_id = w_from.m_warehouse_id "
+            f"JOIN adempiere.m_locator l_to ON ml.m_locatorto_id = l_to.m_locator_id "
+            f"JOIN adempiere.m_warehouse w_to ON l_to.m_warehouse_id = w_to.m_warehouse_id "
+            f"WHERE {where} "
+            f"GROUP BY w_from.name, w_to.name ORDER BY qty_total DESC LIMIT 15"
+        )
+        by_warehouse = [
+            {
+                "almacen_origen": r[0],
+                "almacen_destino": r[1],
+                "movimientos": r[2],
+                "cantidad_total": float(r[3]),
+            }
+            for r in db.execute(by_warehouse_q, params).fetchall()
+        ]
+
+        # 4. By organization
+        by_org_q = text(
+            f"SELECT org.name AS organizacion, "
+            f"COUNT(*) AS movimientos "
+            f"FROM adempiere.m_movement mv "
+            f"JOIN adempiere.ad_org org ON mv.ad_org_id = org.ad_org_id "
+            f"WHERE {where} "
+            f"GROUP BY org.name ORDER BY movimientos DESC"
+        )
+        by_org = [
+            {"organizacion": r[0], "movimientos": r[1]}
+            for r in db.execute(by_org_q, params).fetchall()
+        ]
+
+        # 5. Recent documents
+        docs_q = text(
+            f"SELECT mv.documentno, mv.movementdate::date AS fecha, "
+            f"COALESCE(mv.description, '') AS descripcion, "
+            f"org.name AS organizacion "
+            f"FROM adempiere.m_movement mv "
+            f"JOIN adempiere.ad_org org ON mv.ad_org_id = org.ad_org_id "
+            f"WHERE {where} "
+            f"ORDER BY mv.movementdate DESC LIMIT 20"
+        )
+        docs = [
+            {
+                "documento": r[0],
+                "fecha": str(r[1]),
+                "descripcion": r[2],
+                "organizacion": r[3],
+            }
+            for r in db.execute(docs_q, params).fetchall()
+        ]
+
+        return {
+            "anio": anio,
+            "mes": mes,
+            "totales": totals,
+            "por_producto": by_product,
+            "flujo_almacenes": by_warehouse,
+            "por_organizacion": by_org,
+            "documentos_recientes": docs,
+        }
+    finally:
+        db.close()
+
+
+# ---------------------------------------------------------------------------
 # COMPRAS PRODUCTORES (Producer Purchases)
 # ---------------------------------------------------------------------------
 

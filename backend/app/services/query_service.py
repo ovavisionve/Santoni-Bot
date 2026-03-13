@@ -533,6 +533,60 @@ def build_production_orders(
 
 
 # ---------------------------------------------------------------------------
+# Pre-built queries: PRODUCCIÓN REAL (m_production)
+# ---------------------------------------------------------------------------
+
+def build_production_runs(
+    mes: int | None = None,
+    anio: int | None = None,
+    org_ids: list[int] | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    org_name: str | None = None,
+    product_search: str | None = None,
+) -> dict:
+    """Production runs - routes to iDempiere."""
+    if _is_production():
+        from app.services.idempiere_queries import build_production_runs as _fn
+        return _fn(
+            mes=mes, anio=anio, org_ids=org_ids,
+            date_from=date_from, date_to=date_to,
+            org_name=org_name, product_search=product_search,
+        )
+    return {"totales": {"total_producciones": 0, "cantidad_total_producida": 0}, "productos_terminados": [], "insumos_consumidos": [], "por_mes": [], "por_organizacion": [], "por_fecha": []}
+
+
+def build_bom_info(
+    product_search: str | None = None,
+    org_ids: list[int] | None = None,
+    org_name: str | None = None,
+) -> dict:
+    """BOM/recipe info - routes to iDempiere."""
+    if _is_production():
+        from app.services.idempiere_queries import build_bom_info as _fn
+        return _fn(product_search=product_search, org_ids=org_ids, org_name=org_name)
+    return {"total_boms": 0, "boms": []}
+
+
+def build_warehouse_movements(
+    mes: int | None = None,
+    anio: int | None = None,
+    org_ids: list[int] | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    org_name: str | None = None,
+) -> dict:
+    """Warehouse movements - routes to iDempiere."""
+    if _is_production():
+        from app.services.idempiere_queries import build_warehouse_movements as _fn
+        return _fn(
+            mes=mes, anio=anio, org_ids=org_ids,
+            date_from=date_from, date_to=date_to, org_name=org_name,
+        )
+    return {"totales": {"total_movimientos": 0}, "por_producto": [], "flujo_almacenes": [], "por_organizacion": [], "documentos_recientes": []}
+
+
+# ---------------------------------------------------------------------------
 # Pre-built queries: COMPRAS PRODUCTORES (Producer Purchases)
 # ---------------------------------------------------------------------------
 

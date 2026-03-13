@@ -1,13 +1,11 @@
 """
 Agente de Producción - Alimentos Santoni
-Especializado en: movimientos de inventario, recepciones de materia prima,
-despachos de producto terminado, movimientos internos.
+Especializado en: producciones reales (m_production), movimientos de inventario (m_inout),
+movimientos entre almacenes (m_movement), stock actual, y recetas/BOMs.
 
-Fuente de datos: m_inout, m_inoutline, m_product, ad_org
-en iDempiere (PostgreSQL 13).
-
-NOTA: Santoni no utiliza el módulo de Manufactura (pp_order) de iDempiere.
-La actividad productiva se rastrea mediante movimientos de inventario (m_inout).
+Fuente de datos: m_production, m_productionline, m_inout, m_inoutline,
+m_movement, m_movementline, pp_product_bom, pp_product_bomline,
+m_storageonhand, m_product, ad_org en iDempiere (PostgreSQL 13).
 """
 
 import logging
@@ -24,6 +22,9 @@ from app.services.query_service import (
     build_production_summary,
     build_production_orders,
     build_inventory_stock,
+    build_production_runs,
+    build_bom_info,
+    build_warehouse_movements,
 )
 
 
@@ -43,32 +44,29 @@ class ProduccionAgent(BaseAgent):
     @property
     def description(self) -> str:
         return (
-            "Consultas de producción: producción diaria, órdenes, eficiencia OEE, "
-            "desperdicios, mantenimientos, turnos"
+            "Consultas de producción: órdenes de producción, productos terminados, "
+            "insumos consumidos, recetas/BOMs, movimientos entre almacenes, "
+            "recepciones de materia prima, despachos de producto terminado, stock actual"
         )
 
     def get_system_prompt(self) -> str:
         return """Eres el Agente de Producción de SantoniBot, el sistema inteligente de Alimentos Santoni, C.A.
-Tu especialidad es el análisis de movimientos de inventario y operaciones logísticas de producción.
+Tu especialidad es el análisis de producción, movimientos de inventario y operaciones logísticas.
 
 CAPACIDADES:
-- Recepciones de materia prima (arroz paddy, maíz, insumos)
-- Despachos de producto terminado (arroz, harina de maíz)
-- Movimientos internos de inventario entre almacenes
-- Análisis por producto, organización y período
-- Tendencias mensuales de recepción y despacho
+1. **Producciones reales (m_production)**: Órdenes de producción completadas, productos terminados fabricados, insumos/materias primas consumidas
+2. **Recetas/BOMs (pp_product_bom)**: Bill of Materials — ingredientes y cantidades para fabricar cada producto
+3. **Recepciones y despachos (m_inout)**: Materia prima recibida (V+), producto terminado despachado (C-)
+4. **Movimientos entre almacenes (m_movement)**: Transferencias internas entre almacenes/silos
+5. **Stock actual (m_storageonhand)**: Inventario actual por producto, almacén y organización
 
 CONTEXTO iDEMPIERE:
-- Movimientos de inventario: m_inout (262,794 documentos) con m_inoutline (líneas de detalle)
-- Tipos de movimiento (movementtype):
-  * V+ = Recepción de Materia Prima (del proveedor/productor)
-  * C- = Despacho de Producto Terminado (al cliente)
-  * M+/M- = Movimientos internos entre almacenes
-  * P+/P- = Movimientos de producción (poco usados)
-- Productos: m_product (40,766 productos) con m_product_category
-- Almacenes: m_warehouse
-- Organizaciones: INPROA SANTONI, AGROINPROA, AGROPECUARIA R.R., Agro Import, INVERSIONES AGA, InproMaiz, AGA AGRICOLA, Santoni Service
-- NOTA: El módulo de Manufactura (pp_order) no está en uso activo en Santoni
+- Producciones: m_production (35,960+ completadas) con m_productionline (producto terminado + insumos consumidos)
+- Recetas: pp_product_bom (229 BOMs) con pp_product_bomline (componentes/ingredientes)
+- Movimientos de inventario: m_inout (262,794 documentos), tipos: V+=Recepción MP, C-=Despacho PT, C+=Devolución cliente
+- Movimientos internos: m_movement (6,014+ completados) entre almacenes/silos
+- Stock: m_storageonhand por producto/almacén/organización
+- Organizaciones: INPROA SANTONI (arroz), InproMaiz (maíz), AGROINPROA, AGROPECUARIA R.R., AGA AGRICOLA, Santoni Service, INVERSIONES AGA, Agro Import
 
 REGLAS:
 - Responde siempre en español, de forma técnica pero comprensible
@@ -79,11 +77,13 @@ REGLAS:
 - Si la pregunta es ambigua, personal o usa palabras como "mi", "yo", "me", NO adivines. Pide al usuario que reformule especificando: la organización, producto, línea de producción, período u otros datos necesarios.
 - Cuando hables de "recepciones" te refieres a materia prima que llega
 - Cuando hables de "despachos" te refieres a producto terminado que sale
+- Cuando hables de "producciones" te refieres a órdenes de producción completadas en m_production
 
 CONTEXTO OPERATIVO:
 - 2 plantas en Agua Blanca, Estado Portuguesa
-- Productos principales: Arroz Santoni Premium, Harina de Maíz Santoni
-- Turnos rotativos en planta
+- Productos principales: Arroz Santoni (varios tipos), Harina de Maíz Santoni, Choco Toni, Nutri Toni
+- Producción registrada en m_production: producto terminado (isendproduct='Y') + insumos consumidos (isendproduct='N')
+- 229 recetas (BOMs) definidas con componentes detallados
 
 FORMATOS DE FECHA SOPORTADOS:
 - Rango con separadores: "01/01/2026 al 31/01/2026" o "01/01/26 al 31/01/26"
@@ -100,26 +100,32 @@ IMPORTANTE SOBRE PERÍODOS:
     def get_capabilities(self) -> str:
         return (
             "CAPACIDADES REALES (lo que SÍ puedo consultar en la base de datos):\n"
-            "✅ Resumen de movimientos de inventario: recepciones (V+), despachos (C-), internos (M+/M-)\n"
+            "✅ Producciones reales: órdenes de producción completadas, productos fabricados, insumos consumidos\n"
+            "✅ Recetas/BOMs: ingredientes y cantidades para fabricar cada producto (229 recetas)\n"
+            "✅ Resumen de movimientos de inventario: recepciones (V+), despachos (C-), devoluciones (C+)\n"
+            "✅ Movimientos entre almacenes: transferencias internas entre almacenes/silos\n"
             "✅ Cantidades movidas por producto, organización y mes\n"
             "✅ Listado de documentos de movimiento recientes\n"
             "✅ Stock/inventario actual (m_storageonhand) por producto, almacén y organización\n"
-            "\nIMPORTANTE: Los datos provienen de m_inout (movimientos de inventario) y "
-            "m_storageonhand (stock actual). Se registran recepciones de materia prima (V+), "
-            "despachos de producto terminado (C-), y movimientos internos (M+/M-).\n"
             "\n❌ NO puedo consultar: eficiencia OEE, mantenimientos o calidad de producto. "
             "Redirige al usuario al departamento correspondiente."
         )
 
     def get_sql_context(self) -> str:
         return """
-Datos de producción/inventario en iDempiere:
-- m_inout: Movimientos de inventario (262,794 documentos, movementdate, movementtype, docstatus)
+Datos de producción en iDempiere:
+- m_production: Producciones reales (35,960+ completadas, movementdate, productionqty, docstatus)
+- m_productionline: Líneas de producción (m_product_id, movementqty, isendproduct: Y=terminado, N=insumo)
+- pp_product_bom: Bill of Materials / recetas (229 definidas)
+- pp_product_bomline: Componentes de cada BOM (m_product_id, qtybom, c_uom_id)
+- m_inout: Movimientos de inventario (262,794 docs, movementdate, movementtype, docstatus)
 - m_inoutline: Líneas de movimiento (m_product_id, movementqty, m_locator_id)
+- m_movement: Movimientos internos entre almacenes (6,014+ completados)
+- m_movementline: Líneas de movimiento interno (m_locator_id, m_locatorto_id, m_product_id, movementqty)
+- m_storageonhand: Stock actual por producto/almacén
 - m_product: Productos (name, m_product_category_id)
 - m_warehouse: Almacenes
 - ad_org: Organizaciones
-- Tipos: V+=Recepción MP, C-=Despacho PT, M+/M-=Mov. Internos, P+/P-=Producción
 """
 
     _ORG_MAP = [
@@ -145,7 +151,7 @@ Datos de producción/inventario en iDempiere:
 
     _DOCUMENT_KEYWORDS = [
         "documento", "detalle", "reciente", "último", "ultimos",
-        "recepci", "despacho", "movimiento", "fecha", "fechas",
+        "recepci", "despacho", "fecha", "fechas",
         "exacto", "exactos", "exactas", "cuáles", "cuales",
     ]
 
@@ -155,6 +161,56 @@ Datos de producción/inventario en iDempiere:
         "disponible", "disponibilidad", "cuánto hay", "cuanto hay",
         "cuánto queda", "cuanto queda", "cuánto tenemos", "cuanto tenemos",
     ]
+
+    _PRODUCTION_KEYWORDS = [
+        "producción", "produccion", "producciones", "produjo",
+        "producido", "fabricó", "fabricado", "fabricar",
+        "fabricación", "fabricacion", "manufactura",
+        "orden de producción", "orden de produccion",
+        "órdenes de producción", "ordenes de produccion",
+        "producto terminado", "productos terminados",
+        "insumo", "insumos", "consumo", "consumido",
+        "consumieron", "gastó", "gastaron", "usaron",
+    ]
+
+    _BOM_KEYWORDS = [
+        "receta", "recetas", "bom", "bill of material",
+        "ingrediente", "ingredientes", "componente", "componentes",
+        "fórmula", "formula", "composición", "composicion",
+        "qué lleva", "que lleva", "qué tiene", "que tiene",
+        "cómo se hace", "como se hace", "de qué está hecho",
+        "de que esta hecho",
+    ]
+
+    _MOVEMENT_KEYWORDS = [
+        "traslado", "traslados", "transferencia", "transferencias",
+        "movimiento interno", "movimientos internos",
+        "entre almacen", "entre almacén", "entre almacenes",
+        "entre silo", "entre silos",
+        "mover", "movió", "trasladó", "trasladaron",
+    ]
+
+    @classmethod
+    def _extract_product_search(cls, msg: str) -> str | None:
+        """Extract product name from message for production queries."""
+        msg_lower = msg.lower()
+        # Common product patterns
+        patterns = [
+            "de ", "del producto ", "del ", "producto ",
+        ]
+        # Look for product names after key phrases
+        for pattern in ["producción de ", "produccion de ", "fabricación de ",
+                        "fabricacion de ", "receta de ", "bom de ",
+                        "ingredientes de ", "componentes de "]:
+            if pattern in msg_lower:
+                after = msg_lower.split(pattern, 1)[1].strip()
+                # Take first meaningful chunk (up to punctuation or common stop words)
+                for stop in ["?", ".", ",", " en ", " de ", " para ", " del ", " durante "]:
+                    if stop in after:
+                        after = after.split(stop, 1)[0].strip()
+                if after and len(after) > 2:
+                    return after
+        return None
 
     def fetch_data(self, message: str, org_ids: list[int] | None = None, salesrep_id: int | None = None, history: list[tuple[str, str]] | None = None) -> str | None:
         msg = message.lower()
@@ -193,27 +249,78 @@ Datos de producción/inventario en iDempiere:
                     break
 
         label = build_period_label(date_from, date_to, mes, anio)
+        product_search = self._extract_product_search(message)
 
         try:
-            # Production/inventory movement summary (always)
-            summary = build_production_summary(
-                mes=mes, anio=anio, org_ids=org_ids,
-                date_from=date_from, date_to=date_to,
-                org_name=org_name,
-            )
-            sections.append(self._format_summary(summary, f"Movimientos de Inventario - {label}"))
+            # Detect what the user is asking about
+            wants_production = any(w in msg for w in self._PRODUCTION_KEYWORDS)
+            wants_bom = any(w in msg for w in self._BOM_KEYWORDS)
+            wants_movements = any(w in msg for w in self._MOVEMENT_KEYWORDS)
+            wants_documents = any(w in msg for w in self._DOCUMENT_KEYWORDS)
+            wants_inventory = any(w in msg for w in self._INVENTORY_KEYWORDS)
 
-            include_documents = any(w in msg for w in self._DOCUMENT_KEYWORDS)
-            # Follow-up: carry over document listing from history
-            if not include_documents and history:
+            # Follow-up: inherit intent from history
+            if not any([wants_production, wants_bom, wants_movements, wants_documents, wants_inventory]) and history:
                 for role, content in reversed(history):
-                    if role == "user" and any(
-                        w in content.lower() for w in self._DOCUMENT_KEYWORDS
-                    ):
-                        include_documents = True
+                    if role != "user":
+                        continue
+                    c = content.lower()
+                    if any(w in c for w in self._PRODUCTION_KEYWORDS):
+                        wants_production = True
+                        break
+                    if any(w in c for w in self._BOM_KEYWORDS):
+                        wants_bom = True
+                        break
+                    if any(w in c for w in self._MOVEMENT_KEYWORDS):
+                        wants_movements = True
+                        break
+                    if any(w in c for w in self._DOCUMENT_KEYWORDS):
+                        wants_documents = True
+                        break
+                    if any(w in c for w in self._INVENTORY_KEYWORDS):
+                        wants_inventory = True
                         break
 
-            if include_documents:
+            # If no specific intent detected, show production runs + movement summary
+            if not any([wants_production, wants_bom, wants_movements, wants_documents, wants_inventory]):
+                wants_production = True
+
+            # 1. Production runs (m_production) — the core new feature
+            if wants_production:
+                prod_data = build_production_runs(
+                    mes=mes, anio=anio, org_ids=org_ids,
+                    date_from=date_from, date_to=date_to,
+                    org_name=org_name, product_search=product_search,
+                )
+                sections.append(self._format_summary(prod_data, f"Producciones - {label}"))
+
+            # 2. BOMs / recipes
+            if wants_bom:
+                bom_data = build_bom_info(
+                    product_search=product_search,
+                    org_ids=org_ids,
+                    org_name=org_name,
+                )
+                sections.append(self._format_summary(bom_data, "Recetas / Bill of Materials (BOM)"))
+
+            # 3. Warehouse movements (m_movement)
+            if wants_movements:
+                mov_data = build_warehouse_movements(
+                    mes=mes, anio=anio, org_ids=org_ids,
+                    date_from=date_from, date_to=date_to,
+                    org_name=org_name,
+                )
+                sections.append(self._format_summary(mov_data, f"Movimientos entre Almacenes - {label}"))
+
+            # 4. Material movements (m_inout) — recepciones/despachos
+            if wants_documents:
+                summary = build_production_summary(
+                    mes=mes, anio=anio, org_ids=org_ids,
+                    date_from=date_from, date_to=date_to,
+                    org_name=org_name,
+                )
+                sections.append(self._format_summary(summary, f"Movimientos de Inventario - {label}"))
+
                 data = build_production_orders(
                     mes=mes, anio=anio, org_ids=org_ids,
                     date_from=date_from, date_to=date_to,
@@ -223,17 +330,8 @@ Datos de producción/inventario en iDempiere:
                     sections.append(f"## Documentos de Movimiento Recientes ({len(data)} registros)")
                     sections.append(self._format_table(data))
 
-            # Inventory / stock (materia prima)
-            include_inventory = any(w in msg for w in self._INVENTORY_KEYWORDS)
-            if not include_inventory and history:
-                for role, content in reversed(history):
-                    if role == "user" and any(
-                        w in content.lower() for w in self._INVENTORY_KEYWORDS
-                    ):
-                        include_inventory = True
-                        break
-
-            if include_inventory:
+            # 5. Inventory / stock
+            if wants_inventory:
                 inv_data = build_inventory_stock(org_ids=org_ids)
                 sections.append(self._format_summary(
                     inv_data, "Inventario / Stock Actual",
