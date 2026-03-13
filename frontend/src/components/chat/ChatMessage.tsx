@@ -24,7 +24,7 @@ interface ChatMessageProps {
   onEdit?: (content: string) => void;
 }
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
 function downloadExport(messageId: number, format: string) {
   const token = localStorage.getItem("santonibot_token");

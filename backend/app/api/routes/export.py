@@ -14,7 +14,7 @@ router = APIRouter(prefix="/export", tags=["Exportación"])
 @router.get("/message/{message_id}")
 def export_message(
     message_id: int,
-    format: str = Query(..., regex="^(csv|excel|pdf|docx)$"),
+    format: str = Query(..., pattern="^(csv|excel|pdf|docx)$"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
