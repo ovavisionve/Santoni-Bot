@@ -279,8 +279,8 @@ def check_produccion(db):
         else:
             print(f"  {Colors.YELLOW}Sin movimientos hoy{Colors.RESET}")
     except Exception:
-        # Fallback: m_movement_type might not exist
-        pass
+        db.rollback()
+        print(f"  {Colors.DIM}(tabla m_movement_type no existe, saltando){Colors.RESET}")
 
     # Simpler query using docbasetype
     subheader(f"M_INOUT hoy ({today}) por docbasetype")
@@ -550,6 +550,7 @@ def main():
                 try:
                     fn(db)
                 except Exception as exc:
+                    db.rollback()
                     print(f"\n  {Colors.RED}ERROR en {name}: {exc}{Colors.RESET}")
         elif args.check in ALL_CHECKS:
             ALL_CHECKS[args.check](db)
