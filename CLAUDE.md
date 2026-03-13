@@ -394,6 +394,161 @@ HISTORICAL_DATA_CUTOFF=2026-03-01  # Fecha de corte
 
 ---
 
+## CAMBIOS PENDIENTES DE APLICAR (sesión 13/Mar 2026 - check-santoni-chat-9teWt)
+
+Estos cambios fueron desarrollados en el branch `claude/check-santoni-chat-9teWt` pero no se pudieron
+mergear limpiamente al servidor (main). Hay que aplicarlos manualmente sobre el código actual del servidor.
+El servidor está en main con HEAD = `c987aa3` (branch `claude/general-session-YZXaU`).
+
+### 1. Fix conteo inflado de empleados (1056→701)
+
+**Archivo**: `backend/app/services/idempiere_queries.py` — función `build_employee_summary`
+
+**Problema**: `build_employee_summary` no hacía JOIN a `c_bpartner` y no filtraba `bp.isactive='Y'`.
+Personas desactivadas a nivel de partner (c_bpartner.isactive='N') pero con registros activos en
+hr_employee se contaban. Resultado: 1,056 en vez de ~701 reales.
+
+**Cambio requerido** en `build_employee_summary()`:
+```python
+# ANTES:
+conditions = ["1=1"]
+params: dict = {}
+_add_org_filter(conditions, params, org_ids, "e")
+where = " AND ".join(conditions)
+# Y las queries solo usan: FROM adempiere.hr_employee e
+
+# DESPUÉS:
+conditions = ["e.isactive = 'Y'", "bp.isactive = 'Y'"]
+params: dict = {}
+_add_org_filter(conditions, params, org_ids, "e")
+where = " AND ".join(conditions)
+bp_join = "JOIN adempiere.c_bpartner bp ON e.c_bpartner_id = bp.c_bpartner_id"
+# Agregar {bp_join} después de FROM adempiere.hr_employee e en las 4 sub-queries (totals, by_org, by_dept, by_job)
+```
+
+En la query `totals_q`, simplificar:
+```python
+# ANTES:
+f"COUNT(DISTINCT e.c_bpartner_id) AS total, "
+f"COUNT(DISTINCT CASE WHEN e.isactive = 'Y' THEN e.c_bpartner_id END) AS activos, "
+f"COUNT(DISTINCT CASE WHEN e.isactive = 'N' THEN e.c_bpartner_id END) AS inactivos "
+f"FROM adempiere.hr_employee e "
+
+# DESPUÉS:
+f"COUNT(DISTINCT e.c_bpartner_id) AS total "
+f"FROM adempiere.hr_employee e "
+f"{bp_join} "
+
+# Y en el dict de resultado:
+totals = {
+    "total": row[0] if row else 0,
+    "activos": row[0] if row else 0,  # todos son activos por el filtro
+    "inactivos": 0,
+}
+```
+
+En las queries `by_org_q`, `by_dept_q`, `by_job_q`: agregar `{bp_join}` después de `FROM adempiere.hr_employee e`
+y cambiar `COUNT(DISTINCT CASE WHEN e.isactive = 'Y' THEN e.c_bpartner_id END) AS activos`
+por `COUNT(DISTINCT e.c_bpartner_id) AS activos` (ya están filtrados por el WHERE).
+
+### 2. Filtrado por nombre de organización en agente de producción
+
+**Problema CRÍTICO**: El agente de producción ignoraba el nombre de organización en el mensaje.
+Cuando alguien preguntaba "producción de InproMaiz hoy", el agente solo filtraba por `org_ids`
+del usuario autenticado. Si el usuario estaba asignado a INPROA SANTONI, mostraba datos de INPROA,
+NO de InproMaiz. Esto causó la discrepancia reportada por el personal de InproMaiz.
+
+**Archivo 1**: `backend/app/agents/produccion.py`
+
+Agregar `_ORG_MAP` y `_extract_org_name` (igual que compras_insumos, ventas, compras_productores):
+```python
+# Después de _INVENTORY_KEYWORDS, agregar:
+_ORG_MAP = [
+    ("inpromaiz", "InproMaiz"),
+    ("inpro maiz", "InproMaiz"),
+    ("inproa santoni", "INPROA SANTONI"),
+    ("inproa", "INPROA SANTONI"),
+    ("santoni service", "Santoni Service"),
+    ("agropecuaria", "AGROPECUARIA"),
+    ("aga agricola", "AGA AGRICOLA"),
+    ("aga agrícola", "AGA AGRICOLA"),
+    ("agroinproa", "AGROINPROA"),
+    ("inversiones aga", "INVERSIONES AGA"),
+]
+
+@classmethod
+def _extract_org_name(cls, msg: str) -> str | None:
+    msg_lower = msg.lower()
+    for kw, val in cls._ORG_MAP:
+        if kw in msg_lower:
+            return val
+    return None
+```
+
+En `fetch_data()`:
+```python
+# Al inicio, después de sections = []:
+org_name = self._extract_org_name(message)
+
+# Después de herencia temporal, agregar herencia de org_name:
+if not org_name and history:
+    for role, content in reversed(history):
+        if role != "user":
+            continue
+        inherited = self._extract_org_name(content)
+        if inherited:
+            org_name = inherited
+            break
+
+# En el label:
+label = build_period_label(date_from, date_to, mes, anio)
+if org_name:
+    label = f"{org_name} - {label}"
+
+# Pasar org_name a las funciones de query:
+summary = build_production_summary(
+    mes=mes, anio=anio, org_ids=org_ids,
+    date_from=date_from, date_to=date_to,
+    org_name=org_name,  # NUEVO
+)
+
+data = build_production_orders(
+    mes=mes, anio=anio, org_ids=org_ids,
+    date_from=date_from, date_to=date_to,
+    org_name=org_name,  # NUEVO
+)
+```
+
+**Archivo 2**: `backend/app/services/idempiere_queries.py`
+
+Agregar `org_name: str | None = None` como parámetro a `build_production_summary` y `build_production_orders`.
+En ambas funciones, usar `_add_org_name_filter` (ya existe) cuando `org_name` está presente:
+```python
+# En ambas funciones, después de construir conditions:
+_add_org_name_filter(conditions, params, org_name, "io")
+if not org_name:
+    _add_org_filter(conditions, params, org_ids, "io")
+```
+Esto da prioridad al nombre de org del mensaje sobre los org_ids del usuario.
+
+**Archivo 3**: `backend/app/services/query_service.py`
+
+Agregar `org_name: str | None = None` a `build_production_summary` y `build_production_orders`,
+y propagarlo al llamar las funciones de `idempiere_queries.py`.
+
+### 3. Desglose por organización en verify_data.py
+
+**Archivo**: `backend/scripts/verify_data.py` — función `check_produccion`
+
+Agregar antes de "Top 10 productos movidos":
+- Desglose de movimientos de HOY por organización (query con GROUP BY o.name)
+- Check específico de InproMaiz para hoy (sin filtro de docstatus para ver borradores)
+- Histórico de InproMaiz últimos 7 días
+
+Esto es para diagnóstico — permite ver qué org tiene movimientos cuando hay discrepancias.
+
+---
+
 ## Convenciones de Código
 
 - **Idioma del código**: Variables y funciones en inglés, comentarios y mensajes al usuario en español
