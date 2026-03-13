@@ -160,6 +160,15 @@ class BaseAgent(ABC):
             "- PROHIBIDO copiar nombres o datos del historial de conversación para responder una nueva consulta.\n"
             "- Cada respuesta debe basarse EXCLUSIVAMENTE en los 'DATOS REALES' proporcionados para ESA consulta.\n"
             "- Si los datos muestran 5 empleados, tu tabla debe tener EXACTAMENTE 5 filas, ni más ni menos.\n"
+            "\nREGLAS DE CONTEO Y TOTALES (CRÍTICAS):\n"
+            "- Cuando los datos incluyen 'TOTAL EXACTO: N', debes usar ESE número como total. NO lo recalcules ni lo cambies.\n"
+            "- Cuando los datos incluyen 'Total Empleados: N' o 'Total Producciones: N', copia ESE número exacto.\n"
+            "- PROHIBIDO inventar totales, promedios o estadísticas que no estén en los datos.\n"
+            "- Si cuentas filas en una tabla, el resultado DEBE coincidir con el total indicado en el encabezado.\n"
+            "- Si los datos dicen 'Total Monto: 575.030.358,59', NO escribas un número diferente.\n"
+            "- NUNCA digas 'Empleados activos: 1.057' si los datos dicen 'Total Empleados: 702'.\n"
+            "- PROHIBIDO inventar 'Total deducciones: 0' si los datos muestran deducciones.\n"
+            "- Los únicos números que puedes usar son los que aparecen LITERALMENTE en los datos.\n"
         )
         messages = [SystemMessage(content=enhanced_prompt)]
 
@@ -239,6 +248,9 @@ class BaseAgent(ABC):
                         "- Si falta información que el usuario pidió, di 'no se encontraron datos' y sugiere alternativas.\n"
                         "- PROHIBIDO inventar nombres de personas, empresas, facturas, lotes o buques.\n"
                         "- PROHIBIDO mostrar porcentajes de humedad, proteína o impureza si NO aparecen en los datos.\n"
+                        "- CUANDO RESUMAS: copia los totales EXACTOS de los datos. Si dice 'Total Empleados: 702', "
+                        "  tu resumen debe decir 702, NO otro número.\n"
+                        "- CUANDO CUENTES filas de una tabla: el conteo debe coincidir con lo indicado en el encabezado.\n"
                         "══════════════════════════════════════════════════════\n\n"
                         f"{data_context}"
                     )
@@ -564,7 +576,7 @@ class BaseAgent(ABC):
                     else:
                         lines.append(f"- {k.replace('_', ' ').title()}: {v}")
             elif isinstance(value, list):
-                lines.append(f"\n### {key.replace('_', ' ').title()}")
+                lines.append(f"\n### {key.replace('_', ' ').title()} [{len(value)} registros exactos]")
                 if value and isinstance(value[0], dict):
                     lines.append(BaseAgent._format_table(value))
                 else:

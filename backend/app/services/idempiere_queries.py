@@ -1260,6 +1260,7 @@ def build_employee_list(
 def build_birthday_list(
     mes: int | None = None,
     org_ids: list[int] | None = None,
+    org_name: str | None = None,
 ) -> list[dict]:
     """List employees whose birthday falls in the given month.
 
@@ -1270,6 +1271,7 @@ def build_birthday_list(
         conditions = ["e.isactive = 'Y'", "bp.isactive = 'Y'", "bday.birthday IS NOT NULL"]
         params: dict = {}
         _add_org_filter(conditions, params, org_ids, "e")
+        _add_org_name_filter(conditions, params, org_name, "e")
 
         if mes:
             conditions.append("EXTRACT(MONTH FROM bday.birthday) = :mes")

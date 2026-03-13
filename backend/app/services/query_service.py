@@ -940,11 +940,12 @@ def build_employee_summary(org_ids: list[int] | None = None) -> dict:
 def build_birthday_list(
     mes: int | None = None,
     org_ids: list[int] | None = None,
+    org_name: str | None = None,
 ) -> list[dict]:
     """Birthday list - routes to demo or iDempiere."""
     if _is_production():
         from app.services.idempiere_queries import build_birthday_list as _prod
-        return _prod(mes=mes, org_ids=org_ids)
+        return _prod(mes=mes, org_ids=org_ids, org_name=org_name)
     return []
 
 

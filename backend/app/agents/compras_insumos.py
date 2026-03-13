@@ -68,8 +68,8 @@ CONTEXTO iDEMPIERE:
 - Facturas de compra: c_invoice (issotrx='N', docstatus IN ('CO','CL')) - CO=completada, CL=cerrada (pagada). Ambos estados son válidos.
 - Órdenes de compra: c_order (issotrx='N') - órdenes pendientes, en proceso y completadas
 - Líneas de factura: c_invoiceline (m_product_id, qtyinvoiced, linenetamt)
-- Proveedores: c_bpartner (isvendor='Y') - 26,070 socios de negocio
-- Productos: m_product (40,766 productos) con m_product_category
+- Proveedores: c_bpartner (isvendor='Y')
+- Productos: m_product con m_product_category
 - Monedas en iDempiere (Santoni usa múltiples códigos de moneda):
   * VES (ID 205) - Bolívares Soberanos (todas las organizaciones)
   * DOL (ID 1000000) - Dólares en INPROA SANTONI

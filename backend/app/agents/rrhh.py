@@ -72,8 +72,9 @@ CONTEXTO iDEMPIERE:
 - Movimientos de nómina: hr_movement (hr_process_id, c_bpartner_id, hr_concept_id, amount, qty)
 - Conceptos: hr_concept (value, name, columntype, type)
 - Nóminas definidas: hr_payroll (name, hr_payroll_id)
-- Organizaciones: INPROA SANTONI (444 empleados), InproMaiz (206), Santoni Service (134), AGROPECUARIA R.R. (124), AGA AGRICOLA (91), AGROINPROA (38), INVERSIONES AGA (4)
+- Organizaciones: INPROA SANTONI, InproMaiz, Santoni Service, AGROPECUARIA R.R., AGA AGRICOLA, AGROINPROA, INVERSIONES AGA
 - NOTA: Los conteos de empleados usan DISTINCT por c_bpartner_id ya que hr_employee tiene múltiples registros por persona
+- IMPORTANTE: Los conteos exactos de empleados por organización SOLO están en los datos reales que recibes. NUNCA inventes cifras.
 
 REGLAS:
 - Responde siempre en español, de forma profesional
@@ -132,6 +133,27 @@ Datos de RRHH en iDempiere:
 - hr_payroll: Definiciones de nómina (name)
 - c_bpartner: Datos de empleados (isemployee='Y', name, value)
 """
+
+    _ORG_MAP = [
+        ("inpromaiz", "InproMaiz"),
+        ("inpro maiz", "InproMaiz"),
+        ("inproa santoni", "INPROA SANTONI"),
+        ("inproa", "INPROA SANTONI"),
+        ("santoni service", "Santoni Service"),
+        ("agropecuaria", "AGROPECUARIA"),
+        ("aga agricola", "AGA AGRICOLA"),
+        ("aga agrícola", "AGA AGRICOLA"),
+        ("agroinproa", "AGROINPROA"),
+        ("inversiones aga", "INVERSIONES AGA"),
+    ]
+
+    @classmethod
+    def _extract_org_name(cls, msg: str) -> str | None:
+        msg_lower = msg.lower()
+        for kw, val in cls._ORG_MAP:
+            if kw in msg_lower:
+                return val
+        return None
 
     # Name search trigger phrases
     _NAME_TRIGGERS = [
@@ -258,7 +280,10 @@ Datos de RRHH en iDempiere:
             mes = None
             anio = None
 
-        # Inherit temporal context from history for follow-ups
+        # Extract organization name from message
+        org_name = self._extract_org_name(message)
+
+        # Inherit temporal context and org_name from history for follow-ups
         if not date_from and not date_to and not mes and history:
             for role, content in reversed(history):
                 if role != "user":
@@ -270,6 +295,14 @@ Datos de RRHH en iDempiere:
                 m, a = extract_month_year(content)
                 if m:
                     mes, anio = m, a
+                    break
+        if not org_name and history:
+            for role, content in reversed(history):
+                if role != "user":
+                    continue
+                o = self._extract_org_name(content)
+                if o:
+                    org_name = o
                     break
 
         label = build_period_label(date_from, date_to, mes, anio)
@@ -350,9 +383,10 @@ Datos de RRHH en iDempiere:
                 from app.agents.date_utils import MESES_NOMBRES
                 mes_label = MESES_NOMBRES.get(birthday_mes, str(birthday_mes)) if birthday_mes else "Todos los meses"
                 try:
-                    data = build_birthday_list(mes=birthday_mes, org_ids=org_ids)
+                    data = build_birthday_list(mes=birthday_mes, org_ids=org_ids, org_name=org_name)
                     if data:
-                        sections.append(f"## Cumpleañeros de {mes_label} ({len(data)} empleados)")
+                        org_label = f" en {org_name}" if org_name else ""
+                        sections.append(f"## Cumpleañeros de {mes_label}{org_label} — TOTAL EXACTO: {len(data)} empleados")
                         sections.append(self._format_table(data))
                     else:
                         sections.append(

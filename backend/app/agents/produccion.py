@@ -61,12 +61,13 @@ CAPACIDADES:
 5. **Stock actual (m_storageonhand)**: Inventario actual por producto, almacén y organización
 
 CONTEXTO iDEMPIERE:
-- Producciones: m_production (35,960+ completadas) con m_productionline (producto terminado + insumos consumidos)
-- Recetas: pp_product_bom (229 BOMs) con pp_product_bomline (componentes/ingredientes)
-- Movimientos de inventario: m_inout (262,794 documentos), tipos: V+=Recepción MP, C-=Despacho PT, C+=Devolución cliente
-- Movimientos internos: m_movement (6,014+ completados) entre almacenes/silos
+- Producciones: m_production con m_productionline (producto terminado + insumos consumidos)
+- Recetas: pp_product_bom con pp_product_bomline (componentes/ingredientes)
+- Movimientos de inventario: m_inout, tipos: V+=Recepción MP, C-=Despacho PT, C+=Devolución cliente
+- Movimientos internos: m_movement entre almacenes/silos
 - Stock: m_storageonhand por producto/almacén/organización
 - Organizaciones: INPROA SANTONI (arroz), InproMaiz (maíz), AGROINPROA, AGROPECUARIA R.R., AGA AGRICOLA, Santoni Service, INVERSIONES AGA, Agro Import
+- IMPORTANTE: Los conteos exactos de producciones, BOMs, documentos, etc. SOLO están en los datos reales que recibes. NUNCA cites cifras de este contexto como si fueran datos.
 
 REGLAS:
 - Responde siempre en español, de forma técnica pero comprensible
@@ -108,7 +109,7 @@ IMPORTANTE SOBRE PERÍODOS:
         return (
             "CAPACIDADES REALES (lo que SÍ puedo consultar en la base de datos):\n"
             "✅ Producciones reales: órdenes de producción completadas, productos fabricados, insumos consumidos\n"
-            "✅ Recetas/BOMs: ingredientes y cantidades para fabricar cada producto (229 recetas)\n"
+            "✅ Recetas/BOMs: ingredientes y cantidades para fabricar cada producto\n"
             "✅ Resumen de movimientos de inventario: recepciones (V+), despachos (C-), devoluciones (C+)\n"
             "✅ Movimientos entre almacenes: transferencias internas entre almacenes/silos\n"
             "✅ Cantidades movidas por producto, organización y mes\n"
@@ -121,13 +122,13 @@ IMPORTANTE SOBRE PERÍODOS:
     def get_sql_context(self) -> str:
         return """
 Datos de producción en iDempiere:
-- m_production: Producciones reales (35,960+ completadas, movementdate, productionqty, docstatus)
+- m_production: Producciones reales (movementdate, productionqty, docstatus)
 - m_productionline: Líneas de producción (m_product_id, movementqty, isendproduct: Y=terminado, N=insumo)
-- pp_product_bom: Bill of Materials / recetas (229 definidas)
+- pp_product_bom: Bill of Materials / recetas
 - pp_product_bomline: Componentes de cada BOM (m_product_id, qtybom, c_uom_id)
-- m_inout: Movimientos de inventario (262,794 docs, movementdate, movementtype, docstatus)
+- m_inout: Movimientos de inventario (movementdate, movementtype, docstatus)
 - m_inoutline: Líneas de movimiento (m_product_id, movementqty, m_locator_id)
-- m_movement: Movimientos internos entre almacenes (6,014+ completados)
+- m_movement: Movimientos internos entre almacenes
 - m_movementline: Líneas de movimiento interno (m_locator_id, m_locatorto_id, m_product_id, movementqty)
 - m_storageonhand: Stock actual por producto/almacén
 - m_product: Productos (name, m_product_category_id)

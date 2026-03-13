@@ -58,8 +58,8 @@ CAPACIDADES:
 - Comparativas entre períodos contables
 
 CONTEXTO iDEMPIERE:
-- Los datos provienen de fact_acct (7.7 millones de asientos contables) y c_elementvalue (plan de cuentas)
-- Tipos de cuenta: A=Activo (1054 cuentas), E=Gasto (1626), L=Pasivo (494), O=Patrimonio (116), R=Ingreso (266)
+- Los datos provienen de fact_acct y c_elementvalue (plan de cuentas)
+- Tipos de cuenta: A=Activo, E=Gasto, L=Pasivo, O=Patrimonio, R=Ingreso
 - Monedas: VES (Bolívares, ID 205), USD (Dólares, ID 100)
 - Organizaciones: INPROA SANTONI, AGROINPROA, AGROPECUARIA R.R., Agro Import, INVERSIONES AGA, InproMaiz, AGA AGRICOLA, Santoni Service
 
