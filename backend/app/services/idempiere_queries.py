@@ -1583,6 +1583,134 @@ def build_turnover_summary(
         db.close()
 
 
+def build_vacation_summary(
+    mes: int | None = None,
+    anio: int | None = None,
+    org_ids: list[int] | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> dict:
+    """Vacation data from hr_movement concepts containing 'vacacion' or 'bono vacacional'."""
+    db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
+    try:
+        conditions = [
+            "hp.docstatus IN ('CO', 'CL')",
+            "hp.isactive = 'Y'",
+        ]
+        params: dict = {}
+        _add_org_filter(conditions, params, org_ids, "hm")
+        _add_date_filter(conditions, params, date_from, date_to, mes, anio, "hp.dateacct")
+
+        # Filter concepts related to vacations
+        vacation_terms = ["%vacacion%", "%bono vacacional%", "%dias disfrut%"]
+        like_clauses = " OR ".join(
+            f"LOWER(hc.name) LIKE :vac_{i}" for i in range(len(vacation_terms))
+        )
+        conditions.append(f"({like_clauses})")
+        for i, term in enumerate(vacation_terms):
+            params[f"vac_{i}"] = term
+
+        where = " AND ".join(conditions)
+
+        # Totals
+        totals_q = text(
+            f"SELECT COUNT(DISTINCT hm.c_bpartner_id) AS total_empleados, "
+            f"COALESCE(SUM(ABS(hm.amount)), 0) AS total_monto, "
+            f"COUNT(*) AS total_ocurrencias "
+            f"FROM adempiere.hr_movement hm "
+            f"JOIN adempiere.hr_process hp ON hp.hr_process_id = hm.hr_process_id "
+            f"JOIN adempiere.hr_concept hc ON hm.hr_concept_id = hc.hr_concept_id "
+            f"WHERE {where}"
+        )
+        row = db.execute(totals_q, params).fetchone()
+        totals = {
+            "total_empleados": row[0] if row else 0,
+            "total_monto": float(row[1]) if row else 0.0,
+            "total_ocurrencias": row[2] if row else 0,
+        }
+
+        if totals["total_empleados"] == 0:
+            totals["nota"] = (
+                "No se encontraron conceptos de vacaciones en nómina para este período. "
+                "Los conceptos buscados incluyen: vacacion, bono vacacional, dias disfrutados."
+            )
+
+        # By concept
+        by_concept_q = text(
+            f"SELECT hc.name AS concepto, "
+            f"COUNT(DISTINCT hm.c_bpartner_id) AS empleados, "
+            f"COALESCE(SUM(ABS(hm.amount)), 0) AS monto, "
+            f"COUNT(*) AS ocurrencias "
+            f"FROM adempiere.hr_movement hm "
+            f"JOIN adempiere.hr_process hp ON hp.hr_process_id = hm.hr_process_id "
+            f"JOIN adempiere.hr_concept hc ON hm.hr_concept_id = hc.hr_concept_id "
+            f"WHERE {where} "
+            f"GROUP BY hc.name ORDER BY monto DESC"
+        )
+        by_concept = [
+            {
+                "concepto": r[0],
+                "empleados": r[1],
+                "monto": float(r[2]),
+                "ocurrencias": r[3],
+            }
+            for r in db.execute(by_concept_q, params).fetchall()
+        ]
+
+        # By organization
+        by_org_q = text(
+            f"SELECT COALESCE(o.name, 'Sin Org') AS organizacion, "
+            f"COUNT(DISTINCT hm.c_bpartner_id) AS empleados, "
+            f"COALESCE(SUM(ABS(hm.amount)), 0) AS monto, "
+            f"COUNT(*) AS ocurrencias "
+            f"FROM adempiere.hr_movement hm "
+            f"JOIN adempiere.hr_process hp ON hp.hr_process_id = hm.hr_process_id "
+            f"JOIN adempiere.hr_concept hc ON hm.hr_concept_id = hc.hr_concept_id "
+            f"LEFT JOIN adempiere.ad_org o ON hm.ad_org_id = o.ad_org_id "
+            f"WHERE {where} "
+            f"GROUP BY o.name ORDER BY monto DESC"
+        )
+        by_org = [
+            {
+                "organizacion": r[0],
+                "empleados": r[1],
+                "monto": float(r[2]),
+                "ocurrencias": r[3],
+            }
+            for r in db.execute(by_org_q, params).fetchall()
+        ]
+
+        # Detail: top 30 employees with vacation amounts
+        detail_q = text(
+            f"SELECT bp.name AS empleado, "
+            f"hc.name AS concepto, "
+            f"COALESCE(SUM(ABS(hm.amount)), 0) AS monto "
+            f"FROM adempiere.hr_movement hm "
+            f"JOIN adempiere.hr_process hp ON hp.hr_process_id = hm.hr_process_id "
+            f"JOIN adempiere.hr_concept hc ON hm.hr_concept_id = hc.hr_concept_id "
+            f"JOIN adempiere.c_bpartner bp ON hm.c_bpartner_id = bp.c_bpartner_id "
+            f"WHERE {where} "
+            f"GROUP BY bp.name, hc.name ORDER BY monto DESC LIMIT 30"
+        )
+        detail = [
+            {
+                "empleado": r[0],
+                "concepto": r[1],
+                "monto": float(r[2]),
+            }
+            for r in db.execute(detail_q, params).fetchall()
+        ]
+
+        return {
+            "totales": totals,
+            "por_concepto": by_concept,
+            "por_organizacion": by_org,
+            "detalle_empleados": detail,
+        }
+    finally:
+        db.close()
+
+
 # ---------------------------------------------------------------------------
 # PRODUCCION (Production)
 # ---------------------------------------------------------------------------
@@ -1754,6 +1882,7 @@ def build_producer_purchases(
     org_ids: list[int] | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    org_name: str | None = None,
 ) -> dict:
     """Producer purchases from iDempiere."""
     db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
@@ -1765,6 +1894,7 @@ def build_producer_purchases(
         ]
         params: dict = {}
         _add_org_filter(conditions, params, org_ids, "o")
+        _add_org_name_filter(conditions, params, org_name, "o")
         _add_date_filter(conditions, params, date_from, date_to, mes, anio, "o.dateordered")
 
         if producto:
@@ -1881,6 +2011,7 @@ def build_producer_pending_payments(
     producto: str | None = None,
     org_ids: list[int] | None = None,
     producer_name: str | None = None,
+    currency_ids: list[int] | None = None,
 ) -> list[dict]:
     """Pending purchase invoices (not fully paid) from iDempiere.
 
@@ -1899,6 +2030,7 @@ def build_producer_pending_payments(
         ]
         params: dict = {}
         _add_org_filter(conditions, params, org_ids, "i")
+        _add_currency_filter(conditions, params, currency_ids, "i")
 
         if producto:
             conditions.append("LOWER(p.name) LIKE :producto")
@@ -1910,10 +2042,12 @@ def build_producer_pending_payments(
 
         where = " AND ".join(conditions)
 
+        currency_col = _currency_label("i")
         q = text(
             f"SELECT bp.name AS productor, i.documentno AS documento, "
             f"i.dateinvoiced::date AS fecha, "
-            f"i.grandtotal AS monto_total "
+            f"i.grandtotal AS monto_total, "
+            f"{currency_col} AS moneda "
             f"FROM adempiere.c_invoice i "
             f"JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id "
             f"{'JOIN adempiere.c_invoiceline il ON i.c_invoice_id = il.c_invoice_id ' if producto else ''}"
@@ -1927,6 +2061,7 @@ def build_producer_pending_payments(
                 "documento": r[1],
                 "fecha": str(r[2]) if r[2] else "",
                 "monto_total": float(r[3]) if r[3] else 0.0,
+                "moneda": r[4] if r[4] else "",
             }
             for r in db.execute(q, params).fetchall()
         ]

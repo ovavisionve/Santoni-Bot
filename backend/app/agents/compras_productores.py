@@ -16,6 +16,7 @@ from app.agents.date_utils import (
     extract_date_range,
     extract_month_year,
     build_period_label,
+    detect_currency,
 )
 from app.services.query_service import (
     build_producer_purchases,
@@ -158,6 +159,28 @@ Datos de compras a productores en iDempiere:
                     return name
         return None
 
+    # Organization name mapping (keyword → iDempiere org name)
+    _ORG_MAP = [
+        ("inpromaiz", "InproMaiz"),
+        ("inpro maiz", "InproMaiz"),
+        ("inproa santoni", "INPROA SANTONI"),
+        ("inproa", "INPROA SANTONI"),
+        ("santoni service", "Santoni Service"),
+        ("agropecuaria", "AGROPECUARIA"),
+        ("aga agricola", "AGA AGRICOLA"),
+        ("aga agrícola", "AGA AGRICOLA"),
+        ("agroinproa", "AGROINPROA"),
+        ("inversiones aga", "INVERSIONES AGA"),
+    ]
+
+    @classmethod
+    def _extract_org_name(cls, msg: str) -> str | None:
+        msg_lower = msg.lower()
+        for kw, val in cls._ORG_MAP:
+            if kw in msg_lower:
+                return val
+        return None
+
     _SECTION_KEYWORDS: dict[str, list[str]] = {
         "productores": ["productor", "registrad", "cuántos", "cuantos"],
         "pendientes": ["pago", "pendiente", "deuda", "deb"],
@@ -234,10 +257,32 @@ Datos de compras a productores en iDempiere:
 
         label = build_period_label(date_from, date_to, mes, anio)
 
+        # Extract organization name from message (e.g. "en INPROA SANTONI", "de inpromaiz")
+        org_name = self._extract_org_name(message)
+        if not org_name and history:
+            for role, content in reversed(history):
+                if role != "user":
+                    continue
+                o = self._extract_org_name(content)
+                if o:
+                    org_name = o
+                    break
+
+        # Detect currency preference (e.g. "en dólares", "monto en usd")
+        currency_ids = detect_currency(message)
+        if not currency_ids and history:
+            for role, content in reversed(history):
+                if role == "user":
+                    currency_ids = detect_currency(content)
+                    if currency_ids:
+                        break
+                    # Stop at first user message that doesn't mention currency
+                    break
+
         try:
             summary = build_producer_purchases(
                 producto=producto, mes=mes, anio=anio, org_ids=org_ids,
-                date_from=date_from, date_to=date_to,
+                date_from=date_from, date_to=date_to, org_name=org_name,
             )
             sections.append(self._format_summary(summary, f"Compras a Productores - {label}"))
 
@@ -272,6 +317,7 @@ Datos de compras a productores en iDempiere:
                 try:
                     pending = build_producer_pending_payments(
                         producto=producto, org_ids=org_ids, producer_name=producer_name,
+                        currency_ids=currency_ids,
                     )
                     if pending:
                         total_pendiente = sum(d.get("monto_total", 0) for d in pending)

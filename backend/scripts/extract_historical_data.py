@@ -69,6 +69,7 @@ REFERENCE_TABLES = [
     "hr_concept",
     "hr_payroll",
     "hr_employee",
+    "ad_user",
     "c_elementvalue",
     "c_element",
     "c_acctschema",

@@ -211,18 +211,34 @@ class BaseAgent(ABC):
             )
 
         if data_context:
-            # Count tables/rows in data to enforce exact counts
-            table_count = data_context.count("\n|") - data_context.count("\n| ---")
+            # Count actual data rows in tables for enforcement
+            data_lines = data_context.split("\n")
+            data_row_count = sum(
+                1 for line in data_lines
+                if line.strip().startswith("|")
+                and "---" not in line
+                and not any(h in line.lower() for h in ["nombre", "codigo", "producto", "proveedor", "concepto", "organizacion", "zona", "banco", "moneda", "cargo", "departamento", "tipo", "estado", "factura", "documento"])
+            )
+            row_enforcement = ""
+            if data_row_count > 0:
+                row_enforcement = (
+                    f"- CONTEO EXACTO: Los datos contienen {data_row_count} filas de datos. "
+                    f"Tu respuesta debe contener EXACTAMENTE {data_row_count} filas de datos, NI UNA MÁS.\n"
+                    f"- NUNCA escribas '(Mostrando X de Y registros)' a menos que ESE TEXTO ya aparezca en los datos.\n"
+                )
+
             messages.append(
                 SystemMessage(
                     content=(
                         "══════════ DATOS REALES DE LA BASE DE DATOS ══════════\n"
                         "⚠️ INSTRUCCIÓN CRÍTICA: Usa EXCLUSIVAMENTE estos datos para responder.\n"
                         "- NO agregues filas, columnas, nombres, montos ni porcentajes que NO estén aquí.\n"
-                        "- Si los datos tienen 5 filas, tu respuesta debe tener EXACTAMENTE 5 filas.\n"
+                        f"{row_enforcement}"
                         "- Si los datos muestran 0 para un campo, muestra 0. NUNCA inventes un valor.\n"
                         "- NO copies datos del historial de conversación para complementar.\n"
-                        "- Si falta información que el usuario pidió, di que no está disponible.\n"
+                        "- Si falta información que el usuario pidió, di 'no se encontraron datos' y sugiere alternativas.\n"
+                        "- PROHIBIDO inventar nombres de personas, empresas, facturas, lotes o buques.\n"
+                        "- PROHIBIDO mostrar porcentajes de humedad, proteína o impureza si NO aparecen en los datos.\n"
                         "══════════════════════════════════════════════════════\n\n"
                         f"{data_context}"
                     )
@@ -269,34 +285,40 @@ class BaseAgent(ABC):
 
     @staticmethod
     def _detect_hallucination(response_text: str, has_data: bool) -> bool:
-        """Detect if the LLM likely hallucinated data when no real data was provided.
+        """Detect if the LLM likely hallucinated data.
 
-        Returns True if hallucination is detected (no data but response has tables with numbers).
-        Also detects fake invoice numbers (FAC-xxxx) and tables with any numeric data.
+        Returns True if hallucination is detected:
+        - When no data was provided (has_data=False): tables with numbers = hallucination
+        - When data WAS provided (has_data=True): fake invoice/doc numbers = hallucination
         """
+        # ALWAYS check for fake document numbers (these are never real)
+        fake_docs = re.search(
+            r'(?:FAC|NC|OC|FC|FP)-\d{4,}', response_text
+        )
+        if fake_docs:
+            return True
+
+        # ALWAYS check for fake lote numbers
+        fake_lotes = re.search(
+            r'(?:Lote|LOTE)\s+(?:MA|AR|PR|IN|MZ)-[A-Z]{2,}-\d{3,}', response_text
+        )
+        if fake_lotes:
+            return True
+
         if has_data:
             return False
 
-        # Check for markdown tables containing monetary amounts
-        # Pattern: | ... number with thousands/decimals ... |
+        # No data was provided — check for generated tables
         table_with_numbers = re.search(
             r'\|[^|]*\d{1,3}(?:[.,]\d{3})+(?:[.,]\d{2})?[^|]*\|', response_text
         )
         if table_with_numbers:
             return True
 
-        # Check for tables with dollar/bolivar amounts
         currency_in_table = re.search(
             r'\|[^|]*(?:Bs\.?|USD|\$)\s*\d+[^|]*\|', response_text
         )
         if currency_in_table:
-            return True
-
-        # Check for fake invoice numbers (FAC-xxxx, NC-xxxx, OC-xxxx)
-        fake_docs = re.search(
-            r'(?:FAC|NC|OC|FC|FP)-\d{3,}', response_text
-        )
-        if fake_docs:
             return True
 
         # Check for tables with any numbers > 0 (even without formatting)
@@ -304,9 +326,8 @@ class BaseAgent(ABC):
             r'\|\s*\d+[\d.,]*\s*\|', response_text
         )
         if table_any_number:
-            # Only flag if there are multiple table rows (header + separator + data)
             table_rows = re.findall(r'^\|.+\|$', response_text, re.MULTILINE)
-            if len(table_rows) >= 4:  # header + separator + at least 2 data rows
+            if len(table_rows) >= 4:
                 return True
 
         return False

@@ -541,13 +541,14 @@ def build_producer_purchases(
     org_ids: list[int] | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    org_name: str | None = None,
 ) -> dict:
     """Producer purchases - routes to demo or iDempiere."""
     if _is_production():
         from app.services.idempiere_queries import build_producer_purchases as _prod
         return _prod(
             producto=producto, mes=mes, anio=anio, org_ids=org_ids,
-            date_from=date_from, date_to=date_to,
+            date_from=date_from, date_to=date_to, org_name=org_name,
         )
 
     db = SessionLocal()
@@ -657,11 +658,12 @@ def build_producer_pending_payments(
     producto: str | None = None,
     org_ids: list[int] | None = None,
     producer_name: str | None = None,
+    currency_ids: list[int] | None = None,
 ) -> list[dict]:
     """Pending producer payments - routes to demo or iDempiere."""
     if _is_production():
         from app.services.idempiere_queries import build_producer_pending_payments as _prod
-        return _prod(producto=producto, org_ids=org_ids, producer_name=producer_name)
+        return _prod(producto=producto, org_ids=org_ids, producer_name=producer_name, currency_ids=currency_ids)
 
     db = SessionLocal()
     try:
@@ -996,6 +998,35 @@ def build_turnover_summary(
             "tasa_rotacion_pct": 0.0,
         },
         "por_organizacion": [],
+    }
+
+
+def build_vacation_summary(
+    mes: int | None = None,
+    anio: int | None = None,
+    org_ids: list[int] | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> dict:
+    """Vacation summary - routes to demo or iDempiere."""
+    if _is_production():
+        from app.services.idempiere_queries import build_vacation_summary as _prod
+        return _prod(
+            mes=mes, anio=anio, org_ids=org_ids,
+            date_from=date_from, date_to=date_to,
+        )
+
+    # Demo fallback
+    return {
+        "totales": {
+            "total_empleados": 0,
+            "total_monto": 0.0,
+            "total_ocurrencias": 0,
+            "nota": "Datos de vacaciones no disponibles en modo demo.",
+        },
+        "por_concepto": [],
+        "por_organizacion": [],
+        "detalle_empleados": [],
     }
 
 
