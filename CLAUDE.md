@@ -158,11 +158,44 @@ docker compose build --no-cache backend frontend && docker compose up -d
 ## Organizaciones en iDempiere
 
 El ERP maneja múltiples organizaciones (empresas del grupo):
-- **INPROA SANTONI** (principal)
-- **InproMaiz**
-- Otras subsidiarias
+- **INPROA SANTONI C.A.** (principal — procesadora de arroz)
+- **InproMaiz C.A** (procesadora de maíz)
+- **Santoni Service C.A** (servicios)
+- **AGROPECUARIA R.R. C.A.** (agropecuaria)
+- **AGA AGRICOLA C.A** (agrícola)
+- **AGROINPROA C.A** (agroindustrial)
+- **INVERSIONES AGA C.A** (inversiones)
+- **Agro Import** (importaciones)
 
 Los agentes filtran por organización cuando el usuario lo especifica.
+
+---
+
+## Monedas en iDempiere
+
+**IMPORTANTE**: En iDempiere de Santoni, cada organización registró su propia entrada de moneda USD
+con iso_code diferente. NO son monedas distintas — **todas representan dólares americanos**.
+
+| c_currency_id | iso_code | Organización |
+|---------------|----------|-------------|
+| 205 | VES | Bolívares (todas las organizaciones) |
+| 100 | USD | Dólares (registro base) |
+| (varios) | DOL | INPROA SANTONI |
+| (varios) | DoL | InproMaiz |
+| (varios) | Dol | INVERSIONES AGA |
+| (varios) | USA | AGROINPROA |
+| (varios) | dol | AGROPECUARIA R.R. |
+| (varios) | DLA | Santoni Service |
+| (varios) | Dla | Santoni Service (variante) |
+| (varios) | US. | Otros |
+| (varios) | EUR | Euros (marginal) |
+
+**Cómo se maneja en el código**:
+- `_currency_label()` en `idempiere_queries.py` agrupa TODOS los IDs de dólar en una sola etiqueta "USD"
+  usando `c_currency_id IN (100,1000000,1000003,1000006,1000008,1000009,1000011,1000013,1000017)`
+- `c_currency_id = 205` → "Bs." (VES/Bolívares)
+- Cualquier otro → "Otro"
+- Los agentes NUNCA deben presentar las monedas por iso_code, siempre usar el CASE de `_currency_label`
 
 ---
 
@@ -204,15 +237,40 @@ Los agentes filtran por organización cuando el usuario lo especifica.
 
 ---
 
+## Selector de Agentes (reemplaza al Orquestador desde Mar 2026)
+
+El orquestador (clasificador de intención LLM) fue **eliminado** del flujo principal de chat.
+Ahora el usuario selecciona el agente directamente desde pestañas en el UI.
+
+### Flujo actual:
+1. Usuario ve pestañas de agentes según sus permisos (GET `/api/chat/agents`)
+2. Selecciona un agente (ej: "Ventas")
+3. Escribe su pregunta
+4. El campo `agent_name` en `ChatRequest` envía el agente directamente
+5. El backend llama al agente sin pasar por el orquestador
+6. Si `agent_name` no viene (API externa), se usa el orquestador como fallback
+
+### Código relevante:
+- Backend: `chat.py` → `_VALID_AGENTS`, `_AGENT_INFO`, endpoint `GET /api/chat/agents`
+- Frontend: `ChatWindow.tsx` → pestañas de agentes, `page.tsx` → `loadAgents()`
+- API: `api.ts` → `getAgents()`, `sendMessage(content, convId, fileId, agentName)`
+
+### Permisos:
+- El endpoint `/api/chat/agents` filtra agentes por `user.allowed_departments`
+- Si el usuario intenta usar un agente no permitido, retorna 403
+
+---
+
 ## Dataset de Entrenamiento
 
-Se mantiene un dataset de escenarios de entrenamiento/validación para el orchestrator:
-- **356 escenarios** (v2.5) cubriendo los 7 agentes
+Se mantiene un dataset de escenarios de entrenamiento/validación:
+- **Archivo**: `backend/data/training_dataset.json`
+- **356+ escenarios** (v2.5+) cubriendo los 7 agentes
 - Incluye: pregunta, agente esperado, tipo de consulta, follow-ups
 - 78 escenarios de follow-up con herencia de contexto
 - Tipos de error rastreados: routing, herencia temporal, fallback sin datos, errores DB,
   docstatus_incompleto, org_name_no_extraido, no_access_text
-- Usado para medir confidence score y mejorar clasificación
+- Usado para medir confidence score y validación de respuestas
 
 ---
 
@@ -228,10 +286,10 @@ Se crearon cuestionarios para que cada departamento valide las respuestas del bo
 
 ## Estado Actual del Proyecto (Marzo 2026)
 
-### Completado (~94% del alcance Fase 1):
+### Completado (~95% del alcance Fase 1):
 - Backend core completo (FastAPI, auth, RBAC, API endpoints)
-- 7 agentes IA + orchestrator funcionando con iDempiere real
-- Frontend completo (chat, login, admin panel, exportaciones)
+- 7 agentes IA funcionando con iDempiere real (orquestador eliminado, selector directo)
+- Frontend completo (chat con selector de agentes, login, admin panel, exportaciones)
 - Docker/deploy configurado y funcionando en servidor
 - 150+ tests automatizados
 - CI/CD con GitHub Actions
@@ -287,6 +345,16 @@ Se crearon cuestionarios para que cada departamento valide las respuestas del bo
   - Panel Auditoría frontend: filtros, búsqueda y exportación visible
   - Routing: "deuda de productor" ahora va a compras_productores (no finanzas)
   - Compras insumos: default sin moneda muestra TODAS las monedas (antes solo VES)
+- **Eliminación del orquestador + selector de agentes (13/Mar 2026)**:
+  - Orquestador eliminado del flujo principal — usuario selecciona agente en UI
+  - Endpoint `GET /api/chat/agents` devuelve agentes según permisos del usuario
+  - Frontend: pestañas horizontales de agentes en ChatWindow
+  - `agent_name` en ChatRequest bypasea el orquestador completamente
+  - Anti-alucinación nivel 4: detección de "no tengo acceso" + re-invocación LLM
+  - Fix: normalización de acentos en búsqueda de productos (compras_productores)
+    `LOWER LIKE '%maiz%'` fallaba con `'Maíz'` → ahora usa `_add_product_search_filter`
+  - Scripts de prueba: `test_agent_queries.py` (20 preguntas) y `verify_data.py` (SQL directo)
+  - Documentación de monedas por organización (DOL=INPROA, DoL=InproMaiz, etc.)
 
 ### Pendiente:
 - Mapeo completo de todas las tablas iDempiere (algunas queries aún en ajuste)

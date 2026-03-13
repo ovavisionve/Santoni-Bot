@@ -1,31 +1,31 @@
 {
-  "version": "2.5",
-  "created": "2026-03-11",
-  "description": "Dataset de entrenamiento v2.5: Fix docstatus IN ('CO','CL') para incluir facturas cerradas/pagadas en todas las queries. Extracción de org_name del mensaje en compras_insumos. Regla PROHIBIDO 'no tengo acceso' en system prompt de los 7 agentes. Escenarios: último proveedor por código+org, cajas de cartón inventario vs compras, préstamos en finanzas.",
+  "version": "2.6",
+  "created": "2026-03-13",
+  "description": "Dataset v2.6: Eliminación del orquestador, selector directo de agentes. Fix normalización acentos en búsqueda de productos (maíz). Escenarios de verificación directa contra iDempiere. Documentación de monedas por organización (DOL=INPROA, DoL=InproMaiz, etc.).",
   "stats": {
-    "total_entries": 356,
+    "total_entries": 364,
     "por_agente": {
       "compras_insumos": 85,
-      "rrhh": 65,
+      "rrhh": 67,
       "ventas": 58,
-      "produccion": 43,
-      "finanzas": 36,
-      "compras_productores": 27,
+      "produccion": 45,
+      "finanzas": 38,
+      "compras_productores": 29,
       "general": 20,
       "contabilidad": 21
     },
     "por_fuente": {
       "cuestionario_word": 107,
-      "conversacion_real": 89,
+      "conversacion_real": 93,
       "patron_comun": 41,
       "cuestionario_validacion": 39,
-      "correccion_bug": 52,
+      "correccion_bug": 56,
       "excel_compras": 12,
       "nuevas_capacidades": 16
     },
     "escenarios_negativos": 0,
     "con_respuesta_esperada": 15,
-    "followups": 78,
+    "followups": 79,
     "escenarios_alucinacion": 22,
     "escenarios_routing_error": 2
   },
@@ -6413,6 +6413,147 @@
         "notas": "LLM decía 'no tengo acceso directo a préstamos'. Fix: agregar regla PROHIBIDO decir 'no tengo acceso' en system prompt de TODOS los 7 agentes (antes solo compras_insumos la tenía)."
       },
       "categoria": "prestamos"
+    },
+    {
+      "id": 357,
+      "pregunta": "Compras de maíz acondicionado de InproMaiz",
+      "agente_esperado": "compras_productores",
+      "departamento_usuario": "compras_productores",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": { "producto": "maiz", "organizacion": "InproMaiz" },
+      "es_followup": false,
+      "fuente": "correccion_bug",
+      "usuario": "mfigueredo",
+      "resultado_real": {
+        "agente_usado": "compras_productores",
+        "exito": true,
+        "notas": "Fix: LOWER LIKE '%maiz%' fallaba con 'Maíz' (acento). Ahora usa _add_product_search_filter con normalización de acentos."
+      },
+      "categoria": "compras_materia_prima"
+    },
+    {
+      "id": 358,
+      "pregunta": "Control de vacaciones de enero 2026",
+      "agente_esperado": "rrhh",
+      "departamento_usuario": "rrhh",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": { "mes": 1, "anio": 2026 },
+      "es_followup": false,
+      "fuente": "correccion_bug",
+      "usuario": "esalas",
+      "resultado_real": {
+        "agente_usado": "rrhh",
+        "exito": true,
+        "notas": "Antes el LLM decía 'no tengo acceso' cuando build_vacation_summary SÍ devolvía datos. Fix: anti-alucinación nivel 4 + regla PROHIBIDO en system prompt."
+      },
+      "categoria": "vacaciones"
+    },
+    {
+      "id": 359,
+      "pregunta": "Cumpleañeros de mayo",
+      "agente_esperado": "rrhh",
+      "departamento_usuario": "rrhh",
+      "contexto": {
+        "last_agent": "rrhh",
+        "historial": [["user", "Cumpleañeros del mes de marzo"]]
+      },
+      "extracciones": { "mes": 5 },
+      "es_followup": true,
+      "fuente": "correccion_bug",
+      "usuario": "esalas",
+      "resultado_real": {
+        "agente_usado": "rrhh",
+        "exito": true,
+        "notas": "Follow-up de cumpleañeros. Antes el LLM inventaba nombres en vez de consultar la BD."
+      },
+      "categoria": "cumpleanos"
+    },
+    {
+      "id": 360,
+      "pregunta": "Cuentas por cobrar vencidas",
+      "agente_esperado": "finanzas",
+      "departamento_usuario": "finanzas",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": {},
+      "es_followup": false,
+      "fuente": "correccion_bug",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "finanzas",
+        "exito": false,
+        "error": "no_access_text",
+        "notas": "LLM dijo 'no arrojó resultados' cuando build_financial_summary SÍ devuelve datos de CxC vencidas (9,243 facturas). El dato viene dentro del resumen financiero pero el LLM lo ignora."
+      },
+      "categoria": "cxc_vencidas"
+    },
+    {
+      "id": 361,
+      "pregunta": "¿Cuánto es la cuenta por pagar?",
+      "agente_esperado": "finanzas",
+      "departamento_usuario": "finanzas",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": {},
+      "es_followup": false,
+      "fuente": "conversacion_real",
+      "usuario": "jalvarez",
+      "resultado_real": {
+        "agente_usado": "finanzas",
+        "exito": true,
+        "notas": "Responde con CxP separadas por moneda (Bs. y USD). El total es del año 2026 por defecto."
+      },
+      "categoria": "cuentas_por_pagar"
+    },
+    {
+      "id": 362,
+      "pregunta": "¿Cuál es la producción de hoy?",
+      "agente_esperado": "produccion",
+      "departamento_usuario": "produccion",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": {},
+      "es_followup": false,
+      "fuente": "conversacion_real",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "produccion",
+        "exito": false,
+        "error": "modulo_no_activo",
+        "notas": "pp_order no se usa en Santoni. El agente de producción usa m_inout (recepciones/despachos). Si no hay movimientos hoy, no se encontrarán datos."
+      },
+      "categoria": "resumen_produccion"
+    },
+    {
+      "id": 363,
+      "pregunta": "Top productores por volumen",
+      "agente_esperado": "compras_productores",
+      "departamento_usuario": "compras_productores",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": {},
+      "es_followup": false,
+      "fuente": "conversacion_real",
+      "usuario": "mfigueredo",
+      "resultado_real": {
+        "agente_usado": "compras_productores",
+        "exito": true,
+        "notas": "Muestra top 20 productores con estado/municipio (datos de ubicación reales via c_bpartner_location JOINs)."
+      },
+      "categoria": "productores"
+    },
+    {
+      "id": 364,
+      "pregunta": "Inventario actual en almacén",
+      "agente_esperado": "produccion",
+      "departamento_usuario": "produccion",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": {},
+      "es_followup": false,
+      "fuente": "conversacion_real",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "produccion",
+        "exito": true,
+        "notas": "Usa build_inventory_stock (m_storageonhand). Muestra stock real por producto/almacén/organización."
+      },
+      "categoria": "inventario"
     }
   ],
   "tipos_error": {
@@ -6515,7 +6656,8 @@
     "ingresos_personal",
     "ordenes_compra",
     "comparacion_precios",
-    "estado_pago"
+    "estado_pago",
+    "moneda_por_organizacion"
   ],
   "updated": "2026-03-11"
 }
