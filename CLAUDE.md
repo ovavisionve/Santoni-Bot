@@ -61,7 +61,9 @@ Santoni-Bot/
 │   │   │   ├── export_service.py # Exportación CSV/Excel/PDF
 │   │   │   ├── document_service.py # Análisis de documentos
 │   │   │   ├── audit.py         # Logging de auditoría
-│   │   │   └── cache.py         # Cache de queries
+│   │   │   ├── cache.py         # Cache de queries
+│   │   │   ├── idempiere_permissions.py # Permisos desde roles iDempiere
+│   │   │   └── window_capability_map.py # Mapeo ventanas→agentes (31 capabilities)
 │   │   ├── middleware/          # Auth, seguridad, CORS
 │   │   └── utils/
 │   ├── tests/                   # 150+ tests (pytest)
@@ -167,6 +169,10 @@ Los agentes filtran por organización cuando el usuario lo especifica.
 ## Seguridad
 
 - **RBAC**: Roles (usuario, supervisor, administrador) + departamentos (7)
+- **Permisos iDempiere**: Ventanas asignadas en iDempiere → capabilities → agentes permitidos
+  - `window_capability_map.py`: 31 capabilities mapeadas a 7 agentes
+  - `idempiere_permissions.py`: Consulta roles/ventanas del usuario en iDempiere
+  - Importación masiva de usuarios con `scripts/import_idempiere_users.py`
 - **JWT**: Tokens con expiración configurable
 - **iDempiere read-only**: `SET default_transaction_read_only = ON`
 - **Anonymizer**: Datos sensibles se enmascaran antes de enviar al LLM
@@ -222,7 +228,7 @@ Se crearon cuestionarios para que cada departamento valide las respuestas del bo
 
 ## Estado Actual del Proyecto (Marzo 2026)
 
-### Completado (~91% del alcance Fase 1):
+### Completado (~94% del alcance Fase 1):
 - Backend core completo (FastAPI, auth, RBAC, API endpoints)
 - 7 agentes IA + orchestrator funcionando con iDempiere real
 - Frontend completo (chat, login, admin panel, exportaciones)
@@ -236,7 +242,7 @@ Se crearon cuestionarios para que cada departamento valide las respuestas del bo
 - **Datos históricos locales (10/Mar 2026)**: Sistema para cachear datos de iDempiere pre-marzo 2026 en DB local (ver sección abajo)
 - Conexión exitosa a iDempiere real (queries de nómina, ventas, compras)
 - Follow-ups inteligentes con herencia de contexto temporal
-- Confidence score + dataset de 355 escenarios (v2.5)
+- Confidence score + dataset de 356 escenarios (v2.5)
 - Separación de compras por moneda (VES/USD)
 - Inventario desde m_storageonhand
 - Corrección de múltiples bugs reportados por usuarios reales
@@ -260,11 +266,31 @@ Se crearon cuestionarios para que cada departamento valide las respuestas del bo
   - Regla PROHIBIDO "no tengo acceso" agregada al system prompt de los 7 agentes
     (antes solo la tenía compras_insumos; finanzas decía "no tengo acceso" para préstamos)
   - Dataset v2.5: 5 nuevos escenarios (352-356), 3 nuevos tipos de error
+- **Permisos iDempiere (12/Mar 2026)**:
+  - Script `scripts/query_idempiere_roles.py` para consultar roles y accesos
+  - Integración de roles iDempiere → permisos del bot (`services/idempiere_permissions.py`)
+  - Permisos granulares basados en ventanas de iDempiere (`window_capability_map.py`)
+  - Importación masiva de usuarios iDempiere al bot
+  - Combinación de permisos de múltiples `ad_user_ids` por persona
+- **RRHH + Anti-alucinación (12/Mar 2026)**:
+  - Fix: agentes piden reformular preguntas ambiguas en vez de adivinar
+  - Fix: vacaciones habilitadas en agente RRHH (`build_vacation_summary`)
+  - Fix: routing compras_productores + columna city faltante
+  - Fix: 3 problemas RRHH - routing nacimientos, alucinación, vacaciones
+  - OpenRouter: restricción de proveedores via `OPENROUTER_PROVIDERS` + fallback automático
+- **Auditoría completa (13/Mar 2026)**:
+  - Migración 010: tabla `ad_user` en esquema local (birthday queries)
+  - Cumpleañeros usa `ad_user.birthday` + eliminación de duplicados con LATERAL subquery
+  - Anti-alucinación reforzada: conteo exacto de filas + detección de docs/lotes falsos
+  - Corrección sistemática de queries, routing y anti-alucinación en 7 agentes
+  - Compras productores: extracción de org_name, detección de moneda, nombre de productor
+  - Panel Auditoría frontend: filtros, búsqueda y exportación visible
+  - Routing: "deuda de productor" ahora va a compras_productores (no finanzas)
+  - Compras insumos: default sin moneda muestra TODAS las monedas (antes solo VES)
 
 ### Pendiente:
 - Mapeo completo de todas las tablas iDempiere (algunas queries aún en ajuste)
 - Tests E2E
-- Script de migración datos demo → datos reales
 - Sentry (monitoreo de errores)
 - WhatsApp (Fase 2, post-lanzamiento)
 
@@ -357,6 +383,49 @@ HISTORICAL_DATA_CUTOFF=2026-03-01  # Fecha de corte
 - `build_inventory_stock` - stock actual
 - `build_registered_producers` - productores registrados
 - `build_producer_pending_payments` - pagos pendientes actuales
+
+---
+
+## Auditoría de Agentes (13/Mar 2026)
+
+Auditoría completa de los 7 agentes + orchestrator + base_agent.
+
+### Resumen por Agente
+
+| Agente | Queries | Herencia temporal | Anti-alucinación | Error handling | org_name | Moneda |
+|--------|---------|-------------------|------------------|----------------|----------|--------|
+| Ventas | 4 funciones | ✅ Completa | ✅ Fuerte | ✅ try/except | ✅ | ✅ VES/USD |
+| Finanzas | 2 funciones | ✅ Completa | ✅ Fuerte | ✅ try/except | ❌ No extrae | N/A (separado en query) |
+| Contabilidad | 2 funciones | ✅ Completa + cuenta | ✅ + zero-movement | ✅ try/except | ❌ | ✅ currency_ids |
+| RRHH | 7 funciones | ✅ Completa + cargo | ✅ Fuerte | ✅ try/except anidados | ❌ | N/A |
+| Producción | 3 funciones | ✅ Completa | ✅ Fuerte | ✅ try/except | ❌ No extrae | N/A |
+| Compras Insumos | 6 funciones | ✅ Completa | ✅ Fuerte | ✅ try/except | ✅ _extract_org_name | ✅ _detect_currency |
+| Compras Productores | 4 funciones | ✅ Completa + producto | ✅ Fuerte | ✅ try/except anidados | ✅ _extract_org_name | ✅ detect_currency |
+
+### Funciones de Query por Agente
+
+- **Ventas**: `build_top_clients`, `build_sales_summary`, `build_collection_summary`, `build_overdue_receivables`
+- **Finanzas**: `build_financial_summary`, `build_overdue_receivables`
+- **Contabilidad**: `build_accounting_summary`, `build_account_detail`
+- **RRHH**: `build_employee_summary`, `build_employee_list`, `build_birthday_list`, `build_payroll_summary`, `build_attendance_summary`, `build_turnover_summary`, `build_vacation_summary`
+- **Producción**: `build_production_summary`, `build_production_orders`, `build_inventory_stock`
+- **Compras Insumos**: `build_supply_purchases`, `build_product_purchase_history`, `build_inventory_stock`, `build_pending_purchase_orders`, `build_supplier_price_comparison`, `build_purchase_payment_status`
+- **Compras Productores**: `build_producer_purchases`, `build_registered_producers`, `build_producer_pending_payments`, `build_producer_price_analysis`
+
+### Hallazgos Conocidos (no críticos)
+
+1. **`build_inventory_stock`** usa `IdempiereSession()` directo en vez de `_get_session()` — intencional porque inventario es siempre dato actual, nunca histórico
+2. **Streaming**: La detección de alucinación post-stream solo logea, no puede reemplazar tokens ya enviados
+3. **Conteo de filas** en `base_agent.py`: El filtro de headers es heurístico (busca palabras como "nombre", "codigo"); puede fallar si esas palabras aparecen en datos
+4. **`_region_case_sql()`** en ventas: Usa string interpolation pero con datos hardcodeados (no es inyección SQL, pero no es parameterizado)
+5. **Currency IDs hardcodeados**: 9 IDs para USD en `date_utils.py` y `compras_insumos.py` — si Santoni agrega nuevos, requiere actualización manual
+
+### Routing del Orchestrator (orden de prioridad)
+
+1. Greetings → `general` (si < 60 chars)
+2. Código contable (`\d\.\d{2}\.\d{2}`) → `contabilidad`
+3. Keywords en orden: `compras_productores` → `produccion` → `compras_insumos` → `contabilidad` → `finanzas` → `ventas` → `rrhh`
+4. Fallback: `last_agent` (follow-up) → keywords genéricos → `general`
 
 ---
 
