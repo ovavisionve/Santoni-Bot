@@ -1810,11 +1810,26 @@ def build_production_summary(
             for r in db.execute(by_org_q, params).fetchall()
         ]
 
+        # By date (daily breakdown) — prevents LLM from inventing dates
+        by_date_q = text(
+            f"SELECT io.movementdate::date AS fecha, "
+            f"SUM(CASE WHEN io.movementtype = 'V+' THEN 1 ELSE 0 END) AS recepciones, "
+            f"SUM(CASE WHEN io.movementtype = 'C-' THEN 1 ELSE 0 END) AS despachos, "
+            f"COUNT(*) AS total "
+            f"FROM adempiere.m_inout io WHERE {where} "
+            f"GROUP BY io.movementdate::date ORDER BY fecha"
+        )
+        by_date = [
+            {"fecha": str(r[0]), "recepciones": r[1], "despachos": r[2], "total": r[3]}
+            for r in db.execute(by_date_q, params).fetchall()
+        ]
+
         return {
             "anio": anio,
             "mes": mes,
             "totales": totals,
             "por_producto": by_product,
+            "por_fecha": by_date,
             "por_mes": by_month,
             "por_organizacion": by_org,
         }
@@ -1898,8 +1913,7 @@ def build_producer_purchases(
         _add_date_filter(conditions, params, date_from, date_to, mes, anio, "o.dateordered")
 
         if producto:
-            conditions.append("LOWER(p.name) LIKE :producto")
-            params["producto"] = f"%{producto.lower()}%"
+            _add_product_search_filter(conditions, params, producto, prefix="pprod")
 
         where = " AND ".join(conditions)
 
@@ -2033,8 +2047,7 @@ def build_producer_pending_payments(
         _add_currency_filter(conditions, params, currency_ids, "i")
 
         if producto:
-            conditions.append("LOWER(p.name) LIKE :producto")
-            params["producto"] = f"%{producto.lower()}%"
+            _add_product_search_filter(conditions, params, producto, prefix="ppend")
 
         if producer_name:
             conditions.append("LOWER(bp.name) LIKE :producer_name")

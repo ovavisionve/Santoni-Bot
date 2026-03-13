@@ -125,6 +125,7 @@ Datos de producción/inventario en iDempiere:
     _DOCUMENT_KEYWORDS = [
         "documento", "detalle", "reciente", "último", "ultimos",
         "recepci", "despacho", "movimiento",
+        "fecha", "exacto", "exacta", "diario", "día", "dia",
     ]
 
     _INVENTORY_KEYWORDS = [

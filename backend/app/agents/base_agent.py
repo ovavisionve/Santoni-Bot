@@ -305,7 +305,20 @@ class BaseAgent(ABC):
         if fake_lotes:
             return True
 
+        # When data WAS provided but LLM says "no tengo acceso" → hallucination
         if has_data:
+            no_access_phrases = [
+                "no tengo acceso",
+                "no puedo acceder",
+                "no dispongo",
+                "no tengo acceso directo",
+                "no puedo consultar",
+                "no cuento con acceso",
+            ]
+            response_lower = response_text.lower()
+            for phrase in no_access_phrases:
+                if phrase in response_lower:
+                    return True
             return False
 
         # No data was provided — check for generated tables
@@ -472,7 +485,7 @@ class BaseAgent(ABC):
                 yield chunk.content
 
         # Post-stream hallucination check
-        if not has_data and accumulated:
+        if accumulated:
             full_response = "".join(accumulated)
             if self._detect_hallucination(full_response, has_data):
                 logger.warning(

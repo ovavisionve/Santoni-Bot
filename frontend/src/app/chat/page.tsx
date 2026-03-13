@@ -36,6 +36,8 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
+  const [agents, setAgents] = useState<{ name: string; display_name: string; department: string; description: string }[]>([]);
+  const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
 
   // Track whether this is the first exchange in a new conversation
   const isNewConversationRef = useRef(true);
@@ -50,8 +52,23 @@ export default function ChatPage() {
   useEffect(() => {
     if (user) {
       loadConversations();
+      loadAgents();
     }
   }, [user]);
+
+  const loadAgents = async () => {
+    try {
+      const data = await api.getAgents();
+      setAgents(data);
+      // Auto-select user's primary department if available
+      if (data.length > 0 && user) {
+        const match = data.find((a) => a.department === user.department);
+        if (match) setSelectedAgent(match.name);
+      }
+    } catch {
+      // ignore
+    }
+  };
 
   const loadConversations = async () => {
     try {
@@ -175,6 +192,7 @@ export default function ChatPage() {
             },
           },
           activeConversationId ?? undefined,
+          selectedAgent ?? undefined,
         );
 
         // Update message with real DB id + agent + timestamp
@@ -194,7 +212,8 @@ export default function ChatPage() {
         const response = await api.sendMessage(
           content,
           activeConversationId ?? undefined,
-          fileId
+          fileId,
+          selectedAgent ?? undefined,
         );
 
         if (!activeConversationId) {
@@ -336,6 +355,9 @@ export default function ChatPage() {
         isLoading={isLoading}
         onSendMessage={handleSendMessage}
         onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
+        agents={agents}
+        selectedAgent={selectedAgent}
+        onSelectAgent={setSelectedAgent}
       />
     </div>
   );

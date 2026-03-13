@@ -124,11 +124,19 @@ docker compose build --no-cache backend frontend && docker compose up -d
 
 ### Flujo de una consulta:
 1. Usuario envía mensaje por chat
-2. **Orchestrator** clasifica la intención y selecciona el agente correcto
-3. El agente especializado genera la query SQL apropiada
-4. Se ejecuta contra iDempiere (read-only) via `query_service.py`
-5. El agente formatea la respuesta con tablas markdown
-6. Se devuelve al usuario con opción de exportar (CSV/Excel/PDF)
+2. **Selector de agente** (frontend): si el usuario seleccionó un agente, va directo a él
+3. **Orchestrator** (fallback): si no hay selector, clasifica la intención y selecciona el agente
+4. El agente especializado genera la query SQL apropiada
+5. Se ejecuta contra iDempiere (read-only) via `query_service.py`
+6. El agente formatea la respuesta con tablas markdown
+7. Se devuelve al usuario con opción de exportar (CSV/Excel/PDF)
+
+### Selector de agentes (implementado Mar 2026):
+- Frontend muestra tabs con los agentes disponibles para el usuario
+- Si el usuario selecciona un agente, `agent_name` se envía en el `ChatRequest`
+- Backend valida permisos y envía directo al agente sin pasar por el orchestrator
+- Si "Automático" está seleccionado, funciona como antes (orchestrator decide)
+- Endpoint `GET /api/chat/agents` retorna los agentes disponibles para el usuario
 
 ### Agentes:
 
@@ -155,10 +163,24 @@ docker compose build --no-cache backend frontend && docker compose up -d
 
 ## Organizaciones en iDempiere
 
-El ERP maneja múltiples organizaciones (empresas del grupo):
-- **INPROA SANTONI** (principal)
-- **InproMaiz**
-- Otras subsidiarias
+El ERP maneja 8 organizaciones (empresas del grupo):
+
+| # | Organización | Código moneda (iso_code) | Actividad |
+|---|-------------|-------------------------|-----------|
+| 1 | **INPROA SANTONI C.A.** | DOL | Procesadora de arroz (principal) |
+| 2 | **InproMaiz C.A** | DoL | Procesadora de maíz |
+| 3 | **Santoni Service C.A** | DLA | Servicios |
+| 4 | **AGROPECUARIA R.R. C.A.** | dol | Agropecuaria |
+| 5 | **AGA AGRICOLA C.A** | (VES) | Agrícola |
+| 6 | **AGROINPROA C.A** | USA | Agroindustrial |
+| 7 | **INVERSIONES AGA C.A** | Dol | Inversiones |
+| 8 | **Agro Import** | - | Importaciones |
+
+**IMPORTANTE — Monedas en iDempiere:**
+Cada organización tiene su propia moneda con iso_code diferente (DOL, DoL, Dol, dol, DLA, USA, US., etc.)
+pero TODAS representan dólares. El bot las agrupa usando `c_currency_id`:
+- `c_currency_id = 205` → **Bolívares (VES/Bs.)**
+- `c_currency_id IN (100, 1000000, 1000003, 1000006, 1000008, 1000009, 1000011, 1000013, 1000017)` → **Dólares (USD)**
 
 Los agentes filtran por organización cuando el usuario lo especifica.
 
@@ -201,7 +223,7 @@ Los agentes filtran por organización cuando el usuario lo especifica.
 ## Dataset de Entrenamiento
 
 Se mantiene un dataset de escenarios de entrenamiento/validación para el orchestrator:
-- **356 escenarios** (v2.5) cubriendo los 7 agentes
+- **364 escenarios** (v2.6) cubriendo los 7 agentes
 - Incluye: pregunta, agente esperado, tipo de consulta, follow-ups
 - 78 escenarios de follow-up con herencia de contexto
 - Tipos de error rastreados: routing, herencia temporal, fallback sin datos, errores DB,
@@ -260,6 +282,18 @@ Se crearon cuestionarios para que cada departamento valide las respuestas del bo
   - Regla PROHIBIDO "no tengo acceso" agregada al system prompt de los 7 agentes
     (antes solo la tenía compras_insumos; finanzas decía "no tengo acceso" para préstamos)
   - Dataset v2.5: 5 nuevos escenarios (352-356), 3 nuevos tipos de error
+
+- **Selector de agentes + verificación de datos (13/Mar 2026)**:
+  - Selector de agentes en frontend (tabs) con `agent_name` en ChatRequest
+  - Backend: routing directo al agente, bypass orchestrator, validación de permisos
+  - Endpoint `GET /api/chat/agents` para listar agentes disponibles
+  - Anti-alucinación mejorada: detecta "no tengo acceso" cuando SÍ hay datos (has_data=True)
+  - Fix acentos: `build_producer_purchases` y `build_producer_pending_payments` usan `_add_product_search_filter`
+  - Desglose por fecha (`por_fecha`) en `build_production_summary` — evita que el LLM invente fechas
+  - Script `verify_data.py` — verificación directa contra iDempiere
+  - Script `test_agent_queries.py` — 21 preguntas de prueba contra los 7 agentes
+  - Dataset v2.6: 364 escenarios (+8 nuevos de verificación)
+  - Documentación de monedas por organización (DOL, DoL, Dol, dol, DLA, USA)
 
 ### Pendiente:
 - Mapeo completo de todas las tablas iDempiere (algunas queries aún en ajuste)

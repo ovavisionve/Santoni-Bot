@@ -1,18 +1,18 @@
 {
-  "version": "2.5",
-  "created": "2026-03-11",
-  "description": "Dataset de entrenamiento v2.5: Fix docstatus IN ('CO','CL') para incluir facturas cerradas/pagadas en todas las queries. Extracción de org_name del mensaje en compras_insumos. Regla PROHIBIDO 'no tengo acceso' en system prompt de los 7 agentes. Escenarios: último proveedor por código+org, cajas de cartón inventario vs compras, préstamos en finanzas.",
+  "version": "2.6",
+  "created": "2026-03-13",
+  "description": "Dataset v2.6: Selector de agentes (bypass orchestrator), anti-alucinación mejorada (detectar 'no tengo acceso' con datos reales), fix acentos en compras_productores, desglose por fecha en producción, mapeo de monedas por organización (DOL=INPROA, DoL=InproMaiz, etc.), scripts de verificación y pruebas.",
   "stats": {
-    "total_entries": 356,
+    "total_entries": 364,
     "por_agente": {
       "compras_insumos": 85,
-      "rrhh": 65,
-      "ventas": 58,
-      "produccion": 43,
-      "finanzas": 36,
-      "compras_productores": 27,
+      "rrhh": 66,
+      "ventas": 59,
+      "produccion": 45,
+      "finanzas": 37,
+      "compras_productores": 29,
       "general": 20,
-      "contabilidad": 21
+      "contabilidad": 22
     },
     "por_fuente": {
       "cuestionario_word": 107,
@@ -21,7 +21,8 @@
       "cuestionario_validacion": 39,
       "correccion_bug": 52,
       "excel_compras": 12,
-      "nuevas_capacidades": 16
+      "nuevas_capacidades": 16,
+      "verificacion_produccion": 8
     },
     "escenarios_negativos": 0,
     "con_respuesta_esperada": 15,
@@ -6413,6 +6414,140 @@
         "notas": "LLM decía 'no tengo acceso directo a préstamos'. Fix: agregar regla PROHIBIDO decir 'no tengo acceso' en system prompt de TODOS los 7 agentes (antes solo compras_insumos la tenía)."
       },
       "categoria": "prestamos"
+    },
+    {
+      "id": 357,
+      "pregunta": "Compras de maíz acondicionado de InproMaiz",
+      "agente_esperado": "compras_productores",
+      "departamento_usuario": "compras_productores",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": { "producto": "maiz", "organizacion": "InproMaiz" },
+      "es_followup": false,
+      "fuente": "verificacion_produccion",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "compras_productores",
+        "exito": true,
+        "notas": "Fix acentos: _add_product_search_filter en vez de LOWER LIKE (maíz vs maiz)."
+      },
+      "categoria": "compras_materia_prima"
+    },
+    {
+      "id": 358,
+      "pregunta": "Control de vacaciones de enero 2026",
+      "agente_esperado": "rrhh",
+      "departamento_usuario": "rrhh",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": { "fecha_desde": null, "fecha_hasta": null },
+      "es_followup": false,
+      "fuente": "verificacion_produccion",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "rrhh",
+        "exito": true,
+        "notas": "544 empleados con vacaciones en enero 2026. Verificado contra iDempiere."
+      },
+      "categoria": "vacaciones"
+    },
+    {
+      "id": 359,
+      "pregunta": "Cumpleañeros de mayo",
+      "agente_esperado": "rrhh",
+      "departamento_usuario": "rrhh",
+      "contexto": { "last_agent": "rrhh", "historial": [["user", "Cumpleañeros del mes de marzo"]] },
+      "extracciones": {},
+      "es_followup": true,
+      "fuente": "verificacion_produccion",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "rrhh",
+        "exito": true,
+        "notas": "Follow-up de cumpleañeros, cambia de marzo a mayo."
+      },
+      "categoria": "cumpleanos"
+    },
+    {
+      "id": 360,
+      "pregunta": "Cuentas por cobrar vencidas",
+      "agente_esperado": "finanzas",
+      "departamento_usuario": "finanzas",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": {},
+      "es_followup": false,
+      "fuente": "verificacion_produccion",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "finanzas",
+        "exito": false,
+        "error": "no_access_text",
+        "notas": "LLM dijo 'no arrojó resultados' cuando SÍ hay 9,237+ facturas vencidas. Fix: anti-alucinación mejorada detecta 'no tengo acceso' cuando has_data=True."
+      },
+      "categoria": "cxc_vencidas"
+    },
+    {
+      "id": 361,
+      "pregunta": "¿Cuál es la producción de hoy?",
+      "agente_esperado": "produccion",
+      "departamento_usuario": "produccion",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": {},
+      "es_followup": false,
+      "fuente": "verificacion_produccion",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "produccion",
+        "exito": true,
+        "notas": "Desglose por_fecha agregado para evitar que el LLM invente fechas."
+      },
+      "categoria": "resumen_produccion"
+    },
+    {
+      "id": 362,
+      "pregunta": "Top productores por volumen",
+      "agente_esperado": "compras_productores",
+      "departamento_usuario": "compras_productores",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": {},
+      "es_followup": false,
+      "fuente": "verificacion_produccion",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "compras_productores",
+        "exito": true
+      },
+      "categoria": "productores"
+    },
+    {
+      "id": 363,
+      "pregunta": "Resumen de ventas de febrero 2026",
+      "agente_esperado": "ventas",
+      "departamento_usuario": "ventas",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": {},
+      "es_followup": false,
+      "fuente": "verificacion_produccion",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "ventas",
+        "exito": true
+      },
+      "categoria": "resumen_ventas"
+    },
+    {
+      "id": 364,
+      "pregunta": "Muéstrame el balance general actualizado",
+      "agente_esperado": "contabilidad",
+      "departamento_usuario": "contabilidad",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": {},
+      "es_followup": false,
+      "fuente": "verificacion_produccion",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "contabilidad",
+        "exito": true
+      },
+      "categoria": "balance_general"
     }
   ],
   "tipos_error": {
@@ -6515,7 +6650,10 @@
     "ingresos_personal",
     "ordenes_compra",
     "comparacion_precios",
-    "estado_pago"
+    "estado_pago",
+    "moneda_por_organizacion",
+    "selector_agente",
+    "desglose_fecha"
   ],
-  "updated": "2026-03-11"
+  "updated": "2026-03-13"
 }

@@ -156,13 +156,20 @@ class ApiClient {
   }
 
   // Chat
-  async sendMessage(message: string, conversationId?: number, fileId?: string) {
+  async getAgents() {
+    return this.request<{ name: string; display_name: string; department: string; description: string }[]>(
+      "/api/chat/agents"
+    );
+  }
+
+  async sendMessage(message: string, conversationId?: number, fileId?: string, agentName?: string) {
     return this.request<import("@/types").ChatResponse>("/api/chat/", {
       method: "POST",
       body: JSON.stringify({
         message,
         conversation_id: conversationId || null,
         file_id: fileId || null,
+        agent_name: agentName || null,
       }),
     });
   }
@@ -179,6 +186,7 @@ class ApiClient {
       onError?: (error: string) => void;
     },
     conversationId?: number,
+    agentName?: string,
   ): Promise<{ message_id: number; conversation_id: number }> {
     const token = this.getToken();
     const headers: Record<string, string> = {
@@ -193,6 +201,7 @@ class ApiClient {
         message,
         conversation_id: conversationId || null,
         file_id: null,
+        agent_name: agentName || null,
       }),
     });
 

@@ -118,7 +118,18 @@ async def stream_message(
 
     history = _get_history(db, conversation.id)
     last_agent = _get_last_agent(db, conversation.id)
-    agent_name, routing_score, match_type = await orchestrator.get_stream_agent_name(data.message, current_user, last_agent=last_agent)
+
+    # Direct agent selection (from frontend selector) or orchestrator routing
+    if data.agent_name and data.agent_name in orchestrator.agents:
+        # Validate user has access to this agent's department
+        allowed = current_user.allowed_departments
+        if data.agent_name not in allowed and "all" not in allowed:
+            raise HTTPException(status_code=403, detail=f"No tienes acceso al agente {data.agent_name}")
+        agent_name = data.agent_name
+        routing_score = 1.0
+        match_type = "selector_directo"
+    else:
+        agent_name, routing_score, match_type = await orchestrator.get_stream_agent_name(data.message, current_user, last_agent=last_agent)
 
     # Send initial metadata
     conv_id = conversation.id
@@ -142,14 +153,26 @@ async def stream_message(
             yield f"data: {json.dumps({'type': 'token', 'content': cached['response']})}\n\n"
         else:
             try:
-                async for token in orchestrator.stream(
-                    message=message_text,
-                    user=current_user,
-                    history=history,
-                    last_agent=last_agent,
-                ):
-                    full_response.append(token)
-                    yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
+                # If agent selected directly, stream from that agent; otherwise use orchestrator
+                if match_type == "selector_directo":
+                    agent = orchestrator.agents[agent_name]
+                    async for token in agent.stream(
+                        message=message_text,
+                        history=history,
+                        org_ids=current_user.org_ids,
+                        salesrep_id=current_user.idempiere_salesrep_id,
+                    ):
+                        full_response.append(token)
+                        yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
+                else:
+                    async for token in orchestrator.stream(
+                        message=message_text,
+                        user=current_user,
+                        history=history,
+                        last_agent=last_agent,
+                    ):
+                        full_response.append(token)
+                        yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
             except Exception as exc:
                 logger.error("Streaming error: %s: %s", type(exc).__name__, exc, exc_info=True)
                 error_msg = f"Error al consultar el modelo de IA: {type(exc).__name__}"
@@ -258,13 +281,33 @@ async def send_message(
             logger.info("Document attached: %s (%s)", document.get("filename"), document["type"])
 
     try:
-        result = await orchestrator.process(
-            message=data.message,
-            user=current_user,
-            history=history,
-            document=document,
-            last_agent=last_agent,
-        )
+        # Direct agent selection or orchestrator routing
+        if data.agent_name and data.agent_name in orchestrator.agents and not document:
+            allowed = current_user.allowed_departments
+            if data.agent_name not in allowed and "all" not in allowed:
+                raise HTTPException(status_code=403, detail=f"No tienes acceso al agente {data.agent_name}")
+            agent = orchestrator.agents[data.agent_name]
+            result = await agent.process(
+                message=data.message,
+                history=history,
+                org_ids=current_user.org_ids,
+                salesrep_id=current_user.idempiere_salesrep_id,
+            )
+            # Add confidence score
+            from app.agents.orchestrator import compute_confidence_score
+            has_data = result.get("metadata", {}).get("has_data", False)
+            conf_score, score_breakdown = compute_confidence_score(1.0, has_data, data.agent_name)
+            result["confidence_score"] = conf_score
+            result["score_breakdown"] = score_breakdown
+            result.setdefault("metadata", {})["match_type"] = "selector_directo"
+        else:
+            result = await orchestrator.process(
+                message=data.message,
+                user=current_user,
+                history=history,
+                document=document,
+                last_agent=last_agent,
+            )
     except Exception as exc:
         logger.error(
             "Error processing chat message: %s: %s",
@@ -314,6 +357,24 @@ async def send_message(
         agent_used=result.get("agent_used"),
         metadata=result.get("metadata"),
     )
+
+
+@router.get("/agents")
+def get_available_agents(
+    current_user: User = Depends(get_current_user),
+):
+    """Return agents available to the current user based on their permissions."""
+    allowed = current_user.allowed_departments
+    agents = []
+    for name, agent in orchestrator.agents.items():
+        if name in allowed or "all" in allowed:
+            agents.append({
+                "name": name,
+                "display_name": agent.display_name,
+                "department": agent.department,
+                "description": agent.description,
+            })
+    return agents
 
 
 @router.get("/conversations", response_model=list[ConversationListItem])
