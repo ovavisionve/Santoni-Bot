@@ -92,6 +92,7 @@ class UserResponse(BaseModel):
     is_active: bool
     totp_enabled: bool = False
     created_at: datetime
+    conversation_count: int = 0
 
     model_config = {"from_attributes": True}
 

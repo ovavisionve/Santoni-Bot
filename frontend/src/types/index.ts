@@ -7,11 +7,14 @@ export interface User {
   department: string;
   extra_departments: string | null;
   allowed_org_ids: string | null;
+  allowed_capabilities: string | null;
+  ad_user_id: number | null;
   idempiere_salesrep_id: number | null;
   sensitivity_level: number;
   is_active: boolean;
   totp_enabled: boolean;
   created_at: string;
+  conversation_count: number;
 }
 
 export interface Organization {

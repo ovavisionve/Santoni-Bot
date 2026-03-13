@@ -27,6 +27,8 @@ import {
   ChevronDown,
   ChevronUp,
   Eye,
+  Search,
+  Filter,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -1639,7 +1641,6 @@ function AuditPanel({
   users: User[];
 }) {
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
-  const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
   const [viewingConvs, setViewingConvs] = useState<{
     user: { id: number; username: string; full_name: string };
     conversations: Array<{
@@ -1652,6 +1653,13 @@ function AuditPanel({
   } | null>(null);
   const [loadingConvs, setLoadingConvs] = useState(false);
   const [expandedConv, setExpandedConv] = useState<number | null>(null);
+
+  // Filters
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showActiveOnly, setShowActiveOnly] = useState(true);
+  const [filterRole, setFilterRole] = useState<string>("all");
+  const [filterDept, setFilterDept] = useState<string>("all");
+  const [showFilters, setShowFilters] = useState(false);
 
   const handleViewConversations = async (userId: number) => {
     setLoadingConvs(true);
@@ -1668,7 +1676,6 @@ function AuditPanel({
   const handleDownload = (userId: number, format: "txt" | "pdf") => {
     const url = api.exportUserConversationsUrl(userId, format);
     const token = localStorage.getItem("santonibot_token");
-    // Use fetch with auth header and download the blob
     fetch(url, { headers: { Authorization: `Bearer ${token || ""}` } })
       .then(r => {
         if (!r.ok) throw new Error("Error al descargar");
@@ -1768,36 +1775,172 @@ function AuditPanel({
     );
   }
 
-  // Unique users with conversations
-  const uniqueUserIds = Array.from(new Set(auditLogs.filter(l => l.user_id).map(l => l.user_id)));
+  // Filter and sort users
+  const filteredUsers = users
+    .filter((u) => {
+      if (showActiveOnly && !u.is_active) return false;
+      if (filterRole !== "all" && u.role !== filterRole) return false;
+      if (filterDept !== "all" && u.department !== filterDept) return false;
+      if (searchQuery) {
+        const q = searchQuery.toLowerCase();
+        return (
+          u.full_name.toLowerCase().includes(q) ||
+          u.username.toLowerCase().includes(q) ||
+          u.email.toLowerCase().includes(q)
+        );
+      }
+      return true;
+    })
+    .sort((a, b) => (b.conversation_count ?? 0) - (a.conversation_count ?? 0));
+
+  // Get unique departments and roles from users
+  const availableRoles = Array.from(new Set(users.map((u) => u.role)));
+  const availableDepts = Array.from(new Set(users.map((u) => u.department)));
 
   return (
     <div className="space-y-4">
-      {/* Quick user conversation access */}
-      {users.length > 0 && (
-        <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-            <Eye size={16} />
-            Ver conversaciones por usuario
-          </h3>
-          <div className="flex flex-wrap gap-2">
-            {users.map((u) => (
-              <button
-                key={u.id}
-                onClick={() => handleViewConversations(u.id)}
-                disabled={loadingConvs}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-50 hover:bg-santoni-50 hover:text-santoni-700 border border-gray-200 rounded-lg text-xs text-gray-600 transition-colors disabled:opacity-50"
-              >
-                <MessageSquare size={12} />
-                {u.full_name}
-              </button>
-            ))}
+      {/* Search and filters */}
+      <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
+        <div className="flex items-center gap-3">
+          <div className="relative flex-1">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Buscar por nombre, usuario o email..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-santoni-500 focus:border-transparent"
+            />
           </div>
+          <button
+            onClick={() => setShowFilters(!showFilters)}
+            className={`flex items-center gap-1.5 px-3 py-2 border rounded-lg text-sm transition-colors ${
+              showFilters || filterRole !== "all" || filterDept !== "all" || !showActiveOnly
+                ? "border-santoni-300 bg-santoni-50 text-santoni-700"
+                : "border-gray-200 text-gray-600 hover:bg-gray-50"
+            }`}
+          >
+            <Filter size={14} />
+            Filtros
+          </button>
+          <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={showActiveOnly}
+              onChange={(e) => setShowActiveOnly(e.target.checked)}
+              className="rounded border-gray-300 text-santoni-600 focus:ring-santoni-500"
+            />
+            Solo activos
+          </label>
         </div>
-      )}
+
+        {showFilters && (
+          <div className="flex flex-wrap gap-3 pt-2 border-t border-gray-100">
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Rol</label>
+              <select
+                value={filterRole}
+                onChange={(e) => setFilterRole(e.target.value)}
+                className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:ring-2 focus:ring-santoni-500"
+              >
+                <option value="all">Todos los roles</option>
+                {availableRoles.map((r) => (
+                  <option key={r} value={r}>{ROLE_LABELS[r] || r}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Departamento</label>
+              <select
+                value={filterDept}
+                onChange={(e) => setFilterDept(e.target.value)}
+                className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:ring-2 focus:ring-santoni-500"
+              >
+                <option value="all">Todos los departamentos</option>
+                {availableDepts.map((d) => (
+                  <option key={d} value={d}>{DEPARTMENT_LABELS[d] || d}</option>
+                ))}
+              </select>
+            </div>
+            {(filterRole !== "all" || filterDept !== "all") && (
+              <button
+                onClick={() => { setFilterRole("all"); setFilterDept("all"); }}
+                className="self-end text-xs text-santoni-600 hover:text-santoni-800 underline pb-1.5"
+              >
+                Limpiar filtros
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* User list with conversations */}
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div className="px-4 py-3 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+            <Eye size={16} />
+            Usuarios ({filteredUsers.length})
+          </h3>
+          <span className="text-xs text-gray-400">Ordenados por conversaciones</span>
+        </div>
+        <div className="divide-y divide-gray-100 max-h-[500px] overflow-y-auto">
+          {filteredUsers.map((u) => (
+            <div
+              key={u.id}
+              className="flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition-colors"
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <div className={`w-2 h-2 rounded-full flex-shrink-0 ${u.is_active ? "bg-green-400" : "bg-gray-300"}`} />
+                <div className="min-w-0">
+                  <div className="text-sm font-medium text-gray-900 truncate">{u.full_name}</div>
+                  <div className="text-xs text-gray-400 truncate">
+                    @{u.username} &middot; {ROLE_LABELS[u.role] || u.role} &middot; {DEPARTMENT_LABELS[u.department] || u.department}
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
+                  {u.conversation_count ?? 0} conv.
+                </span>
+                <button
+                  onClick={() => handleViewConversations(u.id)}
+                  disabled={loadingConvs}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 bg-santoni-50 hover:bg-santoni-100 text-santoni-700 rounded-lg text-xs transition-colors disabled:opacity-50"
+                  title="Ver conversaciones"
+                >
+                  <MessageSquare size={12} />
+                  Ver chats
+                </button>
+                <button
+                  onClick={() => handleDownload(u.id, "txt")}
+                  className="flex items-center gap-1 px-2 py-1.5 bg-gray-50 hover:bg-gray-100 text-gray-600 rounded-lg text-xs transition-colors"
+                  title="Exportar TXT"
+                >
+                  <Download size={12} /> TXT
+                </button>
+                <button
+                  onClick={() => handleDownload(u.id, "pdf")}
+                  className="flex items-center gap-1 px-2 py-1.5 bg-gray-50 hover:bg-gray-100 text-gray-600 rounded-lg text-xs transition-colors"
+                  title="Exportar PDF"
+                >
+                  <Download size={12} /> PDF
+                </button>
+              </div>
+            </div>
+          ))}
+          {filteredUsers.length === 0 && (
+            <div className="px-4 py-8 text-center text-gray-400 text-sm">
+              No se encontraron usuarios con los filtros aplicados
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* Audit log table */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
+          <h3 className="text-sm font-semibold text-gray-700">Registro de actividad</h3>
+        </div>
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>

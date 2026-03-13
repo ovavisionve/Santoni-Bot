@@ -1,12 +1,13 @@
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import text
+from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
 from app.database import get_db, IdempiereSession
 from app.middleware.auth import require_admin
 from app.models.user import User, UserRole, Department
+from app.models.conversation import Conversation
 from app.schemas.user import UserCreate, UserUpdate, UserResponse
 from app.services.auth import hash_password, verify_password
 
@@ -20,7 +21,22 @@ def list_users(
     admin: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    return db.query(User).order_by(User.full_name).all()
+    conv_count = (
+        db.query(Conversation.user_id, func.count(Conversation.id).label("cnt"))
+        .group_by(Conversation.user_id)
+        .subquery()
+    )
+    rows = (
+        db.query(User, func.coalesce(conv_count.c.cnt, 0).label("conversation_count"))
+        .outerjoin(conv_count, User.id == conv_count.c.user_id)
+        .order_by(User.full_name)
+        .all()
+    )
+    result = []
+    for user, count in rows:
+        user.conversation_count = count
+        result.append(user)
+    return result
 
 
 @router.post("/", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
