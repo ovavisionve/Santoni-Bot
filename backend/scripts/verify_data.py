@@ -437,20 +437,24 @@ def check_cumpleaneros(db):
 
     q = text("""
         SELECT COUNT(*) AS total
-        FROM adempiere.hr_employee e
-        JOIN adempiere.c_bpartner bp ON e.c_bpartner_id = bp.c_bpartner_id
-        JOIN adempiere.ad_user u ON bp.c_bpartner_id = u.c_bpartner_id
-        WHERE e.isactive = 'Y'
-          AND bp.isactive = 'Y'
-          AND u.birthday IS NOT NULL
-          AND EXTRACT(MONTH FROM u.birthday) = 3
+        FROM (
+            SELECT DISTINCT ON (e.c_bpartner_id) e.c_bpartner_id
+            FROM adempiere.hr_employee e
+            JOIN adempiere.c_bpartner bp ON e.c_bpartner_id = bp.c_bpartner_id
+            JOIN adempiere.ad_user u ON bp.c_bpartner_id = u.c_bpartner_id
+            WHERE e.isactive = 'Y'
+              AND bp.isactive = 'Y'
+              AND u.birthday IS NOT NULL
+              AND EXTRACT(MONTH FROM u.birthday) = 3
+        ) sub
     """)
     r = db.execute(q).fetchone()
     row("Cumpleañeros de marzo", r[0])
 
-    subheader("Primeros 10 cumpleañeros de marzo")
+    subheader("Primeros 10 cumpleañeros de marzo (DISTINCT)")
     q2 = text("""
-        SELECT bp.name AS nombre,
+        SELECT DISTINCT ON (e.c_bpartner_id)
+               bp.name AS nombre,
                EXTRACT(DAY FROM u.birthday)::int AS dia,
                EXTRACT(MONTH FROM u.birthday)::int AS mes
         FROM adempiere.hr_employee e
@@ -460,7 +464,7 @@ def check_cumpleaneros(db):
           AND bp.isactive = 'Y'
           AND u.birthday IS NOT NULL
           AND EXTRACT(MONTH FROM u.birthday) = 3
-        ORDER BY EXTRACT(DAY FROM u.birthday)
+        ORDER BY e.c_bpartner_id, EXTRACT(DAY FROM u.birthday)
         LIMIT 10
     """)
     rows = [{"nombre": r[0], "dia": r[1], "mes": r[2]} for r in db.execute(q2).fetchall()]
@@ -471,14 +475,14 @@ def check_nomina(db):
     """Verificar nómina febrero 2026."""
     header("VERIFICACIÓN: NÓMINA FEBRERO 2026")
 
+    # Usa la misma lógica que build_payroll_summary: amount > 0 = devengado, amount < 0 = deducción
     q = text("""
         SELECT COUNT(DISTINCT hp.hr_process_id) AS procesos,
                COUNT(DISTINCT hm.c_bpartner_id) AS empleados,
-               COALESCE(SUM(CASE WHEN hc.columntype = 'D' THEN ABS(hm.amount) ELSE 0 END), 0) AS devengado,
-               COALESCE(SUM(CASE WHEN hc.columntype = 'R' THEN ABS(hm.amount) ELSE 0 END), 0) AS deducciones
+               COALESCE(SUM(CASE WHEN hm.amount > 0 THEN hm.amount ELSE 0 END), 0) AS devengado,
+               COALESCE(SUM(CASE WHEN hm.amount < 0 THEN ABS(hm.amount) ELSE 0 END), 0) AS deducciones
         FROM adempiere.hr_movement hm
         JOIN adempiere.hr_process hp ON hp.hr_process_id = hm.hr_process_id
-        JOIN adempiere.hr_concept hc ON hm.hr_concept_id = hc.hr_concept_id
         WHERE hp.docstatus IN ('CO', 'CL')
           AND hp.isactive = 'Y'
           AND EXTRACT(MONTH FROM hp.dateacct) = 2
