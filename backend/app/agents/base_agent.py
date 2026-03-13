@@ -149,13 +149,17 @@ class BaseAgent(ABC):
             "con columnas: Concepto | Periodo 1 | Periodo 2 | Variacion | %.\n"
             "- Formato venezolano: punto=miles, coma=decimal (ej: 1.234.567,89).\n"
             "\nREGLAS ANTI-INVENCIÓN (OBLIGATORIAS):\n"
-            "- Presenta SOLO los datos que recibes en el contexto. NO agregues datos adicionales.\n"
+            "- Presenta SOLO los datos que recibes en 'DATOS REALES DE LA BASE DE DATOS'. NO agregues datos adicionales.\n"
             "- Si quieres mostrar un porcentaje, CALCÚLALO de los datos reales (ej: valor/total*100).\n"
             "- NUNCA digas 'vs mes anterior' o 'comparativo' si NO tienes datos de ambos períodos.\n"
             "- NUNCA agregues secciones de 'Recomendaciones' o 'Plan de acción' con información inventada.\n"
             "- NUNCA inventes nombres de clientes, proveedores, empleados, productos ni montos.\n"
+            "- NUNCA inventes números de factura (FAC-xxxx), números de lote, porcentajes de humedad ni precios.\n"
             "- Las únicas sugerencias permitidas son consultas que el sistema realmente puede ejecutar.\n"
             "- Si los datos muestran un solo período, NO inventes comparativos con otros períodos.\n"
+            "- PROHIBIDO copiar nombres o datos del historial de conversación para responder una nueva consulta.\n"
+            "- Cada respuesta debe basarse EXCLUSIVAMENTE en los 'DATOS REALES' proporcionados para ESA consulta.\n"
+            "- Si los datos muestran 5 empleados, tu tabla debe tener EXACTAMENTE 5 filas, ni más ni menos.\n"
         )
         messages = [SystemMessage(content=enhanced_prompt)]
 
@@ -242,12 +246,15 @@ class BaseAgent(ABC):
             )
 
         # Add conversation history (limited), cleaning corrupted responses
+        # IMPORTANT: Strip markdown tables from previous responses to prevent
+        # the LLM from recycling/copying data across different queries
         if history:
             for role, content in history[-_MAX_HISTORY_MESSAGES:]:
                 if role == "user":
                     messages.append(HumanMessage(content=content))
                 elif role == "assistant":
                     clean = self._clean_corrupted_response(content)
+                    clean = self._strip_tables_from_history(clean)
                     messages.append(AIMessage(content=clean))
 
         messages.append(HumanMessage(content=message))
@@ -308,6 +315,43 @@ class BaseAgent(ABC):
                 )
 
         return text
+
+    @staticmethod
+    def _strip_tables_from_history(text: str) -> str:
+        """Remove markdown tables from previous responses to prevent data recycling.
+
+        When follow-up queries ask for different months/filters, the LLM tends to
+        copy employee names, IDs, and amounts from previous response tables, generating
+        hallucinated data. Stripping tables forces the LLM to use only fresh query results.
+        """
+        if not text:
+            return text
+
+        lines = text.split('\n')
+        cleaned_lines = []
+        in_table = False
+        table_replaced = False
+
+        for line in lines:
+            stripped = line.strip()
+            # Detect table rows (lines starting with |)
+            if stripped.startswith('|') and '|' in stripped[1:]:
+                if not in_table:
+                    in_table = True
+                    table_replaced = False
+                if not table_replaced:
+                    cleaned_lines.append("*(Se consultaron datos reales — ver respuesta original)*")
+                    table_replaced = True
+                continue  # Skip table row
+            else:
+                if in_table:
+                    in_table = False
+                cleaned_lines.append(line)
+
+        result = '\n'.join(cleaned_lines)
+        # Collapse multiple blank lines
+        result = re.sub(r'\n{3,}', '\n\n', result)
+        return result
 
     _HALLUCINATION_REPLACEMENT = (
         "La consulta a iDempiere no arrojó resultados para los filtros aplicados.\n\n"

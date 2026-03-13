@@ -449,6 +449,11 @@ _reg(Capability(
         "pagos pendientes productores", "deuda productores",
         "pendiente de pago a productor", "le debemos a productores",
         "pagar a productor", "pagar a productores",
+        "deuda de maiz", "deuda de maíz", "deuda de arroz",
+        "pagar de maiz", "pagar de maíz", "pagar de arroz",
+        "monto a pagar de maiz", "monto a pagar de maíz",
+        "monto a pagar de arroz",
+        "por pagar de maiz", "por pagar de maíz", "por pagar de arroz",
     ),
     tables=("c_invoice", "c_bpartner", "c_invoiceline", "m_product"),
 ))
