@@ -1088,32 +1088,36 @@ def build_employee_summary(org_ids: list[int] | None = None) -> dict:
     db = IdempiereSession()
     try:
         # Overall counts (unique employees)
-        conditions = ["1=1"]
+        # IMPORTANT: JOIN c_bpartner and filter bp.isactive='Y' to exclude
+        # deactivated partners who still have active hr_employee records.
+        # Without this filter, count is inflated (~1056 vs real ~701).
+        conditions = ["e.isactive = 'Y'", "bp.isactive = 'Y'"]
         params: dict = {}
         _add_org_filter(conditions, params, org_ids, "e")
         where = " AND ".join(conditions)
+        bp_join = "JOIN adempiere.c_bpartner bp ON e.c_bpartner_id = bp.c_bpartner_id"
 
         totals_q = text(
             f"SELECT "
-            f"COUNT(DISTINCT e.c_bpartner_id) AS total, "
-            f"COUNT(DISTINCT CASE WHEN e.isactive = 'Y' THEN e.c_bpartner_id END) AS activos, "
-            f"COUNT(DISTINCT CASE WHEN e.isactive = 'N' THEN e.c_bpartner_id END) AS inactivos "
+            f"COUNT(DISTINCT e.c_bpartner_id) AS total "
             f"FROM adempiere.hr_employee e "
+            f"{bp_join} "
             f"WHERE {where}"
         )
         row = db.execute(totals_q, params).fetchone()
         totals = {
             "total": row[0] if row else 0,
-            "activos": row[1] if row else 0,
-            "inactivos": row[2] if row else 0,
+            "activos": row[0] if row else 0,
+            "inactivos": 0,
         }
 
         # By organization (unique employees per org)
         by_org_q = text(
             f"SELECT COALESCE(o.name, 'Sin Organización') AS organizacion, "
             f"COUNT(DISTINCT e.c_bpartner_id) AS total, "
-            f"COUNT(DISTINCT CASE WHEN e.isactive = 'Y' THEN e.c_bpartner_id END) AS activos "
+            f"COUNT(DISTINCT e.c_bpartner_id) AS activos "
             f"FROM adempiere.hr_employee e "
+            f"{bp_join} "
             f"LEFT JOIN adempiere.ad_org o ON e.ad_org_id = o.ad_org_id "
             f"WHERE {where} "
             f"GROUP BY o.name ORDER BY total DESC"
@@ -1127,8 +1131,9 @@ def build_employee_summary(org_ids: list[int] | None = None) -> dict:
         by_dept_q = text(
             f"SELECT COALESCE(d.name, 'Sin Departamento') AS departamento, "
             f"COUNT(DISTINCT e.c_bpartner_id) AS total, "
-            f"COUNT(DISTINCT CASE WHEN e.isactive = 'Y' THEN e.c_bpartner_id END) AS activos "
+            f"COUNT(DISTINCT e.c_bpartner_id) AS activos "
             f"FROM adempiere.hr_employee e "
+            f"{bp_join} "
             f"LEFT JOIN adempiere.hr_department d ON e.hr_department_id = d.hr_department_id "
             f"WHERE {where} "
             f"GROUP BY d.name ORDER BY total DESC LIMIT 20"
@@ -1142,8 +1147,9 @@ def build_employee_summary(org_ids: list[int] | None = None) -> dict:
         by_job_q = text(
             f"SELECT COALESCE(j.name, 'Sin Cargo') AS cargo, "
             f"COUNT(DISTINCT e.c_bpartner_id) AS total, "
-            f"COUNT(DISTINCT CASE WHEN e.isactive = 'Y' THEN e.c_bpartner_id END) AS activos "
+            f"COUNT(DISTINCT e.c_bpartner_id) AS activos "
             f"FROM adempiere.hr_employee e "
+            f"{bp_join} "
             f"LEFT JOIN adempiere.hr_job j ON e.hr_job_id = j.hr_job_id "
             f"WHERE {where} "
             f"GROUP BY j.name ORDER BY total DESC LIMIT 30"
