@@ -1727,6 +1727,7 @@ def build_production_summary(
     org_ids: list[int] | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    org_name: str | None = None,
 ) -> dict:
     """Production/inventory movement summary from iDempiere m_inout.
 
@@ -1741,7 +1742,9 @@ def build_production_summary(
     try:
         conditions = ["io.isactive = 'Y'", "io.docstatus IN ('CO', 'CL')"]
         params: dict = {}
-        _add_org_filter(conditions, params, org_ids, "io")
+        _add_org_name_filter(conditions, params, org_name, "io")
+        if not org_name:
+            _add_org_filter(conditions, params, org_ids, "io")
         _add_date_filter(conditions, params, date_from, date_to, mes, anio, "io.movementdate")
         where = " AND ".join(conditions)
 
@@ -1849,13 +1852,16 @@ def build_production_orders(
     org_ids: list[int] | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    org_name: str | None = None,
 ) -> list[dict]:
     """Recent material movement documents from iDempiere m_inout."""
     db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
     try:
         conditions = ["io.isactive = 'Y'", "io.docstatus IN ('CO', 'CL')"]
         params: dict = {}
-        _add_org_filter(conditions, params, org_ids, "io")
+        _add_org_name_filter(conditions, params, org_name, "io")
+        if not org_name:
+            _add_org_filter(conditions, params, org_ids, "io")
         _add_date_filter(conditions, params, date_from, date_to, mes, anio, "io.movementdate")
         where = " AND ".join(conditions)
 

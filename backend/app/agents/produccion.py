@@ -135,9 +135,33 @@ Datos de producción/inventario en iDempiere:
         "cuánto queda", "cuanto queda", "cuánto tenemos", "cuanto tenemos",
     ]
 
+    _ORG_MAP = [
+        ("inpromaiz", "InproMaiz"),
+        ("inpro maiz", "InproMaiz"),
+        ("inproa santoni", "INPROA SANTONI"),
+        ("inproa", "INPROA SANTONI"),
+        ("santoni service", "Santoni Service"),
+        ("agropecuaria", "AGROPECUARIA"),
+        ("aga agricola", "AGA AGRICOLA"),
+        ("aga agrícola", "AGA AGRICOLA"),
+        ("agroinproa", "AGROINPROA"),
+        ("inversiones aga", "INVERSIONES AGA"),
+    ]
+
+    @classmethod
+    def _extract_org_name(cls, msg: str) -> str | None:
+        msg_lower = msg.lower()
+        for kw, val in cls._ORG_MAP:
+            if kw in msg_lower:
+                return val
+        return None
+
     def fetch_data(self, message: str, org_ids: list[int] | None = None, salesrep_id: int | None = None, history: list[tuple[str, str]] | None = None) -> str | None:
         msg = message.lower()
         sections = []
+
+        # Extract organization name from message
+        org_name = self._extract_org_name(message)
 
         # Extract dates
         date_from, date_to = extract_date_range(message)
@@ -160,13 +184,26 @@ Datos de producción/inventario en iDempiere:
                     mes, anio = m, a
                     break
 
+        # Inherit org_name from history for follow-ups
+        if not org_name and history:
+            for role, content in reversed(history):
+                if role != "user":
+                    continue
+                inherited = self._extract_org_name(content)
+                if inherited:
+                    org_name = inherited
+                    break
+
         label = build_period_label(date_from, date_to, mes, anio)
+        if org_name:
+            label = f"{org_name} - {label}"
 
         try:
             # Production/inventory movement summary (always)
             summary = build_production_summary(
                 mes=mes, anio=anio, org_ids=org_ids,
                 date_from=date_from, date_to=date_to,
+                org_name=org_name,
             )
             sections.append(self._format_summary(summary, f"Movimientos de Inventario - {label}"))
 
@@ -184,6 +221,7 @@ Datos de producción/inventario en iDempiere:
                 data = build_production_orders(
                     mes=mes, anio=anio, org_ids=org_ids,
                     date_from=date_from, date_to=date_to,
+                    org_name=org_name,
                 )
                 if data:
                     sections.append(f"## Documentos de Movimiento Recientes ({len(data)} registros)")
