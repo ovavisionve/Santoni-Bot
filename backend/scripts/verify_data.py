@@ -1357,6 +1357,308 @@ def check_cobranza(db):
 
 
 # ---------------------------------------------------------------------------
+# FINANZAS (Finance)
+# ---------------------------------------------------------------------------
+
+# IDs de monedas USD en iDempiere (mismos que _currency_label en idempiere_queries.py)
+_USD_IDS = (100, 1000000, 1000003, 1000006, 1000008, 1000009, 1000011, 1000013, 1000017)
+_USD_IDS_STR = ",".join(str(x) for x in _USD_IDS)
+
+
+def _currency_label_sql(alias: str = "i") -> str:
+    """Same CASE as idempiere_queries._currency_label for consistency."""
+    return (
+        f"CASE WHEN {alias}.c_currency_id = 205 THEN 'Bs.' "
+        f"WHEN {alias}.c_currency_id IN ({_USD_IDS_STR}) "
+        f"THEN 'USD' ELSE 'Otro' END"
+    )
+
+
+def check_finanzas(db):
+    """Verificar datos financieros: saldos bancarios, CxC, CxP, vencidas."""
+    header("VERIFICACIÓN: FINANZAS")
+
+    # ===== 1. SALDOS BANCARIOS =====
+    subheader("Saldos bancarios por moneda (iso_code RAW)")
+    q = text("""
+        SELECT COALESCE(c.iso_code, 'VES') AS moneda,
+               COUNT(*) AS cuentas,
+               COALESCE(SUM(ba.currentbalance), 0) AS saldo_total
+        FROM adempiere.c_bankaccount ba
+        JOIN adempiere.c_bank b ON ba.c_bank_id = b.c_bank_id
+        LEFT JOIN adempiere.c_currency c ON ba.c_currency_id = c.c_currency_id
+        WHERE ba.isactive = 'Y'
+        GROUP BY c.iso_code ORDER BY saldo_total DESC
+    """)
+    rows = [{"moneda": r[0], "cuentas": r[1], "saldo_total": float(r[2])}
+            for r in db.execute(q).fetchall()]
+    table(rows)
+
+    subheader("Saldos bancarios agrupados (VES / USD / Otro)")
+    q = text(f"""
+        SELECT CASE WHEN ba.c_currency_id = 205 THEN 'VES'
+                    WHEN ba.c_currency_id IN ({_USD_IDS_STR}) THEN 'USD'
+                    ELSE 'Otro' END AS moneda_grupo,
+               COUNT(*) AS cuentas,
+               COALESCE(SUM(ba.currentbalance), 0) AS saldo_total
+        FROM adempiere.c_bankaccount ba
+        WHERE ba.isactive = 'Y'
+        GROUP BY moneda_grupo ORDER BY saldo_total DESC
+    """)
+    rows = [{"moneda_grupo": r[0], "cuentas": r[1], "saldo_total": float(r[2])}
+            for r in db.execute(q).fetchall()]
+    table(rows)
+    total_all = sum(r["saldo_total"] for r in rows)
+
+    subheader("Detalle cuentas VES (top 20 por saldo)")
+    q = text("""
+        SELECT b.name AS banco, ba.accountno AS cuenta,
+               CASE WHEN ba.bankaccounttype = 'C' THEN 'Corriente'
+                    WHEN ba.bankaccounttype = 'S' THEN 'Ahorro'
+                    WHEN ba.bankaccounttype = 'I' THEN 'Inversión'
+                    ELSE ba.bankaccounttype END AS tipo,
+               o.name AS organizacion,
+               ba.currentbalance AS saldo
+        FROM adempiere.c_bankaccount ba
+        JOIN adempiere.c_bank b ON ba.c_bank_id = b.c_bank_id
+        LEFT JOIN adempiere.ad_org o ON ba.ad_org_id = o.ad_org_id
+        WHERE ba.isactive = 'Y' AND ba.c_currency_id = 205
+        ORDER BY ba.currentbalance DESC LIMIT 20
+    """)
+    rows = [{"banco": r[0], "cuenta": r[1], "tipo": r[2], "organizacion": r[3], "saldo": float(r[4])}
+            for r in db.execute(q).fetchall()]
+    table(rows)
+
+    subheader(f"Detalle cuentas USD (c_currency_id IN {_USD_IDS}, top 20)")
+    q = text(f"""
+        SELECT b.name AS banco, ba.accountno AS cuenta,
+               CASE WHEN ba.bankaccounttype = 'C' THEN 'Corriente'
+                    WHEN ba.bankaccounttype = 'S' THEN 'Ahorro'
+                    WHEN ba.bankaccounttype = 'I' THEN 'Inversión'
+                    ELSE ba.bankaccounttype END AS tipo,
+               o.name AS organizacion,
+               c.iso_code AS iso_code_real,
+               ba.currentbalance AS saldo
+        FROM adempiere.c_bankaccount ba
+        JOIN adempiere.c_bank b ON ba.c_bank_id = b.c_bank_id
+        LEFT JOIN adempiere.c_currency c ON ba.c_currency_id = c.c_currency_id
+        LEFT JOIN adempiere.ad_org o ON ba.ad_org_id = o.ad_org_id
+        WHERE ba.isactive = 'Y' AND ba.c_currency_id IN ({_USD_IDS_STR})
+        ORDER BY ba.currentbalance DESC LIMIT 20
+    """)
+    rows = [{"banco": r[0], "cuenta": r[1], "tipo": r[2], "organizacion": r[3],
+             "iso_code_real": r[4], "saldo": float(r[5])}
+            for r in db.execute(q).fetchall()]
+    table(rows)
+
+    # Bug check: cuentas bancarias con iso_code != 'VES' y != 'USD' que caen en 'Otro'
+    subheader("BUG CHECK: Cuentas con iso_code que NO es VES ni está en USD_IDS")
+    q = text(f"""
+        SELECT c.iso_code, c.c_currency_id, ba.accountno, b.name AS banco,
+               ba.currentbalance AS saldo, o.name AS organizacion
+        FROM adempiere.c_bankaccount ba
+        JOIN adempiere.c_bank b ON ba.c_bank_id = b.c_bank_id
+        LEFT JOIN adempiere.c_currency c ON ba.c_currency_id = c.c_currency_id
+        LEFT JOIN adempiere.ad_org o ON ba.ad_org_id = o.ad_org_id
+        WHERE ba.isactive = 'Y'
+          AND ba.c_currency_id != 205
+          AND ba.c_currency_id NOT IN ({_USD_IDS_STR})
+        ORDER BY ba.currentbalance DESC
+    """)
+    rows = [{"iso_code": r[0], "c_currency_id": r[1], "cuenta": r[2], "banco": r[3],
+             "saldo": float(r[4]), "organizacion": r[5]}
+            for r in db.execute(q).fetchall()]
+    if rows:
+        print(f"  {Colors.RED}⚠️ ENCONTRADAS {len(rows)} cuentas que caerían en 'Otro':{Colors.RESET}")
+        table(rows)
+    else:
+        print(f"  {Colors.GREEN}✅ Ninguna cuenta bancaria cae en 'Otro' — todas son VES o USD conocidos{Colors.RESET}")
+
+    # Check: ¿el bot agrupa por iso_code (VES/USD) o por c_currency_id?
+    subheader("BUG CHECK: iso_codes únicos en c_bankaccount (vs 'VES'/'USD' esperado por bot)")
+    q = text("""
+        SELECT DISTINCT c.iso_code, c.c_currency_id, COUNT(*) AS cuentas
+        FROM adempiere.c_bankaccount ba
+        LEFT JOIN adempiere.c_currency c ON ba.c_currency_id = c.c_currency_id
+        WHERE ba.isactive = 'Y'
+        GROUP BY c.iso_code, c.c_currency_id ORDER BY c.iso_code
+    """)
+    rows = [{"iso_code": r[0], "c_currency_id": r[1], "cuentas": r[2]}
+            for r in db.execute(q).fetchall()]
+    table(rows)
+
+    # ===== 2. CUENTAS POR COBRAR (CxC) pendientes =====
+    cur_label = _currency_label_sql("i")
+
+    subheader("CxC pendientes por moneda (agrupado Bs./USD)")
+    q = text(f"""
+        SELECT {cur_label} AS moneda,
+               COUNT(*) AS facturas,
+               COALESCE(SUM(i.grandtotal), 0) AS total
+        FROM adempiere.c_invoice i
+        WHERE i.issotrx = 'Y'
+          AND i.docstatus IN ('CO', 'CL')
+          AND i.ispaid = 'N'
+          AND i.isactive = 'Y'
+        GROUP BY {cur_label} ORDER BY total DESC
+    """)
+    rows = [{"moneda": r[0], "facturas": r[1], "total": float(r[2])}
+            for r in db.execute(q).fetchall()]
+    table(rows)
+    total_cxc = sum(r["total"] for r in rows)
+    total_cxc_fact = sum(r["facturas"] for r in rows)
+    row("TOTAL CxC (todas monedas)", total_cxc)
+    row("TOTAL facturas CxC", total_cxc_fact)
+
+    subheader("CxC VENCIDAS por moneda (agrupado Bs./USD)")
+    q = text(f"""
+        SELECT {cur_label} AS moneda,
+               COUNT(*) AS facturas,
+               COALESCE(SUM(i.grandtotal), 0) AS total
+        FROM adempiere.c_invoice i
+        LEFT JOIN adempiere.c_paymentterm pt ON i.c_paymentterm_id = pt.c_paymentterm_id
+        WHERE i.issotrx = 'Y'
+          AND i.docstatus IN ('CO', 'CL')
+          AND i.ispaid = 'N'
+          AND i.isactive = 'Y'
+          AND (i.dateinvoiced + CASE WHEN COALESCE(pt.netdays, 0) = 0 THEN 30 ELSE pt.netdays END) < CURRENT_DATE
+        GROUP BY {cur_label}
+    """)
+    rows = [{"moneda": r[0], "facturas": r[1], "total": float(r[2])}
+            for r in db.execute(q).fetchall()]
+    table(rows)
+    total_venc_cxc = sum(r["total"] for r in rows)
+    row("TOTAL CxC vencidas", total_venc_cxc)
+
+    subheader("Top 10 morosos (facturas vencidas, grandtotal > 100, últimos 3 años)")
+    q = text(f"""
+        SELECT bp.name AS cliente,
+               {cur_label} AS moneda,
+               COUNT(*) AS facturas,
+               COALESCE(SUM(i.grandtotal), 0) AS total_vencido,
+               MAX(CURRENT_DATE - (i.dateinvoiced + CASE WHEN COALESCE(pt.netdays, 0) = 0 THEN 30 ELSE pt.netdays END)) AS max_dias
+        FROM adempiere.c_invoice i
+        JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id
+        LEFT JOIN adempiere.c_paymentterm pt ON i.c_paymentterm_id = pt.c_paymentterm_id
+        JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id
+        WHERE i.issotrx = 'Y'
+          AND i.docstatus IN ('CO', 'CL')
+          AND i.ispaid = 'N'
+          AND i.isactive = 'Y'
+          AND dt.docbasetype = 'ARI'
+          AND i.dateinvoiced >= (CURRENT_DATE - INTERVAL '3 years')
+          AND i.grandtotal > 100
+          AND (i.dateinvoiced + CASE WHEN COALESCE(pt.netdays, 0) = 0 THEN 30 ELSE pt.netdays END) < CURRENT_DATE
+        GROUP BY bp.name, {cur_label}
+        ORDER BY total_vencido DESC LIMIT 10
+    """)
+    rows = [{"cliente": r[0], "moneda": r[1], "facturas": r[2],
+             "total_vencido": float(r[3]), "max_dias": r[4]}
+            for r in db.execute(q).fetchall()]
+    table(rows)
+
+    # ===== 3. CUENTAS POR PAGAR (CxP) pendientes =====
+    subheader("CxP pendientes por moneda (agrupado Bs./USD)")
+    q = text(f"""
+        SELECT {cur_label} AS moneda,
+               COUNT(*) AS facturas,
+               COALESCE(SUM(i.grandtotal), 0) AS total
+        FROM adempiere.c_invoice i
+        WHERE i.issotrx = 'N'
+          AND i.docstatus IN ('CO', 'CL')
+          AND i.ispaid = 'N'
+          AND i.isactive = 'Y'
+        GROUP BY {cur_label} ORDER BY total DESC
+    """)
+    rows = [{"moneda": r[0], "facturas": r[1], "total": float(r[2])}
+            for r in db.execute(q).fetchall()]
+    table(rows)
+    total_cxp = sum(r["total"] for r in rows)
+    total_cxp_fact = sum(r["facturas"] for r in rows)
+    row("TOTAL CxP (todas monedas)", total_cxp)
+    row("TOTAL facturas CxP", total_cxp_fact)
+
+    subheader("CxP VENCIDAS por moneda (agrupado Bs./USD)")
+    q = text(f"""
+        SELECT {cur_label} AS moneda,
+               COUNT(*) AS facturas,
+               COALESCE(SUM(i.grandtotal), 0) AS total
+        FROM adempiere.c_invoice i
+        LEFT JOIN adempiere.c_paymentterm pt ON i.c_paymentterm_id = pt.c_paymentterm_id
+        WHERE i.issotrx = 'N'
+          AND i.docstatus IN ('CO', 'CL')
+          AND i.ispaid = 'N'
+          AND i.isactive = 'Y'
+          AND (i.dateinvoiced + CASE WHEN COALESCE(pt.netdays, 0) = 0 THEN 30 ELSE pt.netdays END) < CURRENT_DATE
+        GROUP BY {cur_label}
+    """)
+    rows = [{"moneda": r[0], "facturas": r[1], "total": float(r[2])}
+            for r in db.execute(q).fetchall()]
+    table(rows)
+    total_venc_cxp = sum(r["total"] for r in rows)
+    row("TOTAL CxP vencidas", total_venc_cxp)
+
+    subheader("Top 10 proveedores con mayor deuda pendiente")
+    q = text(f"""
+        SELECT bp.name AS proveedor,
+               {cur_label} AS moneda,
+               COUNT(*) AS facturas,
+               COALESCE(SUM(i.grandtotal), 0) AS total_pendiente
+        FROM adempiere.c_invoice i
+        JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id
+        WHERE i.issotrx = 'N'
+          AND i.docstatus IN ('CO', 'CL')
+          AND i.ispaid = 'N'
+          AND i.isactive = 'Y'
+        GROUP BY bp.name, {cur_label}
+        ORDER BY total_pendiente DESC LIMIT 10
+    """)
+    rows = [{"proveedor": r[0], "moneda": r[1], "facturas": r[2], "total_pendiente": float(r[3])}
+            for r in db.execute(q).fetchall()]
+    table(rows)
+
+    # ===== 4. CxC por organización =====
+    subheader("CxC pendientes por organización")
+    q = text(f"""
+        SELECT COALESCE(o.name, 'Sin Org') AS organizacion,
+               {cur_label} AS moneda,
+               COUNT(*) AS facturas,
+               COALESCE(SUM(i.grandtotal), 0) AS total
+        FROM adempiere.c_invoice i
+        LEFT JOIN adempiere.ad_org o ON i.ad_org_id = o.ad_org_id
+        WHERE i.issotrx = 'Y'
+          AND i.docstatus IN ('CO', 'CL')
+          AND i.ispaid = 'N'
+          AND i.isactive = 'Y'
+        GROUP BY o.name, {cur_label}
+        ORDER BY total DESC
+    """)
+    rows = [{"organizacion": r[0], "moneda": r[1], "facturas": r[2], "total": float(r[3])}
+            for r in db.execute(q).fetchall()]
+    table(rows)
+
+    # ===== 5. CxP por organización =====
+    subheader("CxP pendientes por organización")
+    q = text(f"""
+        SELECT COALESCE(o.name, 'Sin Org') AS organizacion,
+               {cur_label} AS moneda,
+               COUNT(*) AS facturas,
+               COALESCE(SUM(i.grandtotal), 0) AS total
+        FROM adempiere.c_invoice i
+        LEFT JOIN adempiere.ad_org o ON i.ad_org_id = o.ad_org_id
+        WHERE i.issotrx = 'N'
+          AND i.docstatus IN ('CO', 'CL')
+          AND i.ispaid = 'N'
+          AND i.isactive = 'Y'
+        GROUP BY o.name, {cur_label}
+        ORDER BY total DESC
+    """)
+    rows = [{"organizacion": r[0], "moneda": r[1], "facturas": r[2], "total": float(r[3])}
+            for r in db.execute(q).fetchall()]
+    table(rows)
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -1376,6 +1678,7 @@ ALL_CHECKS = {
     "nomina": check_nomina,
     "ventas": check_ventas,
     "cobranza": check_cobranza,
+    "finanzas": check_finanzas,
 }
 
 
