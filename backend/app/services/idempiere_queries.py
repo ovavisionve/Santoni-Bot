@@ -914,13 +914,21 @@ def build_financial_summary(
         bank_params: dict = {}
         _add_org_filter(bank_conditions, bank_params, org_ids, "ba")
         bank_where = " AND ".join(bank_conditions)
+        # Group all USD iso_codes (DOL, DoL, Dol, USA, dol, DLA, Dla, US.)
+        # into a single 'USD' label, same as _currency_label but for banks.
+        bank_currency = (
+            "CASE WHEN ba.c_currency_id = 205 THEN 'VES' "
+            "WHEN ba.c_currency_id IN "
+            "(100,1000000,1000003,1000006,1000008,1000009,1000011,1000013,1000017) "
+            "THEN 'USD' ELSE 'Otro' END"
+        )
         bank_q = text(
             f"SELECT b.name AS banco, ba.accountno AS numero_cuenta, "
             f"CASE WHEN ba.bankaccounttype = 'C' THEN 'Corriente' "
             f"     WHEN ba.bankaccounttype = 'S' THEN 'Ahorro' "
             f"     WHEN ba.bankaccounttype = 'I' THEN 'Inversión' "
             f"     ELSE ba.bankaccounttype END AS tipo, "
-            f"COALESCE(c.iso_code, 'VES') AS moneda, "
+            f"{bank_currency} AS moneda, "
             f"ba.currentbalance AS saldo, "
             f"o.name AS organizacion "
             f"FROM adempiere.c_bankaccount ba "
@@ -928,7 +936,7 @@ def build_financial_summary(
             f"LEFT JOIN adempiere.c_currency c ON ba.c_currency_id = c.c_currency_id "
             f"LEFT JOIN adempiere.ad_org o ON ba.ad_org_id = o.ad_org_id "
             f"WHERE {bank_where} "
-            f"ORDER BY c.iso_code, b.name"
+            f"ORDER BY moneda, b.name"
         )
         banks = [
             {
