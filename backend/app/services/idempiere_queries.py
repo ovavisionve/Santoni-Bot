@@ -672,6 +672,7 @@ def build_collection_summary(
         }
 
         # By tender type (payment method)
+        # Santoni uses custom tendertype codes beyond iDempiere standard
         by_method_q = text(
             f"SELECT CASE p.tendertype "
             f"  WHEN 'X' THEN 'Transferencia' "
@@ -679,6 +680,14 @@ def build_collection_summary(
             f"  WHEN 'K' THEN 'Efectivo' "
             f"  WHEN 'D' THEN 'Depósito' "
             f"  WHEN 'T' THEN 'Tarjeta' "
+            f"  WHEN 'W' THEN 'Pago Móvil' "
+            f"  WHEN 'Z' THEN 'Zelle' "
+            f"  WHEN 'S' THEN 'Compensación' "
+            f"  WHEN 'Y' THEN 'Criptomoneda' "
+            f"  WHEN 'B' THEN 'Bono/Voucher' "
+            f"  WHEN 'E' THEN 'E-Wallet' "
+            f"  WHEN 'R' THEN 'Retención' "
+            f"  WHEN 'U' THEN 'Otro' "
             f"  ELSE p.tendertype END AS metodo_pago, "
             f"COUNT(*) AS recibos, "
             f"COALESCE(SUM(p.payamt), 0) AS total "

@@ -289,13 +289,25 @@ Las zonas de `c_salesregion` se agrupan en regiones via un CASE SQL generado por
 
 #### Tipos de pago (tendertype en c_payment)
 
-| Codigo | Significado |
-|--------|-------------|
-| `X` | Transferencia |
-| `C` | Cheque |
-| `K` | Efectivo |
-| `D` | Deposito |
-| `T` | Tarjeta |
+| Codigo | Significado | Volumen 2025 |
+|--------|-------------|-------------|
+| `W` | Pago Móvil | 42,770 recibos (81%) |
+| `X` | Transferencia | 5,195 recibos |
+| `S` | Compensación | 2,275 recibos |
+| `T` | Tarjeta | 1,101 recibos |
+| `Y` | Criptomoneda | 1,057 recibos |
+| `Z` | Zelle | 434 recibos |
+| `D` | Deposito | 73 recibos |
+| `C` | Cheque | - |
+| `K` | Efectivo | 3 recibos |
+| `B` | Bono/Voucher | 2 recibos |
+| `R` | Retención | 1 recibo |
+| `E` | E-Wallet | 1 recibo |
+| `U` | Otro | 1 recibo |
+
+> **NOTA (Mar 2026):** Los nombres de W, Z, S, Y, B, E, R, U son aproximaciones basadas en
+> convenciones de iDempiere Venezuela. Verificar contra `ad_ref_list` en iDempiere para
+> confirmar los nombres exactos que usa Santoni.
 
 ---
 

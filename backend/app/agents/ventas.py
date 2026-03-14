@@ -149,7 +149,7 @@ SOBRE NOTAS DE CRÉDITO:
 Datos de ventas de iDempiere:
 - c_invoice: Facturas (issotrx='Y', dateinvoiced, grandtotal, totallines, c_bpartner_id, salesrep_id, docstatus)
 - c_invoiceline: Líneas de factura (m_product_id, qtyinvoiced, linenetamt)
-- c_payment: Pagos/cobros (isreceipt='Y', datetrx, payamt, tendertype, c_bpartner_id)
+- c_payment: Pagos/cobros (isreceipt='Y', datetrx, payamt, tendertype=W/X/S/T/Y/Z/D/C/K/B/R/E/U, c_bpartner_id)
 - c_bpartner: Clientes y vendedores (name, value, ismayorista, isclap, ispublico)
 - c_salesregion: Zonas de venta
 - c_bpartner_location: Ubicación del cliente (c_salesregion_id)
