@@ -1929,10 +1929,12 @@ def build_production_runs(
 ) -> dict:
     """Production runs from m_production + m_productionline.
 
-    m_production has 35,960+ completed records in Santoni.
     Each production has lines: one 'header' line (isendproduct='Y', qty positive)
     for the finished product, and component lines (isendproduct='N', qty negative)
     for consumed raw materials.
+
+    NOTE: m_production.productionqty is NEGATIVE in Santoni's iDempiere.
+    Always use m_productionline.movementqty for real quantities.
     """
     db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
     try:
@@ -1943,7 +1945,6 @@ def build_production_runs(
             _add_org_filter(conditions, params, org_ids, "pr")
         _add_date_filter(conditions, params, date_from, date_to, mes, anio, "pr.movementdate")
         if product_search:
-            # Build product filter separately, then wrap in subquery
             prod_conds: list[str] = []
             _add_product_search_filter(prod_conds, params, product_search, prefix="prprod")
             if prod_conds:
@@ -1955,23 +1956,16 @@ def build_production_runs(
                 )
         where = " AND ".join(conditions)
 
-        # 1. Totals (use productionline isendproduct='Y' for real qty,
-        #    because m_production.productionqty is negative in Santoni's iDempiere)
+        # 1. Totals — simple JOIN, no nested subqueries
         totals_q = text(
-            f"SELECT COUNT(*) AS total_producciones, "
-            f"COALESCE((SELECT SUM(prl.movementqty) "
-            f"  FROM adempiere.m_productionline prl "
-            f"  JOIN adempiere.m_production pr2 ON prl.m_production_id = pr2.m_production_id "
-            f"  WHERE prl.isendproduct = 'Y' AND prl.movementqty > 0 "
-            f"  AND pr2.m_production_id IN (SELECT pr3.m_production_id FROM adempiere.m_production pr3 WHERE {where})"
-            f"), 0) AS qty_terminada, "
-            f"COALESCE((SELECT SUM(ABS(prl.movementqty)) "
-            f"  FROM adempiere.m_productionline prl "
-            f"  JOIN adempiere.m_production pr2 ON prl.m_production_id = pr2.m_production_id "
-            f"  WHERE (prl.isendproduct = 'N' OR prl.movementqty < 0) "
-            f"  AND pr2.m_production_id IN (SELECT pr3.m_production_id FROM adempiere.m_production pr3 WHERE {where})"
-            f"), 0) AS qty_consumida "
-            f"FROM adempiere.m_production pr WHERE {where}"
+            f"SELECT COUNT(DISTINCT pr.m_production_id) AS total_producciones, "
+            f"COALESCE(SUM(CASE WHEN prl.isendproduct = 'Y' AND prl.movementqty > 0 "
+            f"  THEN prl.movementqty ELSE 0 END), 0) AS qty_terminada, "
+            f"COALESCE(SUM(CASE WHEN prl.isendproduct = 'N' OR prl.movementqty < 0 "
+            f"  THEN ABS(prl.movementqty) ELSE 0 END), 0) AS qty_consumida "
+            f"FROM adempiere.m_production pr "
+            f"JOIN adempiere.m_productionline prl ON pr.m_production_id = prl.m_production_id "
+            f"WHERE {where}"
         )
         row = db.execute(totals_q, params).fetchone()
         totals = {
