@@ -930,6 +930,352 @@ def check_stock_arroz_paddy(db):
     table(rows)
 
 
+def check_ventas(db):
+    """Verificar datos de ventas (facturación) 2024-hoy."""
+    header("VERIFICACIÓN: VENTAS (FACTURACIÓN)")
+
+    cur_label = (
+        "CASE WHEN i.c_currency_id = 205 THEN 'Bs.' "
+        "WHEN i.c_currency_id IN "
+        "(100,1000000,1000003,1000006,1000008,1000009,1000011,1000013,1000017) "
+        "THEN 'USD' ELSE 'Otro' END"
+    )
+
+    # --- Totales por año ---
+    subheader("Totales por año (2024-2026)")
+    q = text("""
+        SELECT EXTRACT(YEAR FROM i.dateinvoiced)::int AS anio,
+               SUM(CASE WHEN dt.docbasetype = 'ARI' THEN 1 ELSE 0 END) AS facturas,
+               SUM(CASE WHEN dt.docbasetype = 'ARC' THEN 1 ELSE 0 END) AS nc,
+               COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal ELSE 0 END), 0) AS total_facturado,
+               COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARC' THEN i.grandtotal ELSE 0 END), 0) AS monto_nc,
+               COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal
+                            WHEN dt.docbasetype = 'ARC' THEN -i.grandtotal ELSE 0 END), 0) AS venta_neta
+        FROM adempiere.c_invoice i
+        JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id
+        WHERE i.issotrx = 'Y' AND i.docstatus IN ('CO', 'CL') AND i.isactive = 'Y'
+          AND EXTRACT(YEAR FROM i.dateinvoiced) >= 2024
+        GROUP BY EXTRACT(YEAR FROM i.dateinvoiced)
+        ORDER BY anio
+    """)
+    rows = [{"anio": r[0], "facturas": r[1], "nc": r[2],
+             "total_facturado": float(r[3]), "monto_nc": float(r[4]),
+             "venta_neta": float(r[5])} for r in db.execute(q).fetchall()]
+    table(rows)
+
+    # --- Ventas por mes 2026 ---
+    subheader("Ventas por mes 2026")
+    q = text("""
+        SELECT EXTRACT(MONTH FROM i.dateinvoiced)::int AS mes,
+               SUM(CASE WHEN dt.docbasetype = 'ARI' THEN 1 ELSE 0 END) AS facturas,
+               SUM(CASE WHEN dt.docbasetype = 'ARC' THEN 1 ELSE 0 END) AS nc,
+               COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal ELSE 0 END), 0) AS total_facturado,
+               COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARC' THEN i.grandtotal ELSE 0 END), 0) AS monto_nc,
+               COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal
+                            WHEN dt.docbasetype = 'ARC' THEN -i.grandtotal ELSE 0 END), 0) AS venta_neta
+        FROM adempiere.c_invoice i
+        JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id
+        WHERE i.issotrx = 'Y' AND i.docstatus IN ('CO', 'CL') AND i.isactive = 'Y'
+          AND EXTRACT(YEAR FROM i.dateinvoiced) = 2026
+        GROUP BY EXTRACT(MONTH FROM i.dateinvoiced)
+        ORDER BY mes
+    """)
+    rows = [{"mes": r[0], "facturas": r[1], "nc": r[2],
+             "total_facturado": float(r[3]), "monto_nc": float(r[4]),
+             "venta_neta": float(r[5])} for r in db.execute(q).fetchall()]
+    table(rows)
+
+    # --- Ventas por moneda 2026 ---
+    subheader("Ventas por moneda 2026 (agrupado USD)")
+    q = text(f"""
+        SELECT {cur_label} AS moneda,
+               SUM(CASE WHEN dt.docbasetype = 'ARI' THEN 1 ELSE 0 END) AS facturas,
+               SUM(CASE WHEN dt.docbasetype = 'ARC' THEN 1 ELSE 0 END) AS nc,
+               COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal ELSE 0 END), 0) AS total_facturado,
+               COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARC' THEN i.grandtotal ELSE 0 END), 0) AS monto_nc,
+               COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal
+                            WHEN dt.docbasetype = 'ARC' THEN -i.grandtotal ELSE 0 END), 0) AS venta_neta
+        FROM adempiere.c_invoice i
+        JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id
+        WHERE i.issotrx = 'Y' AND i.docstatus IN ('CO', 'CL') AND i.isactive = 'Y'
+          AND EXTRACT(YEAR FROM i.dateinvoiced) = 2026
+        GROUP BY {cur_label}
+        ORDER BY venta_neta DESC
+    """)
+    rows = [{"moneda": r[0], "facturas": r[1], "nc": r[2],
+             "total_facturado": float(r[3]), "monto_nc": float(r[4]),
+             "venta_neta": float(r[5])} for r in db.execute(q).fetchall()]
+    table(rows)
+
+    # --- Ventas marzo 2026 por moneda ---
+    subheader("Marzo 2026 por moneda (para comparar con bot)")
+    q = text(f"""
+        SELECT {cur_label} AS moneda,
+               SUM(CASE WHEN dt.docbasetype = 'ARI' THEN 1 ELSE 0 END) AS facturas,
+               SUM(CASE WHEN dt.docbasetype = 'ARC' THEN 1 ELSE 0 END) AS nc,
+               COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal ELSE 0 END), 0) AS total_facturado,
+               COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARC' THEN i.grandtotal ELSE 0 END), 0) AS monto_nc,
+               COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal
+                            WHEN dt.docbasetype = 'ARC' THEN -i.grandtotal ELSE 0 END), 0) AS venta_neta
+        FROM adempiere.c_invoice i
+        JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id
+        WHERE i.issotrx = 'Y' AND i.docstatus IN ('CO', 'CL') AND i.isactive = 'Y'
+          AND EXTRACT(MONTH FROM i.dateinvoiced) = 3
+          AND EXTRACT(YEAR FROM i.dateinvoiced) = 2026
+        GROUP BY {cur_label}
+        ORDER BY venta_neta DESC
+    """)
+    rows = [{"moneda": r[0], "facturas": r[1], "nc": r[2],
+             "total_facturado": float(r[3]), "monto_nc": float(r[4]),
+             "venta_neta": float(r[5])} for r in db.execute(q).fetchall()]
+    table(rows)
+    if rows:
+        total_fact = sum(r["total_facturado"] for r in rows)
+        total_nc = sum(r["monto_nc"] for r in rows)
+        total_neta = sum(r["venta_neta"] for r in rows)
+        row("TOTAL facturado bruto (todas monedas)", total_fact)
+        row("TOTAL notas de crédito", total_nc)
+        row("TOTAL venta neta", total_neta)
+
+    # --- Febrero 2026 por moneda ---
+    subheader("Febrero 2026 por moneda (para comparar con bot)")
+    q = text(f"""
+        SELECT {cur_label} AS moneda,
+               SUM(CASE WHEN dt.docbasetype = 'ARI' THEN 1 ELSE 0 END) AS facturas,
+               SUM(CASE WHEN dt.docbasetype = 'ARC' THEN 1 ELSE 0 END) AS nc,
+               COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal ELSE 0 END), 0) AS total_facturado,
+               COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARC' THEN i.grandtotal ELSE 0 END), 0) AS monto_nc,
+               COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal
+                            WHEN dt.docbasetype = 'ARC' THEN -i.grandtotal ELSE 0 END), 0) AS venta_neta
+        FROM adempiere.c_invoice i
+        JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id
+        WHERE i.issotrx = 'Y' AND i.docstatus IN ('CO', 'CL') AND i.isactive = 'Y'
+          AND EXTRACT(MONTH FROM i.dateinvoiced) = 2
+          AND EXTRACT(YEAR FROM i.dateinvoiced) = 2026
+        GROUP BY {cur_label}
+        ORDER BY venta_neta DESC
+    """)
+    rows = [{"moneda": r[0], "facturas": r[1], "nc": r[2],
+             "total_facturado": float(r[3]), "monto_nc": float(r[4]),
+             "venta_neta": float(r[5])} for r in db.execute(q).fetchall()]
+    table(rows)
+    if rows:
+        total_fact = sum(r["total_facturado"] for r in rows)
+        total_nc = sum(r["monto_nc"] for r in rows)
+        total_neta = sum(r["venta_neta"] for r in rows)
+        row("TOTAL facturado bruto", total_fact)
+        row("TOTAL notas de crédito", total_nc)
+        row("TOTAL venta neta", total_neta)
+
+    # --- Top 10 clientes marzo 2026 (Bs.) ---
+    subheader("Top 10 clientes marzo 2026 (Bs.)")
+    q = text("""
+        SELECT bp.value AS codigo, bp.name AS nombre,
+               SUM(CASE WHEN dt.docbasetype = 'ARI' THEN 1 ELSE 0 END) AS facturas,
+               SUM(CASE WHEN dt.docbasetype = 'ARC' THEN 1 ELSE 0 END) AS nc,
+               COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal
+                            WHEN dt.docbasetype = 'ARC' THEN -i.grandtotal ELSE 0 END), 0) AS venta_neta
+        FROM adempiere.c_invoice i
+        JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id
+        JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id
+        WHERE i.issotrx = 'Y' AND i.docstatus IN ('CO', 'CL') AND i.isactive = 'Y'
+          AND EXTRACT(MONTH FROM i.dateinvoiced) = 3
+          AND EXTRACT(YEAR FROM i.dateinvoiced) = 2026
+          AND i.c_currency_id = 205
+        GROUP BY bp.value, bp.name
+        ORDER BY venta_neta DESC LIMIT 10
+    """)
+    rows = [{"codigo": r[0], "nombre": r[1], "facturas": r[2], "nc": r[3],
+             "venta_neta": float(r[4])} for r in db.execute(q).fetchall()]
+    table(rows)
+
+    # --- Top 10 clientes febrero 2026 (Bs.) ---
+    subheader("Top 10 clientes febrero 2026 (Bs.)")
+    q = text("""
+        SELECT bp.value AS codigo, bp.name AS nombre,
+               SUM(CASE WHEN dt.docbasetype = 'ARI' THEN 1 ELSE 0 END) AS facturas,
+               SUM(CASE WHEN dt.docbasetype = 'ARC' THEN 1 ELSE 0 END) AS nc,
+               COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal
+                            WHEN dt.docbasetype = 'ARC' THEN -i.grandtotal ELSE 0 END), 0) AS venta_neta
+        FROM adempiere.c_invoice i
+        JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id
+        JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id
+        WHERE i.issotrx = 'Y' AND i.docstatus IN ('CO', 'CL') AND i.isactive = 'Y'
+          AND EXTRACT(MONTH FROM i.dateinvoiced) = 2
+          AND EXTRACT(YEAR FROM i.dateinvoiced) = 2026
+          AND i.c_currency_id = 205
+        GROUP BY bp.value, bp.name
+        ORDER BY venta_neta DESC LIMIT 10
+    """)
+    rows = [{"codigo": r[0], "nombre": r[1], "facturas": r[2], "nc": r[3],
+             "venta_neta": float(r[4])} for r in db.execute(q).fetchall()]
+    table(rows)
+
+    # --- Ventas por zona marzo 2026 ---
+    subheader("Ventas por zona marzo 2026 (Bs., top 15)")
+    q = text("""
+        WITH client_zone AS (
+            SELECT DISTINCT ON (bpl.c_bpartner_id)
+                   bpl.c_bpartner_id, sreg.name AS zona_name
+            FROM adempiere.c_bpartner_location bpl
+            LEFT JOIN adempiere.c_salesregion sreg
+            ON bpl.c_salesregion_id = sreg.c_salesregion_id
+            WHERE bpl.isactive = 'Y'
+            ORDER BY bpl.c_bpartner_id, bpl.c_bpartner_location_id DESC
+        )
+        SELECT COALESCE(cz.zona_name, 'Sin Zona') AS zona,
+               SUM(CASE WHEN dt.docbasetype = 'ARI' THEN 1 ELSE 0 END) AS facturas,
+               SUM(CASE WHEN dt.docbasetype = 'ARC' THEN 1 ELSE 0 END) AS nc,
+               COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal
+                            WHEN dt.docbasetype = 'ARC' THEN -i.grandtotal ELSE 0 END), 0) AS venta_neta
+        FROM adempiere.c_invoice i
+        JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id
+        LEFT JOIN client_zone cz ON i.c_bpartner_id = cz.c_bpartner_id
+        WHERE i.issotrx = 'Y' AND i.docstatus IN ('CO', 'CL') AND i.isactive = 'Y'
+          AND EXTRACT(MONTH FROM i.dateinvoiced) = 3
+          AND EXTRACT(YEAR FROM i.dateinvoiced) = 2026
+          AND i.c_currency_id = 205
+        GROUP BY cz.zona_name
+        ORDER BY venta_neta DESC LIMIT 15
+    """)
+    rows = [{"zona": r[0], "facturas": r[1], "nc": r[2],
+             "venta_neta": float(r[3])} for r in db.execute(q).fetchall()]
+    table(rows)
+
+
+def check_cobranza(db):
+    """Verificar datos de cobranza (c_payment) 2024-hoy."""
+    header("VERIFICACIÓN: COBRANZA (c_payment)")
+
+    # --- Cobranza por año ---
+    subheader("Cobranza por año (2024-2026)")
+    q = text("""
+        SELECT EXTRACT(YEAR FROM p.datetrx)::int AS anio,
+               COUNT(*) AS recibos,
+               COALESCE(SUM(p.payamt), 0) AS total_cobrado
+        FROM adempiere.c_payment p
+        WHERE p.isreceipt = 'Y' AND p.docstatus IN ('CO', 'CL') AND p.isactive = 'Y'
+          AND EXTRACT(YEAR FROM p.datetrx) >= 2024
+        GROUP BY EXTRACT(YEAR FROM p.datetrx)
+        ORDER BY anio
+    """)
+    rows = [{"anio": r[0], "recibos": r[1], "total_cobrado": float(r[2])}
+            for r in db.execute(q).fetchall()]
+    table(rows)
+
+    # --- Cobranza por mes 2026 ---
+    subheader("Cobranza por mes 2026")
+    q = text("""
+        SELECT EXTRACT(MONTH FROM p.datetrx)::int AS mes,
+               COUNT(*) AS recibos,
+               COALESCE(SUM(p.payamt), 0) AS total_cobrado
+        FROM adempiere.c_payment p
+        WHERE p.isreceipt = 'Y' AND p.docstatus IN ('CO', 'CL') AND p.isactive = 'Y'
+          AND EXTRACT(YEAR FROM p.datetrx) = 2026
+        GROUP BY EXTRACT(MONTH FROM p.datetrx)
+        ORDER BY mes
+    """)
+    rows = [{"mes": r[0], "recibos": r[1], "total_cobrado": float(r[2])}
+            for r in db.execute(q).fetchall()]
+    table(rows)
+
+    cur_label = (
+        "CASE WHEN p.c_currency_id = 205 THEN 'Bs.' "
+        "WHEN p.c_currency_id IN "
+        "(100,1000000,1000003,1000006,1000008,1000009,1000011,1000013,1000017) "
+        "THEN 'USD' ELSE 'Otro' END"
+    )
+
+    # --- Cobranza marzo 2026 por moneda ---
+    subheader("Cobranza marzo 2026 por moneda (comparar con bot)")
+    q = text(f"""
+        SELECT {cur_label} AS moneda,
+               COUNT(*) AS recibos,
+               COALESCE(SUM(p.payamt), 0) AS total_cobrado
+        FROM adempiere.c_payment p
+        WHERE p.isreceipt = 'Y' AND p.docstatus IN ('CO', 'CL') AND p.isactive = 'Y'
+          AND EXTRACT(MONTH FROM p.datetrx) = 3
+          AND EXTRACT(YEAR FROM p.datetrx) = 2026
+        GROUP BY {cur_label}
+        ORDER BY total_cobrado DESC
+    """)
+    rows = [{"moneda": r[0], "recibos": r[1], "total_cobrado": float(r[2])}
+            for r in db.execute(q).fetchall()]
+    table(rows)
+    if rows:
+        total = sum(r["total_cobrado"] for r in rows)
+        row("TOTAL cobrado marzo 2026 (todas monedas)", total)
+
+    # --- Cobranza febrero 2026 por moneda ---
+    subheader("Cobranza febrero 2026 por moneda")
+    q = text(f"""
+        SELECT {cur_label} AS moneda,
+               COUNT(*) AS recibos,
+               COALESCE(SUM(p.payamt), 0) AS total_cobrado
+        FROM adempiere.c_payment p
+        WHERE p.isreceipt = 'Y' AND p.docstatus IN ('CO', 'CL') AND p.isactive = 'Y'
+          AND EXTRACT(MONTH FROM p.datetrx) = 2
+          AND EXTRACT(YEAR FROM p.datetrx) = 2026
+        GROUP BY {cur_label}
+        ORDER BY total_cobrado DESC
+    """)
+    rows = [{"moneda": r[0], "recibos": r[1], "total_cobrado": float(r[2])}
+            for r in db.execute(q).fetchall()]
+    table(rows)
+    if rows:
+        total = sum(r["total_cobrado"] for r in rows)
+        row("TOTAL cobrado febrero 2026 (todas monedas)", total)
+
+    # --- Cobranza marzo 2026 por método de pago ---
+    subheader("Cobranza marzo 2026 por método de pago")
+    q = text("""
+        SELECT CASE p.tendertype
+            WHEN 'A' THEN 'Depósito Directo'
+            WHEN 'B' THEN 'Tarjeta de Débito'
+            WHEN 'C' THEN 'Tarjeta de Crédito'
+            WHEN 'D' THEN 'Débito Directo'
+            WHEN 'E' THEN 'Euro Efectivo'
+            WHEN 'G' THEN 'Depósito Bancario'
+            WHEN 'K' THEN 'Cheque'
+            WHEN 'S' THEN 'Transferencia Empresas'
+            WHEN 'T' THEN 'Cuenta'
+            WHEN 'W' THEN 'Transferencia'
+            WHEN 'X' THEN 'Efectivo'
+            WHEN 'Y' THEN 'Dólar Efectivo'
+            WHEN 'Z' THEN 'Dólar Transferencia'
+            WHEN 'R' THEN 'Dólar IGTF'
+            WHEN 'U' THEN 'Euro Transferencia'
+            ELSE p.tendertype END AS metodo,
+               COUNT(*) AS recibos,
+               COALESCE(SUM(p.payamt), 0) AS total
+        FROM adempiere.c_payment p
+        WHERE p.isreceipt = 'Y' AND p.docstatus IN ('CO', 'CL') AND p.isactive = 'Y'
+          AND EXTRACT(MONTH FROM p.datetrx) = 3
+          AND EXTRACT(YEAR FROM p.datetrx) = 2026
+        GROUP BY p.tendertype ORDER BY total DESC
+    """)
+    rows = [{"metodo": r[0], "recibos": r[1], "total": float(r[2])}
+            for r in db.execute(q).fetchall()]
+    table(rows)
+
+    # --- Top 10 clientes cobranza marzo 2026 ---
+    subheader("Top 10 clientes cobranza marzo 2026")
+    q = text("""
+        SELECT bp.name AS cliente,
+               COUNT(*) AS recibos,
+               COALESCE(SUM(p.payamt), 0) AS total
+        FROM adempiere.c_payment p
+        JOIN adempiere.c_bpartner bp ON p.c_bpartner_id = bp.c_bpartner_id
+        WHERE p.isreceipt = 'Y' AND p.docstatus IN ('CO', 'CL') AND p.isactive = 'Y'
+          AND EXTRACT(MONTH FROM p.datetrx) = 3
+          AND EXTRACT(YEAR FROM p.datetrx) = 2026
+        GROUP BY bp.name ORDER BY total DESC LIMIT 10
+    """)
+    rows = [{"cliente": r[0], "recibos": r[1], "total": float(r[2])}
+            for r in db.execute(q).fetchall()]
+    table(rows)
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -948,6 +1294,8 @@ ALL_CHECKS = {
     "vacaciones": check_vacaciones,
     "cumpleaneros": check_cumpleaneros,
     "nomina": check_nomina,
+    "ventas": check_ventas,
+    "cobranza": check_cobranza,
 }
 
 
