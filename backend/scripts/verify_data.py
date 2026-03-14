@@ -1067,16 +1067,32 @@ def check_ventas(db):
         row("TOTAL notas de crédito", total_nc)
         row("TOTAL venta neta", total_neta)
 
-    # --- Top 10 clientes marzo 2026 (Bs.) ---
-    subheader("Top 10 clientes marzo 2026 (Bs.)")
-    q = text("""
+    # --- Top 10 clientes marzo 2026 (Bs.) - campos completos ---
+    subheader("Top 10 clientes marzo 2026 (Bs.) - campos completos")
+    zone_cte = """
+        WITH client_zone AS (
+            SELECT DISTINCT ON (bpl.c_bpartner_id)
+                   bpl.c_bpartner_id, sreg.name AS zona_name
+            FROM adempiere.c_bpartner_location bpl
+            LEFT JOIN adempiere.c_salesregion sreg
+            ON bpl.c_salesregion_id = sreg.c_salesregion_id
+            WHERE bpl.isactive = 'Y'
+            ORDER BY bpl.c_bpartner_id, bpl.c_bpartner_location_id DESC
+        )
+    """
+    q = text(f"""
+        {zone_cte}
         SELECT bp.value AS codigo, bp.name AS nombre,
+               MIN(COALESCE(cz.zona_name, 'Sin Zona')) AS zona,
                SUM(CASE WHEN dt.docbasetype = 'ARI' THEN 1 ELSE 0 END) AS facturas,
                SUM(CASE WHEN dt.docbasetype = 'ARC' THEN 1 ELSE 0 END) AS nc,
+               COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal ELSE 0 END), 0) AS total_facturado,
+               COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARC' THEN i.grandtotal ELSE 0 END), 0) AS total_nc,
                COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal
                             WHEN dt.docbasetype = 'ARC' THEN -i.grandtotal ELSE 0 END), 0) AS venta_neta
         FROM adempiere.c_invoice i
         JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id
+        LEFT JOIN client_zone cz ON bp.c_bpartner_id = cz.c_bpartner_id
         JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id
         WHERE i.issotrx = 'Y' AND i.docstatus IN ('CO', 'CL') AND i.isactive = 'Y'
           AND EXTRACT(MONTH FROM i.dateinvoiced) = 3
@@ -1085,20 +1101,55 @@ def check_ventas(db):
         GROUP BY bp.value, bp.name
         ORDER BY venta_neta DESC LIMIT 10
     """)
-    rows = [{"codigo": r[0], "nombre": r[1], "facturas": r[2], "nc": r[3],
-             "venta_neta": float(r[4])} for r in db.execute(q).fetchall()]
+    rows = [{"codigo": r[0], "nombre": r[1], "zona": r[2], "facturas": r[3], "nc": r[4],
+             "facturado": float(r[5]), "total_nc": float(r[6]),
+             "venta_neta": float(r[7])} for r in db.execute(q).fetchall()]
     table(rows)
 
-    # --- Top 10 clientes febrero 2026 (Bs.) ---
-    subheader("Top 10 clientes febrero 2026 (Bs.)")
-    q = text("""
+    # --- Top 10 clientes marzo 2026 (USD) - campos completos ---
+    usd_ids = "100,1000000,1000003,1000006,1000008,1000009,1000011,1000013,1000017"
+    subheader("Top 10 clientes marzo 2026 (USD) - campos completos")
+    q = text(f"""
+        {zone_cte}
         SELECT bp.value AS codigo, bp.name AS nombre,
+               MIN(COALESCE(cz.zona_name, 'Sin Zona')) AS zona,
                SUM(CASE WHEN dt.docbasetype = 'ARI' THEN 1 ELSE 0 END) AS facturas,
                SUM(CASE WHEN dt.docbasetype = 'ARC' THEN 1 ELSE 0 END) AS nc,
+               COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal ELSE 0 END), 0) AS total_facturado,
+               COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARC' THEN i.grandtotal ELSE 0 END), 0) AS total_nc,
                COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal
                             WHEN dt.docbasetype = 'ARC' THEN -i.grandtotal ELSE 0 END), 0) AS venta_neta
         FROM adempiere.c_invoice i
         JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id
+        LEFT JOIN client_zone cz ON bp.c_bpartner_id = cz.c_bpartner_id
+        JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id
+        WHERE i.issotrx = 'Y' AND i.docstatus IN ('CO', 'CL') AND i.isactive = 'Y'
+          AND EXTRACT(MONTH FROM i.dateinvoiced) = 3
+          AND EXTRACT(YEAR FROM i.dateinvoiced) = 2026
+          AND i.c_currency_id IN ({usd_ids})
+        GROUP BY bp.value, bp.name
+        ORDER BY venta_neta DESC LIMIT 10
+    """)
+    rows = [{"codigo": r[0], "nombre": r[1], "zona": r[2], "facturas": r[3], "nc": r[4],
+             "facturado": float(r[5]), "total_nc": float(r[6]),
+             "venta_neta": float(r[7])} for r in db.execute(q).fetchall()]
+    table(rows)
+
+    # --- Top 10 clientes febrero 2026 (Bs.) - campos completos ---
+    subheader("Top 10 clientes febrero 2026 (Bs.) - campos completos")
+    q = text(f"""
+        {zone_cte}
+        SELECT bp.value AS codigo, bp.name AS nombre,
+               MIN(COALESCE(cz.zona_name, 'Sin Zona')) AS zona,
+               SUM(CASE WHEN dt.docbasetype = 'ARI' THEN 1 ELSE 0 END) AS facturas,
+               SUM(CASE WHEN dt.docbasetype = 'ARC' THEN 1 ELSE 0 END) AS nc,
+               COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal ELSE 0 END), 0) AS total_facturado,
+               COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARC' THEN i.grandtotal ELSE 0 END), 0) AS total_nc,
+               COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal
+                            WHEN dt.docbasetype = 'ARC' THEN -i.grandtotal ELSE 0 END), 0) AS venta_neta
+        FROM adempiere.c_invoice i
+        JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id
+        LEFT JOIN client_zone cz ON bp.c_bpartner_id = cz.c_bpartner_id
         JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id
         WHERE i.issotrx = 'Y' AND i.docstatus IN ('CO', 'CL') AND i.isactive = 'Y'
           AND EXTRACT(MONTH FROM i.dateinvoiced) = 2
@@ -1107,8 +1158,37 @@ def check_ventas(db):
         GROUP BY bp.value, bp.name
         ORDER BY venta_neta DESC LIMIT 10
     """)
-    rows = [{"codigo": r[0], "nombre": r[1], "facturas": r[2], "nc": r[3],
-             "venta_neta": float(r[4])} for r in db.execute(q).fetchall()]
+    rows = [{"codigo": r[0], "nombre": r[1], "zona": r[2], "facturas": r[3], "nc": r[4],
+             "facturado": float(r[5]), "total_nc": float(r[6]),
+             "venta_neta": float(r[7])} for r in db.execute(q).fetchall()]
+    table(rows)
+
+    # --- Top 10 clientes febrero 2026 (USD) - campos completos ---
+    subheader("Top 10 clientes febrero 2026 (USD) - campos completos")
+    q = text(f"""
+        {zone_cte}
+        SELECT bp.value AS codigo, bp.name AS nombre,
+               MIN(COALESCE(cz.zona_name, 'Sin Zona')) AS zona,
+               SUM(CASE WHEN dt.docbasetype = 'ARI' THEN 1 ELSE 0 END) AS facturas,
+               SUM(CASE WHEN dt.docbasetype = 'ARC' THEN 1 ELSE 0 END) AS nc,
+               COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal ELSE 0 END), 0) AS total_facturado,
+               COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARC' THEN i.grandtotal ELSE 0 END), 0) AS total_nc,
+               COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal
+                            WHEN dt.docbasetype = 'ARC' THEN -i.grandtotal ELSE 0 END), 0) AS venta_neta
+        FROM adempiere.c_invoice i
+        JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id
+        LEFT JOIN client_zone cz ON bp.c_bpartner_id = cz.c_bpartner_id
+        JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id
+        WHERE i.issotrx = 'Y' AND i.docstatus IN ('CO', 'CL') AND i.isactive = 'Y'
+          AND EXTRACT(MONTH FROM i.dateinvoiced) = 2
+          AND EXTRACT(YEAR FROM i.dateinvoiced) = 2026
+          AND i.c_currency_id IN ({usd_ids})
+        GROUP BY bp.value, bp.name
+        ORDER BY venta_neta DESC LIMIT 10
+    """)
+    rows = [{"codigo": r[0], "nombre": r[1], "zona": r[2], "facturas": r[3], "nc": r[4],
+             "facturado": float(r[5]), "total_nc": float(r[6]),
+             "venta_neta": float(r[7])} for r in db.execute(q).fetchall()]
     table(rows)
 
     # --- Ventas por zona marzo 2026 ---
