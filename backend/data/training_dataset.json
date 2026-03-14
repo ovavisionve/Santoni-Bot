@@ -1,31 +1,32 @@
 {
-  "version": "2.6",
-  "created": "2026-03-13",
-  "description": "Dataset v2.6: Eliminación del orquestador, selector directo de agentes. Fix normalización acentos en búsqueda de productos (maíz). Escenarios de verificación directa contra iDempiere. Documentación de monedas por organización (DOL=INPROA, DoL=InproMaiz, etc.).",
+  "version": "2.7",
+  "created": "2026-03-14",
+  "description": "Dataset v2.7: 40 nuevos escenarios. Cobranza con 12 métodos de pago mapeados (Pago Móvil, Zelle, Compensación, Criptomoneda, etc.). Producción con 3 nuevas fuentes (m_production, BOM/recetas, movimientos de almacén). RRHH: fix nómina devengado/deducciones, ausentismo total_activos, vacaciones org_name, cumpleaños DISTINCT. Cross-year date ranges. Ventas por distribuidor/organización/moneda.",
   "stats": {
-    "total_entries": 364,
+    "total_entries": 404,
     "por_agente": {
-      "compras_insumos": 85,
-      "rrhh": 67,
-      "ventas": 58,
-      "produccion": 45,
-      "finanzas": 38,
+      "compras_insumos": 86,
+      "rrhh": 77,
+      "ventas": 72,
+      "produccion": 61,
+      "finanzas": 37,
       "compras_productores": 29,
-      "general": 20,
-      "contabilidad": 21
+      "contabilidad": 22,
+      "general": 9,
+      "sin_agente": 11
     },
     "por_fuente": {
       "cuestionario_word": 107,
       "conversacion_real": 93,
       "patron_comun": 41,
       "cuestionario_validacion": 39,
-      "correccion_bug": 56,
+      "correccion_bug": 68,
       "excel_compras": 12,
-      "nuevas_capacidades": 16
+      "nuevas_capacidades": 44
     },
     "escenarios_negativos": 0,
     "con_respuesta_esperada": 15,
-    "followups": 79,
+    "followups": 86,
     "escenarios_alucinacion": 22,
     "escenarios_routing_error": 2
   },
@@ -6554,6 +6555,698 @@
         "notas": "Usa build_inventory_stock (m_storageonhand). Muestra stock real por producto/almacén/organización."
       },
       "categoria": "inventario"
+    },
+    {
+      "id": 365,
+      "pregunta": "¿Cuánto se cobró por pago móvil en 2025?",
+      "agente_esperado": "ventas",
+      "departamento_usuario": "ventas",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": { "anio": 2025 },
+      "es_followup": false,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "ventas",
+        "exito": true,
+        "notas": "Fix tendertype: W=Pago Móvil (42,770 recibos, 81% del total). Antes aparecía como código 'W' crudo."
+      },
+      "categoria": "cobranza"
+    },
+    {
+      "id": 366,
+      "pregunta": "Desglose de cobranza por método de pago del año 2025",
+      "agente_esperado": "ventas",
+      "departamento_usuario": "ventas",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": { "anio": 2025 },
+      "es_followup": false,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "ventas",
+        "exito": true,
+        "notas": "12 métodos de pago mapeados: Pago Móvil, Zelle, Compensación, Transferencia, Tarjeta, Depósito, Cheque, Efectivo, Criptomoneda, Bono/Voucher, E-Wallet, Retención."
+      },
+      "categoria": "cobranza"
+    },
+    {
+      "id": 367,
+      "pregunta": "¿Cuánto se cobró por Zelle en 2025?",
+      "agente_esperado": "ventas",
+      "departamento_usuario": "ventas",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": { "anio": 2025 },
+      "es_followup": false,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "ventas",
+        "exito": true,
+        "notas": "Z=Zelle mapeado correctamente. 434 recibos por Bs. 9,557M en 2025."
+      },
+      "categoria": "cobranza"
+    },
+    {
+      "id": 368,
+      "pregunta": "¿Cuánto se cobró por transferencia en enero 2025?",
+      "agente_esperado": "ventas",
+      "departamento_usuario": "ventas",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": { "mes": 1, "anio": 2025 },
+      "es_followup": false,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "ventas",
+        "exito": true,
+        "notas": "X=Transferencia. Cobranza filtrada por mes y método de pago."
+      },
+      "categoria": "cobranza"
+    },
+    {
+      "id": 369,
+      "pregunta": "¿Y por compensación?",
+      "agente_esperado": "ventas",
+      "departamento_usuario": "ventas",
+      "contexto": {
+        "last_agent": "ventas",
+        "historial": [["user", "¿Cuánto se cobró por transferencia en enero 2025?"]]
+      },
+      "extracciones": { "mes": 1, "anio": 2025 },
+      "es_followup": true,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "ventas",
+        "exito": true,
+        "notas": "Follow-up: hereda mes=1, anio=2025. S=Compensación."
+      },
+      "categoria": "cobranza"
+    },
+    {
+      "id": 370,
+      "pregunta": "Ventas por distribuidor en 2025",
+      "agente_esperado": "ventas",
+      "departamento_usuario": "ventas",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": { "anio": 2025 },
+      "es_followup": false,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "ventas",
+        "exito": true,
+        "notas": "Muestra top distribuidores con venta neta. 'Sin Distribuidor' agrupa clientes directos."
+      },
+      "categoria": "ranking_vendedores"
+    },
+    {
+      "id": 371,
+      "pregunta": "Ventas por organización del año 2025",
+      "agente_esperado": "ventas",
+      "departamento_usuario": "ventas",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": { "anio": 2025 },
+      "es_followup": false,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "ventas",
+        "exito": true,
+        "notas": "Desglose por organización: INPROA SANTONI (27,313 facturas), InproMaiz (10,056), AGROINPROA, etc."
+      },
+      "categoria": "resumen_ventas"
+    },
+    {
+      "id": 372,
+      "pregunta": "Ventas mensuales de octubre 2024 a marzo 2025",
+      "agente_esperado": "ventas",
+      "departamento_usuario": "ventas",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": { "fecha_desde": "2024-10-01", "fecha_hasta": "2025-03-31" },
+      "es_followup": false,
+      "fuente": "correccion_bug",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "ventas",
+        "exito": true,
+        "notas": "Fix cross-year: el desglose por_mes ahora incluye campo 'anio' para distinguir meses de años diferentes."
+      },
+      "categoria": "resumen_ventas"
+    },
+    {
+      "id": 373,
+      "pregunta": "Ventas del 15 de diciembre 2024 al 15 de enero 2025",
+      "agente_esperado": "ventas",
+      "departamento_usuario": "ventas",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": { "fecha_desde": "2024-12-15", "fecha_hasta": "2025-01-15" },
+      "es_followup": false,
+      "fuente": "correccion_bug",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "ventas",
+        "exito": true,
+        "notas": "Fix cross-year en date_utils: rangos que cruzan año (dic→ene) se parsean correctamente."
+      },
+      "categoria": "resumen_ventas"
+    },
+    {
+      "id": 374,
+      "pregunta": "¿Cuánto se produjo en febrero 2026?",
+      "agente_esperado": "produccion",
+      "departamento_usuario": "produccion",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": { "mes": 2, "anio": 2026 },
+      "es_followup": false,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "produccion",
+        "exito": true,
+        "notas": "Usa build_production_runs() con m_production + m_productionline. Muestra producto terminado y materias primas consumidas."
+      },
+      "categoria": "resumen_produccion"
+    },
+    {
+      "id": 375,
+      "pregunta": "¿Cuáles son los principales productos terminados este año?",
+      "agente_esperado": "produccion",
+      "departamento_usuario": "produccion",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": { "anio": 2026 },
+      "es_followup": false,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "produccion",
+        "exito": true,
+        "notas": "Top 20 productos terminados (isendproduct='Y') con cantidad producida. Usa m_productionline.movementqty."
+      },
+      "categoria": "produccion_producto"
+    },
+    {
+      "id": 376,
+      "pregunta": "¿Cuáles son las materias primas más consumidas en producción?",
+      "agente_esperado": "produccion",
+      "departamento_usuario": "produccion",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": {},
+      "es_followup": false,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "produccion",
+        "exito": true,
+        "notas": "Top 20 insumos consumidos (isendproduct='N' o movementqty<0). Muestra cantidad consumida por producto."
+      },
+      "categoria": "produccion_producto"
+    },
+    {
+      "id": 377,
+      "pregunta": "¿Cuánto arroz se produjo en enero 2026?",
+      "agente_esperado": "produccion",
+      "departamento_usuario": "produccion",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": { "producto": "arroz", "mes": 1, "anio": 2026 },
+      "es_followup": false,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "produccion",
+        "exito": true,
+        "notas": "Filtro por producto con normalización de acentos. Muestra producción de arroz terminado + insumos consumidos."
+      },
+      "categoria": "produccion_producto"
+    },
+    {
+      "id": 378,
+      "pregunta": "¿Cuál es la receta del producto arroz blanco?",
+      "agente_esperado": "produccion",
+      "departamento_usuario": "produccion",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": { "producto": "arroz blanco" },
+      "es_followup": false,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "produccion",
+        "exito": true,
+        "notas": "Usa build_bom_info() con pp_product_bom + pp_product_bomline. Muestra componentes, cantidades y unidades de la fórmula."
+      },
+      "categoria": "receta_produccion"
+    },
+    {
+      "id": 379,
+      "pregunta": "¿Cuáles son las recetas registradas en el sistema?",
+      "agente_esperado": "produccion",
+      "departamento_usuario": "produccion",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": {},
+      "es_followup": false,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "produccion",
+        "exito": true,
+        "notas": "229 BOMs/recetas registradas en iDempiere. Siempre consulta iDempiere en vivo (datos de referencia)."
+      },
+      "categoria": "receta_produccion"
+    },
+    {
+      "id": 380,
+      "pregunta": "¿Cuántos ingredientes tiene la fórmula de harina de maíz?",
+      "agente_esperado": "produccion",
+      "departamento_usuario": "produccion",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": { "producto": "harina de maiz" },
+      "es_followup": false,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "produccion",
+        "exito": true,
+        "notas": "BOM con búsqueda de producto. Muestra num_componentes y detalle de cada componente."
+      },
+      "categoria": "receta_produccion"
+    },
+    {
+      "id": 381,
+      "pregunta": "¿Qué traslados de almacén hubo en febrero 2026?",
+      "agente_esperado": "produccion",
+      "departamento_usuario": "produccion",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": { "mes": 2, "anio": 2026 },
+      "es_followup": false,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "produccion",
+        "exito": true,
+        "notas": "Usa build_warehouse_movements() con m_movement + m_movementline. Muestra flujo entre almacenes origen→destino."
+      },
+      "categoria": "movimientos_almacen"
+    },
+    {
+      "id": 382,
+      "pregunta": "¿Cuáles son los productos más transferidos entre almacenes?",
+      "agente_esperado": "produccion",
+      "departamento_usuario": "produccion",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": {},
+      "es_followup": false,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "produccion",
+        "exito": true,
+        "notas": "Top 20 productos movidos entre almacenes con cantidad y conteo de movimientos. 6,014+ movimientos completados en Santoni."
+      },
+      "categoria": "movimientos_almacen"
+    },
+    {
+      "id": 383,
+      "pregunta": "Movimientos internos de arroz paddy en INPROA SANTONI",
+      "agente_esperado": "produccion",
+      "departamento_usuario": "produccion",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": { "producto": "arroz paddy", "organizacion": "INPROA SANTONI" },
+      "es_followup": false,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "produccion",
+        "exito": true,
+        "notas": "Movimientos de almacén filtrados por producto y organización. Muestra origen→destino."
+      },
+      "categoria": "movimientos_almacen"
+    },
+    {
+      "id": 384,
+      "pregunta": "¿Cuánto se produjo ayer?",
+      "agente_esperado": "produccion",
+      "departamento_usuario": "produccion",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": {},
+      "es_followup": false,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "produccion",
+        "exito": true,
+        "notas": "Desglose por_fecha incluye últimos 31 días. Evita alucinación de fechas mostrando datos reales por día."
+      },
+      "categoria": "resumen_produccion"
+    },
+    {
+      "id": 385,
+      "pregunta": "Producción de InproMaiz en enero 2026",
+      "agente_esperado": "produccion",
+      "departamento_usuario": "produccion",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": { "organizacion": "InproMaiz", "mes": 1, "anio": 2026 },
+      "es_followup": false,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "produccion",
+        "exito": true,
+        "notas": "Producción filtrada por organización y mes. Incluye por_organizacion y por_fecha para anti-alucinación."
+      },
+      "categoria": "resumen_produccion"
+    },
+    {
+      "id": 386,
+      "pregunta": "¿Y en INPROA SANTONI?",
+      "agente_esperado": "produccion",
+      "departamento_usuario": "produccion",
+      "contexto": {
+        "last_agent": "produccion",
+        "historial": [["user", "Producción de InproMaiz en enero 2026"]]
+      },
+      "extracciones": { "organizacion": "INPROA SANTONI", "mes": 1, "anio": 2026 },
+      "es_followup": true,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "produccion",
+        "exito": true,
+        "notas": "Follow-up: hereda mes=1, anio=2026 del historial, cambia organización a INPROA SANTONI."
+      },
+      "categoria": "resumen_produccion"
+    },
+    {
+      "id": 387,
+      "pregunta": "¿Cuánto es la nómina de febrero 2026 en INPROA SANTONI?",
+      "agente_esperado": "rrhh",
+      "departamento_usuario": "rrhh",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": { "mes": 2, "anio": 2026, "organizacion": "INPROA SANTONI" },
+      "es_followup": false,
+      "fuente": "correccion_bug",
+      "usuario": "esalas",
+      "resultado_real": {
+        "agente_usado": "rrhh",
+        "exito": true,
+        "notas": "Fix nómina: ahora distingue devengado (type='E') vs deducciones (type='D'). Muestra neto=devengado-deducciones."
+      },
+      "categoria": "nomina"
+    },
+    {
+      "id": 388,
+      "pregunta": "¿Cuáles son las principales deducciones de nómina?",
+      "agente_esperado": "rrhh",
+      "departamento_usuario": "rrhh",
+      "contexto": {
+        "last_agent": "rrhh",
+        "historial": [["user", "¿Cuánto es la nómina de febrero 2026 en INPROA SANTONI?"]]
+      },
+      "extracciones": { "mes": 2, "anio": 2026, "organizacion": "INPROA SANTONI" },
+      "es_followup": true,
+      "fuente": "correccion_bug",
+      "usuario": "esalas",
+      "resultado_real": {
+        "agente_usado": "rrhh",
+        "exito": true,
+        "notas": "Follow-up: hereda contexto temporal y org. Deducciones vienen de hr_concept.type='D'. Todos los montos son positivos en BD, el tipo determina el signo."
+      },
+      "categoria": "nomina"
+    },
+    {
+      "id": 389,
+      "pregunta": "Tasa de ausentismo de enero 2026",
+      "agente_esperado": "rrhh",
+      "departamento_usuario": "rrhh",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": { "mes": 1, "anio": 2026 },
+      "es_followup": false,
+      "fuente": "correccion_bug",
+      "usuario": "esalas",
+      "resultado_real": {
+        "agente_usado": "rrhh",
+        "exito": true,
+        "notas": "Fix: total_activos ahora se calcula con JOIN a c_bpartner (bp.isactive='Y'), dando ~702 en vez de ~1057. tasa_ausentismo_pct = afectados/activos*100."
+      },
+      "categoria": "ausentismo"
+    },
+    {
+      "id": 390,
+      "pregunta": "¿Cuántos empleados activos hay en InproMaiz?",
+      "agente_esperado": "rrhh",
+      "departamento_usuario": "rrhh",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": { "organizacion": "InproMaiz" },
+      "es_followup": false,
+      "fuente": "correccion_bug",
+      "usuario": "esalas",
+      "resultado_real": {
+        "agente_usado": "rrhh",
+        "exito": true,
+        "notas": "Fix: build_employee_list filtra bp.isactive='Y'. Solo muestra empleados activos."
+      },
+      "categoria": "empleados"
+    },
+    {
+      "id": 391,
+      "pregunta": "Vacaciones de enero 2026 en InproMaiz",
+      "agente_esperado": "rrhh",
+      "departamento_usuario": "rrhh",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": { "mes": 1, "anio": 2026, "organizacion": "InproMaiz" },
+      "es_followup": false,
+      "fuente": "correccion_bug",
+      "usuario": "esalas",
+      "resultado_real": {
+        "agente_usado": "rrhh",
+        "exito": true,
+        "notas": "Fix: build_vacation_summary ahora acepta org_name y filtra correctamente con JOIN a ad_org."
+      },
+      "categoria": "vacaciones"
+    },
+    {
+      "id": 392,
+      "pregunta": "Cumpleañeros de marzo en INPROA SANTONI",
+      "agente_esperado": "rrhh",
+      "departamento_usuario": "rrhh",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": { "mes": 3, "organizacion": "INPROA SANTONI" },
+      "es_followup": false,
+      "fuente": "correccion_bug",
+      "usuario": "esalas",
+      "resultado_real": {
+        "agente_usado": "rrhh",
+        "exito": true,
+        "notas": "Fix: DISTINCT ON + LATERAL elimina duplicados cuando c_bpartner tiene múltiples ad_user. Filtra bp.isactive='Y'."
+      },
+      "categoria": "cumpleanos"
+    },
+    {
+      "id": 393,
+      "pregunta": "¿Quiénes son los obreros de InproMaiz?",
+      "agente_esperado": "rrhh",
+      "departamento_usuario": "rrhh",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": { "organizacion": "InproMaiz" },
+      "es_followup": false,
+      "fuente": "nuevas_capacidades",
+      "usuario": "esalas",
+      "resultado_real": {
+        "agente_usado": "rrhh",
+        "exito": true,
+        "notas": "Búsqueda por cargo: 'obreros' → cargo_search='obrero' (normaliza plural a singular). Filtra por ILIKE en hr_job.name."
+      },
+      "categoria": "busqueda_cargo"
+    },
+    {
+      "id": 394,
+      "pregunta": "Buscar empleado de apellido Rodríguez",
+      "agente_esperado": "rrhh",
+      "departamento_usuario": "rrhh",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": {},
+      "es_followup": false,
+      "fuente": "nuevas_capacidades",
+      "usuario": "esalas",
+      "resultado_real": {
+        "agente_usado": "rrhh",
+        "exito": true,
+        "notas": "Búsqueda por nombre: name_search='Rodríguez'. Filtra por ILIKE en c_bpartner.name."
+      },
+      "categoria": "empleados"
+    },
+    {
+      "id": 395,
+      "pregunta": "Nómina de INPROA SANTONI vs InproMaiz en enero 2026",
+      "agente_esperado": "rrhh",
+      "departamento_usuario": "rrhh",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": { "mes": 1, "anio": 2026 },
+      "es_followup": false,
+      "fuente": "nuevas_capacidades",
+      "usuario": "esalas",
+      "resultado_real": {
+        "agente_usado": "rrhh",
+        "exito": true,
+        "notas": "Sin org_name cuando hay comparación. Muestra por_tipo_nomina con desglose por organización y devengado vs deducciones."
+      },
+      "categoria": "nomina"
+    },
+    {
+      "id": 396,
+      "pregunta": "Rotación de personal en 2025",
+      "agente_esperado": "rrhh",
+      "departamento_usuario": "rrhh",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": { "anio": 2025 },
+      "es_followup": false,
+      "fuente": "nuevas_capacidades",
+      "usuario": "esalas",
+      "resultado_real": {
+        "agente_usado": "rrhh",
+        "exito": true,
+        "notas": "build_turnover_summary: cuenta empleados con enddate en el año y isactive='N'. tasa_rotacion_pct = bajas/activos*100."
+      },
+      "categoria": "rotacion"
+    },
+    {
+      "id": 397,
+      "pregunta": "Cobranza de octubre 2024 a febrero 2025",
+      "agente_esperado": "ventas",
+      "departamento_usuario": "ventas",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": { "fecha_desde": "2024-10-01", "fecha_hasta": "2025-02-28" },
+      "es_followup": false,
+      "fuente": "correccion_bug",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "ventas",
+        "exito": true,
+        "notas": "Fix cross-year: rangos que cruzan año se parsean correctamente. por_mes incluye campo 'anio'."
+      },
+      "categoria": "cobranza"
+    },
+    {
+      "id": 398,
+      "pregunta": "¿Cuánto se cobró por criptomoneda en 2025?",
+      "agente_esperado": "ventas",
+      "departamento_usuario": "ventas",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": { "anio": 2025 },
+      "es_followup": false,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "ventas",
+        "exito": true,
+        "notas": "Y=Criptomoneda. 1,057 recibos. Mapeado correctamente en tendertype."
+      },
+      "categoria": "cobranza"
+    },
+    {
+      "id": 399,
+      "pregunta": "Top 20 clientes con más cobranza en 2025",
+      "agente_esperado": "ventas",
+      "departamento_usuario": "ventas",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": { "anio": 2025 },
+      "es_followup": false,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "ventas",
+        "exito": true,
+        "notas": "build_collection_summary incluye por_vendedor (top clientes por cobranza). INPROA SANTONI es el mayor con Bs. 12,190M."
+      },
+      "categoria": "cobranza"
+    },
+    {
+      "id": 400,
+      "pregunta": "Producción diaria de la última semana",
+      "agente_esperado": "produccion",
+      "departamento_usuario": "produccion",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": {},
+      "es_followup": false,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "produccion",
+        "exito": true,
+        "notas": "por_fecha incluye últimos 31 días con desglose diario: fecha, producciones, cantidad_terminada. Previene alucinación de fechas."
+      },
+      "categoria": "resumen_produccion"
+    },
+    {
+      "id": 401,
+      "pregunta": "¿Qué insumos se usaron para producir maíz?",
+      "agente_esperado": "produccion",
+      "departamento_usuario": "produccion",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": { "producto": "maiz" },
+      "es_followup": false,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "produccion",
+        "exito": true,
+        "notas": "build_production_runs filtra por producto 'maíz' (normalización de acentos). Muestra insumos_consumidos asociados."
+      },
+      "categoria": "produccion_producto"
+    },
+    {
+      "id": 402,
+      "pregunta": "Ventas en USD del 2025",
+      "agente_esperado": "ventas",
+      "departamento_usuario": "ventas",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": { "moneda": "USD", "anio": 2025 },
+      "es_followup": false,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "ventas",
+        "exito": true,
+        "notas": "Filtra por currency_ids de USD (100,1000000,1000003,...). 22,832 facturas, venta neta USD 73.2M."
+      },
+      "categoria": "resumen_ventas"
+    },
+    {
+      "id": 403,
+      "pregunta": "¿Y en bolívares?",
+      "agente_esperado": "ventas",
+      "departamento_usuario": "ventas",
+      "contexto": {
+        "last_agent": "ventas",
+        "historial": [["user", "Ventas en USD del 2025"]]
+      },
+      "extracciones": { "moneda": "VES", "anio": 2025 },
+      "es_followup": true,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "ventas",
+        "exito": true,
+        "notas": "Follow-up: hereda anio=2025, cambia moneda a VES (c_currency_id=205). 20,037 facturas, venta neta Bs. 8,960M."
+      },
+      "categoria": "resumen_ventas"
+    },
+    {
+      "id": 404,
+      "pregunta": "Ventas por zona en 2025",
+      "agente_esperado": "ventas",
+      "departamento_usuario": "ventas",
+      "contexto": { "last_agent": null, "historial": [] },
+      "extracciones": { "anio": 2025 },
+      "es_followup": false,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "ventas",
+        "exito": true,
+        "notas": "Desglose por zona: Barquisimeto, Maracaibo, Mérida, Guanare, Falcón, etc. 'Sin Zona' agrupa clientes sin zona asignada."
+      },
+      "categoria": "ventas_zona"
     }
   ],
   "tipos_error": {
@@ -6583,7 +7276,11 @@
     "fecha_incorrecta": "El bot respondió con datos de otra fecha (ej: julio 2024) cuando se preguntó por 'actual'",
     "docstatus_incompleto": "Query solo incluía docstatus='CO' y excluía facturas cerradas ('CL') que son pagadas/completadas",
     "org_name_no_extraido": "Agente no extraía nombre de organización del mensaje del usuario (ej: 'en INPROA SANTONI')",
-    "no_access_text": "LLM generó texto 'no tengo acceso' cuando debía decir 'no se encontraron datos'. Requiere regla PROHIBIDO en system prompt."
+    "no_access_text": "LLM generó texto 'no tengo acceso' cuando debía decir 'no se encontraron datos'. Requiere regla PROHIBIDO en system prompt.",
+    "tendertype_no_mapeado": "Método de pago aparecía como código crudo (W, Z, S) en vez de nombre legible (Pago Móvil, Zelle, Compensación)",
+    "cross_year_parsing": "Rango de fechas que cruza año (dic 2024 → ene 2025) no se parseaba correctamente",
+    "total_activos_incorrecto": "Conteo de empleados activos incluía inactivos (~1057 vs ~702 correcto). Fix: JOIN a c_bpartner con bp.isactive='Y'",
+    "productionqty_negativo": "m_production.productionqty es negativo. Fix: usar m_productionline.movementqty en su lugar"
   },
   "categorias": [
     "asistencia",
@@ -6657,7 +7354,10 @@
     "ordenes_compra",
     "comparacion_precios",
     "estado_pago",
-    "moneda_por_organizacion"
+    "moneda_por_organizacion",
+    "receta_produccion",
+    "movimientos_almacen",
+    "historial_producto"
   ],
-  "updated": "2026-03-11"
+  "updated": "2026-03-14"
 }
