@@ -164,6 +164,7 @@ IDs 1000009, 1000013, 1000017 del código no aparecen en 2025 (posiblemente en d
 
 ## Pendientes
 
-1. Confirmar nombres exactos de W, Z, S, Y contra `ad_ref_list` en iDempiere
+1. ~~Confirmar nombres exactos de W, Z, S, Y contra `ad_ref_list` en iDempiere~~ **HECHO 14/Mar/2026** - 19 tipos verificados
 2. Evaluar si las zonas duplicadas (mismo nombre, diferente ID) causan problemas
-3. Considerar excluir pagos inter-empresa del resumen de cobranza (INPROA, INPROMAIZ)
+3. Considerar excluir pagos inter-empresa del resumen de cobranza (INPROA, INPROMAIZ) — **DECIDIDO: NO filtrar** (usuario quiere verlos)
+4. **CRÍTICO:** El agente de ventas hallucina datos en consultas de "Ventas en Bs." — facturas, montos y desglose regional inventados. Investigar por qué USD funciona bien pero Bs. no. Ver tabla de discrepancias en `DATOS_VERIFICACION_IDEMPIERE.md`

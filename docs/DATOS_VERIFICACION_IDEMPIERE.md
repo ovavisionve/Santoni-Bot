@@ -563,6 +563,345 @@
 
 ---
 
+## VENTAS - Datos Raw de iDempiere (verificación 14/Mar/2026)
+
+> **Fuente:** SQL directo contra iDempiere producción (192.168.1.73)
+> **Propósito:** Referencia maestra para validar respuestas del agente de ventas
+
+### Totales anuales
+
+| Año | Facturas | Total facturado | Total neto | Total IVA | NC | Monto NC |
+|-----|----------|-----------------|------------|-----------|-----|----------|
+| 2024 | 38,674 | 1,994,297,738.41 | 1,972,439,650.88 | 21,858,087.53 | 21,270 | 88,940,915.92 |
+| 2025 | 42,869 | 10,404,177,997.05 | 10,327,273,434.17 | 76,904,562.88 | 15,150 | 1,370,574,621.23 |
+
+### Ventas por mes 2024
+
+| Mes | Facturas | NC | Venta neta |
+|-----|----------|-----|------------|
+| 1 | 2,727 | 1,282 | 137,847,404.22 |
+| 2 | 2,251 | 1,306 | 50,722,210.93 |
+| 3 | 2,987 | 1,425 | 96,556,269.30 |
+| 4 | 4,468 | 2,023 | 191,529,344.91 |
+| 5 | 4,207 | 1,853 | 192,339,290.33 |
+| 6 | 3,650 | 1,722 | 168,024,341.14 |
+| 7 | 3,135 | 1,625 | 143,483,672.50 |
+| 8 | 3,181 | 1,772 | 210,081,711.62 |
+| 9 | 3,008 | 2,155 | 146,523,017.78 |
+| 10 | 3,652 | 2,339 | 212,725,876.43 |
+| 11 | 2,962 | 2,026 | 190,329,735.83 |
+| 12 | 2,446 | 1,742 | 165,193,947.50 |
+
+### Ventas por mes 2025
+
+| Mes | Facturas | NC | Venta neta |
+|-----|----------|-----|------------|
+| 1 | 2,785 | 2,009 | 215,608,007.98 |
+| 2 | 2,929 | 1,679 | 244,848,249.47 |
+| 3 | 2,928 | 1,697 | 231,480,752.14 |
+| 4 | 3,607 | 1,517 | 373,346,976.97 |
+| 5 | 3,723 | 2,675 | 437,826,915.33 |
+| 6 | 3,402 | 925 | 479,905,112.03 |
+| 7 | 3,556 | 828 | 389,294,711.63 |
+| 8 | 3,640 | 574 | 828,772,034.04 |
+| 9 | 4,124 | 894 | 918,530,821.23 |
+| 10 | 5,052 | 882 | 1,558,429,690.04 |
+| 11 | 3,728 | 722 | 1,350,606,616.72 |
+| 12 | 3,395 | 748 | 2,004,953,488.24 |
+
+### Ventas por moneda 2024
+
+| Moneda | Facturas | NC | Total facturado | Monto NC | Venta neta |
+|--------|----------|-----|-----------------|----------|------------|
+| Bs. | 18,117 | 4,446 | 1,929,685,883.16 | 82,849,257.14 | 1,846,836,626.02 |
+| USD | 20,557 | 16,824 | 64,611,855.25 | 6,091,658.78 | 58,520,196.47 |
+
+### Ventas por moneda 2025
+
+| Moneda | Facturas | NC | Total facturado | Monto NC | Venta neta |
+|--------|----------|-----|-----------------|----------|------------|
+| Bs. | 20,037 | 5,617 | 10,325,338,152.77 | 1,364,956,937.99 | 8,960,381,214.78 |
+| USD | 22,832 | 9,533 | 78,839,844.28 | 5,617,683.24 | 73,222,161.04 |
+
+### Ventas por zona 2025 (Top 20)
+
+| Zona | Facturas | Total bruto | Total NC | Venta neta |
+|------|----------|-------------|----------|------------|
+| Sin Zona | 23,532 | 5,391,849,172.12 | 872,950,128.26 | 4,518,899,043.86 |
+| ZONA BARQUISIMETO | 4,225 | 440,847,540.28 | 28,665,702.39 | 412,181,837.89 |
+| ZONA MARACAIBO | 1,111 | 407,244,819.22 | 55,025,976.45 | 352,218,842.77 |
+| ZONA MERIDA | 862 | 365,488,513.30 | 25,036,866.17 | 340,451,647.13 |
+| ZONA GUANARE | 329 | 348,845,188.09 | 28,809,246.16 | 320,035,941.93 |
+| ZONA FALCON- CORO | 139 | 270,091,093.81 | 9,153,166.52 | 260,937,927.29 |
+| ZONA MARGARITA | 391 | 267,839,336.60 | 56,268,557.43 | 211,570,779.17 |
+| ZONA FALCON | 195 | 220,448,787.08 | 12,759,976.75 | 207,688,810.33 |
+| ZONA TRUJILLO-VALERA | 226 | 197,199,575.15 | 14,714,308.15 | 182,485,267.00 |
+| ZONA SAN CRISTOBAL | 943 | 189,234,331.48 | 11,090,559.25 | 178,143,772.23 |
+| ZONA BARINAS | 158 | 183,908,488.06 | 8,062,642.41 | 175,845,845.65 |
+| ZONA TRUJILO | 107 | 181,938,935.48 | 9,747,907.49 | 172,191,027.99 |
+| ZONA SAN FELIX-CIUDAD GUAYANA | 275 | 194,547,354.47 | 26,463,527.77 | 168,083,826.70 |
+| ZONA SANTA BARBARA DE ZULIA | 671 | 144,836,984.94 | 5,475,952.65 | 139,361,032.29 |
+| ZONA CIUDAD BOLIVAR | 303 | 136,015,867.86 | 17,776,759.37 | 118,239,108.49 |
+| ZONA UPATA-BOLIVAR | 150 | 119,242,814.49 | 5,185,515.00 | 114,057,299.49 |
+| ZONA CARACAS | 871 | 148,951,821.11 | 37,775,394.78 | 111,176,426.33 |
+| ZONA MATURIN | 1,013 | 97,167,135.85 | 6,263,520.76 | 90,903,615.09 |
+| ZONA EL VIGIA | 29 | 104,443,616.45 | 18,495,926.81 | 85,947,689.64 |
+| ALMACENADORA DE SEMILLAS Y CEREALES PORTUGUESA C.A | 158 | 91,844,883.18 | 6,298,024.03 | 85,546,859.15 |
+
+### Ventas por organización 2025
+
+| Organización | Facturas | Venta neta |
+|-------------|----------|------------|
+| INPROA SANTONI C.A. | 27,313 | 5,476,541,151.25 |
+| InproMaiz C.A | 10,056 | 2,930,382,187.51 |
+| AGROINPROA C.A | 2,695 | 401,269,680.86 |
+| AGROPECUARIA R.R. C.A. | 1,551 | 132,311,559.79 |
+| INVERSIONES AGA C.A | 1,222 | 52,611,764.19 |
+| AGA AGRICOLA C.A | 2 | 32,797,600.00 |
+| Santoni Service C.A | 25 | 7,409,932.22 |
+| Ocean Equipment Industries LLC | 5 | 279,500.00 |
+
+### Ventas por distribuidor 2025 (Top 20)
+
+| Distribuidor | Facturas | Venta neta |
+|-------------|----------|------------|
+| Sin Distribuidor | 31,618 | 6,405,810,010.27 |
+| NAUDY JOSE VITAL GALVAN | 668 | 597,737,417.35 |
+| NAIFEN FENG | 833 | 437,857,489.94 |
+| INVERSIONES CORDERO HERNANDEZ, C.A. | 278 | 327,559,144.77 |
+| VIDRIOS Y MARQUETERIA EL CONDOR, CA | 1,599 | 252,600,010.44 |
+| AGROPECUARIA CANAIMA CA | 1,511 | 148,302,182.03 |
+| PUBLI EVENTO'S, C.A. | 145 | 128,042,572.10 |
+| TRACTO AMERICA CA | 1,197 | 113,600,183.78 |
+| OPERADORA TURISTICA CAQUETIO C.A. | 104 | 93,895,062.60 |
+| TAFERCA C.A. | 236 | 90,686,403.17 |
+| CENYA MARIA MENDOZA | 328 | 71,349,243.60 |
+| EBER JESUS RODRIGUEZ MARTINEZ | 352 | 57,547,507.95 |
+| TIKO'S C.A | 49 | 54,359,579.18 |
+| AUTOMERCADO LAS AMAPOLAS CA | 64 | 40,285,381.95 |
+| SUPERMERCADO CAMPO BELLO C A | 685 | 29,731,457.40 |
+| LACTEOS FLOR DE CATIA, C.A. | 981 | 24,215,995.43 |
+| COMERCIAL SAMI S.A | 708 | 20,881,537.56 |
+| JUNIOR VIVERES, C.A. | 46 | 20,108,678.80 |
+| ABASTOS Y SUPERMERCADO DON RAMON C.A. | 220 | 19,501,338.99 |
+| SUPERMERCADO DELGRANO C.A. | 72 | 18,042,471.95 |
+
+### Cobranza 2024-2025
+
+| Año | Recibos | Total cobrado |
+|-----|---------|--------------|
+| 2024 | 39,160 | 7,930,476,229.79 |
+| 2025 | 52,913 | 34,928,699,827.85 |
+
+### Cobranza por método de pago 2025
+
+| Código | Método (verificado ad_ref_list) | Recibos | Total |
+|--------|--------------------------------|---------|-------|
+| W | Transferencia | 42,770 | 11,117,867,081.75 |
+| Z | Dólar Transferencia | 434 | 9,557,473,756.07 |
+| D | Débito Directo | 73 | 6,811,027,732.52 |
+| S | Transferencia Empresas | 2,275 | 5,161,862,020.40 |
+| X | Efectivo | 5,195 | 1,144,746,454.47 |
+| T | Cuenta | 1,101 | 742,944,501.19 |
+| Y | Dólar Efectivo | 1,057 | 296,087,501.40 |
+| U | Euro Transferencia | 1 | 96,385,483.74 |
+| K | Cheque | 3 | 209,183.40 |
+| R | Dólar IGTF | 1 | 88,008.81 |
+| B | Tarjeta de Débito | 2 | 6,033.00 |
+| E | Euro Efectivo | 1 | 2,071.11 |
+
+### Top 20 cobranza por cliente 2025
+
+| Cliente | Recibos | Total |
+|---------|---------|-------|
+| INPROA SANTONI, C.A | 2,955 | 12,190,558,629.00 |
+| INPROMAIZ, C.A. | 1,467 | 10,475,468,598.38 |
+| AGROINPROA,C.A. | 190 | 1,726,278,816.39 |
+| INVERSIONES LA ESPIGA LLC | 1 | 804,342,310.00 |
+| ALIMENTOS PARADAYS, C.A | 354 | 509,837,356.93 |
+| GRUPO AGROLLANO 2910 C.A. | 36 | 429,378,723.55 |
+| GRUPO SONREIR 123, C.A | 474 | 339,770,010.88 |
+| SUPER DISTRIBUCIONES VALERA, C.A | 406 | 285,271,910.26 |
+| OHA TECHNOLOGY, C.A | 1 | 283,250,000.00 |
+| INPROMAÍZ, C.A. | 192 | 276,978,794.29 |
+| IMPORTACIONES TOP 2023, C.A. | 30 | 260,909,729.56 |
+| INVERSIONES FRANSIL 2017, C.A | 110 | 255,319,998.01 |
+| LACTEOS JUNIOR, C.A | 914 | 232,081,206.55 |
+| ALIMENTOS EL MAIZAL C. A. | 58 | 229,980,101.07 |
+| SUPER DISTRIBUCIONES DEL ZULIA, C.A. | 343 | 216,872,805.30 |
+| SUPER DISTRIBUCIONES FALCON, C.A. SUDIFALCA | 312 | 177,901,835.42 |
+| COMERCIALIZADORA Y DISTRIBUIDORA TERAN & HIJOS, C.A. | 143 | 150,146,604.86 |
+| ARAQUEZ, C.A. | 561 | 142,616,351.52 |
+| EXCELENCIA CORPORACION, C.A | 146 | 135,392,185.23 |
+| SUPER DISTRIBUCIONES COL, C.A. | 189 | 127,424,237.54 |
+
+### Cobranza por mes 2025
+
+| Mes | Recibos | Total cobrado |
+|-----|---------|--------------|
+| 1 | 3,583 | 1,076,227,315.56 |
+| 2 | 3,223 | 446,596,066.69 |
+| 3 | 3,673 | 713,487,203.04 |
+| 4 | 3,832 | 1,194,267,965.35 |
+| 5 | 4,445 | 1,465,422,774.88 |
+| 6 | 4,267 | 1,233,424,951.30 |
+| 7 | 4,696 | 2,128,727,678.02 |
+| 8 | 4,532 | 2,543,863,238.66 |
+| 9 | 4,785 | 6,116,846,612.72 |
+| 10 | 5,526 | 6,340,132,638.31 |
+| 11 | 5,013 | 4,376,856,085.92 |
+| 12 | 5,338 | 7,292,847,297.39 |
+
+### Docstatus facturas 2025
+
+| Docstatus | Cantidad |
+|-----------|----------|
+| CO (Completado) | 58,019 |
+| RE (Reversado) | 1,913 |
+| VO (Anulado) | 293 |
+| DR (Borrador) | 6 |
+
+### Docstatus pagos 2025
+
+| Docstatus | Cantidad |
+|-----------|----------|
+| CO | 52,913 |
+| RE | 1,794 |
+| VO | 70 |
+| IP | 28 |
+| DR | 9 |
+| IN | 4 |
+
+### Monedas en facturas 2025
+
+| iso_code | c_currency_id | Facturas |
+|----------|---------------|----------|
+| VES | 205 | 25,654 |
+| DOL | 1000000 | 19,751 |
+| DoL | 1000011 | 7,189 |
+| USA | 1000003 | 2,796 |
+| dol | 1000008 | 1,550 |
+| Dol | 1000006 | 1,074 |
+| USD | 100 | 5 |
+
+### Tipos de documento en facturas 2025
+
+| issotrx | Tipo documento | Cantidad |
+|---------|---------------|----------|
+| ARI | AR Invoice ProformaVB | 21,032 |
+| ARI | AR Invoice V | 11,660 |
+| ARC | AR Credit ProformaV | 1,965 |
+| ARC | AR Credit ProformaC | 1,809 |
+| ARI | AR Invoice DolaresNF | 1,373 |
+| ARI | AR Invoice B | 1,095 |
+| ARC | AR Credit MemoV | 923 |
+| ARC | AR Credit MemoC | 884 |
+| ARC | AR Credit Memo | 436 |
+| ARI | AR Invoice IMVDolar | 385 |
+| ARI | AR Invoice CargoDolar | 382 |
+| ARI | AR Invoice LiqDolar | 380 |
+| ARI | AR Credit Dolar Note | 296 |
+| ARC | AR Credit Memo Proforma | 276 |
+| ARI | AR Invoice | 267 |
+| ARI | Factura AGA | 256 |
+| ARI | AR InvoiceE | 221 |
+| ARC | AR Credit Memo Valencia | 145 |
+| ARC | AR Credit Memo ProDolares | 111 |
+| ARI | AR Debit MemoCaracas | 51 |
+| ARC | AR Credit Memo Caracas | 37 |
+| ARI | AR Debit MemoValencia | 36 |
+| ARI | AR Invoice Service | 25 |
+| ARC | AR Credit Memo AGA | 22 |
+| ARI | AR InvoiceF | 13 |
+| ARI | AR Debit Memo | 7 |
+| ARC | AR Credit Memo Serie B | 4 |
+| ARI | AR Invoice Debito | 3 |
+| ARI | Factura R.R. | 1 |
+
+### Zonas de venta en iDempiere
+
+| Zona | c_salesregion_id | Clientes asignados |
+|------|------------------|--------------------|
+| SANTA CRUZ DE ARAGUA | 1000538 | 552 |
+| PORTUGUESA-ACARIGUA | 1000387 | 474 |
+| ALMACENADORA DE SEMILLAS Y CEREALES PORTUGUESA C.A | 1000281 | 368 |
+| ZONA BARQUISIMETO | 1000013 | 332 |
+| INPROA SANTONI C.A | 1000252 | 237 |
+| ZONA BARQUISIMETO | 1000406 | 170 |
+| ZONA YARACUY | 1000076 | 145 |
+| ZONA CARACAS | 1000033 | 119 |
+| ZONA ANZOATEGUI | 1000151 | 108 |
+| ZONA MARACAIBO | 1000047 | 102 |
+| ZONA ACARIGUA | 1000020 | 101 |
+| ZONA BARINAS | 1000024 | 98 |
+| GUANARE-PORTUGUESA | 1000363 | 75 |
+| ZONA ANZOATEGUI | 1000411 | 67 |
+| ZONA YARACUY | 1000407 | 64 |
+| ZONA MARACAIBO | 1000404 | 56 |
+| ZONA ACARIGUA | 1000399 | 48 |
+| ZONA MATURIN | 1000054 | 47 |
+| ZONA MERIDA | 1000055 | 46 |
+| ZONA MERIDA | 1000422 | 45 |
+| ZONA GUANARE | 1000424 | 39 |
+| ZONA CARABOBO (LARGO) | 1000380 | 37 |
+| ZONA MATURIN | 1000409 | 37 |
+| ZONA BARCELONA | 1000373 | 35 |
+| ZONA CIUDAD BOLIVAR | 1000142 | 34 |
+| ZONA CUMANA | 1000155 | 33 |
+| ZONA MARGARITA | 1000095 | 32 |
+
+> **NOTA:** Existen zonas duplicadas con IDs diferentes (ej: "ZONA BARQUISIMETO" x2, "ZONA MERIDA" x2)
+
+### Tipologías de clientes (c_bp_group)
+
+| Tipología | Clientes |
+|-----------|----------|
+| Proveedores | 8,179 |
+| Clientes | 3,635 |
+| ClientesInproa | 3,432 |
+| Estándar | 3,422 |
+| Proveedor | 2,031 |
+| Productor | 947 |
+| Empleados Inproa Santoni CA | 926 |
+| ClientesInproaPLANTA | 384 |
+| Empleados | 280 |
+| Clientes al Mayor | 236 |
+| Productores | 212 |
+| Empleado | 94 |
+| INVERSIONES AGA (ALQUILERES) | 93 |
+| Vendedores | 82 |
+| Proveedores Insumos | 80 |
+| Empleado Gerencial | 48 |
+| Empleados Inpromaíz CA | 44 |
+| Empleados Destajo | 42 |
+| Proveedores varios | 37 |
+| CLIENTES | 34 |
+| Empleado (Choferes) | 33 |
+| Empleado (Fuerza Venta) | 32 |
+| PROVEEDORES | 17 |
+| EMPLEADOS | 15 |
+| Staff | 7 |
+| Vendors | 6 |
+| Cliente | 4 |
+
+### Discrepancias detectadas en respuestas del bot (14/Mar/2026)
+
+| Consulta | Dato | Bot dijo | Dato real SQL | Problema |
+|----------|------|----------|---------------|----------|
+| Ventas Bs. 2025 | Facturas | 124,857 | **20,037** | Hallucination LLM |
+| Ventas Bs. 2025 | Total facturado | 12,837M | **10,325M** | Hallucination LLM |
+| Ventas Bs. 2025 | NC | 1,766M | **1,365M** | Hallucination LLM |
+| Ventas Bs. 2025 | Venta neta | 11,071M | **8,960M** | Hallucination LLM |
+| Ventas Bs. 2025 | Facturas "sin región" | 89,432 | ~23,532 (ambas monedas) | Hallucination LLM |
+| Ventas Oct-Mar | Facturas Oct 2024 | 1,432 | **3,652** | Posible filtro parcial |
+| Ventas Oct-Mar | Facturas Nov 2024 | 1,398 | **2,962** | Posible filtro parcial |
+| Ventas USD 2025 | Todos los campos | Correcto | Correcto | OK |
+| Ventas por distribuidor | Todos los campos | Correcto | Correcto | OK |
+| Cobranza método pago | Todos los campos | Correcto | Correcto | OK (nombres viejos, ya corregidos) |
+| Top 20 cobranza | Todos los campos | Correcto | Correcto | OK |
+
+---
+
 ## Notas Importantes
 
 1. **m_production.productionqty es negativo** en iDempiere de Santoni — usar `m_productionline.movementqty` para cantidades reales
