@@ -333,16 +333,18 @@ Datos de ventas de iDempiere:
                 if limit_match:
                     limit = int(limit_match.group(1))
                 org_label = f" - {org_name}" if org_name else ""
+                # Default to Bs. when no currency specified to avoid mixing Bs+USD
+                top_currency = currency_ids if currency_ids else [205]
                 logger.info(
                     "Top clients query: mes=%s, anio=%s, date_from=%s, date_to=%s, "
                     "zona=%s, vendedor=%s, org_name=%s, org_ids=%s, currency_ids=%s",
-                    mes, anio, date_from, date_to, zona, vendedor, org_name, org_ids, currency_ids,
+                    mes, anio, date_from, date_to, zona, vendedor, org_name, org_ids, top_currency,
                 )
                 data = build_top_clients(
                     limit=limit, zona=zona, vendedor=vendedor, mes=mes, anio=anio,
                     org_ids=org_ids, salesrep_id=salesrep_id,
                     date_from=date_from, date_to=date_to,
-                    currency_ids=currency_ids, org_name=org_name,
+                    currency_ids=top_currency, org_name=org_name,
                 )
                 logger.info("Top clients result: %d rows", len(data) if isinstance(data, list) else -1)
                 # If specific period returned empty, retry with full year
@@ -352,7 +354,7 @@ Datos de ventas de iDempiere:
                         limit=limit, zona=zona, vendedor=vendedor, mes=None, anio=anio,
                         org_ids=org_ids, salesrep_id=salesrep_id,
                         date_from=None, date_to=None,
-                        currency_ids=currency_ids, org_name=org_name,
+                        currency_ids=top_currency, org_name=org_name,
                     )
                     logger.info("Fallback result: %d rows", len(data_year) if isinstance(data_year, list) else -1)
                     if not self._is_empty_result(data_year):
