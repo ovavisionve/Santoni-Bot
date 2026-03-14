@@ -913,7 +913,7 @@
 | Vendors | 6 |
 | Cliente | 4 |
 
-### Discrepancias detectadas en respuestas del bot (14/Mar/2026)
+### Discrepancias detectadas en respuestas del bot (14/Mar/2026 - ronda 1)
 
 | Consulta | Dato | Bot dijo | Dato real SQL | Problema |
 |----------|------|----------|---------------|----------|
@@ -928,6 +928,264 @@
 | Ventas por distribuidor | Todos los campos | Correcto | Correcto | OK |
 | Cobranza método pago | Todos los campos | Correcto | Correcto | OK (nombres viejos, ya corregidos) |
 | Top 20 cobranza | Todos los campos | Correcto | Correcto | OK |
+
+---
+
+## 16. VENTAS + COBRANZA 2024-2026 (verificación 14/Mar/2026 22:50)
+
+> **Fuente:** `verify_data.py --check ventas` y `--check cobranza` contra iDempiere producción
+> **Propósito:** Validar respuestas del agente de ventas para Feb/Mar 2026
+
+### 16.1 Ventas - Totales por año
+
+| Año | Facturas | NC | Total facturado | Monto NC | Venta neta |
+|-----|----------|-----|-----------------|----------|------------|
+| 2024 | 38,674 | 21,270 | 1,994,297,738.41 | 88,940,915.92 | 1,905,356,822.49 |
+| 2025 | 42,869 | 15,150 | 10,404,177,997.05 | 1,370,574,621.23 | 9,033,603,375.82 |
+| 2026 | 9,090 | 1,831 | 7,123,098,104.13 | 1,623,768,954.23 | 5,499,329,149.90 |
+
+### 16.2 Ventas por mes 2026
+
+| Mes | Facturas | NC | Total facturado | Monto NC | Venta neta |
+|-----|----------|-----|-----------------|----------|------------|
+| 1 | 3,840 | 685 | 2,455,780,015.16 | 524,947,220.55 | 1,930,832,794.61 |
+| 2 | 3,408 | 706 | 3,325,776,278.80 | 638,104,672.47 | 2,687,671,606.33 |
+| 3 | 1,842 | 440 | 1,341,541,810.17 | 460,717,061.21 | 880,824,748.96 |
+
+### 16.3 Ventas por moneda 2026 (USD agrupado)
+
+| Moneda | Facturas | NC | Total facturado | Monto NC | Venta neta |
+|--------|----------|-----|-----------------|----------|------------|
+| Bs. | 4,539 | 955 | 7,103,805,828.56 | 1,622,015,736.41 | 5,481,790,092.15 |
+| USD | 4,551 | 876 | 19,292,275.57 | 1,753,217.82 | 17,539,057.75 |
+
+### 16.4 Marzo 2026 por moneda
+
+| Moneda | Facturas | NC | Total facturado | Monto NC | Venta neta |
+|--------|----------|-----|-----------------|----------|------------|
+| Bs. | 1,054 | 263 | 1,339,544,816.03 | 460,578,879.25 | 878,965,936.78 |
+| USD | 788 | 177 | 1,996,994.14 | 138,181.96 | 1,858,812.18 |
+| **TOTAL** | **1,842** | **440** | **1,341,541,810.17** | **460,717,061.21** | **880,824,748.96** |
+
+### 16.5 Febrero 2026 por moneda
+
+| Moneda | Facturas | NC | Total facturado | Monto NC | Venta neta |
+|--------|----------|-----|-----------------|----------|------------|
+| Bs. | 1,730 | 380 | 3,318,858,414.19 | 637,653,273.71 | 2,681,205,140.48 |
+| USD | 1,678 | 326 | 6,917,864.61 | 451,398.76 | 6,466,465.85 |
+| **TOTAL** | **3,408** | **706** | **3,325,776,278.80** | **638,104,672.47** | **2,687,671,606.33** |
+
+### 16.6 Top 10 clientes marzo 2026 (Bs.)
+
+| Código | Nombre | Facturas | NC | Venta neta |
+|--------|--------|----------|-----|------------|
+| B-0109 | ALIMENTOS PARADAYS, C.A | 5 | 1 | 62,993,011.99 |
+| I-0344 | CAPITALINA DE ALIMENTOS 212, C.A | 5 | 1 | 49,515,960.82 |
+| D-0318 | CENTRO NACIONAL DE DISTRIBUCION, C.A. | 7 | 2 | 39,518,926.55 |
+| Z-0219-E | SUPER DISTRIBUCIONES FALCON, C.A. SUDIFALCA | 3 | 2 | 33,079,251.49 |
+| U-0107 | DISTRIBUCIONES GONZALEZ LA GRITA C.A. | 4 | 1 | 32,886,821.47 |
+| Z-0198 | ALKOSTO DONDE COMPRAR ES GANAR, C.A. | 11 | 2 | 21,578,887.16 |
+| H-0054 | COMERCIAL CASA FORTUNA 2013, C.A | 2 | 2 | 21,306,725.80 |
+| M-0041 | SUPLIALIMENTOS DISTRIBUCIONES, C.A. | 2 | 0 | 20,335,175.19 |
+| Z-0219-C | SUPER DISTRIBUCIONES VALERA, C.A | 2 | 3 | 19,995,836.08 |
+| Z-0219-G | SUPER DISTRIBUCIONES CORO . C.A | 2 | 1 | 18,827,085.94 |
+
+### 16.7 Top 10 clientes febrero 2026 (Bs.)
+
+| Código | Nombre | Facturas | NC | Venta neta |
+|--------|--------|----------|-----|------------|
+| 2008116 | PROGRAMA MUNDIAL DE ALIMENTOS | 9 | 1 | 308,439,386.66 |
+| C-0501 | INVERSIONES FRANSIL 2017, C.A | 17 | 14 | 177,162,705.44 |
+| B-0109 | ALIMENTOS PARADAYS, C.A | 8 | 0 | 122,531,483.00 |
+| Z-0231 | ARAQUEZ, C.A. | 7 | 3 | 94,576,728.86 |
+| 2007868 | PROCESADORA DE ALIMENTOS LA TIERRA, C.A | 3 | 1 | 91,312,190.70 |
+| Z-0219-D | SUPER DISTRIBUCIONES DEL ZULIA, C.A. | 8 | 3 | 79,803,616.29 |
+| Z-0219-E | SUPER DISTRIBUCIONES FALCON, C.A. SUDIFALCA | 8 | 1 | 75,603,953.69 |
+| Z-0219-C | SUPER DISTRIBUCIONES VALERA, C.A | 6 | 2 | 73,200,106.20 |
+| 1004811 | GRUPO AGROLLANO 2910 C.A. | 7 | 0 | 69,706,471.05 |
+| A-0291 | LACTEOS JUNIOR, C.A | 4 | 0 | 52,118,028.00 |
+
+### 16.8 Ventas por zona marzo 2026 (Bs., top 15)
+
+| Zona | Facturas | NC | Venta neta |
+|------|----------|-----|------------|
+| Sin Zona | 592 | 166 | 403,382,061.01 |
+| ZONA CUMANA | 28 | 3 | 45,329,356.10 |
+| ZONA SAN CRISTOBAL | 26 | 8 | 39,802,274.08 |
+| ZONA BARQUISIMETO | 113 | 12 | 39,430,938.60 |
+| ZONA FALCON | 5 | 2 | 38,706,903.50 |
+| ZONA SAN FELIX-CIUDAD GUAYANA | 6 | 3 | 34,541,485.55 |
+| ZONA MARGARITA | 7 | 2 | 26,932,332.53 |
+| ZONA MARACAIBO | 28 | 18 | 26,373,336.05 |
+| ZONA TRUJILLO-VALERA | 11 | 5 | 26,008,796.24 |
+| ZONA GUANARE | 11 | 3 | 22,620,388.64 |
+| ZONA MERIDA | 6 | 7 | 22,338,713.73 |
+| ZONA BARINAS | 3 | 0 | 21,209,195.60 |
+| ZONA SANTA BARBARA ZULIA | 3 | 0 | 17,226,010.70 |
+| ZONA TRUJILO | 2 | 0 | 15,565,927.00 |
+| ZONA CIUDAD BOLIVAR | 7 | 3 | 14,785,342.57 |
+
+### 16.9 Cobranza por año (c_payment, isreceipt='Y')
+
+| Año | Recibos | Total cobrado |
+|-----|---------|--------------|
+| 2024 | 39,160 | 7,930,476,229.79 |
+| 2025 | 52,913 | 34,928,699,827.85 |
+| 2026 | 12,050 | 24,321,047,182.00 |
+
+### 16.10 Cobranza por mes 2026
+
+| Mes | Recibos | Total cobrado |
+|-----|---------|--------------|
+| 1 | 4,944 | 6,837,260,893.53 |
+| 2 | 4,890 | 12,065,110,830.06 |
+| 3 | 2,216 | 5,418,675,458.41 |
+
+### 16.11 Cobranza marzo 2026 por moneda
+
+| Moneda | Recibos | Total cobrado |
+|--------|---------|--------------|
+| Bs. | 1,215 | 5,414,659,477.46 |
+| USD | 1,001 | 4,015,980.95 |
+| **TOTAL** | **2,216** | **5,418,675,458.41** |
+
+### 16.12 Cobranza febrero 2026 por moneda
+
+| Moneda | Recibos | Total cobrado |
+|--------|---------|--------------|
+| Bs. | 2,994 | 12,056,545,230.45 |
+| USD | 1,896 | 8,565,599.62 |
+| **TOTAL** | **4,890** | **12,065,110,830.06** |
+
+### 16.13 Cobranza marzo 2026 por método de pago
+
+| Método | Recibos | Total |
+|--------|---------|-------|
+| Transferencia Empresas | 226 | 2,033,900,884.87 |
+| Dólar Transferencia | 15 | 1,626,031,840.88 |
+| Débito Directo | 4 | 973,272,498.61 |
+| Transferencia | 1,620 | 722,807,931.85 |
+| Efectivo | 311 | 51,537,426.36 |
+| Dólar Efectivo | 27 | 6,231,103.68 |
+| Depósito Directo | 1 | 3,500,000.00 |
+| Cuenta | 9 | 771,926.54 |
+| Cheque | 3 | 621,845.63 |
+
+### 16.14 Top 10 clientes cobranza marzo 2026
+
+| Cliente | Recibos | Total |
+|---------|---------|-------|
+| INPROA SANTONI, C.A | 159 | 2,373,557,295.01 |
+| INPROMAIZ, C.A. | 72 | 991,024,414.57 |
+| AGROINPROA, C.A. | 12 | 432,489,973.81 |
+| SANTONI SERVICE, C.A. | 8 | 343,578,478.02 |
+| PROGRAMA MUNDIAL DE ALIMENTOS | 6 | 203,425,807.44 |
+| INPROMAÍZ, C.A. | 7 | 175,171,613.08 |
+| AGROPECUARIA R.R, C.A. | 11 | 137,461,251.34 |
+| INVERSIONES FRANSIL 2017, C.A | 8 | 50,411,446.47 |
+| GRUPO AGROLLANO 2910 C.A. | 2 | 33,810,376.10 |
+| VALENMARKET C.A. | 14 | 24,103,713.29 |
+
+---
+
+### Comparación bot vs datos reales (14/Mar/2026 - ronda 2)
+
+#### Facturación marzo 2026
+
+| Dato | Bot dijo | Dato real SQL | Coincide? |
+|------|----------|---------------|-----------|
+| Total facturado bruto | 1,341,541,810.17 | **1,341,541,810.17** | ✅ Exacto |
+| Notas de crédito | 460,717,061.21 | **460,717,061.21** | ✅ Exacto |
+| Venta neta | 880,824,748.96 | **880,824,748.96** | ✅ Exacto |
+| Bs. facturado | 1,339,544,816.03 | **1,339,544,816.03** | ✅ Exacto |
+| Bs. NC | 460,578,879.25 | **460,578,879.25** | ✅ Exacto |
+| Bs. neto | 878,965,936.78 | **878,965,936.78** | ✅ Exacto |
+| USD facturado | 1,996,994.14 | **1,996,994.14** | ✅ Exacto |
+| USD NC | 138,181.96 | **138,181.96** | ✅ Exacto |
+| USD neto | 1,858,812.18 | **1,858,812.18** | ✅ Exacto |
+| Facturas Bs. | 1,054 (no mostró) | **1,054** | ✅ |
+| Facturas USD | 788 | **788** | ✅ Exacto |
+
+#### Febrero 2026
+
+| Dato | Bot dijo | Dato real SQL | Coincide? |
+|------|----------|---------------|-----------|
+| Facturas emitidas | 3,408 | **3,408** | ✅ Exacto |
+| Total facturado bruto | 3,325,776,278.80 | **3,325,776,278.80** | ✅ Exacto |
+| NC | 706 (Bs. 638,104,672.47) | **706 / 638,104,672.47** | ✅ Exacto |
+| Venta neta | 2,687,671,606.33 | **2,687,671,606.33** | ✅ Exacto |
+| Bs. neto | 2,681,205,140.48 | **2,681,205,140.48** | ✅ Exacto |
+| USD neto | 6,466,465.85 | **6,466,465.85** | ✅ Exacto |
+
+#### Top 10 clientes marzo 2026 (Bs.)
+
+| Dato | Bot dijo | Dato real SQL | Coincide? |
+|------|----------|---------------|-----------|
+| #1 B-0109 ALIMENTOS PARADAYS | 42,545,250.19 | **62,993,011.99** | ⚠️ Bot lo separa por zona (42.5M + 20.4M = 62.9M) |
+| #2 I-0344 CAPITALINA | 27,263,238.30 | **49,515,960.82** | ⚠️ Bot lo separa (27.2M + 22.2M = 49.5M) |
+| M-0041 SUPLIALIMENTOS | 20,335,175.19 | **20,335,175.19** | ✅ Exacto |
+| Z-0219-C SUPER DIST VALERA | 19,995,836.08 | **19,995,836.08** | ✅ Exacto |
+| Z-0219-G SUPER DIST CORO | 18,827,085.94 | **18,827,085.94** | ✅ Exacto |
+
+> **Nota:** `build_top_clients` agrupa por zona+distribuidor, por eso un cliente puede
+> aparecer múltiples veces. Los montos parciales suman al total real. No es error.
+
+#### Top clientes febrero 2026 (Bs.)
+
+| Dato | Bot dijo | Dato real SQL | Coincide? |
+|------|----------|---------------|-----------|
+| #1 PROG MUNDIAL ALIMENTOS | Facturado 308M, NC -1.25M, Neto 307M | Neto real **308,439,386.66** | ❌ Bot inventó NC monetario |
+| #2 INVERSIONES FRANSIL | Facturado 177M, NC -14.5M, Neto 162M | Neto real **177,162,705.44** | ❌ Bot inventó NC monetario |
+| #3 ALIMENTOS PARADAYS | 53,321,455.90 | **122,531,483.00** | ❌ Bot filtró solo una zona |
+| #9 I-0344 CAPITALINA | 44,926,593.03 | No está en top 10 real | ⚠️ Apareció por separación zona |
+| #10 A-0291 LACTEOS JUNIOR | 52,118,028.00 | **52,118,028.00** | ✅ Exacto |
+
+> **Bug LLM:** `build_top_clients` retorna `total_facturado` que ya es NETO (ARI - ARC),
+> pero el LLM lo presenta como "bruto" y luego **inventa montos de NC** para restarlos.
+> Ejemplo: PROGRAMA MUNDIAL real neto = 308M, bot muestra 308M como "bruto" y resta 1.25M inventado.
+
+#### Ventas por zona marzo 2026
+
+| Zona | Bot dijo | Dato real SQL | Coincide? |
+|------|----------|---------------|-----------|
+| Sin Zona | 403,382,061.01 | **403,382,061.01** | ✅ Exacto |
+| Zona Cumaná | 45,329,356.10 | **45,329,356.10** | ✅ Exacto |
+| Zona San Cristóbal | 39,802,274.08 | **39,802,274.08** | ✅ Exacto |
+| Zona Barquisimeto | 39,430,938.60 | **39,430,938.60** | ✅ Exacto |
+| Zona Falcón | 38,706,903.50 | **38,706,903.50** | ✅ Exacto |
+| Zona San Félix | 34,541,485.55 | **34,541,485.55** | ✅ Exacto |
+| Zona Margarita | 26,932,332.53 | **26,932,332.53** | ✅ Exacto |
+| Zona Maracaibo | 26,373,336.05 | **26,373,336.05** | ✅ Exacto |
+| Zona Trujillo-Valera | 26,008,796.24 | **26,008,796.24** | ✅ Exacto |
+| Zona Guanare | 22,620,388.64 | **22,620,388.64** | ✅ Exacto |
+
+> **Resultado: 10/10 zonas EXACTAS.**
+
+#### COBRANZA MARZO 2026 — BUG CRÍTICO
+
+| Dato | Bot dijo | Dato real SQL | Coincide? |
+|------|----------|---------------|-----------|
+| Pagos registrados | 1,842 | **2,216** | ❌ Bot usó conteo de facturas |
+| Total cobrado | 880,824,748.96 | **5,418,675,458.41** | ❌❌ Bot usó venta neta como cobranza |
+
+> **Bug:** El agente de ventas respondió la pregunta "¿Cuánto se ha cobrado este mes?"
+> con los datos de FACTURACIÓN (1,842 facturas / 880M neto) en vez de COBRANZA
+> (2,216 recibos / 5,418M cobrado). El código `build_collection_summary` es correcto
+> (usa `c_payment` con `isreceipt='Y'`), pero el LLM aparentemente NO llamó esa función
+> y presentó los datos de `build_sales_summary` como si fueran cobranza.
+
+#### Resumen ronda 2
+
+| Pregunta | Resultado |
+|----------|-----------|
+| Facturación marzo 2026 | ✅ **100% correcto** (todos los números exactos) |
+| Facturación USD marzo | ✅ **100% correcto** |
+| Febrero 2026 totales | ✅ **100% correcto** |
+| Top clientes Bs. febrero | ⚠️ Montos correctos pero NC monetarios **inventados por LLM** |
+| Top clientes marzo | ⚠️ Montos correctos pero **separados por zona** (confuso, no error) |
+| Ventas por zona | ✅ **100% correcto** (10/10 zonas exactas) |
+| Cobranza marzo | ❌ **INCORRECTO** — usó datos de facturación en vez de c_payment |
+| Morosos | ⚠️ Plausible (top 10 = 23% del total vencido) |
 
 ---
 
