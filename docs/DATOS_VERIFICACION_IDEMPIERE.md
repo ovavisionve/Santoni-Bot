@@ -693,6 +693,35 @@
 | 2024 | 39,160 | 7,930,476,229.79 |
 | 2025 | 52,913 | 34,928,699,827.85 |
 
+### Referencia: ad_ref_list (C_Payment Tender Type) — consultado 14/Mar/2026
+
+> Query: `SELECT value, name FROM adempiere.ad_ref_list WHERE ad_reference_id = (SELECT ad_reference_id FROM adempiere.ad_reference WHERE name ILIKE '%Tender Type%')`
+
+| Código | Nombre en iDempiere |
+|--------|---------------------|
+| A | Direct Deposit |
+| B | Tarjeta de Debito |
+| C | Credit Card |
+| D | Direct Debit |
+| E | Euro Efectivo |
+| G | Banck Deposit |
+| I | Direct Debit ITF |
+| J | Comission Banck |
+| K | Check |
+| P | Impuesto |
+| Q | Giro |
+| R | Dolar IGTF |
+| S | Transferencia Empresas |
+| T | Account |
+| U | Euro Transferencia |
+| W | Wire Transfer |
+| X | Cash |
+| Y | Dolar Efectivo |
+| Z | Dolar Transferencia |
+
+> **19 tipos totales.** Mapeo usado en `idempiere_queries.py` → `build_collection_summary()` CASE statement.
+> Los nombres en español del CASE son traducciones de estos valores oficiales.
+
 ### Cobranza por método de pago 2025
 
 | Código | Método (verificado ad_ref_list) | Recibos | Total |

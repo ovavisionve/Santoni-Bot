@@ -96,11 +96,11 @@ IMPORTANTE SOBRE PERÍODOS:
 - Si el usuario especificó un rango de fechas, los datos ya vienen filtrados para ese rango exacto
 
 SOBRE MONEDA:
-- Si el usuario pide datos "en dólares", "en USD", "en DOL", los datos ya vienen filtrados SOLO por facturas en esa moneda
-- Si el usuario pide datos "en bolívares", "en BS", "en VES", los datos ya vienen filtrados SOLO por facturas en bolívares
-- Si no se especifica moneda, se muestran TODAS las facturas. Los datos incluyen columna "moneda" (Bs. o USD) para que indiques claramente la moneda de cada monto
-- NUNCA intentes convertir montos entre monedas. Los datos son montos reales facturados en la moneda original
-- La sección "por_moneda" muestra el desglose de totales por moneda
+- Si el usuario pide datos "en dólares", "en USD", "en DOL", los datos ya vienen filtrados SOLO por facturas en esa moneda. La sección "por_moneda" tendrá UNA SOLA fila (USD). Esto es correcto, NO falta nada.
+- Si el usuario pide datos "en bolívares", "en BS", "en VES", los datos ya vienen filtrados SOLO por facturas en bolívares. La sección "por_moneda" tendrá UNA SOLA fila (Bs.). Esto es correcto, NO falta nada.
+- Si no se especifica moneda, se muestran TODAS las facturas y "por_moneda" tendrá DOS filas (Bs. y USD).
+- NUNCA intentes convertir montos entre monedas. Los datos son montos reales facturados en la moneda original.
+- CUANDO VES UNA SOLA MONEDA en "por_moneda", es porque el usuario filtró por esa moneda. NO inventes datos de la otra moneda.
 
 SOBRE DISTRIBUIDORES:
 - La columna "distribuidor" muestra el distribuidor/intermediario asignado a la factura (salesrep_id)
@@ -417,5 +417,19 @@ Datos de ventas de iDempiere:
                 f"Esto puede deberse a un problema de conexión con iDempiere. "
                 f"Intenta de nuevo en unos momentos."
             )
+
+        # Signal to LLM which currency filter was applied
+        if sections and currency_ids:
+            if currency_ids == [205]:
+                currency_note = (
+                    "⚠️ FILTRO DE MONEDA APLICADO: Los datos están filtrados SOLO por BOLÍVARES (Bs.). "
+                    "NO existe datos de USD en esta consulta. NO inventes ni agregues datos de otra moneda."
+                )
+            else:
+                currency_note = (
+                    "⚠️ FILTRO DE MONEDA APLICADO: Los datos están filtrados SOLO por USD/DÓLARES. "
+                    "NO existe datos de Bs. en esta consulta. NO inventes ni agregues datos de otra moneda."
+                )
+            sections.insert(0, currency_note)
 
         return "\n\n".join(sections) if sections else None
