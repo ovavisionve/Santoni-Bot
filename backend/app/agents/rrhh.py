@@ -283,6 +283,14 @@ Datos de RRHH en iDempiere:
         # Extract organization name from message
         org_name = self._extract_org_name(message)
 
+        # Detect if user explicitly wants ALL organizations (reset org filter)
+        _ALL_ORGS_PHRASES = [
+            "todas las empresa", "todas las organiz", "todo el grupo",
+            "todos los empleados", "en general", "en total",
+            "todas las filiales", "grupo santoni",
+        ]
+        wants_all_orgs = any(phrase in msg for phrase in _ALL_ORGS_PHRASES)
+
         # Inherit temporal context and org_name from history for follow-ups
         if not date_from and not date_to and not mes and history:
             for role, content in reversed(history):
@@ -296,14 +304,25 @@ Datos de RRHH en iDempiere:
                 if m:
                     mes, anio = m, a
                     break
-        if not org_name and history:
-            for role, content in reversed(history):
-                if role != "user":
-                    continue
-                o = self._extract_org_name(content)
-                if o:
-                    org_name = o
-                    break
+        # Only inherit org_name if user didn't explicitly ask for all orgs
+        # and the current message looks like a follow-up (short, no new topic keywords)
+        if not org_name and not wants_all_orgs and history:
+            # Only inherit org if the message is clearly a follow-up
+            # (doesn't introduce a new broad topic)
+            _NEW_TOPIC_INDICATORS = [
+                "cuántos empleados", "cuantos empleados", "nómina de", "nomina de",
+                "ausentismo", "vacaciones en", "rotación", "rotacion",
+                "cumpleañeros de", "cumplen años en", "cumple años en",
+            ]
+            is_new_topic = any(ind in msg for ind in _NEW_TOPIC_INDICATORS)
+            if not is_new_topic:
+                for role, content in reversed(history):
+                    if role != "user":
+                        continue
+                    o = self._extract_org_name(content)
+                    if o:
+                        org_name = o
+                        break
 
         label = build_period_label(date_from, date_to, mes, anio)
 
@@ -374,6 +393,9 @@ Datos de RRHH en iDempiere:
 
             if any(w in msg for w in [
                 "cumpleaño", "cumpleaños", "cumpleañero", "cumpleañeros",
+                "cumplen años", "cumple años", "cumplen año",
+                "nacieron en", "nacidos en", "fecha de nacimiento",
+                "birthday", "nacimiento",
             ]):
                 # For birthdays, use mes from the message (or current month if not specified)
                 birthday_mes = mes

@@ -326,8 +326,18 @@ Datos de producción en iDempiere:
                     date_from=date_from, date_to=date_to,
                     org_name=org_name, product_search=product_search,
                 )
-                sections.append(self._format_summary(prod_data, f"Producciones - {label}"))
-                sections.append(self._row_count_marker(prod_data))
+                total_prods = prod_data.get("totales", {}).get("total_producciones", 0)
+                if total_prods == 0:
+                    sections.append(
+                        f"## Producciones - {label}\n"
+                        f"**RESULTADO: 0 producciones encontradas** para el período {label}.\n"
+                        f"La consulta se ejecutó correctamente contra la base de datos pero no "
+                        f"arrojó registros en la tabla m_production para los filtros aplicados.\n"
+                        f"PROHIBIDO inventar cifras. Solo informa que no hay datos y sugiere consultas alternativas."
+                    )
+                else:
+                    sections.append(self._format_summary(prod_data, f"Producciones - {label}"))
+                    sections.append(self._row_count_marker(prod_data))
 
             # 2. BOMs / recipes
             if wants_bom:
