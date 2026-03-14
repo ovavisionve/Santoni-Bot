@@ -566,10 +566,11 @@ def build_sales_summary(
             for r in db.execute(by_distributor_q, params).fetchall()
         ]
 
-        # By month - net of credit notes
+        # By month - net of credit notes (include year for cross-year ranges)
         by_month_q = text(
             f"{zone_cte}"
-            f"SELECT EXTRACT(MONTH FROM i.dateinvoiced)::int AS mes, "
+            f"SELECT EXTRACT(YEAR FROM i.dateinvoiced)::int AS anio, "
+            f"EXTRACT(MONTH FROM i.dateinvoiced)::int AS mes, "
             f"SUM(CASE WHEN dt.docbasetype = 'ARI' THEN 1 ELSE 0 END) AS facturas, "
             f"SUM(CASE WHEN dt.docbasetype = 'ARC' THEN 1 ELSE 0 END) AS notas_credito, "
             f"COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal "
@@ -577,10 +578,11 @@ def build_sales_summary(
             f"FROM adempiere.c_invoice i "
             f"{joins}"
             f"WHERE {where} "
-            f"GROUP BY EXTRACT(MONTH FROM i.dateinvoiced) ORDER BY mes"
+            f"GROUP BY EXTRACT(YEAR FROM i.dateinvoiced), EXTRACT(MONTH FROM i.dateinvoiced) "
+            f"ORDER BY anio, mes"
         )
         by_month = [
-            {"mes": r[0], "facturas": r[1], "notas_credito": r[2], "total": float(r[3])}
+            {"anio": r[0], "mes": r[1], "facturas": r[2], "notas_credito": r[3], "total": float(r[4])}
             for r in db.execute(by_month_q, params).fetchall()
         ]
 
@@ -1820,17 +1822,19 @@ def build_production_summary(
             for r in db.execute(by_product_q, params).fetchall()
         ]
 
-        # By month
+        # By month (include year for cross-year ranges)
         by_month_q = text(
-            f"SELECT EXTRACT(MONTH FROM io.movementdate)::int AS mes, "
+            f"SELECT EXTRACT(YEAR FROM io.movementdate)::int AS anio, "
+            f"EXTRACT(MONTH FROM io.movementdate)::int AS mes, "
             f"COUNT(*) AS movimientos, "
             f"SUM(CASE WHEN io.movementtype = 'V+' THEN 1 ELSE 0 END) AS recepciones, "
             f"SUM(CASE WHEN io.movementtype = 'C-' THEN 1 ELSE 0 END) AS despachos "
             f"FROM adempiere.m_inout io WHERE {where} "
-            f"GROUP BY EXTRACT(MONTH FROM io.movementdate) ORDER BY mes"
+            f"GROUP BY EXTRACT(YEAR FROM io.movementdate), EXTRACT(MONTH FROM io.movementdate) "
+            f"ORDER BY anio, mes"
         )
         by_month = [
-            {"mes": r[0], "movimientos": r[1], "recepciones": r[2], "despachos": r[3]}
+            {"anio": r[0], "mes": r[1], "movimientos": r[2], "recepciones": r[3], "despachos": r[4]}
             for r in db.execute(by_month_q, params).fetchall()
         ]
 
@@ -2033,9 +2037,10 @@ def build_production_runs(
             for r in db.execute(by_insumo_q, params).fetchall()
         ]
 
-        # 4. By month (qty from finished products in productionline)
+        # 4. By month (qty from finished products in productionline, include year for cross-year ranges)
         by_month_q = text(
-            f"SELECT EXTRACT(MONTH FROM pr.movementdate)::int AS mes, "
+            f"SELECT EXTRACT(YEAR FROM pr.movementdate)::int AS anio, "
+            f"EXTRACT(MONTH FROM pr.movementdate)::int AS mes, "
             f"COUNT(DISTINCT pr.m_production_id) AS producciones, "
             f"COALESCE(SUM(CASE WHEN prl.isendproduct = 'Y' AND prl.movementqty > 0 "
             f"  THEN prl.movementqty ELSE 0 END), 0) AS qty_terminada, "
@@ -2044,11 +2049,12 @@ def build_production_runs(
             f"FROM adempiere.m_production pr "
             f"JOIN adempiere.m_productionline prl ON pr.m_production_id = prl.m_production_id "
             f"WHERE {where} "
-            f"GROUP BY EXTRACT(MONTH FROM pr.movementdate) ORDER BY mes"
+            f"GROUP BY EXTRACT(YEAR FROM pr.movementdate), EXTRACT(MONTH FROM pr.movementdate) "
+            f"ORDER BY anio, mes"
         )
         by_month = [
-            {"mes": r[0], "producciones": r[1],
-             "cantidad_terminada": float(r[2]), "cantidad_consumida": float(r[3])}
+            {"anio": r[0], "mes": r[1], "producciones": r[2],
+             "cantidad_terminada": float(r[3]), "cantidad_consumida": float(r[4])}
             for r in db.execute(by_month_q, params).fetchall()
         ]
 
@@ -2625,16 +2631,18 @@ def build_supply_purchases(
             for r in db.execute(by_supplier_q, params).fetchall()
         ]
 
-        # By month
+        # By month (include year for cross-year ranges)
         by_month_q = text(
-            f"SELECT EXTRACT(MONTH FROM i.dateinvoiced)::int AS mes, "
+            f"SELECT EXTRACT(YEAR FROM i.dateinvoiced)::int AS anio, "
+            f"EXTRACT(MONTH FROM i.dateinvoiced)::int AS mes, "
             f"COUNT(DISTINCT i.c_invoice_id) AS facturas, "
             f"COALESCE(SUM(i.grandtotal), 0) AS total "
             f"FROM adempiere.c_invoice i WHERE {where} "
-            f"GROUP BY EXTRACT(MONTH FROM i.dateinvoiced) ORDER BY mes"
+            f"GROUP BY EXTRACT(YEAR FROM i.dateinvoiced), EXTRACT(MONTH FROM i.dateinvoiced) "
+            f"ORDER BY anio, mes"
         )
         by_month = [
-            {"mes": r[0], "facturas": r[1], "total": float(r[2])}
+            {"anio": r[0], "mes": r[1], "facturas": r[2], "total": float(r[3])}
             for r in db.execute(by_month_q, params).fetchall()
         ]
 
