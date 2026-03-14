@@ -1,0 +1,413 @@
+===============================================================
+SALIDA CRUDA - verificacion_ventas_2025.sql
+Ejecutado: 14/Mar/2026 contra iDempiere producción (192.168.1.73)
+===============================================================
+
+--- TOP 20 CLIENTES 2025 ---
+
+ codigo   | nombre                                                | zona                        | distribuidor                        | tipologia      | moneda | facturas | notas_credito | total_facturado
+----------+-------------------------------------------------------+-----------------------------+-------------------------------------+----------------+--------+----------+---------------+----------------
+          | (datos parciales capturados del output)
+ Z-0219-C | SUPER DISTRIBUCIONES VALERA, C.A                      | ZONA TRUJILLO-VALERA        | NAIFEN FENG                         | ClientesInproa | Bs.    |       53 |            64 |    137956810.72
+ Z-0219-G | SUPER DISTRIBUCIONES CORO . C.A                       | ZONA FALCON- CORO           | Sin Distribuidor                    | Clientes       | Bs.    |       30 |            21 |    135961501.76
+ E-0007-B | EXCELENCIA CORPORACION, C.A                           | Sin Zona                    | Sin Distribuidor                    | ClientesInproa | Bs.    |       51 |            32 |    133872054.28
+ 1-00001  | INPROA SANTONI, C.A                                   | Sin Zona                    | Sin Distribuidor                    | Clientes       | Bs.    |        1 |             0 |    132231943.86
+ L-0177-A | COMERCIALIZADORA Y DISTRIBUIDORA TERAN & HIJOS, C.A.  | ZONA BARQUISIMETO           | Sin Distribuidor                    | Clientes       | Bs.    |       38 |             6 |    132004266.32
+ B-0109   | ALIMENTOS PARADAYS, C.A                               | ZONA BARINAS                | INVERSIONES CORDERO HERNANDEZ, C.A. | ClientesInproa | Bs.    |       19 |             6 |    120907702.35
+ E-0007   | GRUPO SONREIR 123, C.A                                | Sin Zona                    | Sin Distribuidor                    | ClientesInproa | Bs.    |       16 |            12 |    109998640.09
+ I-0344   | CAPITALINA DE ALIMENTOS 212, C.A                      | Sin Zona                    | Sin Distribuidor                    | ClientesInproa | Bs.    |       39 |            19 |    103526984.53
+ Z-0231   | ARAQUEZ, C.A.                                         | ZONA SANTA BARBARA DE ZULIA | NAIFEN FENG                         | ClientesInproa | Bs.    |       36 |            20 |     99826097.41
+ E-0007   | GRUPO SONREIR 123, C.A                                | Sin Zona                    | Sin Distribuidor                    | Clientes       | Bs.    |       30 |            16 |     98690187.62
+ E-0007   | GRUPO SONREIR 123, C.A                                | Sin Zona                    | PUBLI EVENTO'S, C.A.                | ClientesInproa | Bs.    |       41 |            19 |     97429857.50
+ Z-0219-E | SUPER DISTRIBUCIONES FALCON, C.A. SUDIFALCA           | ZONA FALCON                 | Sin Distribuidor                    | ClientesInproa | Bs.    |       44 |            38 |     95395442.16
+ C-0445   | FRIGORIFICO LA FUERZA DEL TORO C.A                    | Sin Zona                    | VIDRIOS Y MARQUETERIA EL CONDOR, CA | ClientesInproa | Bs.    |       48 |            30 |     90402734.58
+(20 rows)
+
+--- TOP 20 CLIENTES 2024 ---
+
+ codigo   | nombre                                              | zona                          | moneda | facturas | total_facturado
+----------+-----------------------------------------------------+-------------------------------+--------+----------+----------------
+          | (primer cliente cortado en output)                   |                               |        |          |     32766258.35
+ Z-0219-C | SUPER DISTRIBUCIONES VALERA, C.A                     | ZONA TRUJILLO-VALERA          | Bs.    |       47 |     32185129.03
+ U-0098   | CORPORACION DHL C.A                                  | ZONA SAN CRISTOBAL            | Bs.    |       56 |     31174328.49
+ B-0109   | ALIMENTOS PARADAYS, C.A                              | ZONA BARINAS                  | Bs.    |       42 |     30465842.12
+ E-0007-A | EXCELENCIAS OLA, C.A.                                | Sin Zona                      | Bs.    |       44 |     29383710.44
+ L-0177   | DISTRIBUIDORA  VIVERES A-1 CA                        | ZONA BARQUISIMETO             | Bs.    |       55 |     29118062.12
+ 1-00001  | INPROA SANTONI, C.A                                  | Sin Zona                      | Bs.    |        6 |     27988882.74
+ Z-0219-E | SUPER DISTRIBUCIONES FALCON, C.A. SUDIFALCA          | ZONA FALCON                   | Bs.    |       37 |     27098413.94
+ Z-0219-E | SUPER DISTRIBUCIONES FALCON, C.A. SUDIFALCA          | ZONA PTO FIJO                 | Bs.    |       30 |     25464039.05
+ H-0050   | ALIMENTOS NUTRIORIENTE, C.A                          | ZONA SAN FELIX-CIUDAD GUAYANA | Bs.    |       42 |     21607435.91
+ A-0291   | LACTEOS JUNIOR, C.A                                  | ZONA GUANARE                  | Bs.    |       25 |     21448707.06
+ Z-0219-C | SUPER DISTRIBUCIONES VALERA, C.A                     | ZONA TRUJILO                  | Bs.    |       22 |     19716176.07
+ 1000084  | INPROA SANTONI, C.A                                  | Sin Zona                      | Bs.    |        6 |     18349170.16
+ A-0291-A | COMERCIALIZADORA Y EMPAQUETADORA  DOÑA CARMEN C.A    | ZONA GUANARE                  | Bs.    |       21 |     16529690.81
+(20 rows)
+
+--- CUENTAS POR COBRAR VENCIDAS (Top 30) ---
+
+ numero_factura | cliente                                        | zona          | monto_total | fecha               | fecha_vencimiento | dias_vencido
+----------------+------------------------------------------------+---------------+-------------+---------------------+-------------------+--------------
+                | (primeras filas cortadas en output)
+ F-002074       | AUTOMERCADOS PLAZA'S, C.A.                     |               |     3705.07 | 2023-05-30 00:00:00 | 2023-06-14        |         1004
+ F-002072       | AUTOMERCADOS PLAZA'S, C.A.                     |               |     6754.84 | 2023-05-30 00:00:00 | 2023-06-14        |         1004
+ PF-013753      | INSIDE MARKET SUPERMERCADO RIO, C.A            |               |    31313.28 | 2023-05-30 00:00:00 | 2023-06-19        |          999
+ A-063798       | MASTER CONFITE COMPAÑIA ANONIMA                | ZONA CORO     |    18850.17 | 2023-06-22 00:00:00 | 2023-07-02        |          986
+ PF-014230      | DISTRIBUIDORA Y COMERCIALIZADORA VALENCIA, C.A |               |    16800.00 | 2023-06-29 00:00:00 | 2023-07-06        |          982
+ PF-014228      | DISTRIBUIDORA Y COMERCIALIZADORA VALENCIA, C.A |               |      872.64 | 2023-06-29 00:00:00 | 2023-07-06        |          982
+ A-000010       | ALIMENTOS POLAR COMERCIAL, C.A.                |               | 18875847.60 | 2023-06-07 00:00:00 | 2023-07-07        |          981
+ A-000011       | ALIMENTOS POLAR COMERCIAL, C.A.                |               | 54561530.40 | 2023-06-07 00:00:00 | 2023-07-07        |          981
+ PFC-005230     | AUTOMERCADO SUPREMO C.A.                       |               |      426.43 | 2023-06-30 00:00:00 | 2023-07-15        |          973
+ PFC-005229     | AUTOMERCADO SUPREMO C.A.                       |               |      325.92 | 2023-06-30 00:00:00 | 2023-07-15        |          973
+ PF-014466      | MASTER CONFITE COMPAÑIA ANONIMA                | ZONA CORO     |     3573.60 | 2023-07-10 00:00:00 | 2023-07-17        |          971
+ PFC-005265     | SUPERMERCADOS UNICASA, C.A.                    |               |     7208.40 | 2023-07-06 00:00:00 | 2023-07-21        |          967
+ A-063893       | ALIMENTOS FM C.A                               |               |    14911.57 | 2023-07-06 00:00:00 | 2023-07-21        |          967
+(30 rows)
+
+--- TIPOS DE DOCUMENTO EN FACTURAS 2025 ---
+
+ docbasetype | tipo_documento              | cantidad
+-------------+-----------------------------+----------
+ ARI         | AR Invoice ProformaV        |    15803
+ ARI         | AR Invoice ProformaC        |     8476
+ ARI         | AR Invoice Dolares          |     3996
+ ARC         | AR Credit ProformaV         |     1965
+ ARC         | AR Credit ProformaC         |     1809
+ ARI         | AR Invoice DolaresNF        |     1373
+ ARI         | AR Invoice B                |     1095
+ ARC         | AR Credit MemoV             |      923
+ ARC         | AR Credit MemoC             |      884
+ ARC         | AR Credit Memo              |      436
+ ARI         | AR Invoice IMVDolar         |      385
+ ARI         | AR Invoice CargoDolar       |      382
+ ARI         | AR Invoice LiqDolar         |      380
+ ARI         | AR Credit Dolar Note        |      296
+ ARC         | AR Credit Memo Proforma     |      276
+ ARI         | AR Invoice                  |      267
+ ARI         | Factura AGA                 |      256
+ ARI         | AR InvoiceE                 |      221
+ ARC         | AR Credit Memo Valencia     |      145
+ ARC         | AR Credit Memo ProDolares   |      111
+ ARI         | AR Debit MemoCaracas        |       51
+ ARC         | AR Credit Memo Caracas      |       37
+ ARI         | AR Debit MemoValencia       |       36
+ ARI         | AR Invoice Service          |       25
+ ARC         | AR Credit Memo AGA          |       22
+ ARI         | AR InvoiceF                 |       13
+ ARI         | AR Debit Memo               |        7
+ ARC         | AR Credit Memo Serie B      |        4
+ ARI         | AR Invoice Debito           |        3
+ ARI         | Factura R.R.                |        1
+(35 rows)
+
+--- MONEDAS EN FACTURAS 2025 ---
+
+ iso_code | c_currency_id | cursymbol | facturas
+----------+---------------+-----------+----------
+ VES      |           205 | BsS       |    25654
+ DOL      |       1000000 | $         |    19751
+ DoL      |       1000011 | $         |     7189
+ USA      |       1000003 | $         |     2796
+ dol      |       1000008 | $         |     1550
+ Dol      |       1000006 | $         |     1074
+ USD      |           100 | $         |        5
+(7 rows)
+
+--- ZONAS DE VENTA EN IDEMPIERE ---
+
+                        zona                        | c_salesregion_id | clientes_asignados
+----------------------------------------------------+------------------+--------------------
+ SANTA CRUZ DE ARAGUA                               |          1000538 |                552
+ PORTUGUESA-ACARIGUA                                |          1000387 |                474
+ ALMACENADORA DE SEMILLAS Y CEREALES PORTUGUESA C.A |          1000281 |                368
+ ZONA BARQUISIMETO                                  |          1000013 |                332
+ INPROA SANTONI C.A                                 |          1000252 |                237
+ ZONA BARQUISIMETO                                  |          1000406 |                170
+ ZONA YARACUY                                       |          1000076 |                145
+ ZONA CARACAS                                       |          1000033 |                119
+ ZONA ANZOATEGUI                                    |          1000151 |                108
+ ZONA MARACAIBO                                     |          1000047 |                102
+ ZONA ACARIGUA                                      |          1000020 |                101
+ ZONA BARINAS                                       |          1000024 |                 98
+ GUANARE-PORTUGUESA                                 |          1000363 |                 75
+ ZONA ANZOATEGUI                                    |          1000411 |                 67
+ ZONA YARACUY                                       |          1000407 |                 64
+ ZONA MARACAIBO                                     |          1000404 |                 56
+ ZONA ACARIGUA                                      |          1000399 |                 48
+ ZONA MATURIN                                       |          1000054 |                 47
+ ZONA MERIDA                                        |          1000055 |                 46
+ ZONA MERIDA                                        |          1000422 |                 45
+ ZONA GUANARE                                       |          1000424 |                 39
+ ZONA CARABOBO (LARGO)                              |          1000380 |                 37
+ ZONA MATURIN                                       |          1000409 |                 37
+ ZONA BARCELONA                                     |          1000373 |                 35
+ ZONA CIUDAD BOLIVAR                                |          1000142 |                 34
+ ZONA CUMANA                                        |          1000155 |                 33
+ ZONA MARGARITA                                     |          1000095 |                 32
+(continúa...)
+
+--- TIPOLOGÍAS DE CLIENTES ---
+
+           tipologia            | clientes
+--------------------------------+----------
+ Proveedores                    |     8179
+ Clientes                       |     3635
+ ClientesInproa                 |     3432
+ Estándar                       |     3422
+ Proveedor                      |     2031
+ Productor                      |      947
+ Empleados Inproa Santoni CA    |      926
+ ClientesInproaPLANTA           |      384
+ Empleados                      |      280
+ Clientes al Mayor              |      236
+ Productores                    |      212
+ Empleado                       |       94
+ INVERSIONES AGA ( ALQUILERES ) |       93
+ Vendedores                     |       82
+ Proveedores Insumos            |       80
+ Empleado Gerencial             |       48
+ Empleados Inpromaíz CA         |       44
+ Empleados Destajo              |       42
+ Proveedores varios             |       37
+ CLIENTES                       |       34
+ Empleado (Choferes)            |       33
+ Empleado (Fuerza Venta)        |       32
+ PROVEEDORES                    |       17
+ EMPLEADOS                      |       15
+ Staff                          |        7
+ Vendors                        |        6
+ Cliente                        |        4
+(continúa...)
+
+--- AÑO 2024 ---
+
+ total_facturas | total_facturado |  total_neto   |  total_iva
+----------------+-----------------+---------------+-------------
+          38674 |   1994297738.41 | 1972439650.88 | 21858087.53
+
+ total_notas_credito | monto_notas_credito
+---------------------+---------------------
+               21270 |         88940915.92
+
+--- AÑO 2025 ---
+
+ total_facturas | total_facturado |   total_neto   |  total_iva
+----------------+-----------------+----------------+-------------
+          42869 |  10404177997.05 | 10327273434.17 | 76904562.88
+
+ total_notas_credito | monto_notas_credito
+---------------------+---------------------
+               15150 |       1370574621.23
+
+--- VENTAS POR MES 2024 ---
+
+ anio | mes | facturas | notas_credito |  venta_neta
+------+-----+----------+---------------+--------------
+ 2024 |   1 |     2727 |          1282 | 137847404.22
+ 2024 |   2 |     2251 |          1306 |  50722210.93
+ 2024 |   3 |     2987 |          1425 |  96556269.30
+ 2024 |   4 |     4468 |          2023 | 191529344.91
+ 2024 |   5 |     4207 |          1853 | 192339290.33
+ 2024 |   6 |     3650 |          1722 | 168024341.14
+ 2024 |   7 |     3135 |          1625 | 143483672.50
+ 2024 |   8 |     3181 |          1772 | 210081711.62
+ 2024 |   9 |     3008 |          2155 | 146523017.78
+ 2024 |  10 |     3652 |          2339 | 212725876.43
+ 2024 |  11 |     2962 |          2026 | 190329735.83
+ 2024 |  12 |     2446 |          1742 | 165193947.50
+(12 rows)
+
+--- VENTAS POR MES 2025 ---
+
+ anio | mes | facturas | notas_credito |  venta_neta
+------+-----+----------+---------------+---------------
+ 2025 |   1 |     2785 |          2009 |  215608007.98
+ 2025 |   2 |     2929 |          1679 |  244848249.47
+ 2025 |   3 |     2928 |          1697 |  231480752.14
+ 2025 |   4 |     3607 |          1517 |  373346976.97
+ 2025 |   5 |     3723 |          2675 |  437826915.33
+ 2025 |   6 |     3402 |           925 |  479905112.03
+ 2025 |   7 |     3556 |           828 |  389294711.63
+ 2025 |   8 |     3640 |           574 |  828772034.04
+ 2025 |   9 |     4124 |           894 |  918530821.23
+ 2025 |  10 |     5052 |           882 | 1558429690.04
+ 2025 |  11 |     3728 |           722 | 1350606616.72
+ 2025 |  12 |     3395 |           748 | 2004953488.24
+(12 rows)
+
+--- VENTAS POR MONEDA 2025 ---
+
+ moneda | facturas | notas_credito | total_facturado |   monto_nc    |  venta_neta
+--------+----------+---------------+-----------------+---------------+---------------
+ Bs.    |    20037 |          5617 |  10325338152.77 | 1364956937.99 | 8960381214.78
+ USD    |    22832 |          9533 |     78839844.28 |    5617683.24 |   73222161.04
+(2 rows)
+
+--- VENTAS POR MONEDA 2024 ---
+
+ moneda | facturas | notas_credito | total_facturado |  monto_nc   |  venta_neta
+--------+----------+---------------+-----------------+-------------+---------------
+ Bs.    |    18117 |          4446 |   1929685883.16 | 82849257.14 | 1846836626.02
+ USD    |    20557 |         16824 |     64611855.25 |  6091658.78 |   58520196.47
+(2 rows)
+
+--- VENTAS POR ZONA 2025 ---
+
+                        zona                        | facturas |  total_bruto  |   total_nc   |  venta_neta
+----------------------------------------------------+----------+---------------+--------------+---------------
+ Sin Zona                                           |    23532 | 5391849172.12 | 872950128.26 | 4518899043.86
+ ZONA BARQUISIMETO                                  |     4225 |  440847540.28 |  28665702.39 |  412181837.89
+ ZONA MARACAIBO                                     |     1111 |  407244819.22 |  55025976.45 |  352218842.77
+ ZONA MERIDA                                        |      862 |  365488513.30 |  25036866.17 |  340451647.13
+ ZONA GUANARE                                       |      329 |  348845188.09 |  28809246.16 |  320035941.93
+ ZONA FALCON- CORO                                  |      139 |  270091093.81 |   9153166.52 |  260937927.29
+ ZONA MARGARITA                                     |      391 |  267839336.60 |  56268557.43 |  211570779.17
+ ZONA FALCON                                        |      195 |  220448787.08 |  12759976.75 |  207688810.33
+ ZONA TRUJILLO-VALERA                               |      226 |  197199575.15 |  14714308.15 |  182485267.00
+ ZONA SAN CRISTOBAL                                 |      943 |  189234331.48 |  11090559.25 |  178143772.23
+ ZONA BARINAS                                       |      158 |  183908488.06 |   8062642.41 |  175845845.65
+ ZONA TRUJILO                                       |      107 |  181938935.48 |   9747907.49 |  172191027.99
+ ZONA SAN FELIX-CIUDAD GUAYANA                      |      275 |  194547354.47 |  26463527.77 |  168083826.70
+ ZONA SANTA BARBARA DE ZULIA                        |      671 |  144836984.94 |   5475952.65 |  139361032.29
+ ZONA CIUDAD BOLIVAR                                |      303 |  136015867.86 |  17776759.37 |  118239108.49
+ ZONA UPATA-BOLIVAR                                 |      150 |  119242814.49 |   5185515.00 |  114057299.49
+ ZONA CARACAS                                       |      871 |  148951821.11 |  37775394.78 |  111176426.33
+ ZONA MATURIN                                       |     1013 |   97167135.85 |   6263520.76 |   90903615.09
+ ZONA EL VIGIA                                      |       29 |  104443616.45 |  18495926.81 |   85947689.64
+ ALMACENADORA DE SEMILLAS Y CEREALES PORTUGUESA C.A |      158 |   91844883.18 |   6298024.03 |   85546859.15
+(20 rows)
+
+--- VENTAS POR ORGANIZACIÓN 2025 ---
+
+          organizacion          | facturas |  venta_neta
+--------------------------------+----------+---------------
+ INPROA SANTONI C.A.            |    27313 | 5476541151.25
+ InproMaiz C.A                  |    10056 | 2930382187.51
+ AGROINPROA C.A                 |     2695 |  401269680.86
+ AGROPECUARIA R.R. C.A.         |     1551 |  132311559.79
+ INVERSIONES AGA C.A            |     1222 |   52611764.19
+ AGA AGRICOLA C.A               |        2 |   32797600.00
+ Santoni Service C.A            |       25 |    7409932.22
+ Ocean Equipment Industries LLC |        5 |     279500.00
+(8 rows)
+
+--- VENTAS POR DISTRIBUIDOR 2025 ---
+
+             distribuidor              | facturas |  venta_neta
+---------------------------------------+----------+---------------
+ Sin Distribuidor                      |    31618 | 6405810010.27
+ NAUDY JOSE VITAL GALVAN               |      668 |  597737417.35
+ NAIFEN FENG                           |      833 |  437857489.94
+ INVERSIONES CORDERO HERNANDEZ, C.A.   |      278 |  327559144.77
+ VIDRIOS Y MARQUETERIA EL CONDOR, CA   |     1599 |  252600010.44
+ AGROPECUARIA CANAIMA CA               |     1511 |  148302182.03
+ PUBLI EVENTO'S, C.A.                  |      145 |  128042572.10
+ TRACTO AMERICA CA                     |     1197 |  113600183.78
+ OPERADORA TURISTICA CAQUETIO C.A.     |      104 |   93895062.60
+ TAFERCA C.A.                          |      236 |   90686403.17
+ CENYA MARIA MENDOZA                   |      328 |   71349243.60
+ EBER JESUS RODRIGUEZ MARTINEZ         |      352 |   57547507.95
+ TIKO'S C.A                            |       49 |   54359579.18
+ AUTOMERCADO LAS AMAPOLAS CA           |       64 |   40285381.95
+ SUPERMERCADO CAMPO BELLO C A          |      685 |   29731457.40
+ LACTEOS FLOR DE CATIA, C.A.           |      981 |   24215995.43
+ COMERCIAL  SAMI S.A                   |      708 |   20881537.56
+ JUNIOR VIVERES, C.A.                  |       46 |   20108678.80
+ ABASTOS Y SUPERMERCADO DON RAMON C.A. |      220 |   19501338.99
+ SUPERMERCADO DELGRANO C.A.            |       72 |   18042471.95
+(20 rows)
+
+--- COBRANZA 2025 ---
+
+ total_recibos |        total_cobrado
+---------------+------------------------------
+         52913 | 34928699827.8473375624661667
+
+--- COBRANZA 2024 ---
+
+ total_recibos |        total_cobrado
+---------------+------------------------------
+         39160 | 7930476229.78807478479126775
+
+--- COBRANZA POR MÉTODO 2025 ---
+
+  metodo_pago  | recibos |            total
+---------------+---------+------------------------------
+ W             |   42770 | 11117867081.7459805206288494
+ Z             |     434 |       9557473756.07261201085
+ Depósito      |      73 |        6811027732.5166860000
+ S             |    2275 |    5161862020.39750601665310
+ Transferencia |    5195 |  1144746454.4680049999989273
+ Tarjeta       |    1101 |      742944501.1879515069688
+ Y             |    1057 |     296087501.40219650736649
+ U             |       1 |                  96385483.74
+ Efectivo      |       3 |                    209183.40
+ R             |       1 |                   88008.8064
+ B             |       2 |                      6033.00
+ E             |       1 |                      2071.11
+(12 rows)
+
+--- TOP 20 COBRANZA POR CLIENTE 2025 ---
+
+                       cliente                        | recibos |           total
+------------------------------------------------------+---------+----------------------------
+ INPROA SANTONI, C.A                                  |    2955 | 12190558629.00289003054270
+ INPROMAIZ, C.A.                                      |    1467 |    10475468598.38269801166
+ AGROINPROA,C.A.                                      |     190 |     1726278816.38760000001
+ INVERSIONES LA ESPIGA LLC                            |       1 |                  804342310
+ ALIMENTOS PARADAYS, C.A                              |     354 |             509837356.9310
+ GRUPO AGROLLANO 2910 C.A.                            |      36 |               429378723.55
+ GRUPO SONREIR 123, C.A                               |     474 |              339770010.875
+ SUPER DISTRIBUCIONES VALERA, C.A                     |     406 |            285271910.25828
+ OHA TECHNOLOGY, C.A                                  |       1 |                  283250000
+ INPROMAÍZ, C.A.                                      |     192 |            276978794.28926
+ IMPORTACIONES TOP 2023, C.A.                         |      30 |               260909729.56
+ INVERSIONES FRANSIL 2017, C.A                        |     110 |              255319998.007
+ LACTEOS JUNIOR, C.A                                  |     914 |             232081206.5450
+ ALIMENTOS EL MAIZAL C. A.                            |      58 |               229980101.07
+ SUPER DISTRIBUCIONES DEL ZULIA, C.A.                 |     343 |              216872805.300
+ SUPER DISTRIBUCIONES FALCON, C.A. SUDIFALCA          |     312 |             177901835.4200
+ COMERCIALIZADORA Y DISTRIBUIDORA TERAN & HIJOS, C.A. |     143 |               150146604.86
+ ARAQUEZ, C.A.                                        |     561 |             142616351.5200
+ EXCELENCIA CORPORACION, C.A                          |     146 |               135392185.23
+ SUPER DISTRIBUCIONES COL, C.A.                       |     189 |               127424237.54
+(20 rows)
+
+--- COBRANZA POR MES 2025 ---
+
+ anio | mes | recibos |        total_cobrado
+------+-----+---------+-----------------------------
+ 2025 |   1 |    3583 | 1076227315.5588859999769273
+ 2025 |   2 |    3223 |  446596066.6905440005750136
+ 2025 |   3 |    3673 |    713487203.03847975181463
+ 2025 |   4 |    3832 |   1194267965.35180500021997
+ 2025 |   5 |    4445 | 1465422774.8832532147349615
+ 2025 |   6 |    4267 | 1233424951.2980400000141783
+ 2025 |   7 |    4696 |   2128727678.02411399999978
+ 2025 |   8 |    4532 |    2543863238.6600790094899
+ 2025 |   9 |    4785 |     6116846612.724330233273
+ 2025 |  10 |    5526 |  6340132638.305884356892716
+ 2025 |  11 |    5013 |   4376856085.91741996349439
+ 2025 |  12 |    5338 |   7292847297.39450203198070
+(12 rows)
+
+--- DOCSTATUS DE FACTURAS 2025 ---
+
+ docstatus | cantidad
+-----------+----------
+ CO        |    58019
+ RE        |     1913
+ VO        |      293
+ DR        |        6
+(4 rows)
+
+--- DOCSTATUS DE PAGOS 2025 ---
+
+ docstatus | cantidad
+-----------+----------
+ CO        |    52913
+ RE        |     1794
+ VO        |       70
+ IP        |       28
+ DR        |        9
+ IN        |        4
+(6 rows)
