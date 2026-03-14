@@ -1342,14 +1342,17 @@ def build_payroll_summary(
         _add_date_filter(conditions, params, date_from, date_to, mes, anio, "hp.dateacct")
         where = " AND ".join(conditions)
 
-        # Process summary
+        # Process summary — use hr_concept.type to distinguish earnings ('E') vs deductions ('D')
+        # In iDempiere, all hr_movement.amount values are positive; the concept type
+        # determines whether it's an earning or deduction.
         totals_q = text(
             f"SELECT COUNT(DISTINCT hp.hr_process_id) AS total_procesos, "
             f"COUNT(DISTINCT hm.c_bpartner_id) AS empleados_procesados, "
-            f"COALESCE(SUM(CASE WHEN hm.amount > 0 THEN hm.amount ELSE 0 END), 0) AS total_devengado, "
-            f"COALESCE(SUM(CASE WHEN hm.amount < 0 THEN ABS(hm.amount) ELSE 0 END), 0) AS total_deducciones "
+            f"COALESCE(SUM(CASE WHEN hc.type = 'E' THEN ABS(hm.amount) ELSE 0 END), 0) AS total_devengado, "
+            f"COALESCE(SUM(CASE WHEN hc.type = 'D' THEN ABS(hm.amount) ELSE 0 END), 0) AS total_deducciones "
             f"FROM adempiere.hr_process hp "
             f"LEFT JOIN adempiere.hr_movement hm ON hp.hr_process_id = hm.hr_process_id "
+            f"LEFT JOIN adempiere.hr_concept hc ON hm.hr_concept_id = hc.hr_concept_id "
             f"WHERE {where}"
         )
         row = db.execute(totals_q, params).fetchone()
@@ -1486,6 +1489,8 @@ def build_attendance_summary(
         ]
 
         # Total active employees for rate calculation
+        # Must JOIN c_bpartner to check bp.isactive = 'Y' (same as build_employee_summary)
+        # Without this join, hr_employee alone returns ~1057 instead of 702
         emp_conditions = ["1=1"]
         emp_params: dict = {}
         _add_org_filter(emp_conditions, emp_params, org_ids, "e")
@@ -1493,7 +1498,8 @@ def build_attendance_summary(
         emp_q = text(
             f"SELECT COUNT(DISTINCT e.c_bpartner_id) "
             f"FROM adempiere.hr_employee e "
-            f"WHERE e.isactive = 'Y' AND {emp_where}"
+            f"JOIN adempiere.c_bpartner bp ON e.c_bpartner_id = bp.c_bpartner_id "
+            f"WHERE e.isactive = 'Y' AND bp.isactive = 'Y' AND {emp_where}"
         )
         emp_row = db.execute(emp_q, emp_params).fetchone()
         total_activos = emp_row[0] if emp_row else 0
@@ -1502,10 +1508,12 @@ def build_attendance_summary(
         tasa = (total_afectados / total_activos * 100) if total_activos else 0
 
         total_ocurrencias = sum(c["ocurrencias"] for c in by_concept)
+        total_monto_bs = sum(c["monto_bs"] for c in by_concept)
         totals = {
             "empleados_activos": total_activos,
             "empleados_con_ausencias": total_afectados,
             "total_ocurrencias": total_ocurrencias,
+            "total_monto_bs": total_monto_bs,
             "tasa_ausentismo_pct": round(tasa, 2),
             "conceptos_encontrados": len(by_concept),
             "nota_horas": "No se dispone de horas-hombre en el sistema de nómina. Los datos se expresan en ocurrencias y monto (Bs.).",
@@ -1605,6 +1613,7 @@ def build_vacation_summary(
     org_ids: list[int] | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    org_name: str | None = None,
 ) -> dict:
     """Vacation data from hr_movement concepts containing 'vacacion' or 'bono vacacional'."""
     db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
@@ -1617,8 +1626,14 @@ def build_vacation_summary(
         _add_org_filter(conditions, params, org_ids, "hm")
         _add_date_filter(conditions, params, date_from, date_to, mes, anio, "hp.dateacct")
 
+        # Filter by org_name if provided
+        if org_name:
+            conditions.append("UPPER(o.name) LIKE :org_name_filter")
+            params["org_name_filter"] = f"%{org_name.upper()}%"
+
         # Filter concepts related to vacations
-        vacation_terms = ["%vacacion%", "%bono vacacional%", "%dias disfrut%"]
+        # Use unaccent-safe patterns: 'vacacion' matches both 'vacacion' and 'vacación'
+        vacation_terms = ["%vacacion%", "%vacaci_n%", "%bono vacacional%", "%dias disfrut%"]
         like_clauses = " OR ".join(
             f"LOWER(hc.name) LIKE :vac_{i}" for i in range(len(vacation_terms))
         )
@@ -1628,6 +1643,9 @@ def build_vacation_summary(
 
         where = " AND ".join(conditions)
 
+        # Optional org JOIN (needed when org_name filter is used)
+        org_join = "LEFT JOIN adempiere.ad_org o ON hm.ad_org_id = o.ad_org_id " if org_name else ""
+
         # Totals
         totals_q = text(
             f"SELECT COUNT(DISTINCT hm.c_bpartner_id) AS total_empleados, "
@@ -1636,6 +1654,7 @@ def build_vacation_summary(
             f"FROM adempiere.hr_movement hm "
             f"JOIN adempiere.hr_process hp ON hp.hr_process_id = hm.hr_process_id "
             f"JOIN adempiere.hr_concept hc ON hm.hr_concept_id = hc.hr_concept_id "
+            f"{org_join}"
             f"WHERE {where}"
         )
         row = db.execute(totals_q, params).fetchone()
@@ -1660,6 +1679,7 @@ def build_vacation_summary(
             f"FROM adempiere.hr_movement hm "
             f"JOIN adempiere.hr_process hp ON hp.hr_process_id = hm.hr_process_id "
             f"JOIN adempiere.hr_concept hc ON hm.hr_concept_id = hc.hr_concept_id "
+            f"{org_join}"
             f"WHERE {where} "
             f"GROUP BY hc.name ORDER BY monto DESC"
         )
@@ -1705,6 +1725,7 @@ def build_vacation_summary(
             f"JOIN adempiere.hr_process hp ON hp.hr_process_id = hm.hr_process_id "
             f"JOIN adempiere.hr_concept hc ON hm.hr_concept_id = hc.hr_concept_id "
             f"JOIN adempiere.c_bpartner bp ON hm.c_bpartner_id = bp.c_bpartner_id "
+            f"{org_join}"
             f"WHERE {where} "
             f"GROUP BY bp.name, hc.name ORDER BY monto DESC LIMIT 30"
         )

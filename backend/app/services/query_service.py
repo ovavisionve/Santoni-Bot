@@ -1066,6 +1066,7 @@ def build_vacation_summary(
     org_ids: list[int] | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    org_name: str | None = None,
 ) -> dict:
     """Vacation summary - routes to demo or iDempiere."""
     if _is_production():
@@ -1073,6 +1074,7 @@ def build_vacation_summary(
         return _prod(
             mes=mes, anio=anio, org_ids=org_ids,
             date_from=date_from, date_to=date_to,
+            org_name=org_name,
         )
 
     # Demo fallback

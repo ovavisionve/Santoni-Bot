@@ -459,6 +459,7 @@ Datos de RRHH en iDempiere:
                     data = build_vacation_summary(
                         mes=mes, anio=anio, org_ids=org_ids,
                         date_from=date_from, date_to=date_to,
+                        org_name=org_name,
                     )
                     sections.append(self._format_summary(
                         data, f"Resumen de Vacaciones - {label}",

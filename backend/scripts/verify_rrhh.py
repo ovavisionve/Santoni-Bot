@@ -462,14 +462,15 @@ def check_nomina(db):
     header("NÓMINA: DATOS REALES")
 
     # Nómina febrero 2026 (lo que reportó el bot)
-    subheader("Nómina febrero 2026 (query del agente)")
+    subheader("Nómina febrero 2026 (query del agente - usa hr_concept.type)")
     q1 = text("""
         SELECT COUNT(DISTINCT hp.hr_process_id) AS procesos,
                COUNT(DISTINCT hm.c_bpartner_id) AS empleados,
-               COALESCE(SUM(CASE WHEN hm.amount > 0 THEN hm.amount ELSE 0 END), 0) AS devengado,
-               COALESCE(SUM(CASE WHEN hm.amount < 0 THEN ABS(hm.amount) ELSE 0 END), 0) AS deducciones
+               COALESCE(SUM(CASE WHEN hc.type = 'E' THEN ABS(hm.amount) ELSE 0 END), 0) AS devengado,
+               COALESCE(SUM(CASE WHEN hc.type = 'D' THEN ABS(hm.amount) ELSE 0 END), 0) AS deducciones
         FROM adempiere.hr_movement hm
         JOIN adempiere.hr_process hp ON hp.hr_process_id = hm.hr_process_id
+        LEFT JOIN adempiere.hr_concept hc ON hm.hr_concept_id = hc.hr_concept_id
         WHERE hp.docstatus IN ('CO', 'CL')
           AND hp.isactive = 'Y'
           AND EXTRACT(MONTH FROM hp.dateacct) = 2
@@ -523,9 +524,10 @@ def check_nomina(db):
     q4 = text("""
         SELECT EXTRACT(MONTH FROM hp.dateacct)::int AS mes,
                COUNT(DISTINCT hm.c_bpartner_id) AS empleados,
-               COALESCE(SUM(CASE WHEN hm.amount > 0 THEN hm.amount ELSE 0 END), 0) AS devengado
+               COALESCE(SUM(CASE WHEN hc.type = 'E' THEN ABS(hm.amount) ELSE 0 END), 0) AS devengado
         FROM adempiere.hr_movement hm
         JOIN adempiere.hr_process hp ON hp.hr_process_id = hm.hr_process_id
+        LEFT JOIN adempiere.hr_concept hc ON hm.hr_concept_id = hc.hr_concept_id
         WHERE hp.docstatus IN ('CO', 'CL')
           AND hp.isactive = 'Y'
           AND EXTRACT(YEAR FROM hp.dateacct) = 2026
