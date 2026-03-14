@@ -783,13 +783,14 @@ def build_top_clients(
             f"{zone_cte}"
             f"SELECT bp.value AS codigo, bp.name AS nombre, "
             f"COALESCE(cz.zona_name, 'Sin Zona') AS zona, "
-            f"COALESCE(sr.name, 'Sin Distribuidor') AS distribuidor, "
             f"COALESCE(bpg.name, 'Sin Tipología') AS tipologia, "
             f"{cur_label} AS moneda, "
             f"SUM(CASE WHEN dt.docbasetype = 'ARI' THEN 1 ELSE 0 END) AS facturas, "
             f"SUM(CASE WHEN dt.docbasetype = 'ARC' THEN 1 ELSE 0 END) AS notas_credito, "
+            f"COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal ELSE 0 END), 0) AS total_facturado, "
+            f"COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARC' THEN i.grandtotal ELSE 0 END), 0) AS total_notas_credito, "
             f"COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal "
-            f"WHEN dt.docbasetype = 'ARC' THEN -i.grandtotal ELSE 0 END), 0) AS total_facturado "
+            f"WHEN dt.docbasetype = 'ARC' THEN -i.grandtotal ELSE 0 END), 0) AS venta_neta "
             f"FROM adempiere.c_invoice i "
             f"JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id "
             f"LEFT JOIN adempiere.c_bpartner sr ON i.salesrep_id = sr.c_bpartner_id "
@@ -797,8 +798,8 @@ def build_top_clients(
             f"LEFT JOIN adempiere.c_bp_group bpg ON bp.c_bp_group_id = bpg.c_bp_group_id "
             f"JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id "
             f"WHERE {where} "
-            f"GROUP BY bp.value, bp.name, cz.zona_name, sr.name, bpg.name, {cur_label} "
-            f"ORDER BY total_facturado DESC "
+            f"GROUP BY bp.value, bp.name, cz.zona_name, bpg.name, {cur_label} "
+            f"ORDER BY venta_neta DESC "
             f"LIMIT :limit"
         )
         logger.info("build_top_clients SQL WHERE: %s | params: %s", where, {k: v for k, v in params.items() if k != "limit"})
@@ -809,12 +810,13 @@ def build_top_clients(
                 "codigo": r[0],
                 "nombre": r[1],
                 "zona": r[2],
-                "distribuidor": r[3],
-                "tipologia": r[4],
-                "moneda": r[5],
-                "facturas": r[6],
-                "notas_credito": r[7],
-                "total_facturado": float(r[8]),
+                "tipologia": r[3],
+                "moneda": r[4],
+                "facturas": r[5],
+                "notas_credito": r[6],
+                "total_facturado": float(r[7]),
+                "total_notas_credito": float(r[8]),
+                "venta_neta": float(r[9]),
             }
             for r in rows
         ]

@@ -128,8 +128,8 @@ SOBRE NOTAS DE CRÉDITO:
 - Las notas de crédito (NC) ya están SEPARADAS de las facturas en los datos
 - Los totales de venta muestran: facturas brutas, notas de crédito y venta neta (facturas - NC)
 - En los desgloses por zona, mes y moneda, el campo "total" ya es el neto (facturas - NC)
-- En el top de clientes, el total_facturado ya es neto (restadas las NC del cliente)
-- SIEMPRE presenta la venta neta como el dato principal y menciona las NC como referencia
+- En el top de clientes los datos incluyen: total_facturado (bruto), total_notas_credito (monto NC), y venta_neta (= facturado - NC). Usa SIEMPRE venta_neta como dato principal
+- NUNCA inventes montos de notas de crédito. Los montos EXACTOS ya vienen en el campo total_notas_credito. Solo usa esos valores
 - Ejemplo: "Venta neta: Bs. 1,500,000 (Facturado: Bs. 1,800,000 - NC: Bs. 300,000)"
 - Las cuentas por cobrar vencidas NO incluyen notas de crédito"""
 
@@ -179,7 +179,7 @@ Datos de ventas de iDempiere:
     ]
     _QUERY_TYPES = {
         "top": ["top", "mejor", "ranking", "pareto", "principales"],
-        "cobranza": ["cobran", "cobro", "recauda", "pago"],
+        "cobranza": ["cobran", "cobro", "cobrad", "recauda", "pago"],
         "vencidas": ["atrasa", "vencid", "pendiente", "deuda", "mora"],
         "ventas": ["venta", "factur", "ingreso", "volumen"],
         "region": ["region", "región", "regiones"],
