@@ -975,35 +975,73 @@
 | USD | 1,678 | 326 | 6,917,864.61 | 451,398.76 | 6,466,465.85 |
 | **TOTAL** | **3,408** | **706** | **3,325,776,278.80** | **638,104,672.47** | **2,687,671,606.33** |
 
-### 16.6 Top 10 clientes marzo 2026 (Bs.)
+### 16.6 Top 10 clientes marzo 2026 (Bs.) - campos completos
 
-| Código | Nombre | Facturas | NC | Venta neta |
-|--------|--------|----------|-----|------------|
-| B-0109 | ALIMENTOS PARADAYS, C.A | 5 | 1 | 62,993,011.99 |
-| I-0344 | CAPITALINA DE ALIMENTOS 212, C.A | 5 | 1 | 49,515,960.82 |
-| D-0318 | CENTRO NACIONAL DE DISTRIBUCION, C.A. | 7 | 2 | 39,518,926.55 |
-| Z-0219-E | SUPER DISTRIBUCIONES FALCON, C.A. SUDIFALCA | 3 | 2 | 33,079,251.49 |
-| U-0107 | DISTRIBUCIONES GONZALEZ LA GRITA C.A. | 4 | 1 | 32,886,821.47 |
-| Z-0198 | ALKOSTO DONDE COMPRAR ES GANAR, C.A. | 11 | 2 | 21,578,887.16 |
-| H-0054 | COMERCIAL CASA FORTUNA 2013, C.A | 2 | 2 | 21,306,725.80 |
-| M-0041 | SUPLIALIMENTOS DISTRIBUCIONES, C.A. | 2 | 0 | 20,335,175.19 |
-| Z-0219-C | SUPER DISTRIBUCIONES VALERA, C.A | 2 | 3 | 19,995,836.08 |
-| Z-0219-G | SUPER DISTRIBUCIONES CORO . C.A | 2 | 1 | 18,827,085.94 |
+> **Verificación:** 14/Mar/2026 23:21 — query idéntica a `build_top_clients` con `c_currency_id = 205`
 
-### 16.7 Top 10 clientes febrero 2026 (Bs.)
+| # | Código | Nombre | Zona | Facturas | NC | Facturado bruto | Total NC | Venta neta |
+|---|--------|--------|------|----------|-----|-----------------|----------|------------|
+| 1 | B-0109 | ALIMENTOS PARADAYS, C.A | Sin Zona | 5 | 1 | 77,171,412.19 | 14,178,400.20 | 62,993,011.99 |
+| 2 | I-0344 | CAPITALINA DE ALIMENTOS 212, C.A | Sin Zona | 5 | 1 | 63,176,919.60 | 13,660,958.78 | 49,515,960.82 |
+| 3 | D-0318 | CENTRO NACIONAL DE DISTRIBUCION, C.A. | Sin Zona | 7 | 2 | 55,008,058.17 | 15,489,131.62 | 39,518,926.55 |
+| 4 | Z-0219-E | SUPER DISTRIBUCIONES FALCON, C.A. SUDIFALCA | ZONA FALCON | 3 | 2 | 33,100,275.00 | 21,023.51 | 33,079,251.49 |
+| 5 | U-0107 | DISTRIBUCIONES GONZALEZ LA GRITA C.A. | ZONA SAN CRISTOBAL | 4 | 1 | 34,073,845.29 | 1,187,023.82 | 32,886,821.47 |
+| 6 | Z-0198 | ALKOSTO DONDE COMPRAR ES GANAR, C.A. | ZONA TRUJILLO-VALERA | 11 | 2 | 21,614,416.91 | 35,529.75 | 21,578,887.16 |
+| 7 | H-0054 | COMERCIAL CASA FORTUNA 2013, C.A | ZONA MARGARITA | 2 | 2 | 21,358,803.26 | 52,077.46 | 21,306,725.80 |
+| 8 | M-0041 | SUPLIALIMENTOS DISTRIBUCIONES, C.A. | ZONA MERIDA | 2 | 0 | 20,335,175.19 | 0.00 | 20,335,175.19 |
+| 9 | Z-0219-C | SUPER DISTRIBUCIONES VALERA, C.A | ZONA TRUJILLO-VALERA | 2 | 3 | 20,769,218.26 | 773,382.18 | 19,995,836.08 |
+| 10 | Z-0219-G | SUPER DISTRIBUCIÓNES CORO . C.A | ZONA FALCON | 2 | 1 | 18,841,644.00 | 14,558.06 | 18,827,085.94 |
 
-| Código | Nombre | Facturas | NC | Venta neta |
-|--------|--------|----------|-----|------------|
-| 2008116 | PROGRAMA MUNDIAL DE ALIMENTOS | 9 | 1 | 308,439,386.66 |
-| C-0501 | INVERSIONES FRANSIL 2017, C.A | 17 | 14 | 177,162,705.44 |
-| B-0109 | ALIMENTOS PARADAYS, C.A | 8 | 0 | 122,531,483.00 |
-| Z-0231 | ARAQUEZ, C.A. | 7 | 3 | 94,576,728.86 |
-| 2007868 | PROCESADORA DE ALIMENTOS LA TIERRA, C.A | 3 | 1 | 91,312,190.70 |
-| Z-0219-D | SUPER DISTRIBUCIONES DEL ZULIA, C.A. | 8 | 3 | 79,803,616.29 |
-| Z-0219-E | SUPER DISTRIBUCIONES FALCON, C.A. SUDIFALCA | 8 | 1 | 75,603,953.69 |
-| Z-0219-C | SUPER DISTRIBUCIONES VALERA, C.A | 6 | 2 | 73,200,106.20 |
-| 1004811 | GRUPO AGROLLANO 2910 C.A. | 7 | 0 | 69,706,471.05 |
-| A-0291 | LACTEOS JUNIOR, C.A | 4 | 0 | 52,118,028.00 |
+### 16.6b Top 10 clientes marzo 2026 (USD) - campos completos
+
+> **Verificación:** 14/Mar/2026 23:21 — `c_currency_id IN (100,1000000,1000003,1000006,1000008,1000009,1000011,1000013,1000017)`
+
+| # | Código | Nombre | Zona | Facturas | NC | Facturado bruto | Total NC | Venta neta |
+|---|--------|--------|------|----------|-----|-----------------|----------|------------|
+| 1 | C-0501 | INVERSIONES FRANSIL 2017, C.A | Sin Zona | 7 | 3 | 207,053.60 | 172.80 | 206,880.80 |
+| 2 | Ñ-0040 | MERCADO LA 14, C.A. | Sin Zona | 1 | 0 | 125,199.13 | 0.00 | 125,199.13 |
+| 3 | U-0107 | DISTRIBUCIONES GONZALEZ LA GRITA C.A. | ZONA SAN CRISTOBAL | 3 | 0 | 75,161.44 | 0.00 | 75,161.44 |
+| 4 | D-0318 | CENTRO NACIONAL DE DISTRIBUCION, C.A. | Sin Zona | 4 | 0 | 72,878.40 | 0.00 | 72,878.40 |
+| 5 | I-0344 | CAPITALINA DE ALIMENTOS 212, C.A | Sin Zona | 2 | 0 | 50,607.36 | 0.00 | 50,607.36 |
+| 6 | Z-0198 | ALKOSTO DONDE COMPRAR ES GANAR, C.A. | ZONA TRUJILLO-VALERA | 11 | 2 | 49,507.56 | 82.02 | 49,425.54 |
+| 7 | H-0054 | COMERCIAL CASA FORTUNA 2013, C.A | ZONA MARGARITA | 2 | 3 | 48,185.87 | 381.90 | 47,803.97 |
+| 8 | M-0041 | SUPLIALIMENTOS DISTRIBUCIONES, C.A. | ZONA MERIDA | 2 | 0 | 46,115.08 | 0.00 | 46,115.08 |
+| 9 | I-0127 | FORUM SUPER MAYORISTA, C.A | Sin Zona | 4 | 0 | 40,888.76 | 0.00 | 40,888.76 |
+| 10 | Z-0219-C | SUPER DISTRIBUCIONES VALERA, C.A | ZONA TRUJILLO-VALERA | 1 | 2 | 38,976.00 | 71.88 | 38,904.12 |
+
+### 16.7 Top 10 clientes febrero 2026 (Bs.) - campos completos
+
+> **Verificación:** 14/Mar/2026 23:21
+
+| # | Código | Nombre | Zona | Facturas | NC | Facturado bruto | Total NC | Venta neta |
+|---|--------|--------|------|----------|-----|-----------------|----------|------------|
+| 1 | 2008116 | PROGRAMA MUNDIAL DE ALIMENTOS DE LAS NAC | ZONA MARACAIBO | 9 | 1 | 431,249,937.91 | 122,810,551.25 | 308,439,386.66 |
+| 2 | C-0501 | INVERSIONES FRANSIL 2017, C.A | Sin Zona | 17 | 14 | 209,869,860.21 | 32,707,154.77 | 177,162,705.44 |
+| 3 | B-0109 | ALIMENTOS PARADAYS, C.A | Sin Zona | 8 | 0 | 122,531,483.00 | 0.00 | 122,531,483.00 |
+| 4 | Z-0231 | ARAQUEZ, C.A. | ZONA SANTA BARBARA DE ZULIA | 7 | 3 | 109,420,791.00 | 14,844,062.14 | 94,576,728.86 |
+| 5 | 2007868 | PROCESADORA DE ALIMENTOS LA TIERRA, C.A | Sin Zona | 3 | 1 | 115,645,318.19 | 24,333,127.49 | 91,312,190.70 |
+| 6 | Z-0219-D | SUPER DISTRIBUCIONES DEL ZULIA, C.A. | ZONA MARACAIBO | 8 | 3 | 94,848,684.27 | 15,045,067.98 | 79,803,616.29 |
+| 7 | Z-0219-E | SUPER DISTRIBUCIONES FALCON, C.A. SUDIFALCA | ZONA FALCON | 8 | 1 | 75,615,686.19 | 11,732.50 | 75,603,953.69 |
+| 8 | Z-0219-C | SUPER DISTRIBUCIONES VALERA, C.A | ZONA TRUJILLO-VALERA | 6 | 2 | 76,361,586.28 | 3,161,480.08 | 73,200,106.20 |
+| 9 | 1004811 | GRUPO AGROLLANO 2910 C.A. | Sin Zona | 7 | 0 | 69,706,471.05 | 0.00 | 69,706,471.05 |
+| 10 | A-0291 | LACTEOS JUNIOR, C.A | ZONA GUANARE | 4 | 0 | 52,118,028.00 | 0.00 | 52,118,028.00 |
+
+### 16.7b Top 10 clientes febrero 2026 (USD) - campos completos
+
+> **Verificación:** 14/Mar/2026 23:21
+
+| # | Código | Nombre | Zona | Facturas | NC | Facturado bruto | Total NC | Venta neta |
+|---|--------|--------|------|----------|-----|-----------------|----------|------------|
+| 1 | 2008116 | PROGRAMA MUNDIAL DE ALIMENTOS DE LAS NAC | ZONA MARACAIBO | 20 | 14 | 662,585.20 | 64,577.21 | 598,007.99 |
+| 2 | B-0109 | ALIMENTOS PARADAYS, C.A | Sin Zona | 12 | 0 | 402,976.00 | 0.00 | 402,976.00 |
+| 3 | C-0501 | INVERSIONES FRANSIL 2017, C.A | Sin Zona | 11 | 12 | 302,253.09 | 6,689.29 | 295,563.80 |
+| 4 | Z-0219-E | SUPER DISTRIBUCIONES FALCON, C.A. SUDIFALCA | ZONA FALCON | 10 | 5 | 264,090.46 | 15,028.20 | 249,062.26 |
+| 5 | 2007868 | PROCESADORA DE ALIMENTOS LA TIERRA, C.A | Sin Zona | 12 | 0 | 240,029.46 | 0.00 | 240,029.46 |
+| 6 | Z-0231 | ARAQUEZ, C.A. | ZONA SANTA BARBARA DE ZULIA | 6 | 3 | 201,649.60 | 104.40 | 201,545.20 |
+| 7 | Z-0219-C | SUPER DISTRIBUCIONES VALERA, C.A | ZONA TRUJILLO-VALERA | 6 | 7 | 192,807.38 | 11,841.56 | 180,965.82 |
+| 8 | Z-0219-D | SUPER DISTRIBUCIONES DEL ZULIA, C.A. | ZONA MARACAIBO | 7 | 7 | 187,085.31 | 32,211.70 | 154,873.61 |
+| 9 | A-0291 | LACTEOS JUNIOR, C.A | ZONA GUANARE | 5 | 1 | 163,660.00 | 9,090.00 | 154,570.00 |
+| 10 | Z-0198 | ALKOSTO DONDE COMPRAR ES GANAR, C.A. | ZONA TRUJILLO-VALERA | 19 | 3 | 119,629.10 | 150.51 | 119,478.59 |
 
 ### 16.8 Ventas por zona marzo 2026 (Bs., top 15)
 
@@ -1186,6 +1224,79 @@
 | Ventas por zona | ✅ **100% correcto** (10/10 zonas exactas) |
 | Cobranza marzo | ❌ **INCORRECTO** — usó datos de facturación en vez de c_payment |
 | Morosos | ⚠️ Plausible (top 10 = 23% del total vencido) |
+
+---
+
+### Comparación bot vs datos reales (14/Mar/2026 - ronda 3: post-fix duplicados + moneda default)
+
+> **Fecha:** 14/Mar/2026 23:21
+> **Fixes aplicados antes de esta ronda:**
+> 1. `build_top_clients` GROUP BY solo `bp.value, bp.name` (fix duplicados por zona)
+> 2. 3 campos separados: total_facturado (bruto), total_notas_credito, venta_neta
+> 3. System prompt actualizado para usar venta_neta como dato principal
+> 4. Default a Bs. (currency_id=205) cuando no se especifica moneda en top clientes
+> 5. Fix cobranza: keyword "cobrad" agregado para routing correcto
+
+#### Top 10 clientes marzo 2026 (Bs.) - bot vs SQL
+
+| # | Código | Bot: Facturado | SQL: Facturado | Bot: NC | SQL: NC | Bot: Venta neta | SQL: Venta neta | OK? |
+|---|--------|----------------|----------------|---------|---------|-----------------|-----------------|-----|
+| 1 | B-0109 | 77,171,412.19 | **77,171,412.19** | 14,178,400.20 | **14,178,400.20** | 62,993,011.99 | **62,993,011.99** | ✅ |
+| 2 | I-0344 | 63,176,919.60 | **63,176,919.60** | 13,660,958.78 | **13,660,958.78** | 49,515,960.82 | **49,515,960.82** | ✅ |
+| 3 | D-0318 | 55,008,058.17 | **55,008,058.17** | 15,489,131.62 | **15,489,131.62** | 39,518,926.55 | **39,518,926.55** | ✅ |
+| 4 | Z-0219-E | 33,100,275.00 | **33,100,275.00** | 21,023.51 | **21,023.51** | 33,079,251.49 | **33,079,251.49** | ✅ |
+| 5 | U-0107 | 34,073,845.29 | **34,073,845.29** | 1,187,023.82 | **1,187,023.82** | 32,886,821.47 | **32,886,821.47** | ✅ |
+| 6 | Z-0198 | 21,614,416.91 | **21,614,416.91** | 35,529.75 | **35,529.75** | 21,578,887.16 | **21,578,887.16** | ✅ |
+| 7 | H-0054 | 21,358,803.26 | **21,358,803.26** | 52,077.46 | **52,077.46** | 21,306,725.80 | **21,306,725.80** | ✅ |
+| 8 | M-0041 | 20,335,175.19 | **20,335,175.19** | 0.00 | **0.00** | 20,335,175.19 | **20,335,175.19** | ✅ |
+| 9 | Z-0219-C | 20,769,218.26 | **20,769,218.26** | 773,382.18 | **773,382.18** | 19,995,836.08 | **19,995,836.08** | ✅ |
+| 10 | Z-0219-G | 18,841,644.00 | **18,841,644.00** | 14,558.06 | **14,558.06** | 18,827,085.94 | **18,827,085.94** | ✅ |
+
+> **Resultado: 10/10 clientes Bs. EXACTOS en los 3 campos (facturado, NC, venta neta).**
+
+#### Top 10 clientes marzo 2026 (USD) - bot vs SQL
+
+| # | Código | Nombre | Bot: Venta neta | SQL: Venta neta | OK? |
+|---|--------|--------|-----------------|-----------------|-----|
+| 1 | C-0501 | INVERSIONES FRANSIL 2017, C.A | 206,880.80 | **206,880.80** | ✅ |
+| 2 | Ñ-0040 | MERCADO LA 14, C.A. | 125,199.13 | **125,199.13** | ✅ |
+| 3 | U-0107 | DISTRIBUCIONES GONZALEZ LA GRITA C.A. | 75,161.44 | **75,161.44** | ✅ |
+| 4 | D-0318 | CENTRO NACIONAL DE DISTRIBUCION, C.A. | 72,878.40 | **72,878.40** | ✅ |
+| 5 | I-0344 | CAPITALINA DE ALIMENTOS 212, C.A | 50,607.36 | **50,607.36** | ✅ |
+| 6 | Z-0198 | ALKOSTO DONDE COMPRAR ES GANAR, C.A. | 49,425.54 | **49,425.54** | ✅ |
+| 7 | H-0054 | COMERCIAL CASA FORTUNA 2013, C.A | 47,803.97 | **47,803.97** | ✅ |
+| 8 | M-0041 | SUPLIALIMENTOS DISTRIBUCIONES, C.A. | 46,115.08 | **46,115.08** | ✅ |
+| 9 | I-0127 | FORUM SUPER MAYORISTA, C.A | 40,888.76 | **40,888.76** | ✅ |
+| 10 | Z-0219-C | SUPER DISTRIBUCIONES VALERA, C.A | 38,904.12 | **38,904.12** | ✅ |
+
+> **Resultado: 10/10 clientes USD EXACTOS.**
+
+#### Cobranza marzo 2026 (post-fix routing)
+
+| Dato | Bot dijo | Dato real SQL | Coincide? |
+|------|----------|---------------|-----------|
+| Recibos | 2,216 | **2,216** | ✅ Exacto |
+| Total cobrado Bs. | 5,414,659,477.46 | **5,414,659,477.46** | ✅ Exacto |
+| Total cobrado USD | 4,015,980.95 | **4,015,980.95** | ✅ Exacto |
+| Total cobrado (todas) | 5,418,675,458.41 | **5,418,675,458.41** | ✅ Exacto |
+
+#### Resumen ronda 3
+
+| Pregunta | Resultado |
+|----------|-----------|
+| Facturación marzo 2026 | ✅ **100% correcto** |
+| Facturación USD marzo | ✅ **100% correcto** |
+| Febrero 2026 totales | ✅ **100% correcto** |
+| Top 10 clientes Bs. marzo | ✅ **100% correcto** (10/10 exactos, 3 campos) |
+| Top 10 clientes USD marzo | ✅ **100% correcto** (10/10 exactos) |
+| Ventas por zona | ✅ **100% correcto** (10/10 zonas exactas) |
+| Cobranza marzo | ✅ **100% correcto** (2,216 recibos / 5,418M) |
+
+> **Bugs corregidos desde ronda 2:**
+> - ❌→✅ Top clientes duplicados por zona/distribuidor → GROUP BY solo bp.value, bp.name
+> - ❌→✅ LLM inventaba montos NC → 3 campos separados (facturado, NC, venta neta)
+> - ❌→✅ Cobranza usaba datos de facturación → fix routing keyword "cobrad"
+> - ❌→✅ Top clientes mezclaba Bs+USD → default a Bs. cuando no se especifica moneda
 
 ---
 
