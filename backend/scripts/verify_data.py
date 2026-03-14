@@ -1375,10 +1375,14 @@ def _currency_label_sql(alias: str = "i") -> str:
 
 
 def check_finanzas(db):
-    """Verificar datos financieros: saldos bancarios, CxC, CxP, vencidas."""
-    header("VERIFICACIÓN: FINANZAS")
+    """Verificar datos financieros: saldos bancarios, CxC, CxP, vencidas.
+    Incluye datos históricos 2024-2026 por moneda (Bs./USD)."""
+    header("VERIFICACIÓN: FINANZAS (2024-2026)")
 
-    # ===== 1. SALDOS BANCARIOS =====
+    cur_label = _currency_label_sql("i")
+    cur_label_p = _currency_label_sql("p")
+
+    # ===== 1. SALDOS BANCARIOS (estado actual) =====
     subheader("Saldos bancarios por moneda (iso_code RAW)")
     q = text("""
         SELECT COALESCE(c.iso_code, 'VES') AS moneda,
@@ -1408,7 +1412,6 @@ def check_finanzas(db):
     rows = [{"moneda_grupo": r[0], "cuentas": r[1], "saldo_total": float(r[2])}
             for r in db.execute(q).fetchall()]
     table(rows)
-    total_all = sum(r["saldo_total"] for r in rows)
 
     subheader("Detalle cuentas VES (top 20 por saldo)")
     q = text("""
@@ -1429,7 +1432,7 @@ def check_finanzas(db):
             for r in db.execute(q).fetchall()]
     table(rows)
 
-    subheader(f"Detalle cuentas USD (c_currency_id IN {_USD_IDS}, top 20)")
+    subheader(f"Detalle cuentas USD (c_currency_id IN USD_IDS, top 20)")
     q = text(f"""
         SELECT b.name AS banco, ba.accountno AS cuenta,
                CASE WHEN ba.bankaccounttype = 'C' THEN 'Corriente'
@@ -1451,7 +1454,7 @@ def check_finanzas(db):
             for r in db.execute(q).fetchall()]
     table(rows)
 
-    # Bug check: cuentas bancarias con iso_code != 'VES' y != 'USD' que caen en 'Otro'
+    # Bug check: cuentas bancarias que caen en 'Otro'
     subheader("BUG CHECK: Cuentas con iso_code que NO es VES ni está en USD_IDS")
     q = text(f"""
         SELECT c.iso_code, c.c_currency_id, ba.accountno, b.name AS banco,
@@ -1469,13 +1472,12 @@ def check_finanzas(db):
              "saldo": float(r[4]), "organizacion": r[5]}
             for r in db.execute(q).fetchall()]
     if rows:
-        print(f"  {Colors.RED}⚠️ ENCONTRADAS {len(rows)} cuentas que caerían en 'Otro':{Colors.RESET}")
+        print(f"  {Colors.RED}ENCONTRADAS {len(rows)} cuentas que caerían en 'Otro':{Colors.RESET}")
         table(rows)
     else:
-        print(f"  {Colors.GREEN}✅ Ninguna cuenta bancaria cae en 'Otro' — todas son VES o USD conocidos{Colors.RESET}")
+        print(f"  {Colors.GREEN}Ninguna cuenta bancaria cae en 'Otro' — todas son VES o USD conocidos{Colors.RESET}")
 
-    # Check: ¿el bot agrupa por iso_code (VES/USD) o por c_currency_id?
-    subheader("BUG CHECK: iso_codes únicos en c_bankaccount (vs 'VES'/'USD' esperado por bot)")
+    subheader("BUG CHECK: iso_codes únicos en c_bankaccount")
     q = text("""
         SELECT DISTINCT c.iso_code, c.c_currency_id, COUNT(*) AS cuentas
         FROM adempiere.c_bankaccount ba
@@ -1487,10 +1489,161 @@ def check_finanzas(db):
             for r in db.execute(q).fetchall()]
     table(rows)
 
-    # ===== 2. CUENTAS POR COBRAR (CxC) pendientes =====
-    cur_label = _currency_label_sql("i")
+    # ===== 2. COBROS RECIBIDOS (c_payment) 2024-2026 por moneda =====
+    subheader("Cobros recibidos por año y moneda (2024-2026)")
+    q = text(f"""
+        SELECT EXTRACT(YEAR FROM p.datetrx)::int AS anio,
+               CASE WHEN p.c_currency_id = 205 THEN 'Bs.'
+                    WHEN p.c_currency_id IN ({_USD_IDS_STR}) THEN 'USD'
+                    ELSE 'Otro' END AS moneda,
+               COUNT(*) AS recibos,
+               COALESCE(SUM(p.payamt), 0) AS total
+        FROM adempiere.c_payment p
+        WHERE p.isreceipt = 'Y'
+          AND p.docstatus IN ('CO', 'CL')
+          AND p.isactive = 'Y'
+          AND EXTRACT(YEAR FROM p.datetrx) >= 2024
+        GROUP BY anio, moneda ORDER BY anio, moneda
+    """)
+    rows = [{"anio": r[0], "moneda": r[1], "recibos": r[2], "total": float(r[3])}
+            for r in db.execute(q).fetchall()]
+    table(rows)
 
-    subheader("CxC pendientes por moneda (agrupado Bs./USD)")
+    subheader("Cobros recibidos por mes 2026 y moneda")
+    q = text(f"""
+        SELECT EXTRACT(MONTH FROM p.datetrx)::int AS mes,
+               CASE WHEN p.c_currency_id = 205 THEN 'Bs.'
+                    WHEN p.c_currency_id IN ({_USD_IDS_STR}) THEN 'USD'
+                    ELSE 'Otro' END AS moneda,
+               COUNT(*) AS recibos,
+               COALESCE(SUM(p.payamt), 0) AS total
+        FROM adempiere.c_payment p
+        WHERE p.isreceipt = 'Y'
+          AND p.docstatus IN ('CO', 'CL')
+          AND p.isactive = 'Y'
+          AND EXTRACT(YEAR FROM p.datetrx) = 2026
+        GROUP BY mes, moneda ORDER BY mes, moneda
+    """)
+    rows = [{"mes": r[0], "moneda": r[1], "recibos": r[2], "total": float(r[3])}
+            for r in db.execute(q).fetchall()]
+    table(rows)
+
+    subheader("Cobros recibidos por mes 2025 y moneda")
+    q = text(f"""
+        SELECT EXTRACT(MONTH FROM p.datetrx)::int AS mes,
+               CASE WHEN p.c_currency_id = 205 THEN 'Bs.'
+                    WHEN p.c_currency_id IN ({_USD_IDS_STR}) THEN 'USD'
+                    ELSE 'Otro' END AS moneda,
+               COUNT(*) AS recibos,
+               COALESCE(SUM(p.payamt), 0) AS total
+        FROM adempiere.c_payment p
+        WHERE p.isreceipt = 'Y'
+          AND p.docstatus IN ('CO', 'CL')
+          AND p.isactive = 'Y'
+          AND EXTRACT(YEAR FROM p.datetrx) = 2025
+        GROUP BY mes, moneda ORDER BY mes, moneda
+    """)
+    rows = [{"mes": r[0], "moneda": r[1], "recibos": r[2], "total": float(r[3])}
+            for r in db.execute(q).fetchall()]
+    table(rows)
+
+    subheader("Cobros recibidos por mes 2024 y moneda")
+    q = text(f"""
+        SELECT EXTRACT(MONTH FROM p.datetrx)::int AS mes,
+               CASE WHEN p.c_currency_id = 205 THEN 'Bs.'
+                    WHEN p.c_currency_id IN ({_USD_IDS_STR}) THEN 'USD'
+                    ELSE 'Otro' END AS moneda,
+               COUNT(*) AS recibos,
+               COALESCE(SUM(p.payamt), 0) AS total
+        FROM adempiere.c_payment p
+        WHERE p.isreceipt = 'Y'
+          AND p.docstatus IN ('CO', 'CL')
+          AND p.isactive = 'Y'
+          AND EXTRACT(YEAR FROM p.datetrx) = 2024
+        GROUP BY mes, moneda ORDER BY mes, moneda
+    """)
+    rows = [{"mes": r[0], "moneda": r[1], "recibos": r[2], "total": float(r[3])}
+            for r in db.execute(q).fetchall()]
+    table(rows)
+
+    # ===== 3. PAGOS EMITIDOS (c_payment isreceipt='N') 2024-2026 =====
+    subheader("Pagos emitidos por año y moneda (2024-2026)")
+    q = text(f"""
+        SELECT EXTRACT(YEAR FROM p.datetrx)::int AS anio,
+               CASE WHEN p.c_currency_id = 205 THEN 'Bs.'
+                    WHEN p.c_currency_id IN ({_USD_IDS_STR}) THEN 'USD'
+                    ELSE 'Otro' END AS moneda,
+               COUNT(*) AS pagos,
+               COALESCE(SUM(p.payamt), 0) AS total
+        FROM adempiere.c_payment p
+        WHERE p.isreceipt = 'N'
+          AND p.docstatus IN ('CO', 'CL')
+          AND p.isactive = 'Y'
+          AND EXTRACT(YEAR FROM p.datetrx) >= 2024
+        GROUP BY anio, moneda ORDER BY anio, moneda
+    """)
+    rows = [{"anio": r[0], "moneda": r[1], "pagos": r[2], "total": float(r[3])}
+            for r in db.execute(q).fetchall()]
+    table(rows)
+
+    subheader("Pagos emitidos por mes 2026 y moneda")
+    q = text(f"""
+        SELECT EXTRACT(MONTH FROM p.datetrx)::int AS mes,
+               CASE WHEN p.c_currency_id = 205 THEN 'Bs.'
+                    WHEN p.c_currency_id IN ({_USD_IDS_STR}) THEN 'USD'
+                    ELSE 'Otro' END AS moneda,
+               COUNT(*) AS pagos,
+               COALESCE(SUM(p.payamt), 0) AS total
+        FROM adempiere.c_payment p
+        WHERE p.isreceipt = 'N'
+          AND p.docstatus IN ('CO', 'CL')
+          AND p.isactive = 'Y'
+          AND EXTRACT(YEAR FROM p.datetrx) = 2026
+        GROUP BY mes, moneda ORDER BY mes, moneda
+    """)
+    rows = [{"mes": r[0], "moneda": r[1], "pagos": r[2], "total": float(r[3])}
+            for r in db.execute(q).fetchall()]
+    table(rows)
+
+    # ===== 4. FACTURACIÓN HISTÓRICA (c_invoice) 2024-2026 =====
+    # CxC = facturas de venta (issotrx='Y')
+    subheader("Facturación VENTA por año y moneda (2024-2026, todas las facturas)")
+    q = text(f"""
+        SELECT EXTRACT(YEAR FROM i.dateinvoiced)::int AS anio,
+               {cur_label} AS moneda,
+               COUNT(*) AS facturas,
+               COALESCE(SUM(i.grandtotal), 0) AS total
+        FROM adempiere.c_invoice i
+        WHERE i.issotrx = 'Y'
+          AND i.docstatus IN ('CO', 'CL')
+          AND i.isactive = 'Y'
+          AND EXTRACT(YEAR FROM i.dateinvoiced) >= 2024
+        GROUP BY anio, {cur_label} ORDER BY anio, moneda
+    """)
+    rows = [{"anio": r[0], "moneda": r[1], "facturas": r[2], "total": float(r[3])}
+            for r in db.execute(q).fetchall()]
+    table(rows)
+
+    # CxP = facturas de compra (issotrx='N')
+    subheader("Facturación COMPRA por año y moneda (2024-2026, todas las facturas)")
+    q = text(f"""
+        SELECT EXTRACT(YEAR FROM i.dateinvoiced)::int AS anio,
+               {cur_label} AS moneda,
+               COUNT(*) AS facturas,
+               COALESCE(SUM(i.grandtotal), 0) AS total
+        FROM adempiere.c_invoice i
+        WHERE i.issotrx = 'N'
+          AND i.docstatus IN ('CO', 'CL')
+          AND i.isactive = 'Y'
+          AND EXTRACT(YEAR FROM i.dateinvoiced) >= 2024
+        GROUP BY anio, {cur_label} ORDER BY anio, moneda
+    """)
+    rows = [{"anio": r[0], "moneda": r[1], "facturas": r[2], "total": float(r[3])}
+            for r in db.execute(q).fetchall()]
+    table(rows)
+
+    # ===== 5. CxC PENDIENTES (estado actual) =====
+    subheader("CxC pendientes por moneda (agrupado Bs./USD) — estado actual")
     q = text(f"""
         SELECT {cur_label} AS moneda,
                COUNT(*) AS facturas,
@@ -1509,6 +1662,25 @@ def check_finanzas(db):
     total_cxc_fact = sum(r["facturas"] for r in rows)
     row("TOTAL CxC (todas monedas)", total_cxc)
     row("TOTAL facturas CxC", total_cxc_fact)
+
+    # Aging de CxC por año de factura
+    subheader("CxC pendientes: aging por año de factura y moneda")
+    q = text(f"""
+        SELECT EXTRACT(YEAR FROM i.dateinvoiced)::int AS anio_factura,
+               {cur_label} AS moneda,
+               COUNT(*) AS facturas,
+               COALESCE(SUM(i.grandtotal), 0) AS total
+        FROM adempiere.c_invoice i
+        WHERE i.issotrx = 'Y'
+          AND i.docstatus IN ('CO', 'CL')
+          AND i.ispaid = 'N'
+          AND i.isactive = 'Y'
+        GROUP BY anio_factura, {cur_label}
+        ORDER BY anio_factura DESC, moneda
+    """)
+    rows = [{"anio_factura": r[0], "moneda": r[1], "facturas": r[2], "total": float(r[3])}
+            for r in db.execute(q).fetchall()]
+    table(rows)
 
     subheader("CxC VENCIDAS por moneda (agrupado Bs./USD)")
     q = text(f"""
@@ -1557,8 +1729,8 @@ def check_finanzas(db):
             for r in db.execute(q).fetchall()]
     table(rows)
 
-    # ===== 3. CUENTAS POR PAGAR (CxP) pendientes =====
-    subheader("CxP pendientes por moneda (agrupado Bs./USD)")
+    # ===== 6. CxP PENDIENTES (estado actual) =====
+    subheader("CxP pendientes por moneda (agrupado Bs./USD) — estado actual")
     q = text(f"""
         SELECT {cur_label} AS moneda,
                COUNT(*) AS facturas,
@@ -1577,6 +1749,25 @@ def check_finanzas(db):
     total_cxp_fact = sum(r["facturas"] for r in rows)
     row("TOTAL CxP (todas monedas)", total_cxp)
     row("TOTAL facturas CxP", total_cxp_fact)
+
+    # Aging de CxP
+    subheader("CxP pendientes: aging por año de factura y moneda")
+    q = text(f"""
+        SELECT EXTRACT(YEAR FROM i.dateinvoiced)::int AS anio_factura,
+               {cur_label} AS moneda,
+               COUNT(*) AS facturas,
+               COALESCE(SUM(i.grandtotal), 0) AS total
+        FROM adempiere.c_invoice i
+        WHERE i.issotrx = 'N'
+          AND i.docstatus IN ('CO', 'CL')
+          AND i.ispaid = 'N'
+          AND i.isactive = 'Y'
+        GROUP BY anio_factura, {cur_label}
+        ORDER BY anio_factura DESC, moneda
+    """)
+    rows = [{"anio_factura": r[0], "moneda": r[1], "facturas": r[2], "total": float(r[3])}
+            for r in db.execute(q).fetchall()]
+    table(rows)
 
     subheader("CxP VENCIDAS por moneda (agrupado Bs./USD)")
     q = text(f"""
@@ -1617,8 +1808,8 @@ def check_finanzas(db):
             for r in db.execute(q).fetchall()]
     table(rows)
 
-    # ===== 4. CxC por organización =====
-    subheader("CxC pendientes por organización")
+    # ===== 7. CxC y CxP por organización =====
+    subheader("CxC pendientes por organización y moneda")
     q = text(f"""
         SELECT COALESCE(o.name, 'Sin Org') AS organizacion,
                {cur_label} AS moneda,
@@ -1637,8 +1828,7 @@ def check_finanzas(db):
             for r in db.execute(q).fetchall()]
     table(rows)
 
-    # ===== 5. CxP por organización =====
-    subheader("CxP pendientes por organización")
+    subheader("CxP pendientes por organización y moneda")
     q = text(f"""
         SELECT COALESCE(o.name, 'Sin Org') AS organizacion,
                {cur_label} AS moneda,
@@ -1654,6 +1844,34 @@ def check_finanzas(db):
         ORDER BY total DESC
     """)
     rows = [{"organizacion": r[0], "moneda": r[1], "facturas": r[2], "total": float(r[3])}
+            for r in db.execute(q).fetchall()]
+    table(rows)
+
+    # ===== 8. Cobros por método de pago 2024-2026 =====
+    subheader("Cobros por método de pago y año (2024-2026)")
+    q = text(f"""
+        SELECT EXTRACT(YEAR FROM p.datetrx)::int AS anio,
+               COALESCE(tl.name, p.tendertype) AS metodo,
+               CASE WHEN p.c_currency_id = 205 THEN 'Bs.'
+                    WHEN p.c_currency_id IN ({_USD_IDS_STR}) THEN 'USD'
+                    ELSE 'Otro' END AS moneda,
+               COUNT(*) AS recibos,
+               COALESCE(SUM(p.payamt), 0) AS total
+        FROM adempiere.c_payment p
+        LEFT JOIN adempiere.ad_ref_list rl
+            ON rl.value = p.tendertype
+            AND rl.ad_reference_id = 214
+        LEFT JOIN adempiere.ad_ref_list_trl tl
+            ON tl.ad_ref_list_id = rl.ad_ref_list_id
+            AND tl.ad_language = 'es_VE'
+        WHERE p.isreceipt = 'Y'
+          AND p.docstatus IN ('CO', 'CL')
+          AND p.isactive = 'Y'
+          AND EXTRACT(YEAR FROM p.datetrx) >= 2024
+        GROUP BY anio, COALESCE(tl.name, p.tendertype), moneda
+        ORDER BY anio, total DESC
+    """)
+    rows = [{"anio": r[0], "metodo": r[1], "moneda": r[2], "recibos": r[3], "total": float(r[4])}
             for r in db.execute(q).fetchall()]
     table(rows)
 
