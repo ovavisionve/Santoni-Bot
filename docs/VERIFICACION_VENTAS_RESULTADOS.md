@@ -70,27 +70,25 @@ Datos verificados — ver output completo del script SQL.
 
 ### BUG ENCONTRADO: Métodos de pago
 
-El bot solo mapeaba 5 tipos de pago (X, C, K, D, T) pero existen **12 tipos** en producción.
-El más usado, "W" (Pago Móvil), representaba el 81% de los recibos y aparecía como código crudo.
+El bot solo mapeaba 5 tipos de pago (X, C, K, D, T) pero existen **19 tipos** en producción.
+El más usado, "W" (Transferencia), representaba el 81% de los recibos y aparecía como código crudo.
 
-**Fix aplicado** en `idempiere_queries.py`:
+**Fix aplicado** en `idempiere_queries.py`. Nombres verificados contra `ad_ref_list` (14/Mar/2026):
 
-| Código | Nombre (mapeado) | Recibos 2025 | Total |
-|--------|-------------------|-------------|-------|
-| W | Pago Móvil | 42,770 | 11,117M |
-| Z | Zelle | 434 | 9,557M |
-| D | Depósito | 73 | 6,811M |
-| S | Compensación | 2,275 | 5,161M |
-| X | Transferencia | 5,195 | 1,144M |
-| T | Tarjeta | 1,101 | 742M |
-| Y | Criptomoneda | 1,057 | 296M |
-| U | Otro | 1 | 96M |
-| K | Efectivo | 3 | 209K |
-| R | Retención | 1 | 88K |
-| B | Bono/Voucher | 2 | 6K |
-| E | E-Wallet | 1 | 2K |
-
-> **PENDIENTE:** Verificar nombres exactos de W, Z, S, Y contra `ad_ref_list` en iDempiere.
+| Código | Nombre (verificado) | Recibos 2025 | Total |
+|--------|---------------------|-------------|-------|
+| W | Transferencia | 42,770 | 11,117M |
+| Z | Dólar Transferencia | 434 | 9,557M |
+| D | Débito Directo | 73 | 6,811M |
+| S | Transferencia Empresas | 2,275 | 5,161M |
+| X | Efectivo | 5,195 | 1,144M |
+| T | Cuenta | 1,101 | 742M |
+| Y | Dólar Efectivo | 1,057 | 296M |
+| U | Euro Transferencia | 1 | 96M |
+| K | Cheque | 3 | 209K |
+| R | Dólar IGTF | 1 | 88K |
+| B | Tarjeta de Débito | 2 | 6K |
+| E | Euro Efectivo | 1 | 2K |
 
 ### Top 20 clientes por cobranza 2025
 

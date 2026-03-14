@@ -1,7 +1,7 @@
 {
   "version": "2.7",
   "created": "2026-03-14",
-  "description": "Dataset v2.7: 40 nuevos escenarios. Cobranza con 12 métodos de pago mapeados (Pago Móvil, Zelle, Compensación, Criptomoneda, etc.). Producción con 3 nuevas fuentes (m_production, BOM/recetas, movimientos de almacén). RRHH: fix nómina devengado/deducciones, ausentismo total_activos, vacaciones org_name, cumpleaños DISTINCT. Cross-year date ranges. Ventas por distribuidor/organización/moneda.",
+  "description": "Dataset v2.7: 40 nuevos escenarios. Cobranza con 19 métodos de pago mapeados (Transferencia, Dólar Transferencia, Transferencia Empresas, Dólar Efectivo, etc. - verificados contra ad_ref_list 14/Mar/2026). Producción con 3 nuevas fuentes (m_production, BOM/recetas, movimientos de almacén). RRHH: fix nómina devengado/deducciones, ausentismo total_activos, vacaciones org_name, cumpleaños DISTINCT. Cross-year date ranges. Ventas por distribuidor/organización/moneda.",
   "stats": {
     "total_entries": 404,
     "por_agente": {
@@ -6569,7 +6569,7 @@
       "resultado_real": {
         "agente_usado": "ventas",
         "exito": true,
-        "notas": "Fix tendertype: W=Pago Móvil (42,770 recibos, 81% del total). Antes aparecía como código 'W' crudo."
+        "notas": "Fix tendertype: W=Transferencia (42,770 recibos, 81% del total). Nombres verificados contra ad_ref_list en iDempiere."
       },
       "categoria": "cobranza"
     },
@@ -6586,13 +6586,13 @@
       "resultado_real": {
         "agente_usado": "ventas",
         "exito": true,
-        "notas": "12 métodos de pago mapeados: Pago Móvil, Zelle, Compensación, Transferencia, Tarjeta, Depósito, Cheque, Efectivo, Criptomoneda, Bono/Voucher, E-Wallet, Retención."
+        "notas": "19 métodos de pago mapeados (verificados contra ad_ref_list): Transferencia, Efectivo, Cheque, Tarjeta Crédito, Tarjeta Débito, Débito Directo, Transferencia Empresas, Dólar Transferencia, Dólar Efectivo, Dólar IGTF, Euro Efectivo, Euro Transferencia, Depósito Directo, Depósito Bancario, Cuenta, Impuesto, Giro, Débito ITF, Comisión Bancaria."
       },
       "categoria": "cobranza"
     },
     {
       "id": 367,
-      "pregunta": "¿Cuánto se cobró por Zelle en 2025?",
+      "pregunta": "¿Cuánto se cobró por Dólar Transferencia en 2025?",
       "agente_esperado": "ventas",
       "departamento_usuario": "ventas",
       "contexto": { "last_agent": null, "historial": [] },
@@ -6603,7 +6603,7 @@
       "resultado_real": {
         "agente_usado": "ventas",
         "exito": true,
-        "notas": "Z=Zelle mapeado correctamente. 434 recibos por Bs. 9,557M en 2025."
+        "notas": "Z=Dólar Transferencia (verificado contra ad_ref_list). 434 recibos por Bs. 9,557M en 2025."
       },
       "categoria": "cobranza"
     },
@@ -6640,7 +6640,7 @@
       "resultado_real": {
         "agente_usado": "ventas",
         "exito": true,
-        "notas": "Follow-up: hereda mes=1, anio=2025. S=Compensación."
+        "notas": "Follow-up: hereda mes=1, anio=2025. S=Transferencia Empresas."
       },
       "categoria": "cobranza"
     },
@@ -7139,7 +7139,7 @@
       "resultado_real": {
         "agente_usado": "ventas",
         "exito": true,
-        "notas": "Y=Criptomoneda. 1,057 recibos. Mapeado correctamente en tendertype."
+        "notas": "Y=Dólar Efectivo (verificado contra ad_ref_list). 1,057 recibos."
       },
       "categoria": "cobranza"
     },
@@ -7277,7 +7277,7 @@
     "docstatus_incompleto": "Query solo incluía docstatus='CO' y excluía facturas cerradas ('CL') que son pagadas/completadas",
     "org_name_no_extraido": "Agente no extraía nombre de organización del mensaje del usuario (ej: 'en INPROA SANTONI')",
     "no_access_text": "LLM generó texto 'no tengo acceso' cuando debía decir 'no se encontraron datos'. Requiere regla PROHIBIDO en system prompt.",
-    "tendertype_no_mapeado": "Método de pago aparecía como código crudo (W, Z, S) en vez de nombre legible (Pago Móvil, Zelle, Compensación)",
+    "tendertype_no_mapeado": "Método de pago aparecía como código crudo (W, Z, S) en vez de nombre legible (Transferencia, Dólar Transferencia, Transferencia Empresas)",
     "cross_year_parsing": "Rango de fechas que cruza año (dic 2024 → ene 2025) no se parseaba correctamente",
     "total_activos_incorrecto": "Conteo de empleados activos incluía inactivos (~1057 vs ~702 correcto). Fix: JOIN a c_bpartner con bp.isactive='Y'",
     "productionqty_negativo": "m_production.productionqty es negativo. Fix: usar m_productionline.movementqty en su lugar"
