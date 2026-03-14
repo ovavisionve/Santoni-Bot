@@ -1300,6 +1300,421 @@
 
 ---
 
+## 17. FINANZAS 2024-2026 (verificación 14/Mar/2026 23:46)
+
+> **Fuente:** `verify_data.py --check finanzas` contra iDempiere producción
+> **Propósito:** Validar respuestas del agente de finanzas (saldos, CxC, CxP, cobros, pagos)
+
+### 17.1 Saldos bancarios por moneda (iso_code RAW)
+
+| Moneda (iso_code) | Cuentas | Saldo total |
+|-------------------|---------|-------------|
+| VES | 322 | 54,185,392.67 |
+| DOL | 2 | 133,912.67 |
+| USD | 7 | 12,221.19 |
+| US. | 2 | 0.00 |
+| DLA | 3 | 0.00 |
+| USA | 3 | 0.00 |
+| Dol | 1 | 0.00 |
+| Dla | 2 | 0.00 |
+| DoL | 2 | 0.00 |
+| dol | 2 | 0.00 |
+
+### 17.2 Saldos bancarios agrupados (VES / USD)
+
+| Moneda grupo | Cuentas | Saldo total |
+|-------------|---------|-------------|
+| VES | 322 | 54,185,392.67 |
+| USD | 24 | 146,133.86 |
+
+> **BUG CHECK:** Ninguna cuenta cae en "Otro" — todas son VES o USD conocidos. ✅
+
+### 17.3 iso_codes únicos en c_bankaccount
+
+| iso_code | c_currency_id | Cuentas |
+|----------|---------------|---------|
+| Dla | 1000013 | 2 |
+| DLA | 1000017 | 3 |
+| dol | 1000008 | 2 |
+| Dol | 1000006 | 1 |
+| DoL | 1000011 | 2 |
+| DOL | 1000000 | 2 |
+| US. | 1000009 | 2 |
+| USA | 1000003 | 3 |
+| USD | 100 | 7 |
+| VES | 205 | 322 |
+
+> **Nota:** El bot agrupa por `c_currency_id` (no por iso_code), así que DOL/DoL/etc. se agrupan
+> correctamente como USD usando `_currency_label()`. Pero `build_financial_summary` filtra bancos
+> con `b["moneda"] == "USD"` sobre el iso_code RAW — esto es un BUG potencial porque solo 7 de 24
+> cuentas USD tienen iso_code='USD'. Las otras 17 (DOL, DoL, etc.) caerían en `banks_other`.
+
+### 17.4 Detalle cuentas VES (top 20 por saldo)
+
+| # | Banco | Cuenta | Tipo | Organización | Saldo |
+|---|-------|--------|------|-------------|-------|
+| 1 | BANCO NACIONAL DE CREDITO | 01910063472363002271 | Inversión | INPROA SANTONI C.A. | 233,825,009.72 |
+| 2 | BANCO DE VENEZUELA | 01020330920000958217 | Inversión | INPROA SANTONI C.A. | 41,787,671.76 |
+| 3 | BANCO BANPLUS | 100001296 | Inversión | INPROA SANTONI C.A. | 15,261,521.88 |
+| 4 | BANCARIBE | 01140320473204002125 | Inversión | INPROA SANTONI C.A. | 12,873,675.71 |
+| 5 | BANCARIBE | 01140165111654066252 | Inversión | InproMaiz C.A | 12,521,154.36 |
+| 6 | INTERNACIONALES | 1 | Inversión | INPROA SANTONI C.A. | 9,871,866.60 |
+| 7 | BANCO BANESCO | 1500019102 | Inversión | INPROA SANTONI C.A. | 9,430,139.70 |
+| 8 | BANCO DEL TESORO | 01630239262393013193 | Corriente | InproMaiz C.A | 8,080,443.36 |
+| 9 | BANCO NACIONAL DE CREDITO | 2101015371 | Inversión | InproMaiz C.A | 5,480,622.91 |
+| 10 | BANCO NACIONAL DE CREDITO | 2101005464 | Inversión | INPROA SANTONI C.A. | 2,448,148.48 |
+| 11 | BANCO PROVINCIAL | 609227 | Inversión | INPROA SANTONI C.A. | 2,051,683.19 |
+| 12 | EBNA BANK N.V. | 20408744100100101 | Inversión | InproMaiz C.A | 1,932,933.18 |
+| 13 | BANCARIBE | 00010101020200002218 | Inversión | INPROA SANTONI C.A. | 1,853,518.67 |
+| 14 | BANCO PROVINCIAL | 609226 | Inversión | InproMaiz C.A | 1,815,413.00 |
+| 15 | BANCO DE VENEZUELA | 01020330970000130284 | Corriente | INVERSIONES AGA C.A | 1,759,249.19 |
+| 16 | BANCO EXTERIOR | 01150037477000395498 | Inversión | InproMaiz C.A | 1,553,689.91 |
+| 17 | BANCO DE VENEZUELA | 01020330910000958204 | Inversión | AGROINPROA C.A | 1,484,959.41 |
+| 18 | BANCO PROVINCIAL | 609228 | Inversión | AGROINPROA C.A | 1,467,997.29 |
+| 19 | BANCO NACIONAL DE CREDITO | 01910098792398240097 | Inversión | InproMaiz C.A | 1,141,473.86 |
+| 20 | BANCO MERCANTIL | 30046879 | Inversión | INPROA SANTONI C.A. | 1,001,194.37 |
+
+### 17.5 Detalle cuentas USD (top 20 por saldo)
+
+| # | Banco | Cuenta | Tipo | Organización | iso_code real | Saldo |
+|---|-------|--------|------|-------------|---------------|-------|
+| 1 | CAJA VARIAS | ENVIADO TESORERIA | B | INPROA SANTONI C.A. | DOL | 133,912.67 |
+| 2 | TD BANK | 1 | Inversión | Ocean Equipment Industries LLC | USD | 10,742.52 |
+| 3 | BANCO BANPLUS | 100001518 | Corriente | Ocean Equipment Industries LLC | USD | 1,013.67 |
+| 4 | BANCO BANESCO | 1500122195 | Corriente | Ocean Equipment Industries LLC | USD | 465.00 |
+| 5-20 | CAJA / CRUCE | varios | B | Varias organizaciones | DOL/DoL/Dol/USA/dol/DLA/Dla/US. | 0.00 |
+
+> **Observación:** Solo 4 cuentas USD tienen saldo > 0. Las demás son cajas/cruces en 0.
+
+---
+
+### 17.6 Cobros recibidos (c_payment isreceipt='Y') por año y moneda
+
+| Año | Moneda | Recibos | Total |
+|-----|--------|---------|-------|
+| 2024 | Bs. | 22,899 | 7,863,723,454.36 |
+| 2024 | USD | 16,261 | 66,752,775.43 |
+| 2025 | Bs. | 30,434 | 34,847,775,952.00 |
+| 2025 | USD | 22,479 | 80,923,875.85 |
+| 2026 | Bs. | 7,146 | 24,301,099,178.80 |
+| 2026 | USD | 4,904 | 19,948,003.20 |
+
+### 17.7 Cobros recibidos por mes 2026 y moneda
+
+| Mes | Moneda | Recibos | Total |
+|-----|--------|---------|-------|
+| 1 | Bs. | 2,937 | 6,829,894,470.89 |
+| 1 | USD | 2,007 | 7,366,422.63 |
+| 2 | Bs. | 2,994 | 12,056,545,230.45 |
+| 2 | USD | 1,896 | 8,565,599.62 |
+| 3 | Bs. | 1,215 | 5,414,659,477.46 |
+| 3 | USD | 1,001 | 4,015,980.95 |
+
+### 17.8 Cobros recibidos por mes 2025 y moneda
+
+| Mes | Moneda | Recibos | Total |
+|-----|--------|---------|-------|
+| 1 | Bs. | 2,030 | 1,070,828,355.29 |
+| 1 | USD | 1,553 | 5,398,960.26 |
+| 2 | Bs. | 1,845 | 442,162,535.26 |
+| 2 | USD | 1,378 | 4,433,531.43 |
+| 3 | Bs. | 2,103 | 708,688,699.83 |
+| 3 | USD | 1,570 | 4,798,503.21 |
+| 4 | Bs. | 2,153 | 1,188,933,915.95 |
+| 4 | USD | 1,679 | 5,334,049.40 |
+| 5 | Bs. | 2,507 | 1,458,791,282.97 |
+| 5 | USD | 1,938 | 6,631,491.91 |
+| 6 | Bs. | 2,534 | 1,228,126,910.90 |
+| 6 | USD | 1,733 | 5,298,040.40 |
+| 7 | Bs. | 2,658 | 2,121,861,571.20 |
+| 7 | USD | 2,038 | 6,866,106.83 |
+| 8 | Bs. | 2,664 | 2,538,091,554.88 |
+| 8 | USD | 1,868 | 5,771,683.78 |
+| 9 | Bs. | 2,773 | 6,109,790,943.10 |
+| 9 | USD | 2,012 | 7,055,669.63 |
+| 10 | Bs. | 3,140 | 6,328,476,375.06 |
+| 10 | USD | 2,386 | 11,656,263.24 |
+| 11 | Bs. | 2,878 | 4,367,549,291.94 |
+| 11 | USD | 2,135 | 9,306,793.97 |
+| 12 | Bs. | 3,149 | 7,284,474,515.62 |
+| 12 | USD | 2,189 | 8,372,781.77 |
+
+### 17.9 Cobros recibidos por mes 2024 y moneda
+
+| Mes | Moneda | Recibos | Total |
+|-----|--------|---------|-------|
+| 1 | Bs. | 1,526 | 418,127,578.45 |
+| 1 | USD | 1,030 | 3,972,540.03 |
+| 2 | Bs. | 1,274 | 416,807,008.49 |
+| 2 | USD | 844 | 3,916,702.07 |
+| 3 | Bs. | 1,570 | 432,398,184.12 |
+| 3 | USD | 1,127 | 3,050,684.53 |
+| 4 | Bs. | 2,270 | 396,004,608.58 |
+| 4 | USD | 1,672 | 7,243,977.84 |
+| 5 | Bs. | 2,331 | 510,331,388.66 |
+| 5 | USD | 1,748 | 5,405,978.97 |
+| 6 | Bs. | 2,297 | 675,074,218.06 |
+| 6 | USD | 1,567 | 4,316,156.85 |
+| 7 | Bs. | 2,161 | 1,147,698,508.61 |
+| 7 | USD | 1,439 | 5,469,573.16 |
+| 8 | Bs. | 1,959 | 566,012,030.19 |
+| 8 | USD | 1,385 | 5,798,166.41 |
+| 9 | Bs. | 1,820 | 533,504,020.07 |
+| 9 | USD | 1,327 | 4,617,737.26 |
+| 10 | Bs. | 1,970 | 738,766,367.56 |
+| 10 | USD | 1,549 | 10,859,665.94 |
+| 11 | Bs. | 1,909 | 582,803,326.98 |
+| 11 | USD | 1,393 | 7,797,293.83 |
+| 12 | Bs. | 1,812 | 1,446,196,214.60 |
+| 12 | USD | 1,180 | 4,304,298.54 |
+
+---
+
+### 17.10 Pagos emitidos (c_payment isreceipt='N') por año y moneda
+
+| Año | Moneda | Pagos | Total |
+|-----|--------|-------|-------|
+| 2024 | Bs. | 49,451 | 9,639,355,243.36 |
+| 2024 | USD | 20,832 | 55,434,270.45 |
+| 2025 | Bs. | 48,271 | 42,219,171,135.16 |
+| 2025 | USD | 23,962 | 81,126,297.73 |
+| 2026 | Bs. | 10,650 | 26,442,791,863.28 |
+| 2026 | USD | 4,949 | 15,565,603.76 |
+
+### 17.11 Pagos emitidos por mes 2026 y moneda
+
+| Mes | Moneda | Pagos | Total |
+|-----|--------|-------|-------|
+| 1 | Bs. | 4,089 | 7,646,222,717.87 |
+| 1 | USD | 1,924 | 4,730,101.15 |
+| 2 | Bs. | 4,321 | 12,551,830,975.12 |
+| 2 | USD | 2,014 | 7,492,290.55 |
+| 3 | Bs. | 2,240 | 6,244,738,170.30 |
+| 3 | USD | 1,011 | 3,343,212.07 |
+
+---
+
+### 17.12 Facturación VENTA por año y moneda (todas las facturas)
+
+| Año | Moneda | Facturas | Total |
+|-----|--------|----------|-------|
+| 2024 | Bs. | 22,563 | 2,012,535,140.30 |
+| 2024 | USD | 37,381 | 70,703,514.03 |
+| 2025 | Bs. | 25,654 | 11,690,295,090.76 |
+| 2025 | USD | 32,365 | 84,457,527.52 |
+| 2026 | Bs. | 5,494 | 8,725,821,564.97 |
+| 2026 | USD | 5,427 | 21,045,493.39 |
+
+### 17.13 Facturación COMPRA por año y moneda (todas las facturas)
+
+| Año | Moneda | Facturas | Total |
+|-----|--------|----------|-------|
+| 2024 | Bs. | 6,944 | 1,380,845,431.89 |
+| 2024 | USD | 12,208 | 30,859,154.10 |
+| 2025 | Bs. | 7,408 | 8,257,254,015.78 |
+| 2025 | USD | 14,056 | 33,735,187.08 |
+| 2026 | Bs. | 1,089 | 2,960,146,180.86 |
+| 2026 | USD | 2,991 | 6,094,076.73 |
+
+> **Datos espurios:** Hay facturas con años 2047, 2201, 2202, 2502, 20243, 22018 — errores de captura en iDempiere (montos insignificantes < Bs.4).
+
+---
+
+### 17.14 CxC pendientes — estado actual
+
+| Moneda | Facturas | Total |
+|--------|----------|-------|
+| Bs. | 7,963 | 7,848,421,788.86 |
+| USD | 3,236 | 18,494,002.96 |
+| Otro | 1 | 0.00 |
+| **TOTAL** | **11,200** | **7,866,915,791.82** |
+
+### 17.15 CxC pendientes — aging por año de factura
+
+| Año factura | Moneda | Facturas | Total |
+|-------------|--------|----------|-------|
+| 2026 | Bs. | 2,648 | 4,278,083,209.09 |
+| 2026 | USD | 1,765 | 8,219,363.68 |
+| 2025 | Bs. | 2,844 | 3,074,790,794.07 |
+| 2025 | USD | 677 | 3,018,258.35 |
+| 2024 | Bs. | 2,057 | 358,319,580.01 |
+| 2024 | USD | 362 | 1,836,761.19 |
+| 2023 | Bs. | 113 | 136,525,721.79 |
+| 2023 | USD | 264 | 4,416,727.48 |
+| ≤2022 | Bs. | 301 | 702,483.75 |
+| ≤2022 | USD | 168 | 1,002,892.26 |
+
+### 17.16 CxC VENCIDAS por moneda
+
+| Moneda | Facturas | Total |
+|--------|----------|-------|
+| Bs. | 6,969 | 6,367,619,171.51 |
+| USD | 2,314 | 12,912,170.43 |
+| Otro | 1 | 0.00 |
+| **TOTAL** | **9,284** | **6,380,531,341.94** |
+
+> **81% de CxC están vencidas** (6,380M de 7,867M total)
+
+### 17.17 Top 10 morosos (facturas vencidas, últimos 3 años, > Bs.100)
+
+| # | Cliente | Moneda | Facturas | Total vencido | Max días |
+|---|---------|--------|----------|---------------|----------|
+| 1 | ALIMENTOS PARADAYS, C.A | Bs. | 135 | 570,135,913.09 | 681 |
+| 2 | GRUPO SONREIR 123, C.A | Bs. | 85 | 389,382,911.77 | 717 |
+| 3 | LACTEOS JUNIOR, C.A | Bs. | 63 | 249,950,688.55 | 632 |
+| 4 | ARAQUEZ, C.A. | Bs. | 38 | 231,583,653.37 | 705 |
+| 5 | SUPER DISTRIBUCIONES VALERA, C.A | Bs. | 45 | 229,121,166.65 | 464 |
+| 6 | SUPER DISTRIBUCIONES CORO . C.A | Bs. | 36 | 228,609,045.55 | 353 |
+| 7 | SUPER DISTRIBUCIONES DEL ZULIA, C.A. | Bs. | 45 | 186,653,897.15 | 664 |
+| 8 | SUPER DISTRIBUCIONES FALCON, C.A. SUDIFA | Bs. | 51 | 177,082,556.56 | 717 |
+| 9 | COMERCIALIZADORA Y DISTRIBUIDORA TERAN & | Bs. | 46 | 173,165,235.36 | 555 |
+| 10 | IMPORTACIONES TOP 2023, C.A. | Bs. | 41 | 167,692,983.20 | 219 |
+
+---
+
+### 17.18 CxP pendientes — estado actual
+
+| Moneda | Facturas | Total |
+|--------|----------|-------|
+| Bs. | 331 | 61,490,490.97 |
+| USD | 1,088 | 7,856,673.26 |
+| **TOTAL** | **1,419** | **69,347,164.24** |
+
+### 17.19 CxP pendientes — aging por año de factura
+
+| Año factura | Moneda | Facturas | Total |
+|-------------|--------|----------|-------|
+| 2026 | Bs. | 50 | 25,342,073.18 |
+| 2026 | USD | 841 | 2,231,299.99 |
+| 2025 | Bs. | 11 | 32,443,860.80 |
+| 2025 | USD | 173 | 4,563,953.31 |
+| 2024 | Bs. | 2 | 1,383,855.20 |
+| 2024 | USD | 41 | 798,508.19 |
+| 2023 | Bs. | 2 | 2,139,772.28 |
+| 2023 | USD | 16 | 38,870.23 |
+| ≤2022 | Bs. | 266 | 180,929.49 |
+| ≤2022 | USD | 18 | 224,041.47 |
+
+> **Dato espurio:** 1 factura con año "202" (USD 6,000.00) — error de captura
+
+### 17.20 CxP VENCIDAS por moneda
+
+| Moneda | Facturas | Total |
+|--------|----------|-------|
+| Bs. | 308 | 47,236,711.03 |
+| USD | 610 | 6,552,487.28 |
+| **TOTAL** | **918** | **53,789,198.32** |
+
+> **65% de CxP están vencidas** (53.8M de 69.3M total)
+
+### 17.21 Top 10 proveedores con mayor deuda pendiente
+
+| # | Proveedor | Moneda | Facturas | Total pendiente |
+|---|-----------|--------|----------|----------------|
+| 1 | ANTONIO JUAN PLASENCIA RIVAS | Bs. | 1 | 24,146,397.76 |
+| 2 | MONTANA GRAFICA C.A | Bs. | 5 | 11,008,536.76 |
+| 3 | ALVARO LUIS RIERA YEPEZ | Bs. | 1 | 3,722,113.88 |
+| 4 | MAXCA C.A | Bs. | 1 | 3,432,311.19 |
+| 5 | CALIER INTERNACIONAL, S.A. C.I.S.A. | Bs. | 1 | 3,240,444.42 |
+| 6 | SERVICIO DE SEGURIDAD PREVENTIVA INTEGRA | Bs. | 3 | 3,126,351.51 |
+| 7 | BERNARDO JOSE NARDINOCCHI MARTIN | Bs. | 1 | 2,121,806.67 |
+| 8 | VENEZOLANA DE EMPAQUES FLEXIBLES FLEXOVE | Bs. | 1 | 2,027,955.58 |
+| 9 | SERVICIO DE SEGURIDAD PREVENTIVA INTEGRA | Bs. | 1 | 1,096,590.05 |
+| 10 | SERVICIO DE SEGURIDAD PREVENTIVA INTEGRA | Bs. | 2 | 1,061,302.23 |
+
+---
+
+### 17.22 CxC pendientes por organización y moneda
+
+| Organización | Moneda | Facturas | Total |
+|-------------|--------|----------|-------|
+| InproMaiz C.A | Bs. | 4,354 | 3,901,497,247.95 |
+| INPROA SANTONI C.A. | Bs. | 3,234 | 3,825,787,854.81 |
+| INVERSIONES AGA C.A | Bs. | 167 | 78,813,275.54 |
+| AGROINPROA C.A | Bs. | 169 | 36,477,187.33 |
+| AGROINPROA C.A | USD | 633 | 9,706,366.51 |
+| Santoni Service C.A | Bs. | 3 | 5,846,223.22 |
+| INPROA SANTONI C.A. | USD | 1,677 | 5,681,184.61 |
+| InproMaiz C.A | USD | 629 | 2,987,381.23 |
+| INVERSIONES AGA C.A | USD | 227 | 117,027.85 |
+| AGROPECUARIA R.R. C.A. | USD | 69 | 2,042.76 |
+
+### 17.23 CxP pendientes por organización y moneda
+
+| Organización | Moneda | Facturas | Total |
+|-------------|--------|----------|-------|
+| INPROA SANTONI C.A. | Bs. | 125 | 48,886,544.91 |
+| InproMaiz C.A | Bs. | 12 | 10,319,204.71 |
+| AGROINPROA C.A | USD | 129 | 4,006,695.57 |
+| InproMaiz C.A | USD | 180 | 1,646,757.86 |
+| INPROA SANTONI C.A. | USD | 305 | 1,278,351.21 |
+| AGROPECUARIA R.R. C.A. | Bs. | 66 | 1,065,372.99 |
+| AGA AGRICOLA C.A | Bs. | 2 | 819,940.74 |
+| Santoni Service C.A | USD | 170 | 564,349.67 |
+| AGROINPROA C.A | Bs. | 52 | 319,683.16 |
+| AGROPECUARIA R.R. C.A. | USD | 230 | 187,433.93 |
+| AGA AGRICOLA C.A | USD | 60 | 167,878.21 |
+| INVERSIONES AGA C.A | Bs. | 11 | 51,132.52 |
+| Santoni Service C.A | Bs. | 1 | 28,611.86 |
+| INVERSIONES AGA C.A | USD | 9 | 5,018.34 |
+
+---
+
+### 17.24 Cobros por método de pago y año (resumen 2024-2026)
+
+#### 2024
+
+| Método | Moneda | Recibos | Total |
+|--------|--------|---------|-------|
+| Transferencia Bancaria | Bs. | 17,663 | 3,463,591,015.65 |
+| Dolar Transferencia | Bs. | 1,790 | 2,241,920,096.02 |
+| Débito Directo | Bs. | 56 | 1,756,783,098.67 |
+| Efectivo | Bs. | 2,411 | 221,740,041.41 |
+| Dolar | Bs. | 680 | 78,882,863.53 |
+| Cuenta | Bs. | 193 | 61,766,889.70 |
+| Transferencia Bancaria | USD | 13,152 | 38,268,414.33 |
+| Depósito Directo | Bs. | 7 | 33,950,924.04 |
+| Dolar | USD | 860 | 9,917,259.85 |
+| Efectivo | USD | 457 | 6,856,644.44 |
+| Dolar Transferencia | USD | 1,387 | 5,464,055.94 |
+| Cuenta | USD | 376 | 5,291,802.73 |
+
+#### 2025
+
+| Método | Moneda | Recibos | Total |
+|--------|--------|---------|-------|
+| Transferencia Bancaria | Bs. | 22,901 | 11,063,046,069.63 |
+| Dolar Transferencia | Bs. | 412 | 9,556,764,367.04 |
+| Débito Directo | Bs. | 72 | 6,810,652,732.52 |
+| Transferencia Empresas | Bs. | 2,206 | 5,161,750,369.92 |
+| Efectivo | Bs. | 4,159 | 1,138,673,679.03 |
+| Cuenta | Bs. | 446 | 736,610,518.57 |
+| Dolar | Bs. | 233 | 283,790,367.83 |
+
+> **Nota:** Lista truncada a los métodos más relevantes (30+ filas en total)
+
+---
+
+### 17.25 BUG CONFIRMADO: Saldos bancarios con iso_code
+
+**Problema:** `build_financial_summary` (línea 952-954 de `idempiere_queries.py`) agrupa bancos con:
+```python
+banks_ves = [b for b in banks if b["moneda"] == "VES"]
+banks_usd = [b for b in banks if b["moneda"] == "USD"]
+banks_other = [b for b in banks if b["moneda"] not in ("VES", "USD")]
+```
+
+Pero `b["moneda"]` viene del `c_currency.iso_code` RAW (query línea 923: `c.iso_code AS moneda`).
+Solo 7 de 24 cuentas USD tienen `iso_code = 'USD'`. Las otras 17 (DOL, DoL, Dol, USA, dol, DLA, Dla, US.)
+caerían en `banks_other`, mostrándose como "Cuentas en Otras Monedas" cuando en realidad son USD.
+
+**Impacto:** La cuenta DOL de CAJA VARIAS (Bs. 133,912.67 en USD) se mostraría como "Otra moneda"
+en vez de "Dólares (USD)". Las demás 16 cuentas con saldo 0 no tienen impacto visual.
+
+**Fix necesario:** Usar `c_currency_id IN (USD_IDS)` para agrupar en vez de `iso_code == 'USD'`.
+
+---
+
 ## Notas Importantes
 
 1. **m_production.productionqty es negativo** en iDempiere de Santoni — usar `m_productionline.movementqty` para cantidades reales
