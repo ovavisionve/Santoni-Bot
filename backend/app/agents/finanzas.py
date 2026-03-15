@@ -218,6 +218,24 @@ Datos financieros de iDempiere:
                         lines.append(f"  - **{item['moneda']}**: {item['facturas']} vencidas por {sym} {item['total']:,.2f}")
                 else:
                     lines.append(f"- Total vencido: {ap.get('total_vencido', 0):,.2f}")
+            top_proveedores = ap.get("top_proveedores_vencidos", [])
+            if top_proveedores:
+                lines.append("\n### Top Proveedores con Mayor Deuda Vencida")
+                lines.append("| # | Proveedor | Moneda | Facturas | Total Adeudado |")
+                lines.append("|---|-----------|--------|----------|----------------|")
+                for i, p in enumerate(top_proveedores, 1):
+                    sym = "Bs." if p["moneda"] == "Bs." else "$" if p["moneda"] == "USD" else p["moneda"]
+                    lines.append(f"| {i} | {p['proveedor']} | {p['moneda']} | {p['facturas']} | {sym} {p['total_adeudado']:,.2f} |")
+
+        # --- Top morosos (receivables) ---
+        top_morosos = ar.get("top_clientes_morosos", []) if ar else []
+        if top_morosos:
+            lines.append("\n### Top Clientes Morosos (Mayor Deuda Vencida)")
+            lines.append("| # | Cliente | Moneda | Facturas | Total Adeudado |")
+            lines.append("|---|---------|--------|----------|----------------|")
+            for i, c in enumerate(top_morosos, 1):
+                sym = "Bs." if c["moneda"] == "Bs." else "$" if c["moneda"] == "USD" else c["moneda"]
+                lines.append(f"| {i} | {c['cliente']} | {c['moneda']} | {c['facturas']} | {sym} {c['total_adeudado']:,.2f} |")
 
         return "\n".join(lines)
 

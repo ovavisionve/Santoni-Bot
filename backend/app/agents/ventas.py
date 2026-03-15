@@ -22,6 +22,7 @@ from app.services.query_service import (
     build_collection_summary,
     build_top_clients,
     build_overdue_receivables,
+    build_top_delinquent_clients,
 )
 
 
@@ -180,7 +181,7 @@ Datos de ventas de iDempiere:
     _QUERY_TYPES = {
         "top": ["top", "mejor", "ranking", "pareto", "principales"],
         "cobranza": ["cobran", "cobro", "cobrad", "recauda", "pago"],
-        "vencidas": ["atrasa", "vencid", "pendiente", "deuda", "mora"],
+        "vencidas": ["atrasa", "vencid", "pendiente", "deuda", "mora", "deben", "moroso"],
         "ventas": ["venta", "factur", "ingreso", "volumen"],
         "region": ["region", "región", "regiones"],
     }
@@ -381,8 +382,13 @@ Datos de ventas de iDempiere:
                 sections.append(self._format_summary(data, f"Resumen de Cobranza - {label}"))
 
             if query_type == "vencidas" or any(w in msg for w in self._QUERY_TYPES["vencidas"]):
+                # Use aggregated view (by client) for morosos/deudores questions
+                delinquent_data = build_top_delinquent_clients(org_ids=org_ids, salesrep_id=salesrep_id)
+                sections.append("## Top Clientes Morosos (agregado por cliente)")
+                sections.append(self._format_table(delinquent_data))
+                # Also include individual invoices detail
                 data = build_overdue_receivables(org_ids=org_ids, salesrep_id=salesrep_id)
-                sections.append("## Cuentas por Cobrar Vencidas")
+                sections.append("## Detalle de Facturas Vencidas (top 50)")
                 sections.append(self._format_table(data))
 
             if query_type == "ventas" or any(w in msg for w in self._QUERY_TYPES["ventas"]) or not sections:

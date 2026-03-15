@@ -427,6 +427,19 @@ def build_overdue_receivables(org_ids: list[int] | None = None, salesrep_id: int
         db.close()
 
 
+def build_top_delinquent_clients(
+    org_ids: list[int] | None = None,
+    salesrep_id: int | None = None,
+    limit: int = 20,
+) -> list[dict]:
+    """Top delinquent clients aggregated by client - routes to iDempiere."""
+    if _is_production():
+        from app.services.idempiere_queries import build_top_delinquent_clients as _prod
+        return _prod(org_ids=org_ids, salesrep_id=salesrep_id, limit=limit)
+    # Demo mode: fall back to individual overdue receivables
+    return build_overdue_receivables(org_ids=org_ids, salesrep_id=salesrep_id)
+
+
 # ---------------------------------------------------------------------------
 # Pre-built queries: PRODUCCION (Production)
 # ---------------------------------------------------------------------------

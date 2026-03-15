@@ -892,6 +892,82 @@ def build_overdue_receivables(
         db.close()
 
 
+def build_top_delinquent_clients(
+    org_ids: list[int] | None = None,
+    salesrep_id: int | None = None,
+    limit: int = 20,
+) -> list[dict]:
+    """Top delinquent clients aggregated by client (sum of overdue invoices).
+
+    Groups overdue invoices by c_bpartner, sums grandtotal, counts invoices,
+    and returns max days overdue per client. Filters to last 3 years, amounts > 100.
+    """
+    db = IdempiereSession()
+    try:
+        org_clause = ""
+        params: dict = {}
+        if org_ids:
+            placeholders = ", ".join(f":org_{i}" for i in range(len(org_ids)))
+            org_clause = f"AND i.ad_org_id IN ({placeholders}) "
+            for i, org_id in enumerate(org_ids):
+                params[f"org_{i}"] = org_id
+        salesrep_clause = ""
+        if salesrep_id:
+            salesrep_clause = "AND i.salesrep_id = :salesrep_id "
+            params["salesrep_id"] = salesrep_id
+
+        params["limit"] = limit
+
+        q = text(
+            "WITH client_zone AS ("
+            "SELECT DISTINCT ON (bpl.c_bpartner_id) "
+            "bpl.c_bpartner_id, sreg.name AS zona_name "
+            "FROM adempiere.c_bpartner_location bpl "
+            "LEFT JOIN adempiere.c_salesregion sreg "
+            "ON bpl.c_salesregion_id = sreg.c_salesregion_id "
+            "WHERE bpl.isactive = 'Y' "
+            "ORDER BY bpl.c_bpartner_id, bpl.c_bpartner_location_id DESC) "
+            "SELECT bp.name AS cliente, "
+            "COALESCE(cz.zona_name, '') AS zona, "
+            "SUM(i.grandtotal) AS total_adeudado, "
+            "COUNT(*) AS num_facturas, "
+            "MAX(CURRENT_DATE - (i.dateinvoiced + "
+            "  CASE WHEN COALESCE(pterm.netdays, 0) = 0 THEN 30 ELSE pterm.netdays END"
+            ")) AS max_dias_vencido, "
+            f"{_currency_label('i')} AS moneda "
+            "FROM adempiere.c_invoice i "
+            "JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id "
+            "LEFT JOIN client_zone cz ON bp.c_bpartner_id = cz.c_bpartner_id "
+            "LEFT JOIN adempiere.c_paymentterm pterm ON i.c_paymentterm_id = pterm.c_paymentterm_id "
+            "JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id "
+            "WHERE i.issotrx = 'Y' AND i.docstatus IN ('CO', 'CL') AND i.ispaid = 'N' "
+            "AND i.isactive = 'Y' "
+            "AND dt.docbasetype = 'ARI' "
+            "AND i.dateinvoiced >= (CURRENT_DATE - INTERVAL '3 years') "
+            "AND i.grandtotal > 100 "
+            f"{org_clause}"
+            f"{salesrep_clause}"
+            "AND (i.dateinvoiced + CASE WHEN COALESCE(pterm.netdays, 0) = 0 THEN 30 ELSE pterm.netdays END) < CURRENT_DATE "
+            f"GROUP BY bp.name, cz.zona_name, {_currency_label('i')} "
+            "ORDER BY total_adeudado DESC "
+            "LIMIT :limit"
+        )
+        rows = db.execute(q, params).fetchall()
+        return [
+            {
+                "cliente": r[0],
+                "zona": r[1],
+                "total_adeudado": float(r[2]),
+                "num_facturas": r[3],
+                "max_dias_vencido": r[4],
+                "moneda": r[5],
+            }
+            for r in rows
+        ]
+    finally:
+        db.close()
+
+
 # ---------------------------------------------------------------------------
 # FINANZAS (Finance)
 # ---------------------------------------------------------------------------
@@ -1076,6 +1152,57 @@ def build_financial_summary(
         payables["vencidas_por_moneda"] = [
             {"moneda": r[0], "facturas": r[1], "total": float(r[2])}
             for r in overdue_ap_rows
+        ]
+
+        # Top 10 suppliers with highest overdue payables
+        top_ap_conds = [
+            "i.issotrx = 'N'",
+            "i.docstatus IN ('CO', 'CL')",
+            "i.ispaid = 'N'",
+            "i.isactive = 'Y'",
+            "(i.dateinvoiced + CASE WHEN COALESCE(pt.netdays, 0) = 0 THEN 30 ELSE pt.netdays END) < CURRENT_DATE",
+        ]
+        top_ap_params: dict = {}
+        _add_org_filter(top_ap_conds, top_ap_params, org_ids, "i")
+        top_ap_where = " AND ".join(top_ap_conds)
+        top_ap_q = text(
+            f"SELECT bp.name AS proveedor, "
+            f"{cur_label} AS moneda, "
+            f"COUNT(*) AS facturas, "
+            f"COALESCE(SUM(i.grandtotal), 0) AS total_adeudado "
+            f"FROM adempiere.c_invoice i "
+            f"JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id "
+            f"LEFT JOIN adempiere.c_paymentterm pt ON i.c_paymentterm_id = pt.c_paymentterm_id "
+            f"WHERE {top_ap_where} "
+            f"GROUP BY bp.name, {cur_label} "
+            f"ORDER BY total_adeudado DESC LIMIT 10"
+        )
+        top_ap_rows = db.execute(top_ap_q, top_ap_params).fetchall()
+        payables["top_proveedores_vencidos"] = [
+            {"proveedor": r[0], "moneda": r[1], "facturas": r[2], "total_adeudado": float(r[3])}
+            for r in top_ap_rows
+        ]
+
+        # Top 10 clients with highest overdue receivables
+        top_ar_conds = list(overdue_conds)  # reuse same conditions
+        top_ar_params = dict(overdue_params)
+        top_ar_where = " AND ".join(top_ar_conds)
+        top_ar_q = text(
+            f"SELECT bp.name AS cliente, "
+            f"{cur_label} AS moneda, "
+            f"COUNT(*) AS facturas, "
+            f"COALESCE(SUM(i.grandtotal), 0) AS total_adeudado "
+            f"FROM adempiere.c_invoice i "
+            f"JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id "
+            f"LEFT JOIN adempiere.c_paymentterm pt ON i.c_paymentterm_id = pt.c_paymentterm_id "
+            f"WHERE {top_ar_where} "
+            f"GROUP BY bp.name, {cur_label} "
+            f"ORDER BY total_adeudado DESC LIMIT 10"
+        )
+        top_ar_rows = db.execute(top_ar_q, top_ar_params).fetchall()
+        receivables["top_clientes_morosos"] = [
+            {"cliente": r[0], "moneda": r[1], "facturas": r[2], "total_adeudado": float(r[3])}
+            for r in top_ar_rows
         ]
 
         return {
