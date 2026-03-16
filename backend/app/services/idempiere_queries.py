@@ -2635,10 +2635,11 @@ def build_producer_purchases(
             "o.issotrx = 'N'",
             "o.docstatus IN ('CO', 'CL')",
             "o.isactive = 'Y'",
-            # Exclude summary/total lines: iDempiere stores per-guía totals as
-            # orderlines with qtyordered=1 and priceactual=total amount.
-            # Real agricultural deliveries always have qty > 1 kg.
-            "ol.qtyordered > 1",
+            # NOTE: No filter on ol.qtyordered here — many agricultural
+            # purchases (especially maíz) use qtyordered=1 as a payment
+            # record where priceactual=total amount.  We include ALL orders
+            # for accurate counts/amounts but use a CASE expression for peso
+            # to avoid counting qty=1 as 1 kg.
         ]
         params: dict = {}
         _add_exclude_internal_orgs_filter(conditions, params, "bp")
@@ -2651,10 +2652,14 @@ def build_producer_purchases(
 
         where = " AND ".join(conditions)
 
+        # Expression that yields real kg when available, 0 when qty=1
+        # (payment/settlement records use qtyordered=1 with priceactual=total)
+        _peso_expr = "CASE WHEN ol.qtyordered > 1 THEN ol.qtyordered ELSE 0 END"
+
         # Totals
         totals_q = text(
             f"SELECT COUNT(DISTINCT o.c_order_id) AS total_guias, "
-            f"COALESCE(SUM(ol.qtyordered), 0) AS total_peso_neto_kg, "
+            f"COALESCE(SUM({_peso_expr}), 0) AS total_peso_neto_kg, "
             f"COALESCE(SUM(ol.linenetamt), 0) AS total_monto "
             f"FROM adempiere.c_order o "
             f"JOIN adempiere.c_orderline ol ON o.c_order_id = ol.c_order_id "
@@ -2669,11 +2674,11 @@ def build_producer_purchases(
             "total_monto": float(row[2]) if row else 0.0,
         }
 
-        # By product (no humedad/impureza — not available in c_order standard fields)
+        # By product
         by_product_q = text(
             f"SELECT p.name AS producto, "
             f"COUNT(DISTINCT o.c_order_id) AS guias, "
-            f"COALESCE(SUM(ol.qtyordered), 0) AS peso_neto_kg, "
+            f"COALESCE(SUM({_peso_expr}), 0) AS peso_neto_kg, "
             f"COALESCE(SUM(ol.linenetamt), 0) AS monto_total "
             f"FROM adempiere.c_order o "
             f"JOIN adempiere.c_orderline ol ON o.c_order_id = ol.c_order_id "
@@ -2700,7 +2705,7 @@ def build_producer_purchases(
             f"COALESCE(loc_data.estado, '') AS estado, "
             f"COALESCE(loc_data.municipio, '') AS municipio, "
             f"COUNT(DISTINCT o.c_order_id) AS guias, "
-            f"COALESCE(SUM(ol.qtyordered), 0) AS peso_neto_kg, "
+            f"COALESCE(SUM({_peso_expr}), 0) AS peso_neto_kg, "
             f"COALESCE(SUM(ol.linenetamt), 0) AS monto_total "
             f"FROM adempiere.c_order o "
             f"JOIN adempiere.c_orderline ol ON o.c_order_id = ol.c_order_id "
@@ -2859,13 +2864,20 @@ def build_producer_price_analysis(
     date_from: str | None = None,
     date_to: str | None = None,
 ) -> list[dict]:
-    """Price analysis per product for producer purchases from iDempiere."""
+    """Price analysis per product for producer purchases from iDempiere.
+
+    Only considers orders with qtyordered > 1 because orders with qty=1
+    are payment/settlement records where priceactual = total amount, not
+    a meaningful per-kg price.
+    """
     db = _get_session(date_from=date_from, date_to=date_to, anio=anio)
     try:
         conditions = [
             "o.issotrx = 'N'",
             "o.docstatus IN ('CO', 'CL')",
             "o.isactive = 'Y'",
+            # Keep qtyordered > 1 for price analysis: qty=1 orders have
+            # priceactual = total_amount (not a real per-unit price).
             "ol.qtyordered > 1",
         ]
         params: dict = {}
