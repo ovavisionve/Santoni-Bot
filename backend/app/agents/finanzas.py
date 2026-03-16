@@ -18,6 +18,7 @@ from app.agents.keywords import FINANZAS_CXC, matches_any
 from app.services.query_service import (
     build_financial_summary,
     build_overdue_receivables,
+    build_cobros_pagos_summary,
 )
 
 logger = logging.getLogger("santonibot.agents.finanzas")
@@ -105,6 +106,8 @@ IMPORTANTE SOBRE PERÍODOS:
             "✅ Saldos bancarios actuales por banco, cuenta, moneda y organización\n"
             "✅ Cuentas por cobrar pendientes (facturas de venta no pagadas) con días de atraso\n"
             "✅ Cuentas por pagar pendientes (facturas de compra no pagadas)\n"
+            "✅ Cobros recibidos por período, moneda y método de pago\n"
+            "✅ Pagos emitidos por período, moneda y método de pago\n"
             "✅ Resumen financiero general (bancos + CxC + CxP)\n"
             "\n❌ NO puedo consultar: presupuestos, flujo de caja proyectado o indicadores financieros calculados. "
             "Redirige al usuario al departamento correspondiente."
@@ -120,6 +123,23 @@ Datos financieros de iDempiere:
 - c_paymentterm: Términos de pago (netdays)
 - c_allocationline: Asignación de pagos a facturas
 """
+
+    # Keywords for cobros/pagos detection
+    # NOTE: "cobrar" excluded (conflicts with "cuentas por cobrar"),
+    #       "pagar" excluded (conflicts with "cuentas por pagar")
+    _COBROS_KW = frozenset({
+        "cobro", "cobros", "cobrado", "cobranza", "cobranzas",
+        "recibido", "recibidos", "recaudado", "recaudación", "recaudacion",
+        "recibos",
+        "cuánto se ha cobrado", "cuanto se ha cobrado",
+        "cuánto hemos cobrado", "cuanto hemos cobrado",
+    })
+    _PAGOS_KW = frozenset({
+        "pago", "pagos", "pagado", "desembolso", "desembolsos",
+        "emitido", "emitidos", "egreso", "egresos",
+        "cuánto se ha pagado", "cuanto se ha pagado",
+        "cuánto hemos pagado", "cuanto hemos pagado",
+    })
 
     # -- helpers for currency-aware bank formatting --
     _BANK_COLUMNS = ["banco", "numero_cuenta", "tipo", "organizacion", "saldo"]
@@ -238,6 +258,51 @@ Datos financieros de iDempiere:
 
         return "\n".join(lines)
 
+    @staticmethod
+    def _format_cobros_pagos(data: dict, label: str) -> str:
+        """Format cobros/pagos data as explicit markdown."""
+        tipo = data.get("tipo", "cobros")
+        titulo = "Cobros Recibidos" if tipo == "cobros" else "Pagos Emitidos"
+        lines = [f"## {titulo} - {label}"]
+
+        por_moneda = data.get("por_moneda", [])
+        if not por_moneda:
+            lines.append(f"\nNo se encontraron {tipo} para el período {label}.")
+            return "\n".join(lines)
+
+        lines.append(f"\n**Total registros:** {data.get('total_registros', 0):,}")
+
+        # Totals by currency
+        lines.append("\n### Resumen por Moneda")
+        lines.append("| Moneda | Cantidad | Total |")
+        lines.append("|--------|----------|-------|")
+        for m in por_moneda:
+            sym = "Bs." if m["moneda"] == "Bs." else "$" if m["moneda"] == "USD" else m["moneda"]
+            lines.append(f"| {m['moneda']} | {m['cantidad']:,} | {sym} {m['total']:,.2f} |")
+
+        # By payment method
+        por_metodo = data.get("por_metodo_pago", [])
+        if por_metodo:
+            lines.append(f"\n### Por Método de Pago")
+            lines.append("| Método | Moneda | Cantidad | Total |")
+            lines.append("|--------|--------|----------|-------|")
+            for m in por_metodo[:20]:
+                sym = "Bs." if m["moneda"] == "Bs." else "$" if m["moneda"] == "USD" else m["moneda"]
+                lines.append(f"| {m['metodo_pago']} | {m['moneda']} | {m['cantidad']:,} | {sym} {m['total']:,.2f} |")
+
+        # Top business partners
+        top = data.get("top_socios", [])
+        if top:
+            bp_label = "Clientes" if tipo == "cobros" else "Proveedores"
+            lines.append(f"\n### Top {bp_label}")
+            lines.append(f"| # | {bp_label[:-1]} | Moneda | Cantidad | Total |")
+            lines.append("|---|----------|--------|----------|-------|")
+            for i, s in enumerate(top[:20], 1):
+                sym = "Bs." if s["moneda"] == "Bs." else "$" if s["moneda"] == "USD" else s["moneda"]
+                lines.append(f"| {i} | {s['nombre']} | {s['moneda']} | {s['cantidad']:,} | {sym} {s['total']:,.2f} |")
+
+        return "\n".join(lines)
+
     def fetch_data(self, message: str, org_ids: list[int] | None = None, salesrep_id: int | None = None, history: list[tuple[str, str]] | None = None) -> str | None:
         msg = message.lower()
         sections = []
@@ -265,27 +330,60 @@ Datos financieros de iDempiere:
 
         label = build_period_label(date_from, date_to, mes, anio)
 
+        # Detect if user is asking specifically about cobros or pagos
+        is_cobros = matches_any(msg, self._COBROS_KW)
+        is_pagos = matches_any(msg, self._PAGOS_KW)
+
+        # Inherit cobros/pagos context from history (follow-ups)
+        if not is_cobros and not is_pagos and history:
+            for role, content in reversed(history):
+                if role != "user":
+                    continue
+                c = content.lower()
+                if matches_any(c, self._COBROS_KW):
+                    is_cobros = True
+                    break
+                if matches_any(c, self._PAGOS_KW):
+                    is_pagos = True
+                    break
+
         try:
-            summary = build_financial_summary(
-                mes=mes, anio=anio, org_ids=org_ids,
-                date_from=date_from, date_to=date_to,
-            )
-            if not self._dict_has_data(summary):
-                return None
-            sections.append(self._format_financial_summary(summary, label))
+            # If asking about cobros or pagos, use the dedicated function
+            if is_cobros or is_pagos:
+                if is_cobros:
+                    cobros_data = build_cobros_pagos_summary(
+                        is_receipt=True, mes=mes, anio=anio,
+                        org_ids=org_ids, date_from=date_from, date_to=date_to,
+                    )
+                    sections.append(self._format_cobros_pagos(cobros_data, label))
+                if is_pagos:
+                    pagos_data = build_cobros_pagos_summary(
+                        is_receipt=False, mes=mes, anio=anio,
+                        org_ids=org_ids, date_from=date_from, date_to=date_to,
+                    )
+                    sections.append(self._format_cobros_pagos(pagos_data, label))
+            else:
+                # General financial summary (banks + CxC + CxP)
+                summary = build_financial_summary(
+                    mes=mes, anio=anio, org_ids=org_ids,
+                    date_from=date_from, date_to=date_to,
+                )
+                if not self._dict_has_data(summary):
+                    return None
+                sections.append(self._format_financial_summary(summary, label))
 
-            include_receivables = matches_any(msg, FINANZAS_CXC)
-            # Follow-up: carry over receivables section from history
-            if not include_receivables and history:
-                for role, content in reversed(history):
-                    if role == "user" and matches_any(content.lower(), FINANZAS_CXC):
-                        include_receivables = True
-                        break
+                include_receivables = matches_any(msg, FINANZAS_CXC)
+                # Follow-up: carry over receivables section from history
+                if not include_receivables and history:
+                    for role, content in reversed(history):
+                        if role == "user" and matches_any(content.lower(), FINANZAS_CXC):
+                            include_receivables = True
+                            break
 
-            if include_receivables:
-                data = build_overdue_receivables(org_ids=org_ids)
-                sections.append("## Cuentas por Cobrar Vencidas")
-                sections.append(self._format_table(data))
+                if include_receivables:
+                    data = build_overdue_receivables(org_ids=org_ids)
+                    sections.append("## Cuentas por Cobrar Vencidas")
+                    sections.append(self._format_table(data))
 
         except Exception as exc:
             logger.error("Error consultando datos financieros: %s: %s", type(exc).__name__, exc, exc_info=True)

@@ -907,6 +907,31 @@ def build_financial_summary(
         db.close()
 
 
+def build_cobros_pagos_summary(
+    is_receipt: bool = True,
+    mes: int | None = None,
+    anio: int | None = None,
+    org_ids: list[int] | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> dict:
+    """Cobros/Pagos summary - routes to demo or iDempiere."""
+    if _is_production():
+        from app.services.idempiere_queries import build_cobros_pagos_summary as _prod
+        return _prod(
+            is_receipt=is_receipt, mes=mes, anio=anio,
+            org_ids=org_ids, date_from=date_from, date_to=date_to,
+        )
+    # Demo fallback: return empty structure
+    return {
+        "tipo": "cobros" if is_receipt else "pagos",
+        "total_registros": 0,
+        "por_moneda": [],
+        "por_metodo_pago": [],
+        "top_socios": [],
+    }
+
+
 # ---------------------------------------------------------------------------
 # Pre-built queries: RRHH (Human Resources)
 # ---------------------------------------------------------------------------

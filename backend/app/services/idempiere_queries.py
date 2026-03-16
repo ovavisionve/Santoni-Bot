@@ -1221,6 +1221,102 @@ def build_financial_summary(
         db.close()
 
 
+def build_cobros_pagos_summary(
+    is_receipt: bool = True,
+    mes: int | None = None,
+    anio: int | None = None,
+    org_ids: list[int] | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> dict:
+    """Cobros recibidos (is_receipt=True) or pagos emitidos (is_receipt=False).
+
+    Returns totals, breakdown by currency, by payment method, and top 30
+    business partners — all with proper VES/USD currency separation.
+    """
+    if date_from and date_to:
+        mes = None
+    db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
+    cur_label = _currency_label("p")
+    try:
+        receipt_flag = "'Y'" if is_receipt else "'N'"
+        conditions = [
+            f"p.isreceipt = {receipt_flag}",
+            "p.docstatus IN ('CO', 'CL')",
+            "p.isactive = 'Y'",
+        ]
+        params: dict = {}
+        _add_org_filter(conditions, params, org_ids, "p")
+        _add_date_filter(conditions, params, date_from, date_to, mes, anio, "p.datetrx")
+
+        where = " AND ".join(conditions)
+
+        # Totals by currency
+        totals_q = text(
+            f"SELECT {cur_label} AS moneda, "
+            f"COUNT(*) AS cantidad, "
+            f"COALESCE(SUM(p.payamt), 0) AS total "
+            f"FROM adempiere.c_payment p WHERE {where} "
+            f"GROUP BY {cur_label} ORDER BY total DESC"
+        )
+        totals_rows = db.execute(totals_q, params).fetchall()
+        por_moneda = [
+            {"moneda": r[0], "cantidad": r[1], "total": float(r[2])}
+            for r in totals_rows
+        ]
+
+        # By payment method + currency
+        method_q = text(
+            f"SELECT CASE p.tendertype "
+            f"  WHEN 'A' THEN 'Depósito Directo' "
+            f"  WHEN 'B' THEN 'Tarjeta de Débito' "
+            f"  WHEN 'C' THEN 'Tarjeta de Crédito' "
+            f"  WHEN 'D' THEN 'Débito Directo' "
+            f"  WHEN 'K' THEN 'Cheque' "
+            f"  WHEN 'S' THEN 'Transferencia Empresas' "
+            f"  WHEN 'W' THEN 'Transferencia' "
+            f"  WHEN 'X' THEN 'Efectivo' "
+            f"  WHEN 'Y' THEN 'Dólar Efectivo' "
+            f"  WHEN 'Z' THEN 'Dólar Transferencia' "
+            f"  ELSE p.tendertype END AS metodo_pago, "
+            f"{cur_label} AS moneda, "
+            f"COUNT(*) AS cantidad, "
+            f"COALESCE(SUM(p.payamt), 0) AS total "
+            f"FROM adempiere.c_payment p WHERE {where} "
+            f"GROUP BY p.tendertype, {cur_label} ORDER BY total DESC"
+        )
+        por_metodo = [
+            {"metodo_pago": r[0], "moneda": r[1], "cantidad": r[2], "total": float(r[3])}
+            for r in db.execute(method_q, params).fetchall()
+        ]
+
+        # Top 30 business partners by amount + currency
+        bp_q = text(
+            f"SELECT bp.name, "
+            f"{cur_label} AS moneda, "
+            f"COUNT(*) AS cantidad, "
+            f"COALESCE(SUM(p.payamt), 0) AS total "
+            f"FROM adempiere.c_payment p "
+            f"JOIN adempiere.c_bpartner bp ON p.c_bpartner_id = bp.c_bpartner_id "
+            f"WHERE {where} "
+            f"GROUP BY bp.name, {cur_label} ORDER BY total DESC LIMIT 30"
+        )
+        top_socios = [
+            {"nombre": r[0], "moneda": r[1], "cantidad": r[2], "total": float(r[3])}
+            for r in db.execute(bp_q, params).fetchall()
+        ]
+
+        return {
+            "tipo": "cobros" if is_receipt else "pagos",
+            "total_registros": sum(m["cantidad"] for m in por_moneda),
+            "por_moneda": por_moneda,
+            "por_metodo_pago": por_metodo,
+            "top_socios": top_socios,
+        }
+    finally:
+        db.close()
+
+
 # ---------------------------------------------------------------------------
 # RRHH (Human Resources)
 # ---------------------------------------------------------------------------
