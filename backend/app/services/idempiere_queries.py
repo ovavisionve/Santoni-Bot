@@ -2635,6 +2635,9 @@ def build_producer_purchases(
             "o.issotrx = 'N'",
             "o.docstatus IN ('CO', 'CL')",
             "o.isactive = 'Y'",
+            # Exclude data-entry errors: filter out lines where unit price is
+            # absurdly high (>10,000 Bs/kg).  Normal arroz paddy ~182 Bs/kg.
+            "ol.priceactual < 10000",
         ]
         params: dict = {}
         _add_exclude_internal_orgs_filter(conditions, params, "bp")
@@ -2862,6 +2865,7 @@ def build_producer_price_analysis(
             "o.issotrx = 'N'",
             "o.docstatus IN ('CO', 'CL')",
             "o.isactive = 'Y'",
+            "ol.priceactual < 10000",
         ]
         params: dict = {}
         _add_exclude_internal_orgs_filter(conditions, params, "bp")
