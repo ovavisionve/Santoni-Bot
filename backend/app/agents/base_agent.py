@@ -552,6 +552,23 @@ class BaseAgent(ABC):
     ) -> dict:
         """Process a user message and return a complete response."""
         messages, has_data, data_context = self._build_messages(message, history, org_ids, salesrep_id)
+
+        # When no data was found, skip the LLM entirely to prevent hallucination.
+        # This avoids wasting an LLM call that would just fabricate data.
+        if not has_data:
+            logger.info(
+                "No data for %s — returning fixed message (skip LLM in process)",
+                self.name,
+            )
+            return {
+                "response": self._HALLUCINATION_REPLACEMENT,
+                "agent_used": self.name,
+                "metadata": {
+                    "department": self.department,
+                    "has_data": False,
+                },
+            }
+
         response = await self.llm.ainvoke(messages)
 
         response_text = response.content
@@ -623,6 +640,18 @@ class BaseAgent(ABC):
         with numbers appeared), replaces the entire response.
         """
         messages, has_data, data_context = self._build_messages(message, history, org_ids, salesrep_id)
+
+        # When no data was found, skip the LLM entirely to prevent hallucination.
+        # In streaming mode we can't un-send tokens, so the safest approach is to
+        # never invoke the LLM and yield a deterministic "no results" message.
+        if not has_data:
+            logger.info(
+                "No data for %s — returning fixed message (skip LLM in stream)",
+                self.name,
+            )
+            yield self._HALLUCINATION_REPLACEMENT
+            return
+
         accumulated = []
         async for chunk in self.llm.astream(messages):
             if chunk.content:

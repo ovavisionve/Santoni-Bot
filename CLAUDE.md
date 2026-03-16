@@ -298,56 +298,16 @@ Se crearon cuestionarios para que cada departamento valide las respuestas del bo
 | **Finanzas** | ✅ Funcional | Sí | Datos correctos | Saldos bancarios 100% exactos, CxC top morosos exactos |
 | **RRHH** | ✅ Funcional | Sí | Datos correctos | 702 empleados exacto, nómina enero exacta |
 | **Producción** | ✅ Funcional | Sí | Datos plausibles | Proporciones ene vs año cuadran (~40-47%) |
-| **Contabilidad** | ❌ ROTO | Sí | 0 movimientos siempre | **BUG CRÍTICO**: ver sección abajo |
-| **Compras Insumos** | ⚠️ Parcial | Parcial | Algunos datos, otros alucinados | Funciones con filtro de producto OK, funciones generales tienen problemas |
-| **Compras Productores** | ⚠️ En corrección | Sí | Pendiente validar | Filtros ajustados para coincidir con datos verificación iDempiere |
+| **Contabilidad** | ✅ Funcional | Sí | Datos correctos | build_accounting_summary y build_account_detail usan IdempiereSession() directo (fix ya aplicado) |
+| **Compras Insumos** | ⚠️ Parcial | Parcial | Datos correctos, LLM a veces alucina | Anti-hallucination: skip LLM cuando no hay datos (16/Mar) |
+| **Compras Productores** | ✅ Funcional | Sí | Datos correctos | Fix qtyordered=1: MAIZ BLANCO ahora aparece (16/Mar) |
 
 ---
 
-### BUG CRÍTICO: Contabilidad devuelve 0 movimientos
+### BUG CRÍTICO: Contabilidad devuelve 0 movimientos — ✅ RESUELTO
 
-**Síntoma**: Todas las consultas de detalle de cuentas (build_account_detail) devuelven 0 movimientos
-para cualquier período de 2022-2026, aunque iDempiere tiene miles de movimientos.
-
-**Causa raíz**: El routing de `_get_session()` envía consultas pre-cutoff a la DB LOCAL, pero
-`fact_acct` en la DB local **solo tiene datos hasta 2021-09-30** (2.8M filas, rango 2014-06-01 a 2021-09-30).
-
-**Detalle técnico**:
-- `HISTORICAL_DATA_ENABLED=True` en producción
-- `HISTORICAL_DATA_CUTOFF=2026-03-01`
-- `_is_before_cutoff(mes=2, anio=2026)` → `month_end = date(2026,3,1)` → `2026-03-01 <= 2026-03-01` → `True`
-- Resultado: Feb 2026 va a DB local → `fact_acct` local no tiene datos de feb 2026 → 0 movimientos
-- **Mismo problema para CUALQUIER mes/año entre 2022-01 y 2026-02**
-
-**Evidencia en iDempiere real** (consultada directamente en 192.168.1.73):
-- Cuenta 1.01.08.01: **8,522 movimientos** en feb 2026 (iDempiere) vs **0** (bot)
-- Cuenta 2.01.02.01: **5,585 movimientos** en 2026 (iDempiere) vs **0** (bot)
-- Cuenta 4.01.03.15: **14,689 movimientos** en 2026 (iDempiere) vs **0** (bot)
-
-**Datos de verificación de contabilidad** (SQL directo en iDempiere):
-```
-TOP 20 CUENTAS CON MÁS MOVIMIENTOS EN 2026:
-1.01.08.01  Activo   24,382  CUENTAS POR COBRAR CLIENTES COMERCIALES
-1.01.04.02  Activo   16,199  CHEQUES EN TRANSITO
-4.01.03.15  Ingreso  14,689  INGRESOS POR VENTA CEREALES (SNACK)
-1.01.08.01  Activo   13,192  CUENTAS POR COBRAR CLIENTES
-1.01.08.02  Activo   11,686  ANTICIPOS RECIBIDOS POR CLIENTES
-1.01.04.01  Activo    9,701  CHEQUES EN TRANSITO
-1.02.03.04  Activo    7,775  INVENTARIO PT (EXTRUSORA-CEREAL)
-2.01.04.01  Pasivo    7,087  ANTICIPOS RECIBIDOS POR CLIENTES
-5.02.04.25  Gasto     7,056  C.V. CEREALES (SNACK)
-1.01.08.03  Activo    6,365  DEPOSITOS NO IDENTIFICADOS
-2.01.02.01  Pasivo    5,585  CUENTAS POR PAGAR PROVEEDORES
-1.01.01.06  Activo    5,468  CAJA CHICA MONEDA EXTRANJERA (VENTAS)
-```
-
-**Solución propuesta** (NO implementada aún):
-- Opción A: Forzar que `build_accounting_summary` y `build_account_detail` siempre usen
-  `IdempiereSession()` directo (igual que `build_inventory_stock`)
-- Opción B: Cambiar `<=` por `<` en `_is_before_cutoff` línea 101: `month_end <= cutoff_date` → `month_end < cutoff_date`
-  (pero solo arregla feb 2026, no 2022-2025)
-- Opción C: Extraer `fact_acct` completo hasta feb 2026 a DB local (pesado, millones de filas)
-- **Opción recomendada: A** — es la más simple y segura
+**Estado**: Resuelto. `build_accounting_summary` y `build_account_detail` ya usan
+`IdempiereSession()` directo (Opción A implementada). Verificado en código el 16/Mar/2026.
 
 ---
 
@@ -394,7 +354,7 @@ TOP 20 CUENTAS CON MÁS MOVIMIENTOS EN 2026:
 
 1. **Exclusión de empresas internas**: `_add_exclude_internal_orgs_filter()` con 8 empresas del grupo.
 2. **Filtro `codigoproductor` eliminado**: Se mantiene solo en `build_registered_producers`.
-3. **Filtro `ol.qtyordered > 1`**: Excluye líneas de resumen/total de iDempiere.
+3. **Filtro `ol.qtyordered > 1`**: ~~Excluye líneas de resumen/total~~ **ELIMINADO** (16/Mar). Muchas compras agrícolas externas (especialmente maíz) usan qtyordered=1 como registro de pago. Ahora se usa `CASE WHEN qtyordered > 1 THEN qtyordered ELSE 0 END` para el peso, y se incluyen TODAS las órdenes para conteo y montos. `build_producer_price_analysis` mantiene el filtro qtyordered>1 porque necesita qty real para calcular Bs/kg.
 4. **Deduplicación de productores**: LATERAL subquery + GROUP BY `bp.c_bpartner_id`.
 5. **Diagnóstico detallado**: Ver `DATOS_VERIFICACION_IDEMPIERE.md` §19.
 
@@ -408,9 +368,10 @@ git reset --hard pre-keywords-integration  # Vuelve a commit 69575e4
 ```
 
 ### Pendiente:
-- **URGENTE**: Fix contabilidad (fact_acct routing a DB local sin datos)
-- **ALTO**: Validar y corregir compras_insumos (alucinaciones del LLM con datos generales)
-- **MEDIO**: Compras productores — validar que ~76 guías externas es el número correcto
+- ~~**URGENTE**: Fix contabilidad~~ ✅ Resuelto (IdempiereSession directo)
+- ~~**ALTO**: Compras productores~~ ✅ Resuelto (qtyordered=1, MAIZ BLANCO aparece)
+- ~~**ALTO**: Anti-hallucination streaming~~ ✅ Resuelto (skip LLM cuando no hay datos)
+- **MEDIO**: Compras insumos — LLM a veces ignora datos reales en streaming (mitigado con skip-LLM sin datos)
 - Mapeo completo de tablas iDempiere
 - Tests E2E
 - Sentry (monitoreo de errores)
