@@ -2293,3 +2293,104 @@ en vez de "Dólares (USD)". Las demás 16 cuentas con saldo 0 no tienen impacto 
 4. **QUEVELUG**: Aparece 3+ veces en facturas vencidas con variaciones de nombre
    (mismo problema de data quality que en Finanzas).
 - Nómina Especial
+
+---
+
+## 19. Compras Productores - Diagnóstico detallado (16/Mar/2026)
+
+> **Fecha:** 2026-03-16
+> **Script:** `backend/scripts/diagnose_producer_gap.py`
+> **Propósito:** Explicar gap entre 356 guías (verificación §2) y lo que reporta el agente
+
+### 19.1 Filtros incrementales - Arroz Paddy 2026
+
+| # | Filtro aplicado | Guías | Kg | Monto (Bs.) | Precio prom. |
+|---|-----------------|-------|----|-------------|--------------|
+| 1 | Base: issotrx='N', docstatus IN ('CO','CL'), producto ILIKE arroz paddy | 369 | 7,803,925.17 | 1,439,112,429.03 | 184.41 |
+| 2 | + isactive='Y' | 369 | 7,803,925.17 | 1,439,112,429.03 | 184.41 |
+| 3 | + priceactual < 10000 | 312 | 7,803,868.17 | 886,256,528.69 | 113.57 |
+| 4 | + exclusión empresas internas | 29 | 360,621.02 | 39,428,265.55 | 109.33 |
+
+**Nota:** isactive='Y' no filtra nada. La reducción mayor es por exclusión de empresas internas (312→29).
+
+### 19.2 Verificación exacta p.name = 'ARROZ PADDY ACONDICIONADO'
+
+| Guías | Kg | Monto (Bs.) | Precio prom. |
+|-------|----|-------------|--------------|
+| 369 | 7,803,925.17 | 1,439,112,429.03 | 184.41 |
+
+> La diferencia con §2 (356 guías / 7,657,696.79 kg) se debe a que la verificación §2
+> fue hecha el 13/Mar y ahora hay 13 guías más (hasta 16/Mar).
+
+### 19.3 Empresas del grupo Santoni como "proveedores" de arroz paddy
+
+| Empresa | Guías | Kg | Monto (Bs.) |
+|---------|-------|----|-------------|
+| INPROA SANTONI, C.A | 282 | 7,217,625.42 | 1,281,563,328.62 |
+| AGROPECUARIA R.R, C.A. | 11 | 225,631.73 | 24,397,917.92 |
+| **Subtotal internas** | **293** | **7,443,257.15** | **1,305,961,246.54** |
+
+> INPROA representa el **76%** de todas las guías y el **92%** del kg total.
+> Son transferencias internas contables, no compras a productores externos.
+
+### 19.4 Registros con priceactual >= 10000 (líneas con qty=1)
+
+| Proveedor | Precio unitario | Qty | Monto | Doc |
+|-----------|----------------|-----|-------|-----|
+| INPROA SANTONI, C.A | 137,925,697.61 | 1.00 | 137,925,697.61 | 809381 |
+| INPROA SANTONI, C.A | 124,818,190.03 | 1.00 | 124,818,190.03 | 809374 |
+| INPROA SANTONI, C.A | 106,001,687.10 | 1.00 | 106,001,687.10 | 809393 |
+| INPROA SANTONI, C.A | 32,241,301.65 | 1.00 | 32,241,301.65 | 809382 |
+| INPROA SANTONI, C.A | 18,029,149.70 | 1.00 | 18,029,149.70 | 809391 |
+| INPROA SANTONI, C.A | 13,343,007.32 | 1.00 | 13,343,007.32 | 809392 |
+| CONGLOMERADO AGROSUR, S.A. | 11,573,061.66 | 1.00 | 11,573,061.66 | 809398 |
+| INPROA SANTONI, C.A | 9,657,671.92 | 1.00 | 9,657,671.92 | 809389 |
+| INPROA SANTONI, C.A | 9,311,645.61 | 1.00 | 9,311,645.61 | 809388 |
+| JOSE GREGORIO ESCALONA | 9,250,158.32 | 1.00 | 9,250,158.32 | 809420 |
+| JOSE LUIS PEREZ DEL PALOMAR MIGUEL | 6,621,108.98 | 1.00 | 6,621,108.98 | 809386 |
+| INPROA SANTONI, C.A | 6,589,211.61 | 1.00 | 6,589,211.61 | 809373 |
+| JOSE LUIS DI CAMPLI REAÑEZ | 6,457,484.16 | 1.00 | 6,457,484.16 | 809418 |
+| SALVATORE AMATO MARAGIOGLIO | 4,919,589.00 | 1.00 | 4,919,589.00 | 809419 |
+| JOSE LUIS PEREZ DEL PALOMAR MIGUEL | 4,848,400.77 | 1.00 | 4,848,400.77 | 809390 |
+| JOSE LUIS PEREZ DEL PALOMAR MIGUEL | 4,578,494.00 | 1.00 | 4,578,494.00 | 809384 |
+| JOSE LUIS PEREZ DEL PALOMAR MIGUEL | 4,234,850.00 | 1.00 | 4,234,850.00 | 809372 |
+| EDGAR JOSE MIRANDA CABAÑA | 4,181,445.71 | 1.00 | 4,181,445.71 | 809368 |
+| MANUEL IGNACIO SEQUERA | 3,794,751.50 | 1.00 | 3,794,751.50 | 809417 |
+| CORRADO ATTILIO TINE DORACIO | 3,395,670.66 | 1.00 | 3,395,670.66 | 809371 |
+
+> Patrón: todos tienen `qty=1` y monto = precio unitario. Son líneas de resumen/total
+> dentro de la misma guía (c_order), NO errores de captación. El monto total ya está
+> contabilizado en las líneas detalladas de la misma orden.
+
+### 19.5 Top 10 proveedores de arroz paddy 2026 (SIN exclusiones)
+
+| # | Proveedor | Guías | Kg | Monto (Bs.) |
+|---|-----------|-------|----|-------------|
+| 1 | INPROA SANTONI, C.A | 282 | 7,217,625.42 | 1,281,563,328.62 |
+| 2 | AGROPECUARIA R.R, C.A. | 11 | 225,631.73 | 24,397,917.92 |
+| 3 | JOSE GREGORIO ESCALONA | 14 | 108,206.63 | 21,533,242.31 |
+| 4 | CONGLOMERADO AGROSUR, S.A. | 7 | 75,767.64 | 19,917,690.17 |
+| 5 | JOSE LUIS DI CAMPLI REAÑEZ | 7 | 60,040.39 | 12,971,934.85 |
+| 6 | JOSE GREGORIO SICILIANO AMATA | 2 | 40,759.71 | 4,553,558.40 |
+| 7 | DENNIS JOSE GUEDEZ | 3 | 36,310.76 | 4,045,416.64 |
+| 8 | LUIS SIMON PEREZ DEL PALOMAR GONZALEZ | 1 | 16,983.03 | 1,890,333.20 |
+| 9 | CESAR AUGUSTO MENDEZ ANGULO | 2 | 13,255.29 | 2,720,747.26 |
+| 10 | JOSE LUIS PEREZ DEL PALOMAR MIGUEL | 15 | 9,319.57 | 35,799,701.48 |
+
+### 19.6 Conclusiones
+
+1. **76% de las guías son INPROA** comprándose arroz paddy a sí misma (transferencias internas).
+   La exclusión de empresas internas es **correcta** para el agente de Compras Productores.
+
+2. **Líneas con qty=1 y priceactual alto** son líneas de resumen/total dentro de guías.
+   Estas inflan el monto si se suman. El filtro `priceactual < 10000` las excluye pero
+   también excluye líneas legítimas de productores externos.
+
+3. **Datos correctos para productores externos**: ~76 guías / ~360K kg / ~39M Bs.
+   El precio promedio de productores externos es ~109 Bs/kg (sin las líneas qty=1).
+
+4. **JOSE LUIS PEREZ DEL PALOMAR**: 15 guías / 9,319 kg / 35.8M Bs — el monto alto
+   incluye las líneas qty=1 con montos grandes. Sin esas líneas: 1 guía / 9,305 kg / 897K Bs.
+
+5. **Dato §2 (356 guías) incluye empresas internas** — no es comparable directamente
+   con el agente de Compras Productores que las excluye.

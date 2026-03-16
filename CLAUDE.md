@@ -394,18 +394,23 @@ TOP 20 CUENTAS CON MÁS MOVIMIENTOS EN 2026:
 
 1. **Exclusión de empresas internas**: Se agregó `_add_exclude_internal_orgs_filter()` con 8 empresas
    del grupo Santoni. Usa `NOT LIKE` con match parcial para cubrir variaciones de nombre.
+   - INPROA SANTONI: 282 guías / 7.2M kg (76% del total) — transferencias internas
+   - AGROPECUARIA R.R: 11 guías / 225K kg — también interna
 
-2. **Filtro `codigoproductor` eliminado**: Excluía ~94% de los registros (21 guías vs 356 reales).
-   Los datos de verificación de iDempiere no filtran por este campo. Se removió de
-   `build_producer_purchases`, `build_producer_price_analysis` y `build_producer_pending_payments`.
-   Se mantiene solo en `build_registered_producers` donde SÍ es el criterio correcto.
+2. **Filtro `codigoproductor` eliminado**: Excluía ~94% de los registros.
+   Se removió de `build_producer_purchases`, `build_producer_price_analysis` y
+   `build_producer_pending_payments`. Se mantiene solo en `build_registered_producers`.
 
-3. **Deduplicación de productores**: JOIN de ubicación cambiado a `LATERAL` subquery con `LIMIT 1`
+3. **Filtro `ol.qtyordered > 1`**: Excluye líneas de resumen/total de iDempiere que tienen
+   qtyordered=1 y priceactual=monto total de la guía. Estas líneas duplican el monto.
+
+4. **Deduplicación de productores**: JOIN de ubicación cambiado a `LATERAL` subquery con `LIMIT 1`
    y GROUP BY por `bp.c_bpartner_id` para evitar duplicación por múltiples direcciones.
 
-4. **Datos de verificación objetivo** (DATOS_VERIFICACION_IDEMPIERE.md):
-   - Arroz Paddy 2026: 356 guías, 7,657,696.79 kg, 1,397,225,883.67 Bs.
-   - Precio promedio esperado: ~182 Bs/kg
+5. **Datos de verificación** (DATOS_VERIFICACION_IDEMPIERE.md §19):
+   - Total arroz paddy 2026: 369 guías, 7,803,925.17 kg, 1,439,112,429.03 Bs. (184 Bs/kg)
+   - Productores externos (excl. internas): ~76 guías, ~360K kg, ~39M Bs. (~109 Bs/kg)
+   - Ver §19 para diagnóstico completo de filtros incrementales
 
 ### Módulo de Keywords (`backend/app/agents/keywords.py`) — commit d6eb13f
 
@@ -419,7 +424,7 @@ git reset --hard pre-keywords-integration  # Vuelve a commit 69575e4
 ### Pendiente:
 - **URGENTE**: Fix contabilidad (fact_acct routing a DB local sin datos)
 - **ALTO**: Validar y corregir compras_insumos (alucinaciones del LLM con datos generales)
-- **ALTO**: Validar y corregir compras_productores (INPROA como productor, precio promedio)
+- **MEDIO**: Compras productores — validar que ~76 guías externas es el número correcto
 - Mapeo completo de tablas iDempiere
 - Tests E2E
 - Sentry (monitoreo de errores)
