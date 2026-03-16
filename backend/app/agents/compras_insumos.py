@@ -403,6 +403,10 @@ Datos de compras de insumos en iDempiere:
         # Extract dates from current message
         date_from, date_to = extract_date_range(message)
         mes, anio = extract_month_year(message)
+        # Track if user explicitly mentioned a year/month or if it's just the default
+        _has_explicit_year = bool(re.search(r'20\d{2}', message))
+        _has_explicit_month = mes is not None
+        has_explicit_period = _has_explicit_year or _has_explicit_month or bool(date_from)
         if date_from and date_to:
             mes = None
             anio = None
@@ -528,22 +532,29 @@ Datos de compras de insumos en iDempiere:
                 product_found = True
 
             elif is_price_compare and product_search:
+                # For price comparison, only filter by date if user explicitly
+                # specified a period.  Otherwise show ALL historical data so
+                # the user can see every supplier that has ever sold this product.
+                cmp_anio = anio if has_explicit_period else None
+                cmp_df = date_from if has_explicit_period else None
+                cmp_dt = date_to if has_explicit_period else None
                 compare_data = build_supplier_price_comparison(
                     product_search=product_search,
-                    org_ids=org_ids, anio=anio,
-                    date_from=date_from, date_to=date_to,
+                    org_ids=org_ids, anio=cmp_anio,
+                    date_from=cmp_df, date_to=cmp_dt,
                     org_name=org_name,
                 )
                 if compare_data:
                     product_found = True
+                    period_note = f" - {label}" if has_explicit_period else " - Todo el historial"
                     sections.append(
-                        f"## Comparación de Precios - '{product_search}' ({len(compare_data)} proveedores)"
+                        f"## Comparación de Precios - '{product_search}'{period_note} ({len(compare_data)} proveedores)"
                     )
                     sections.append(self._format_table(compare_data))
                 else:
                     sections.append(
                         f"## Comparación de Precios - '{product_search}'\n"
-                        f"No se encontraron datos de precios para '{product_search}' en el período {label}."
+                        f"No se encontraron datos de precios para '{product_search}'."
                     )
 
             elif product_search:
@@ -552,16 +563,22 @@ Datos de compras de insumos en iDempiere:
                     is_supplier_query = any(w in msg for w in ["proveedores", "proveedor", "quien vende", "quién vende"])
 
                     if is_supplier_query:
+                        # Supplier queries ("quién vende X") should show ALL
+                        # historical suppliers unless user specified a period.
+                        sup_anio = anio if has_explicit_period else None
+                        sup_df = date_from if has_explicit_period else None
+                        sup_dt = date_to if has_explicit_period else None
                         compare_data = build_supplier_price_comparison(
                             product_search=product_search,
-                            org_ids=org_ids, anio=anio,
-                            date_from=date_from, date_to=date_to,
+                            org_ids=org_ids, anio=sup_anio,
+                            date_from=sup_df, date_to=sup_dt,
                             org_name=org_name,
                         )
                         if compare_data:
                             product_found = True
+                            period_note = f" - {label}" if has_explicit_period else " - Todo el historial"
                             sections.append(
-                                f"## Proveedores de '{product_search}' ({len(compare_data)} proveedores)"
+                                f"## Proveedores de '{product_search}'{period_note} ({len(compare_data)} proveedores)"
                             )
                             sections.append(self._format_table(compare_data))
 
