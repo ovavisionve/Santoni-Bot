@@ -2605,6 +2605,9 @@ def build_producer_purchases(
             "o.issotrx = 'N'",
             "o.docstatus IN ('CO', 'CL')",
             "o.isactive = 'Y'",
+            # Only real agricultural producers (exclude internal orgs like INPROA)
+            "bp.codigoproductor IS NOT NULL",
+            "bp.codigoproductor != ''",
         ]
         params: dict = {}
         _add_org_filter(conditions, params, org_ids, "o")
@@ -2616,7 +2619,7 @@ def build_producer_purchases(
 
         where = " AND ".join(conditions)
 
-        # Totals
+        # Totals (JOIN c_bpartner to apply codigoproductor filter)
         totals_q = text(
             f"SELECT COUNT(DISTINCT o.c_order_id) AS total_guias, "
             f"COALESCE(SUM(ol.qtyordered), 0) AS total_peso_neto_kg, "
@@ -2624,6 +2627,7 @@ def build_producer_purchases(
             f"FROM adempiere.c_order o "
             f"JOIN adempiere.c_orderline ol ON o.c_order_id = ol.c_order_id "
             f"JOIN adempiere.m_product p ON ol.m_product_id = p.m_product_id "
+            f"JOIN adempiere.c_bpartner bp ON o.c_bpartner_id = bp.c_bpartner_id "
             f"WHERE {where}"
         )
         row = db.execute(totals_q, params).fetchone()
@@ -2642,6 +2646,7 @@ def build_producer_purchases(
             f"FROM adempiere.c_order o "
             f"JOIN adempiere.c_orderline ol ON o.c_order_id = ol.c_order_id "
             f"JOIN adempiere.m_product p ON ol.m_product_id = p.m_product_id "
+            f"JOIN adempiere.c_bpartner bp ON o.c_bpartner_id = bp.c_bpartner_id "
             f"WHERE {where} "
             f"GROUP BY p.name ORDER BY monto_total DESC"
         )
@@ -2768,6 +2773,9 @@ def build_producer_pending_payments(
             "i.ispaid = 'N'",
             "i.isactive = 'Y'",
             "i.dateinvoiced >= (CURRENT_DATE - INTERVAL '2 years')",
+            # Only real agricultural producers (exclude internal orgs like INPROA)
+            "bp.codigoproductor IS NOT NULL",
+            "bp.codigoproductor != ''",
         ]
         params: dict = {}
         _add_org_filter(conditions, params, org_ids, "i")
@@ -2822,6 +2830,9 @@ def build_producer_price_analysis(
             "o.issotrx = 'N'",
             "o.docstatus IN ('CO', 'CL')",
             "o.isactive = 'Y'",
+            # Only real agricultural producers (exclude internal orgs like INPROA)
+            "bp.codigoproductor IS NOT NULL",
+            "bp.codigoproductor != ''",
         ]
         params: dict = {}
         _add_org_filter(conditions, params, org_ids, "o")
@@ -2838,6 +2849,7 @@ def build_producer_price_analysis(
             f"FROM adempiere.c_order o "
             f"JOIN adempiere.c_orderline ol ON o.c_order_id = ol.c_order_id "
             f"JOIN adempiere.m_product p ON ol.m_product_id = p.m_product_id "
+            f"JOIN adempiere.c_bpartner bp ON o.c_bpartner_id = bp.c_bpartner_id "
             f"WHERE {where} "
             f"GROUP BY p.name ORDER BY compras DESC LIMIT 20"
         )

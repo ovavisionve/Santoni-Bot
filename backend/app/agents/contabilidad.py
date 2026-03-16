@@ -286,8 +286,17 @@ Se pueden consultar cuentas específicas por código (ej: 2.01.01.10) con rango 
         account_match = _ACCOUNT_CODE_RE.search(message)
         account_code = account_match.group(1) if account_match else None
 
-        # Follow-up: if no account code in current message, check history
-        if not account_code and history:
+        # Follow-up: if no account code in current message, check history.
+        # BUT don't inherit account code if the message is a general query
+        # (balance general, top cuentas, estado de resultados, etc.)
+        _summary_kw = {
+            "balance", "balance general", "estado de resultados",
+            "top cuentas", "resumen", "resumen contable",
+            "libro diario", "libro mayor", "asientos",
+            "estado de situación", "estado de situacion",
+        }
+        _is_summary_query = any(kw in message.lower() for kw in _summary_kw)
+        if not account_code and history and not _is_summary_query:
             account_code = self._extract_account_from_history(history)
 
         try:
