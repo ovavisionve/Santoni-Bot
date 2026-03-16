@@ -2394,3 +2394,110 @@ en vez de "Dólares (USD)". Las demás 16 cuentas con saldo 0 no tienen impacto 
 
 5. **Dato §2 (356 guías) incluye empresas internas** — no es comparable directamente
    con el agente de Compras Productores que las excluye.
+
+---
+
+## 20. Diagnóstico de Campos de Peso en c_order (16/Mar/2026)
+
+> **Contexto:** Se investigaron los campos `netweight`, `grossweight`, `tareweight` y `qtyordered`
+> en `c_orderline` para entender por qué maíz blanco externo no mostraba peso real.
+
+### 20.1 Campos de peso - Compras MAÍZ BLANCO 2026
+
+| Proveedor | Doc | netweight | grossweight | tareweight | qtyordered | linenetamt | priceactual |
+|-----------|-----|-----------|-------------|------------|------------|------------|-------------|
+| AGROPECUARIA ESCALA 2002, C.A | 801872 | 0.00 | 0.00 | 0.00 | 1.00 | 1,355,962.34 | 1,355,962.34 |
+| AGROPECUARIA ESCALA 2002, C.A | 801873 | 0.00 | 0.00 | 0.00 | 1.00 | 555,854.40 | 555,854.40 |
+| JOSE LUIS PEREZ DEL PALOMAR MIGUEL | 801876 | 0.00 | 0.00 | 0.00 | 1.00 | 4,323,621.06 | 4,323,621.06 |
+| JOSE LUIS PEREZ DEL PALOMAR MIGUEL | 801875 | 0.00 | 0.00 | 0.00 | 1.00 | 4,323,620.97 | 4,323,620.97 |
+| JOSE LUIS PEREZ DEL PALOMAR MIGUEL | 801879 | 0.00 | 0.00 | 0.00 | 1.00 | 408,658.87 | 408,658.87 |
+| AGROPECUARIA ESCALA 2002, C.A | 801878 | 0.00 | 0.00 | 0.00 | 1.00 | 2,530,066.08 | 2,530,066.08 |
+| AGROPECUARIA ESCALA 2002, C.A | 801880 | 0.00 | 0.00 | 0.00 | 1.00 | 3,333,518.00 | 3,333,518.00 |
+| AGROPECUARIA ESCALA 2002, C.A | 801884 | 0.00 | 0.00 | 0.00 | 1.00 | 62,977.90 | 62,977.90 |
+| AGROPECUARIA ESCALA 2002, C.A | 801883 | 0.00 | 0.00 | 0.00 | 1.00 | 240,750.51 | 240,750.51 |
+| AGROPECUARIA ESCALA 2002, C.A | 801889 | 0.00 | 0.00 | 0.00 | 1.00 | 2,213,794.20 | 2,213,794.20 |
+
+> **Hallazgo:** TODAS las compras externas de maíz tienen `netweight=0`, `grossweight=0`, `qtyordered=1`.
+> Son registros de pago, no de peso. No hay campo de peso real para maíz externo en c_order.
+
+### 20.2 Campos de peso - Compras ARROZ 2026 (primeras 10 externas)
+
+| Proveedor | Doc | netweight | grossweight | tareweight | qtyordered | linenetamt | priceactual |
+|-----------|-----|-----------|-------------|------------|------------|------------|-------------|
+| JOSE LUIS PEREZ DEL PALOMAR MIGUEL | 809362 | 0.00 | 0.00 | 0.00 | 1.00 | 1,852,807.84 | 1,852,807.84 |
+| JOSE LUIS PEREZ DEL PALOMAR MIGUEL | 809364 | 0.00 | 0.00 | 0.00 | 1.00 | 356,309.20 | 356,309.20 |
+| JOSE LUIS PEREZ DEL PALOMAR MIGUEL | 809361 | 0.00 | 0.00 | 0.00 | 1.00 | 2,601,057.16 | 2,601,057.16 |
+| JOSE LUIS PEREZ DEL PALOMAR MIGUEL | 809363 | 0.00 | 0.00 | 0.00 | 1.00 | 534,463.80 | 534,463.80 |
+| MORENO MANZANERO FRANKLIN OSCAR | 809366 | 0.00 | 0.00 | 0.00 | 1.00 | 11,179.40 | 11,179.40 |
+| YSIDRO ANTONIO RIVERO CASTILLO | 809365 | 0.00 | 0.00 | 0.00 | 1.00 | 338,204.11 | 338,204.11 |
+| PEDRO JOSE GARCIA | 809367 | 0.00 | 0.00 | 0.00 | 1.00 | 685,161.50 | 685,161.50 |
+| EDGAR JOSE MIRANDA CABAÑA | 809368 | 0.00 | 0.00 | 0.00 | 1.00 | 4,181,445.71 | 4,181,445.71 |
+| MONICA DAYANA BERMUDEZ OJEDA | 809369 | 0.00 | 0.00 | 0.00 | 1.00 | 257,997.88 | 257,997.88 |
+| MONTANA GRAFICA C.A | 1443 | 0.00 | 0.00 | 0.00 | 94.70 | 1,278.45 | 13.50 |
+
+> **Nota:** Arroz externo también tiene `netweight=0` en muchas líneas, pero arroz INPROA sí tiene
+> `netweight` real (ver §19). La excepción es MONTANA GRAFICA con `qtyordered=94.70` (compra de insumo, no agrícola).
+
+### 20.3 Comparación SUM(netweight) vs SUM(qtyordered) - 2026
+
+| Producto | Guías | SUM(netweight) | SUM(qtyordered) | SUM(linenetamt) |
+|----------|-------|----------------|------------------|-----------------|
+| **MAÍZ externo** | 31 | **0.00 kg** | 22,345.60 kg | Bs. 19,425,008.64 |
+| **ARROZ externo** | 92 | 531,920.00 kg | 441,492.07 kg | Bs. 141,926,958.26 |
+
+> **Conclusión clave:** Para maíz externo, `netweight` siempre es 0. El `qtyordered` en líneas
+> con qty>1 totaliza 22,345.60 kg, pero las líneas con qty=1 (que son la mayoría) no tienen peso.
+> Para arroz externo, `netweight` tiene datos parciales (531,920 kg) y `qtyordered` tiene 441,492 kg.
+
+### 20.4 Distribución de qtyordered en compras externas 2026
+
+| Rango | Líneas | Órdenes |
+|-------|--------|---------|
+| qty ≤ 0 | 22 | 15 |
+| qty = 1 | 2,364 | 1,597 |
+| qty 2-100 | 1,569 | 669 |
+| qty > 100 | 282 | 229 |
+
+> **Conclusión:** La gran mayoría (2,364 líneas / 1,597 órdenes) tienen `qtyordered=1`.
+> Solo 282 líneas tienen qty>100 (peso real en kg). El filtro `qtyordered>1` original
+> excluía el 56% de las líneas. El fix actual usa `CASE WHEN qtyordered>1 THEN qtyordered ELSE 0`
+> para incluir TODAS las órdenes en conteo/monto pero solo usar qty real para peso.
+
+---
+
+## 21. Diagnóstico Filtros Incrementales - Compras Maíz 2026 (16/Mar/2026)
+
+> **Verificación cruzada:** MAÍZ BLANCO DE CONSUMO = 274 guías, 7,003,571.05 kg (dato iDempiere directo)
+
+### 21.1 Filtros incrementales
+
+| Paso | Filtro | Guías | Kg | Monto (Bs.) | Precio prom (Bs/kg) |
+|------|--------|-------|----|-------------|---------------------|
+| 1 | Sin filtros (todas las compras maíz 2026) | 295 | 7,025,906.65 | 824,360,430.17 | 117.33 |
+| 2 | + isactive='Y' + qtyordered > 1 | 270 | 7,025,881.65 | 651,406,710.96 | 92.72 |
+| 3 | + exclusión empresas internas | 13 | 22,327.60 | 76,184.31 | 3.41 |
+
+> **Hallazgo crítico:** Al excluir empresas internas, solo quedan **13 guías** con qty>1
+> y un peso irrisorio de 22,327 kg. La inmensa mayoría de las compras de maíz son
+> transferencias internas de INPROA SANTONI.
+
+### 21.2 Top proveedores de MAÍZ BLANCO DE CONSUMO 2026
+
+| Proveedor | Guías | Kg | Monto (Bs.) | Nota |
+|-----------|-------|----|-------------|------|
+| INPROA SANTONI, C.A | 264 | 7,003,561.05 | 804,935,421.53 | **EXCLUIDO** (empresa interna) |
+| AGROPECUARIA ESCALA 2002, C.A | 7 | 7.00 | 10,292,923.43 | qty=1, peso no real |
+| JOSE LUIS PEREZ DEL PALOMAR MIGUEL | 3 | 3.00 | 9,055,900.90 | qty=1, peso no real |
+
+### 21.3 Solo productores externos de Maíz Blanco 2026
+
+| Métrica | Valor |
+|---------|-------|
+| Guías | 10 |
+| Kg (qtyordered) | 10.00 (todas qty=1) |
+| Monto | Bs. 19,348,824.33 |
+
+> **Conclusión:** Las compras externas de maíz blanco son casi inexistentes en volumen (kg).
+> Los 10 productores externos registran `qtyordered=1` (registros de pago sin peso real).
+> El monto sí es real: Bs. 19.3M. Esto significa que para maíz externo 2026, el agente
+> **no puede reportar kg reales** — solo puede reportar # de guías y montos.
