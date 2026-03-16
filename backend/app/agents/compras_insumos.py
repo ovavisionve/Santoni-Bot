@@ -442,9 +442,15 @@ Datos de compras de insumos en iDempiere:
 
         # Check if user is searching for a specific product
         product_search = self._extract_product_search(message)
-        # Follow-up: if no product in current message, check history
+        # Follow-up: inherit product from history ONLY if the current message
+        # looks like a true follow-up (no explicit period, no broad query keywords).
+        # e.g. "y en dólares?" → inherit; "compras en dólares del 2025" → don't.
         if not product_search and history:
-            product_search = self._extract_product_from_history(history)
+            _broad_query_kw = {"compras", "resumen", "total", "facturas", "estado de pago",
+                               "órdenes", "ordenes", "pendientes", "pagadas", "top"}
+            _is_broad_query = any(w in msg for w in _broad_query_kw)
+            if not has_explicit_period and not _is_broad_query:
+                product_search = self._extract_product_from_history(history)
 
         # Detect query type using centralized keyword sets
         is_inventory = any(w in msg for w in self._INVENTORY_KW_SET)
@@ -491,6 +497,12 @@ Datos de compras de insumos en iDempiere:
 
                 # Add overdue detail
                 vencidas = payment_data.get("facturas_vencidas", [])
+                if vencidas:
+                    sections.append(
+                        f"\n### Facturas Vencidas Sin Pagar [{len(vencidas)} registros exactos]"
+                    )
+                    sections.append(self._format_table(vencidas))
+                product_found = True
 
             elif is_orders:
                 orders_data = build_pending_purchase_orders(
@@ -513,6 +525,11 @@ Datos de compras de insumos en iDempiere:
                         f"- {pm['moneda']}: {pm['total_ordenes']} órdenes, "
                         f"monto total: {pm['total_monto']:,.2f}"
                     )
+                order_lines.append(
+                    "\n⚠️ SOLO presenta los proveedores, documentos y montos que aparecen "
+                    "en las tablas siguientes. NO inventes nombres de proveedores, "
+                    "números de orden (ORD-xxx) ni descripciones de productos."
+                )
                 sections.append("\n".join(order_lines))
 
                 # Add status, supplier, and detail tables
@@ -521,14 +538,9 @@ Datos de compras de insumos en iDempiere:
                     if detail_data:
                         sections.append(
                             f"\n### {detail_key.replace('_', ' ').title()} "
-                            f"[{len(detail_data)} registros exactos]"
+                            f"[{len(detail_data)} registros exactos — NO agregues otros]"
                         )
                         sections.append(self._format_table(detail_data))
-                if vencidas:
-                    sections.append(
-                        f"\n### Facturas Vencidas Sin Pagar [{len(vencidas)} registros exactos]"
-                    )
-                    sections.append(self._format_table(vencidas))
                 product_found = True
 
             elif is_price_compare and product_search:
