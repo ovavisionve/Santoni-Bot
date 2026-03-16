@@ -1214,6 +1214,7 @@ def build_purchase_payment_status(
     org_ids: list[int] | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    currency_ids: list[int] | None = None,
 ) -> dict:
     """Purchase payment status - routes to demo or iDempiere."""
     if _is_production():
@@ -1221,6 +1222,7 @@ def build_purchase_payment_status(
         return _prod(
             mes=mes, anio=anio, org_ids=org_ids,
             date_from=date_from, date_to=date_to,
+            currency_ids=currency_ids,
         )
     return {"resumen_pago": [], "facturas_vencidas": []}
 

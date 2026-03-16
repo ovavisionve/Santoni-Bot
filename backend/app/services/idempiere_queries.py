@@ -2921,15 +2921,15 @@ def build_pending_purchase_orders(
 ) -> dict:
     """Pending purchase orders from iDempiere c_order (issotrx='N').
 
-    Includes orders in progress (docstatus IN ('DR','IP','CO') that have
-    not been fully invoiced/received).
+    Only includes orders NOT yet completed: drafts (DR) and in-progress (IP).
+    CO (completed) orders are NOT pending — they have already been processed.
     """
     db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
     try:
         conditions = [
             "o.issotrx = 'N'",
             "o.isactive = 'Y'",
-            "o.docstatus IN ('DR', 'IP', 'CO')",
+            "o.docstatus IN ('DR', 'IP')",
         ]
         params: dict = {}
         _add_org_filter(conditions, params, org_ids, "o")
@@ -2973,7 +2973,6 @@ def build_pending_purchase_orders(
             f"CASE o.docstatus "
             f"  WHEN 'DR' THEN 'Borrador' "
             f"  WHEN 'IP' THEN 'En Proceso' "
-            f"  WHEN 'CO' THEN 'Completada' "
             f"  ELSE o.docstatus END AS estado, "
             f"{cur_label} AS moneda, "
             f"COUNT(DISTINCT o.c_order_id) AS ordenes, "
@@ -3009,7 +3008,6 @@ def build_pending_purchase_orders(
             f"CASE o.docstatus "
             f"  WHEN 'DR' THEN 'Borrador' "
             f"  WHEN 'IP' THEN 'En Proceso' "
-            f"  WHEN 'CO' THEN 'Completada' "
             f"  ELSE o.docstatus END AS estado, "
             f"o.grandtotal, "
             f"COALESCE(org.name, '') AS organizacion, "
@@ -3117,6 +3115,7 @@ def build_purchase_payment_status(
     org_ids: list[int] | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    currency_ids: list[int] | None = None,
 ) -> dict:
     """Purchase invoice payment status from iDempiere.
 
@@ -3132,6 +3131,7 @@ def build_purchase_payment_status(
         params: dict = {}
         _add_org_filter(conditions, params, org_ids, "i")
         _add_date_filter(conditions, params, date_from, date_to, mes, anio, "i.dateinvoiced")
+        _add_currency_filter(conditions, params, currency_ids, "i")
 
         cur_label = _currency_label("i")
         where = " AND ".join(conditions)

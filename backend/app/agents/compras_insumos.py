@@ -191,18 +191,23 @@ Datos de compras de insumos en iDempiere:
     ]
 
     # Keywords that indicate pending purchase orders query
+    # NOTE: "pendiente" and "pendientes" removed — too generic, conflicts with payment status.
+    # Use "orden/órdenes pendiente(s)" or "pedido(s) pendiente(s)" instead.
     _ORDER_KEYWORDS = [
-        "orden", "órdenes", "ordenes", "orden de compra", "órdenes de compra",
-        "ordenes de compra", "pendiente", "pendientes",
+        "orden de compra", "órdenes de compra", "ordenes de compra",
+        "orden pendiente", "órdenes pendientes", "ordenes pendientes",
+        "pedido pendiente", "pedidos pendientes",
         "por recibir", "por recepcionar", "por recepción", "por recepcion",
-        "solicitado", "solicitados", "pedido", "pedidos",
     ]
 
     # Keywords that indicate price comparison query
     _PRICE_COMPARE_KEYWORDS = [
-        "comparar precio", "comparación de precio", "comparacion de precio",
+        "comparar precio", "comparar precios",
+        "comparación de precio", "comparacion de precio",
+        "comparación de precios", "comparacion de precios",
         "mejor precio", "precio más bajo", "precio mas bajo",
         "quién vende más barato", "quien vende mas barato",
+        "entre proveedores",
         "proveedores que venden", "alternativas de proveedor",
     ]
 
@@ -300,6 +305,17 @@ Datos de compras de insumos en iDempiere:
         )
         if cuanto_match:
             product = cuanto_match.group(1).strip()
+            if len(product) >= 3:
+                return product
+
+        # "comparación de precios de X entre proveedores" — must come BEFORE generic "precio de X"
+        compare_match = re.search(
+            r'comparaci[oó]n\s+de\s+precios?\s+de\s+'
+            r'(.+?)(?:\s+entre\s+proveedores?|\s+(?:en|del|desde|este)\b|\s+\d{4}\b|\s*[?]|$)',
+            msg_lower,
+        )
+        if compare_match:
+            product = compare_match.group(1).strip()
             if len(product) >= 3:
                 return product
 
@@ -497,6 +513,30 @@ Datos de compras de insumos en iDempiere:
                 ))
                 product_found = True
 
+            elif is_payment:
+                payment_data = build_purchase_payment_status(
+                    mes=mes, anio=anio, org_ids=org_ids,
+                    date_from=date_from, date_to=date_to,
+                    currency_ids=currency_ids,
+                )
+                if not self._dict_has_data(payment_data):
+                    return None
+
+                # Build explicit totals for payment status
+                resumen = payment_data.get("resumen_pago", [])
+                payment_lines = [f"## Estado de Pago de Facturas de Compra - {label}"]
+                total_facs = sum(r.get("facturas", 0) for r in resumen)
+                payment_lines.append(f"\nTOTAL EXACTO DE FACTURAS: {total_facs}")
+                for r in resumen:
+                    payment_lines.append(
+                        f"- {r['estado_pago']} ({r['moneda']}): "
+                        f"{r['facturas']} facturas, monto: {r['total']:,.2f}"
+                    )
+                sections.append("\n".join(payment_lines))
+
+                # Add overdue detail
+                vencidas = payment_data.get("facturas_vencidas", [])
+
             elif is_orders:
                 orders_data = build_pending_purchase_orders(
                     mes=mes, anio=anio, org_ids=org_ids,
@@ -506,21 +546,34 @@ Datos de compras de insumos en iDempiere:
                 )
                 if not self._dict_has_data(orders_data):
                     return None
-                sections.append(self._format_summary(
-                    orders_data, f"Órdenes de Compra - {label}",
-                ))
-                product_found = True
 
-            elif is_payment:
-                payment_data = build_purchase_payment_status(
-                    mes=mes, anio=anio, org_ids=org_ids,
-                    date_from=date_from, date_to=date_to,
-                )
-                if not self._dict_has_data(payment_data):
-                    return None
-                sections.append(self._format_summary(
-                    payment_data, f"Estado de Pago de Facturas de Compra - {label}",
-                ))
+                # Build explicit totals for pending orders
+                totals_info = orders_data.get("totales", {})
+                por_moneda = totals_info.get("por_moneda", [])
+                total_ordenes = totals_info.get("total_ordenes", 0)
+                order_lines = [f"## Órdenes de Compra Pendientes (DR/IP) - {label}"]
+                order_lines.append(f"\nTOTAL EXACTO DE ÓRDENES PENDIENTES: {total_ordenes}")
+                for pm in por_moneda:
+                    order_lines.append(
+                        f"- {pm['moneda']}: {pm['total_ordenes']} órdenes, "
+                        f"monto total: {pm['total_monto']:,.2f}"
+                    )
+                sections.append("\n".join(order_lines))
+
+                # Add status, supplier, and detail tables
+                for detail_key in ("por_estado", "por_proveedor", "detalle_ordenes"):
+                    detail_data = orders_data.get(detail_key, [])
+                    if detail_data:
+                        sections.append(
+                            f"\n### {detail_key.replace('_', ' ').title()} "
+                            f"[{len(detail_data)} registros exactos]"
+                        )
+                        sections.append(self._format_table(detail_data))
+                if vencidas:
+                    sections.append(
+                        f"\n### Facturas Vencidas Sin Pagar [{len(vencidas)} registros exactos]"
+                    )
+                    sections.append(self._format_table(vencidas))
                 product_found = True
 
             elif is_price_compare and product_search:
@@ -612,7 +665,28 @@ Datos de compras de insumos en iDempiere:
                 total_facturas = summary.get("totales", {}).get("total_facturas", 0)
                 if total_facturas == 0:
                     return None
-                sections.append(self._format_summary(summary, f"Resumen de Compras de Insumos - {label}"))
+
+                # Build explicit totals header so LLM can't misread nested data
+                totals_info = summary.get("totales", {})
+                por_moneda = totals_info.get("por_moneda", [])
+                totals_lines = [f"## Resumen de Compras de Insumos - {label}"]
+                totals_lines.append(f"\nTOTAL EXACTO DE FACTURAS: {total_facturas}")
+                for pm in por_moneda:
+                    totals_lines.append(
+                        f"- {pm['moneda']}: {pm['total_facturas']} facturas, "
+                        f"monto total: {pm['total_monto']:,.2f}"
+                    )
+                sections.append("\n".join(totals_lines))
+
+                # Add detail tables
+                for detail_key in ("por_proveedor", "por_mes", "por_producto"):
+                    detail_data = summary.get(detail_key, [])
+                    if detail_data:
+                        sections.append(
+                            f"\n### {detail_key.replace('_', ' ').title()} "
+                            f"[{len(detail_data)} registros exactos]"
+                        )
+                        sections.append(self._format_table(detail_data))
 
         except Exception as exc:
             logger.error("Error consultando datos de compras de insumos: %s: %s", type(exc).__name__, exc, exc_info=True)

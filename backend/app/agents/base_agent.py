@@ -677,7 +677,11 @@ class BaseAgent(ABC):
             if isinstance(value, dict):
                 lines.append(f"\n### {key.replace('_', ' ').title()}")
                 for k, v in value.items():
-                    if isinstance(v, float):
+                    if isinstance(v, list) and v and isinstance(v[0], dict):
+                        # Nested list of dicts inside a dict — render as table
+                        lines.append(f"\n#### {k.replace('_', ' ').title()} [{len(v)} registros exactos]")
+                        lines.append(BaseAgent._format_table(v))
+                    elif isinstance(v, float):
                         lines.append(f"- {k.replace('_', ' ').title()}: {v:,.2f}")
                     else:
                         lines.append(f"- {k.replace('_', ' ').title()}: {v}")
