@@ -1,294 +1,377 @@
 # SantoniBot - Estatus del Proyecto
 
-**Fecha:** 12 de febrero 2026
-**Avance general:** 80 de 88 tareas completadas (~91%)
+**Fecha:** 16 de marzo 2026
+**Avance general:** ~97% Fase 1 completada
+**Estado:** Sistema desplegado en servidor, conectado a iDempiere real, en fase de validacion con datos reales
 
 ---
 
 ## Resumen Ejecutivo
 
-| Area | Completado | Pendiente | % |
-|------|-----------|-----------|---|
-| Backend - Core | 18/18 | 0 | 100% |
-| Backend - Agentes IA | 8/8 | 0 | 100% |
-| Backend - Datos demo | 7/7 | 0 | 100% |
-| Frontend - Core | 10/10 | 0 | 100% |
-| Docker / Deploy | 8/8 | 0 | 100% |
-| Seguridad | 7/7 | 0 | 100% |
-| Testing | 7/8 | 1 | 88% |
-| Migraciones DB | 3/3 | 0 | 100% |
-| Conexion iDempiere real | 0/7 | 7 | 0% |
-| CI/CD | 4/4 | 0 | 100% |
-| Monitoreo / Logging | 4/4 | 0 | 100% |
-| WhatsApp | 0/5 | 5 | 0% (Fase 2) |
-| Documentacion | 6/6 | 0 | 100% |
-| **TOTAL** | **80/88** | **8** | **~91%** |
+| Area | Estado | % |
+|------|--------|---|
+| Backend - Core (API, Auth, RBAC) | ✅ Completo | 100% |
+| Backend - 7 Agentes IA | ✅ Completo, conectados a iDempiere real | 100% |
+| Backend - Datos demo | ✅ Completo (usado para dev/testing) | 100% |
+| Frontend - Core (Chat, Admin, Export) | ✅ Completo | 100% |
+| Selector de agentes (reemplazo orchestrator) | ✅ Completo | 100% |
+| Conexion iDempiere real | ✅ Completo (7/7 agentes conectados) | 100% |
+| Permisos iDempiere (roles/ventanas) | ✅ Completo | 100% |
+| Docker / Deploy / Servidor | ✅ Desplegado en 192.168.1.26 | 100% |
+| Seguridad | ✅ Hardened | 100% |
+| Testing | ✅ 150+ tests | 95% |
+| CI/CD | ✅ GitHub Actions + Coolify | 100% |
+| Documentacion | ✅ Completa | 100% |
+| **Validacion con datos reales** | **🔄 En curso** | **60%** |
+| WhatsApp | ⏳ Fase 2, post-lanzamiento | 0% |
 
-> **Nota:** Las 8 tareas pendientes son: conexion iDempiere real (7 tareas,
-> requieren VPN al servidor de Santoni) y tests E2E (1 tarea).
-> WhatsApp (5 tareas) es Fase 2 post-lanzamiento.
-> El sistema esta **100% funcional** para pruebas locales con datos demo.
-
-### Cambios recientes (12 Feb 2026)
-- Seguridad completa: JWT 30min, 2FA TOTP, bloqueo de cuenta, politica de contraseñas
-- Panel de seguridad TI: desbloqueo de cuentas, dashboard de seguridad, IPs sospechosas
-- Sentry integrado (backend + frontend, activado con SENTRY_DSN)
-- Nginx: logs de acceso, compresion gzip, SSL/Certbot listo, headers de seguridad mejorados
-- Backups automaticos de PostgreSQL (Docker service, retencion 30 dias)
-- Graficas interactivas (Recharts, auto-generadas desde tablas markdown)
-- Validacion de SECRET_KEY en produccion
+> **Estado actual:** El sistema esta desplegado y funcionando en el servidor de Santoni
+> (192.168.1.26), conectado al iDempiere real (192.168.1.73). Los 7 agentes consultan
+> datos reales. Estamos en **fase de validacion**: comparando las respuestas del bot
+> contra datos verificados de iDempiere para asegurar precision antes de liberar a usuarios finales.
 
 ---
 
-## Detalle por Area
+## Cambios Recientes (Febrero - Marzo 2026)
 
-### BACKEND - CORE (18/18) ✅ 100%
+### Marzo 2026 (semana del 10-16)
 
-| # | Tarea | Estado |
-|---|-------|--------|
-| 1 | Estructura FastAPI (main.py, config, database) | ✅ |
-| 2 | Modelos SQLAlchemy (User, Conversation, Message, Audit) | ✅ |
-| 3 | Schemas Pydantic (User, Chat, Token) | ✅ |
-| 4 | Autenticacion JWT + bcrypt | ✅ |
-| 5 | Middleware de autenticacion | ✅ |
-| 6 | RBAC (roles: usuario, supervisor, administrador) | ✅ |
-| 7 | RBAC (departamentos: 7 departamentos con acceso granular) | ✅ |
-| 8 | Ruta POST /api/auth/login | ✅ |
-| 9 | Ruta GET /api/auth/me | ✅ |
-| 10 | Ruta POST /api/chat | ✅ |
-| 11 | Rutas GET/PATCH/DELETE /api/conversations | ✅ |
-| 12 | Rutas CRUD /api/users (admin) | ✅ |
-| 13 | Rutas GET /api/admin/stats, /api/admin/audit, /api/admin/metrics | ✅ |
-| 14 | Ruta GET /api/export/message/{id} (CSV/Excel/PDF) | ✅ |
-| 15 | Servicio de auditoria (audit logging mejorado: username, full_name, access_denied, login_failed, IP) | ✅ |
-| 16 | Servicio de exportacion (PDF/Excel/CSV) + fix real message_id en ChatResponse | ✅ |
-| 17 | Anonymizer (proteccion de datos antes del LLM) | ✅ |
-| 18 | Seed de admin por defecto (contrasena segura auto-generada) | ✅ |
+- **Fix critico saldos bancarios**: Las cuentas USD en iDempiere usan iso_codes distintos por organizacion (DOL, DoL, Dol, USA, dol, DLA, Dla, US.). Se corrigio la agrupacion usando c_currency_id en vez de iso_code. Ahora todas las cuentas USD se muestran correctamente.
+- **Fix alucinacion morosos**: Antes el LLM recibia 50 facturas individuales e inventaba los nombres de clientes y montos al agregar. Se creo `build_top_delinquent_clients` que agrega en SQL (GROUP BY cliente). Ahora los nombres y montos son 100% reales.
+- **Fix alucinacion proveedores CxP**: El LLM inventaba un "Top 5 Proveedores" con nombres falsos. Se agrego top 10 proveedores y top 10 clientes morosos reales al resumen financiero.
+- **Fix keyword "deben"**: "¿Cuanto nos deben los clientes?" caia al fallback de ventas. Se agrego "deben" y "moroso" a las keywords de cuentas vencidas.
+- **Eliminacion del orquestador**: El usuario ahora selecciona el agente directamente desde pestanas en la UI. El orquestador solo se usa como fallback para API externas.
+- **Permisos iDempiere**: Roles y ventanas de iDempiere se mapean a permisos del bot. 31 capabilities mapeadas a 7 agentes. Importacion masiva de usuarios.
+- **Anti-alucinacion nivel 4**: Deteccion de documentos falsos, lotes falsos, "no tengo acceso", tablas inventadas, y re-invocacion con prompt reforzado.
+- **Expansion compras_insumos**: Ordenes de compra pendientes, comparacion de precios entre proveedores, estado de pago de facturas, fallback sin fecha.
+- **Fix docstatus**: `docstatus = 'CO'` expandido a `docstatus IN ('CO', 'CL')` en TODAS las queries (facturas pagadas cambian a 'CL' en iDempiere).
+- **Datos historicos locales**: Sistema de cache para datos anteriores a marzo 2026 en DB local.
+- **Script de verificacion**: `verify_data.py` y `check_finanzas` para comparar datos del bot vs SQL directo.
 
-> **Mejoras recientes:** Endpoint placeholder `/api/documents/upload` para carga de documentos.
-> LLM factory (`llm_factory.py`) con cambio de proveedor via `AI_PROVIDER` env var.
-> Audit logs mejorados con eventos `access_denied` y `login_failed`, IP tracking, y UI con codigos de color.
-> Fix de exportacion (real `message_id` en ChatResponse) y fix de manejo de errores en descarga.
+### Febrero 2026
 
-### BACKEND - AGENTES IA (8/8) ✅ 100%
-
-| # | Tarea | Estado |
-|---|-------|--------|
-| 19 | Orchestrator (clasificacion de intencion + routing) | ✅ |
-| 20 | Agente Ventas (con fetch_data dinamico) | ✅ |
-| 21 | Agente Finanzas (con fetch_data dinamico) | ✅ |
-| 22 | Agente Contabilidad (con fetch_data dinamico) | ✅ |
-| 23 | Agente RRHH (con fetch_data dinamico) | ✅ |
-| 24 | Agente Produccion (con fetch_data dinamico) | ✅ |
-| 25 | Agente Compras Insumos (con fetch_data dinamico) | ✅ |
-| 26 | Agente Compras Productores (con fetch_data dinamico) | ✅ |
-
-### BACKEND - DATOS DEMO (7/7) ✅ 100%
-
-| # | Tarea | Estado |
-|---|-------|--------|
-| 27 | Modelos demo (18 tablas simulando iDempiere) | ✅ |
-| 28 | Seed de datos demo (clientes, facturas, cobranzas) | ✅ |
-| 29 | Seed de datos demo (empleados, nomina, asistencia) | ✅ |
-| 30 | Seed de datos demo (produccion, ordenes) | ✅ |
-| 31 | Seed de datos demo (productores, compras agricolas) | ✅ |
-| 32 | Seed de datos demo (proveedores, ordenes de insumos) | ✅ |
-| 33 | Query service para datos demo | ✅ |
-
-### FRONTEND - CORE (10/10) ✅ 100%
-
-| # | Tarea | Estado |
-|---|-------|--------|
-| 34 | Layout base Next.js 14 + Tailwind + paleta Santoni | ✅ |
-| 35 | Pagina de login (con branding, toggle contrasena) | ✅ |
-| 36 | Hook useAuth (JWT token management) | ✅ |
-| 37 | API client (lib/api.ts con todos los endpoints) | ✅ |
-| 38 | Pagina de chat principal | ✅ |
-| 39 | Componente ChatWindow (input, sugerencias por depto, typing indicator) | ✅ |
-| 40 | Componente ChatMessage (markdown con remark-gfm, badge agente, copy-to-clipboard) | ✅ |
-| 41 | Sidebar (conversaciones, busqueda, preview, timestamps relativos) | ✅ |
-| 42 | Botones de exportacion (CSV/Excel/PDF) en mensajes + fix manejo de errores en descarga | ✅ |
-| 43 | Panel de administracion (stats, usuarios, auditoria con codigos de color) | ✅ |
-
-> **Mejoras recientes:** `remark-gfm` integrado para renderizado correcto de tablas markdown.
-> Fix de manejo de errores en descarga de exportaciones. Auditoria con UI color-coded.
-
-### DOCKER / DEPLOY (8/8) ✅ 100%
-
-| # | Tarea | Estado |
-|---|-------|--------|
-| 44 | Dockerfile backend (Python 3.12) | ✅ |
-| 45 | Dockerfile frontend (Node 20) | ✅ |
-| 46 | docker-compose.yml (5 servicios) | ✅ |
-| 47 | docker-compose.prod.yml (override produccion) | ✅ |
-| 48 | Nginx reverse proxy (rate limiting, security headers, CSP) | ✅ |
-| 49 | Script setup-vm.sh | ✅ |
-| 50 | Script deploy.sh | ✅ |
-| 51 | Script backup.sh | ✅ |
-
-### TESTING (7/8) ✅ 88%
-
-| # | Tarea | Estado |
-|---|-------|--------|
-| 58 | Tests unitarios - servicios backend (auth, audit, health) | ✅ |
-| 59 | Tests unitarios - agentes (orchestrator, anonymizer) | ✅ |
-| 60 | Tests de integracion - API endpoints (auth, chat, export) | ✅ |
-| 61 | Tests de integracion - RBAC (permisos por rol/depto/data isolation) | ✅ |
-| 62 | Tests frontend - componentes (ChatMessage, Sidebar) | ✅ |
-| 63 | Tests frontend - hooks (useAuth), API client | ✅ |
-| 64 | Tests E2E - flujo completo login -> chat -> export | ⏳ |
-| -- | Tests admin metrics endpoint | ✅ |
-
-> **150+ tests backend** (12 archivos) + **4 archivos tests frontend**
-
-### MIGRACIONES DB (2/3) ✅ 67%
-
-| # | Tarea | Estado |
-|---|-------|--------|
-| 65 | Migracion inicial Alembic (users, conversations, messages, audit) | ✅ |
-| 66 | Script de migracion datos demo -> datos reales | ⏳ |
-| 67 | Configurar Alembic env.py para dual database | ✅ |
-
-### CI/CD (4/4) ✅ 100%
-
-| # | Tarea | Estado |
-|---|-------|--------|
-| 75 | GitHub Actions - lint + test backend en PR | ✅ |
-| 76 | GitHub Actions - lint + test + build frontend en PR | ✅ |
-| 77 | GitHub Actions - deploy automatico a VM | ✅ |
-| 78 | Configurar Coolify pipeline | ✅ |
-
-### MONITOREO / LOGGING (3/4) ✅ 75%
-
-| # | Tarea | Estado |
-|---|-------|--------|
-| 79 | Logging estructurado backend (JSON en prod, legible en dev) | ✅ |
-| 80 | Health checks avanzados (DB, Groq, Anthropic, iDempiere) | ✅ |
-| 81 | Dashboard de metricas de uso (/api/admin/metrics) | ✅ |
-| 82 | Monitoreo de errores (Sentry o similar) | ⏳ |
-
-### DOCUMENTACION (6/6) ✅ 100%
-
-| # | Tarea | Estado |
-|---|-------|--------|
-| 52 | CLAUDE.md (contexto del proyecto) | ✅ |
-| 53 | .env.example documentado | ✅ |
-| 54 | Manual de pruebas locales (ultra-detallado, paso a paso) | ✅ |
-| 55 | Manual de conexion a Santoni (VPN, SSH, iDempiere) | ✅ |
-| 56 | Coolify README | ✅ |
-| 57 | Manual de usuario final (para empleados de Santoni) | ✅ |
-
-### PREPARACION CLAUDE API (implementado) ✅
-
-| Componente | Detalle | Estado |
-|------------|---------|--------|
-| LLM Factory (`llm_factory.py`) | Cambio de proveedor LLM via variable de entorno `AI_PROVIDER` | ✅ |
-| Soporte Groq + Claude | Groq (Llama 3.1 70B) primario, Claude API secundario, switching transparente | ✅ |
-| Endpoint de documentos | Placeholder `/api/documents/upload` para carga futura de documentos | ✅ |
-| Variable `AI_PROVIDER` | Configuracion en `.env` para seleccionar proveedor: `groq` (default) o `anthropic` | ✅ |
-
-> **Nota:** La integracion de Claude API es pasiva. El sistema usa Groq por defecto
-> y puede cambiar a Claude con solo modificar `AI_PROVIDER=anthropic` en el `.env`.
-> No se requiere cambio de codigo para el switching.
-
-### SEGURIDAD (implementado) ✅
-
-| Medida | Estado |
-|--------|--------|
-| Contrasena admin auto-generada (no hardcoded) | ✅ |
-| iDempiere read-only enforcement (`SET default_transaction_read_only = ON`) | ✅ |
-| CORS restringido (metodos + headers explicitos) | ✅ |
-| Security headers Nginx (CSP, X-Frame-Options, etc.) | ✅ |
-| Rate limiting (API 30r/m, login 5r/m, export 10r/m) | ✅ |
-| Validacion input chat (1-5000 chars) | ✅ |
-| Swagger/Redoc ocultos en produccion | ✅ |
-| Health/detailed requiere autenticacion | ✅ |
-| Debug=false por defecto | ✅ |
-| Anonymizer para datos sensibles antes del LLM | ✅ |
+- Conexion exitosa a iDempiere real (queries de nomina, ventas, compras)
+- Follow-ups inteligentes con herencia de contexto temporal
+- Confidence score + dataset de 356 escenarios de validacion
+- Separacion de compras por moneda (VES/USD)
+- Inventario desde m_storageonhand
+- Correccion de multiples bugs reportados por usuarios reales
+- Script de pruebas en vivo (65 preguntas, 7 agentes)
 
 ---
 
-## TAREAS PENDIENTES (15 restantes)
+## Validacion de Agentes con Datos Reales
 
-### Conexion iDempiere real (7 tareas) - Requiere VPN
+Cada agente se valida comparando las respuestas del bot contra consultas SQL directas a iDempiere.
 
-| # | Tarea |
-|---|-------|
-| 68 | Conectar VPN y explorar schema de idempiere_produccion |
-| 69 | Mapear tablas de Ventas (facturas, cobranzas, clientes) |
-| 70 | Mapear tablas de Finanzas (bancos, pagos, cuentas) |
-| 71 | Mapear tablas de Contabilidad (asientos, balances) |
-| 72 | Mapear tablas de RRHH + Produccion |
-| 73 | Mapear tablas de Compras (insumos + productores) |
-| 74 | Actualizar query_service.py para usar tablas reales |
+### Estado de Validacion por Agente
 
-### WhatsApp (5 tareas) - Fase 2, post-lanzamiento
+| Agente | Funciones | Validado | Resultado | Notas |
+|--------|-----------|----------|-----------|-------|
+| **Ventas** | 4 funciones | ✅ Completo | ✅ Datos correctos | Top clientes, facturacion, cobranza, CxC vencidas |
+| **Finanzas** | 2 funciones | ✅ Completo | ✅ Datos correctos | Saldos bancarios, CxC, CxP, top morosos/proveedores |
+| **Contabilidad** | 2 funciones | ✅ Previamente | ✅ Funcional | Balance, estado de resultados |
+| **RRHH** | 7 funciones | ✅ Previamente | ✅ Funcional | Empleados, nomina, vacaciones, cumpleaneros |
+| **Produccion** | 3 funciones | ✅ Previamente | ✅ Funcional | Ordenes, inventario |
+| **Compras Insumos** | 6 funciones | 🔄 Pendiente | - | Siguiente en validar |
+| **Compras Productores** | 4 funciones | 🔄 Pendiente | - | Siguiente en validar |
 
-| # | Tarea |
-|---|-------|
-| 83 | Integracion API WhatsApp Business |
-| 84 | Webhook receptor de mensajes |
-| 85 | Adaptador de mensajes WhatsApp -> agentes |
-| 86 | Manejo de sesiones por numero de telefono |
-| 87 | Templates de mensajes WhatsApp |
+### Bugs Encontrados y Corregidos en Validacion
 
-### Otros pendientes (3 tareas)
-
-| # | Tarea |
-|---|-------|
-| 64 | Tests E2E (login -> chat -> export) |
-| 66 | Script migracion datos demo -> datos reales |
-| 82 | Integrar Sentry (monitoreo de errores) |
+| Bug | Agente | Impacto | Estado |
+|-----|--------|---------|--------|
+| iso_code bancario (DOL/DoL/etc no agrupaban como USD) | Finanzas | 17 de 24 cuentas USD aparecian en "Otras Monedas" | ✅ Corregido |
+| Keyword "deben" no activaba CxC vencidas | Ventas | Pregunta "cuanto nos deben" devolvia datos de ventas (alucinacion total) | ✅ Corregido |
+| Top morosos inventados por el LLM | Ventas | Nombres y montos 100% falsos al agregar facturas | ✅ Corregido |
+| Top proveedores CxP inventados por el LLM | Finanzas | Nombres falsos como "Agroinsumos del Lago" | ✅ Corregido |
+| docstatus excluia facturas cerradas | Todos | Facturas pagadas (CL) no aparecian en reportes | ✅ Corregido |
+| Acentos en busqueda de productos | Compras | "maiz" no encontraba "Maiz" | ✅ Corregido |
 
 ---
 
-## Ruta Critica
+## Preguntas de Prueba para Validacion por Departamento
 
-### Fase 1: Pruebas locales (AHORA)
+**Instrucciones para los evaluadores:** Seleccione la pestana del agente correspondiente en el chat, haga la pregunta, y compare la respuesta del bot contra los datos reales que usted maneja. Anote cualquier diferencia en montos, nombres, o datos faltantes.
+
+### VENTAS (Pestana: Ventas)
+
+#### Preguntas basicas
+1. "¿Cuales son los top 20 clientes del 2026?"
+2. "¿Cuales son los top 20 clientes en dolares?"
+3. "¿Cuales son los top 10 clientes de enero 2026?"
+4. "¿Cuanto se ha facturado en 2026?"
+5. "¿Cuanto se ha facturado en bolivares en 2026?"
+
+#### Preguntas por zona y organizacion
+6. "Top 10 clientes de la zona Portuguesa"
+7. "Top 10 clientes de la zona Falcon"
+8. "Ventas de INPROA SANTONI en febrero 2026"
+9. "Ventas de InproMaiz en enero 2026"
+10. "Resumen de ventas por zona en 2026"
+
+#### Cobranza y morosos
+11. "¿Cuanto se ha cobrado en marzo 2026?"
+12. "¿Cuanto se ha cobrado en dolares en 2026?"
+13. "¿Cuanto nos deben los clientes?"
+14. "¿Quienes son los morosos?"
+15. "¿Cuales son las cuentas por cobrar vencidas?"
+
+#### Follow-ups (hacer despues de una pregunta anterior)
+16. Despues de preguntar por enero: "¿y en febrero?"
+17. Despues de preguntar top clientes: "¿y en dolares?"
+18. Despues de preguntar una zona: "¿y por region?"
+
+#### Que verificar
+- [ ] Los nombres de clientes coinciden con iDempiere
+- [ ] Los montos totales son correctos (comparar con reportes del ERP)
+- [ ] Las zonas asignadas son correctas
+- [ ] La separacion VES/USD es correcta
+- [ ] Los follow-ups mantienen el contexto (mes, zona, etc.)
+
+---
+
+### FINANZAS (Pestana: Finanzas)
+
+#### Preguntas basicas
+1. "¿Cuales son los saldos bancarios?"
+2. "¿Cuales son las cuentas por cobrar?"
+3. "¿Cuales son las cuentas por pagar?"
+4. "Resumen financiero de febrero 2026"
+5. "Resumen financiero de enero 2026"
+
+#### Morosos y proveedores
+6. "¿Quienes son los principales morosos?"
+7. "¿Cuales son las facturas vencidas por cobrar?"
+8. "¿A quienes les debemos mas?"
+
+#### Que verificar
+- [ ] Saldos bancarios coinciden con los del sistema (VES y USD por separado)
+- [ ] Total VES y USD son correctos
+- [ ] Cuentas bancarias muestran nombre del banco, numero y organizacion correctos
+- [ ] Top morosos coinciden con datos reales (ALIMENTOS PARADAYS, GRUPO SONREIR 123, etc.)
+- [ ] Top proveedores CxP coinciden (ANTONIO JUAN PLASENCIA RIVAS, MONTANA GRAFICA, etc.)
+- [ ] No aparecen nombres de empresas que no existen en el sistema
+
+---
+
+### CONTABILIDAD (Pestana: Contabilidad)
+
+#### Preguntas basicas
+1. "Balance general de febrero 2026"
+2. "Estado de resultados de enero 2026"
+3. "Detalle de la cuenta 1.01.01"
+4. "Movimientos de la cuenta 4.01.01 en febrero 2026"
+5. "Libro mayor de enero 2026"
+
+#### Que verificar
+- [ ] Las cuentas contables coinciden con el plan de cuentas de iDempiere
+- [ ] Los montos debito/credito son correctos
+- [ ] El balance cuadra (Activo = Pasivo + Capital)
+
+---
+
+### RRHH (Pestana: RRHH)
+
+#### Preguntas basicas
+1. "¿Cuantos empleados activos hay?"
+2. "Listado de empleados del departamento de produccion"
+3. "¿Quienes cumplen anos en marzo?"
+4. "Resumen de nomina de febrero 2026"
+5. "¿Cuantos empleados se han retirado en 2026?"
+
+#### Preguntas especificas
+6. "Empleados con cargo de operador"
+7. "Resumen de vacaciones pendientes"
+8. "Nomina de enero 2026"
+9. "¿Cuantos empleados hay por departamento?"
+
+#### Que verificar
+- [ ] Cantidad de empleados activos coincide con iDempiere
+- [ ] Nombres y cargos son correctos
+- [ ] Montos de nomina coinciden
+- [ ] Cumpleaneros del mes son correctos
+- [ ] No aparecen empleados que ya no estan en la empresa
+
+---
+
+### PRODUCCION (Pestana: Produccion)
+
+#### Preguntas basicas
+1. "Ordenes de produccion de febrero 2026"
+2. "Ordenes de produccion de enero 2026"
+3. "¿Cual es el inventario actual?"
+4. "Inventario de productos terminados"
+5. "Resumen de produccion del 2026"
+
+#### Que verificar
+- [ ] Ordenes de produccion coinciden con el sistema
+- [ ] Cantidades producidas son correctas
+- [ ] Stock de inventario coincide con iDempiere (m_storageonhand)
+
+---
+
+### COMPRAS INSUMOS (Pestana: Compras Insumos)
+
+#### Preguntas basicas
+1. "¿Cuanto se ha comprado en insumos en 2026?"
+2. "Compras de insumos de febrero 2026"
+3. "Compras de insumos en dolares en 2026"
+4. "¿Cuales son las ordenes de compra pendientes?"
+5. "Historial de compras de polietileno"
+
+#### Preguntas avanzadas
+6. "Comparacion de precios de polietileno entre proveedores"
+7. "¿Cuales facturas de compra estan pendientes de pago?"
+8. "Compras de insumos de INPROA SANTONI en febrero 2026"
+9. "¿Que facturas de compra estan vencidas?"
+10. "Historial de compras de sal en 2025"
+
+#### Que verificar
+- [ ] Montos de compras coinciden con iDempiere
+- [ ] Nombres de proveedores son correctos
+- [ ] Productos coinciden con los del sistema
+- [ ] Separacion VES/USD es correcta
+- [ ] Ordenes de compra pendientes coinciden con el modulo de compras
+
+---
+
+### COMPRAS PRODUCTORES (Pestana: Compras Productores)
+
+#### Preguntas basicas
+1. "¿Cuanto se ha comprado a productores en 2026?"
+2. "Compras de arroz a productores en febrero 2026"
+3. "Compras de maiz a productores en 2026"
+4. "¿Cuales productores estan registrados?"
+5. "¿Cuales productores tienen pagos pendientes?"
+
+#### Preguntas especificas
+6. "Analisis de precios de arroz por productor en 2026"
+7. "Compras de productores de INPROA SANTONI"
+8. "Compras de productores de InproMaiz en enero 2026"
+9. "¿Cuanto se le debe al productor [nombre]?"
+
+#### Que verificar
+- [ ] Nombres de productores coinciden con iDempiere
+- [ ] Montos y cantidades de compra son correctos
+- [ ] Precios por kilogramo son razonables
+- [ ] Pagos pendientes coinciden con el sistema
+- [ ] Separacion arroz/maiz es correcta
+
+---
+
+## Formato del Reporte de Validacion
+
+Para cada pregunta de prueba, el evaluador debe reportar:
+
+| Campo | Descripcion |
+|-------|-------------|
+| **Pregunta** | La pregunta exacta que hizo |
+| **Agente** | Pestana que selecciono |
+| **Respuesta correcta?** | Si / No / Parcial |
+| **Diferencias encontradas** | Montos incorrectos, nombres que no existen, datos faltantes |
+| **Dato esperado** | El valor correcto segun iDempiere |
+| **Comentarios** | Observaciones adicionales |
+
+---
+
+## Arquitectura Actual del Sistema
+
 ```
-Accion: Ejecutar docker compose up -d --build y seguir el manual
-Bloqueador: Ninguno, todo listo para probar
+Usuario → Frontend (Next.js) → API (FastAPI) → Agente seleccionado → SQL a iDempiere → Respuesta
+                                    ↓
+                              Permisos RBAC + iDempiere roles
+                                    ↓
+                              Auditoria (cada consulta)
 ```
 
-### Fase 2: Conexion a Santoni (despues de pruebas locales OK)
-```
-Tareas: 68-74 (mapeo iDempiere)
-Bloqueador: Acceso VPN funcional + IT Santoni
-```
+### Flujo de una consulta:
+1. Usuario selecciona pestana del agente (ej: "Ventas")
+2. Escribe su pregunta en lenguaje natural
+3. El agente extrae parametros (fecha, zona, moneda, organizacion)
+4. Ejecuta queries SQL contra iDempiere (read-only)
+5. Formatea los datos reales en tablas markdown
+6. El LLM presenta los datos con contexto y sugerencias
+7. El usuario puede exportar a CSV, Excel o PDF
 
-### Fase 3: Produccion (despues de mapeo iDempiere)
-```
-Tareas: 64 (E2E tests) + 66 (migracion datos) + 82 (Sentry)
-Bloqueador: VM funcionando con Docker
-```
+### Proveedores de IA
 
-### Fase 4: WhatsApp (post-lanzamiento)
-```
-Tareas: 83-87
-Bloqueador: Cuenta WhatsApp Business API
+| Proveedor | Modelo | Uso |
+|-----------|--------|-----|
+| OpenRouter | DeepSeek Chat v3 | Produccion (recomendado) |
+| Groq | Llama 3.3 70B | Alternativa gratuita |
+| Anthropic | Claude | Analisis de documentos |
+
+---
+
+## Datos Reales Verificados (Referencia para Validacion)
+
+Estos son datos reales extraidos directamente de iDempiere el 14 de marzo de 2026,
+para que los evaluadores tengan referencia de lo que el bot deberia responder:
+
+### Saldos Bancarios
+- **Total VES**: Bs. 54.185.392,67 (322 cuentas activas)
+- **Total USD**: $146.133,86 (24 cuentas, 4 con saldo > 0)
+- Mayor saldo positivo VES: BANCO DE VENEZUELA - INPROA SANTONI (Bs. 41.787.671,76)
+- Mayor saldo negativo VES: BANCO BANESCO - INPROA SANTONI (-Bs. 37.069.676,54)
+
+### Cuentas por Cobrar (CxC)
+- **Total pendiente**: 11.200 facturas = Bs. 7.866.915.791,82
+  - VES: 7.963 facturas (Bs. 7.800M)
+  - USD: 3.236 facturas ($18.5M)
+- **Vencidas**: 9.284 facturas (81% del total)
+- **Top 3 morosos**: ALIMENTOS PARADAYS (Bs. 570M), GRUPO SONREIR 123 (Bs. 389M), LACTEOS JUNIOR (Bs. 250M)
+
+### Cuentas por Pagar (CxP)
+- **Total pendiente**: 1.419 facturas = Bs. 69.347.164,24
+  - VES: 331 facturas (Bs. 61.5M)
+  - USD: 1.088 facturas ($7.9M)
+- **Vencidas**: 918 facturas (65% del total)
+- **Top 3 proveedores**: ANTONIO JUAN PLASENCIA RIVAS (Bs. 24.1M), MONTANA GRAFICA (Bs. 11.0M), ALVARO LUIS RIERA YEPEZ (Bs. 3.7M)
+
+### Facturacion 2026 (ene-mar YTD)
+- **Ventas VES**: 5.494 facturas por Bs. 8.700M
+- **Ventas USD**: 5.427 facturas por $21.0M
+- **Compras VES**: 1.089 facturas por Bs. 3.000M
+- **Compras USD**: 2.991 facturas por $6.1M
+
+> **Nota**: Estos datos son del 14 de marzo. Los datos del bot pueden variar ligeramente
+> si se consultan en una fecha posterior porque iDempiere se actualiza en tiempo real.
+
+---
+
+## Pendiente
+
+### Validacion en curso (prioridad alta)
+- [ ] Completar validacion de Compras Insumos (6 funciones)
+- [ ] Completar validacion de Compras Productores (4 funciones)
+- [ ] Reducir alucinaciones residuales del LLM (embellecimiento menor con stats inventadas)
+
+### Pendiente tecnico (prioridad media)
+- [ ] Tests E2E (login -> chat -> export)
+- [ ] Integrar Sentry (monitoreo de errores en produccion)
+- [ ] Mapeo completo de tablas iDempiere (algunas queries en ajuste)
+
+### Fase 2 (post-lanzamiento)
+- [ ] Integracion WhatsApp Business API
+- [ ] Analisis de documentos con Claude API
+
+---
+
+## Como Desplegar Cambios
+
+```bash
+# En el servidor 192.168.1.26:
+cd /opt/santonibot
+git pull origin main              # o la rama con los cambios
+docker compose build --no-cache backend frontend
+docker compose up -d
+docker compose logs backend --tail 50   # Verificar que arranco bien
 ```
 
 ---
 
-## Lo que YA funciona hoy
+## Contacto
 
-Si levantas el proyecto con `docker compose up -d --build`:
-
-1. ✅ Login/logout con JWT (contrasena auto-generada en logs)
-2. ✅ Chat con 7 agentes especializados (datos demo realistas)
-3. ✅ Clasificacion automatica de intencion (orchestrator)
-4. ✅ Respuestas con tablas formateadas en markdown (remark-gfm)
-5. ✅ Exportacion a CSV, Excel y PDF (con real message_id)
-6. ✅ Panel de administracion (stats, usuarios, auditoria con codigos de color, metricas)
-7. ✅ Control de acceso por roles y departamentos (RBAC)
-8. ✅ Historial de conversaciones con busqueda
-9. ✅ Datos demo realistas (50 clientes, 200 facturas, etc.)
-10. ✅ Branding Santoni (colores naranja, diseno profesional)
-11. ✅ Seguridad hardened (CORS, CSP, rate limiting, read-only iDempiere)
-12. ✅ Logging estructurado (JSON en prod, legible en dev)
-13. ✅ RAG/ChromaDB integration (base de conocimiento)
-14. ✅ 150+ tests automatizados (backend + frontend)
-15. ✅ CI/CD GitHub Actions (lint + test + deploy en cada PR)
-16. ✅ LLM factory con switching Groq/Claude via AI_PROVIDER
-17. ✅ Audit logs mejorados (username, full_name, IP, eventos access_denied/login_failed)
-18. ✅ Endpoint placeholder para carga de documentos (/api/documents/upload)
+- **Desarrollo**: OVA Agency
+- **Repositorio**: GitHub (privado)
+- **Servidor**: 192.168.1.26 (requiere VPN FortiClient para acceso remoto)
