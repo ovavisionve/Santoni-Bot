@@ -180,6 +180,33 @@ def _add_org_name_filter(
         params["org_name_filter"] = f"%{org_name}%"
 
 
+# Internal Santoni group organizations that should be excluded from
+# producer purchase analysis.  They have codigoproductor set in iDempiere
+# (self-purchases / internal transfers) but are not real external producers.
+_INTERNAL_ORG_NAMES = [
+    "inproa santoni",
+    "inpromaiz",
+    "santoni service",
+    "agropecuaria r.r",
+    "aga agricola",
+    "agroinproa",
+    "inversiones aga",
+    "agro import",
+]
+
+
+def _add_exclude_internal_orgs_filter(
+    conditions: list[str],
+    params: dict,
+    table_alias: str = "bp",
+) -> None:
+    """Exclude internal Santoni group organizations from producer queries."""
+    placeholders = ", ".join(f":_intorg_{i}" for i in range(len(_INTERNAL_ORG_NAMES)))
+    conditions.append(f"LOWER({table_alias}.name) NOT IN ({placeholders})")
+    for i, name in enumerate(_INTERNAL_ORG_NAMES):
+        params[f"_intorg_{i}"] = name
+
+
 def _add_currency_filter(
     conditions: list[str],
     params: dict,
@@ -2610,6 +2637,7 @@ def build_producer_purchases(
             "bp.codigoproductor != ''",
         ]
         params: dict = {}
+        _add_exclude_internal_orgs_filter(conditions, params, "bp")
         _add_org_filter(conditions, params, org_ids, "o")
         _add_org_name_filter(conditions, params, org_name, "o")
         _add_date_filter(conditions, params, date_from, date_to, mes, anio, "o.dateordered")
@@ -2778,6 +2806,7 @@ def build_producer_pending_payments(
             "bp.codigoproductor != ''",
         ]
         params: dict = {}
+        _add_exclude_internal_orgs_filter(conditions, params, "bp")
         _add_org_filter(conditions, params, org_ids, "i")
         _add_currency_filter(conditions, params, currency_ids, "i")
 
@@ -2835,6 +2864,7 @@ def build_producer_price_analysis(
             "bp.codigoproductor != ''",
         ]
         params: dict = {}
+        _add_exclude_internal_orgs_filter(conditions, params, "bp")
         _add_org_filter(conditions, params, org_ids, "o")
         _add_date_filter(conditions, params, date_from, date_to, None, anio, "o.dateordered")
 
@@ -2843,7 +2873,7 @@ def build_producer_price_analysis(
         q = text(
             f"SELECT p.name AS producto, "
             f"MIN(ol.priceactual) AS precio_min, "
-            f"AVG(ol.priceactual) AS precio_promedio, "
+            f"COALESCE(SUM(ol.linenetamt) / NULLIF(SUM(ol.qtyordered), 0), 0) AS precio_promedio, "
             f"MAX(ol.priceactual) AS precio_max, "
             f"COUNT(DISTINCT o.c_order_id) AS compras "
             f"FROM adempiere.c_order o "
