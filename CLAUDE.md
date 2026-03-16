@@ -284,80 +284,135 @@ Se crearon cuestionarios para que cada departamento valide las respuestas del bo
 
 ---
 
-## Estado Actual del Proyecto (Marzo 2026)
+## Estado Actual del Proyecto (16/Mar/2026)
 
-### Completado (~95% del alcance Fase 1):
-- Backend core completo (FastAPI, auth, RBAC, API endpoints)
-- 7 agentes IA funcionando con iDempiere real (orquestador eliminado, selector directo)
-- Frontend completo (chat con selector de agentes, login, admin panel, exportaciones)
-- Docker/deploy configurado y funcionando en servidor
-- 150+ tests automatizados
-- CI/CD con GitHub Actions
-- Documentación completa
-- Seguridad hardened
+### Branch de desarrollo: `claude/general-session-YZXaU`
+### Tag de seguridad: `pre-keywords-integration` → commit `69575e4` (estado antes de keywords.py)
+### HEAD actual: `d6eb13f` (incluye keywords.py integrado en 7 agentes)
 
-### Trabajo reciente (Feb-Mar 2026):
-- **Datos históricos locales (10/Mar 2026)**: Sistema para cachear datos de iDempiere pre-marzo 2026 en DB local (ver sección abajo)
-- Conexión exitosa a iDempiere real (queries de nómina, ventas, compras)
-- Follow-ups inteligentes con herencia de contexto temporal
-- Confidence score + dataset de 356 escenarios (v2.5)
-- Separación de compras por moneda (VES/USD)
-- Inventario desde m_storageonhand
-- Corrección de múltiples bugs reportados por usuarios reales
-- Script de pruebas en vivo (65 preguntas, 7 agentes)
-- Diagnóstico de nómina iDempiere
-- **Fix crítico (Mar 2026)**: Herencia temporal + manejo de errores en los 7 agentes (ver sección abajo)
-- **Expansión compras_insumos (10/Mar 2026)**:
-  - Órdenes de compra pendientes (c_order) - antes solo consultaba facturas confirmadas
-  - Comparación de precios entre proveedores para un mismo producto
-  - Estado de pago de facturas (pagadas vs pendientes vs vencidas)
-  - Fallback automático sin fecha cuando período específico no tiene datos
-  - Búsqueda de productos más flexible (normalización de acentos, OR para 3+ palabras)
-  - Fix de texto "no tengo acceso" en capabilities de todos los agentes (causaba falsos positivos en tests)
-- **Fix docstatus + org_name en compras (11/Mar 2026)**:
-  - `docstatus = 'CO'` → `docstatus IN ('CO', 'CL')` en TODAS las queries de idempiere_queries.py
-    (facturas pagadas cambian a 'CL' en iDempiere, se estaban excluyendo)
-  - Extracción de org_name del mensaje en compras_insumos (`_extract_org_name`)
-    para filtrar por organización (ej: "en INPROA SANTONI", "en InproMaiz")
-  - `org_name` propagado a `build_supplier_price_comparison()` y `build_product_purchase_history()`
-  - System prompts de todos los agentes actualizados para reflejar `docstatus IN ('CO','CL')`
-  - Regla PROHIBIDO "no tengo acceso" agregada al system prompt de los 7 agentes
-    (antes solo la tenía compras_insumos; finanzas decía "no tengo acceso" para préstamos)
-  - Dataset v2.5: 5 nuevos escenarios (352-356), 3 nuevos tipos de error
-- **Permisos iDempiere (12/Mar 2026)**:
-  - Script `scripts/query_idempiere_roles.py` para consultar roles y accesos
-  - Integración de roles iDempiere → permisos del bot (`services/idempiere_permissions.py`)
-  - Permisos granulares basados en ventanas de iDempiere (`window_capability_map.py`)
-  - Importación masiva de usuarios iDempiere al bot
-  - Combinación de permisos de múltiples `ad_user_ids` por persona
-- **RRHH + Anti-alucinación (12/Mar 2026)**:
-  - Fix: agentes piden reformular preguntas ambiguas en vez de adivinar
-  - Fix: vacaciones habilitadas en agente RRHH (`build_vacation_summary`)
-  - Fix: routing compras_productores + columna city faltante
-  - Fix: 3 problemas RRHH - routing nacimientos, alucinación, vacaciones
-  - OpenRouter: restricción de proveedores via `OPENROUTER_PROVIDERS` + fallback automático
-- **Auditoría completa (13/Mar 2026)**:
-  - Migración 010: tabla `ad_user` en esquema local (birthday queries)
-  - Cumpleañeros usa `ad_user.birthday` + eliminación de duplicados con LATERAL subquery
-  - Anti-alucinación reforzada: conteo exacto de filas + detección de docs/lotes falsos
-  - Corrección sistemática de queries, routing y anti-alucinación en 7 agentes
-  - Compras productores: extracción de org_name, detección de moneda, nombre de productor
-  - Panel Auditoría frontend: filtros, búsqueda y exportación visible
-  - Routing: "deuda de productor" ahora va a compras_productores (no finanzas)
-  - Compras insumos: default sin moneda muestra TODAS las monedas (antes solo VES)
-- **Eliminación del orquestador + selector de agentes (13/Mar 2026)**:
-  - Orquestador eliminado del flujo principal — usuario selecciona agente en UI
-  - Endpoint `GET /api/chat/agents` devuelve agentes según permisos del usuario
-  - Frontend: pestañas horizontales de agentes en ChatWindow
-  - `agent_name` en ChatRequest bypasea el orquestador completamente
-  - Anti-alucinación nivel 4: detección de "no tengo acceso" + re-invocación LLM
-  - Fix: normalización de acentos en búsqueda de productos (compras_productores)
-    `LOWER LIKE '%maiz%'` fallaba con `'Maíz'` → ahora usa `_add_product_search_filter`
-  - Scripts de prueba: `test_agent_queries.py` (20 preguntas) y `verify_data.py` (SQL directo)
-  - Documentación de monedas por organización (DOL=INPROA, DoL=InproMaiz, etc.)
+### Estado de Validación por Agente (verificado contra `docs/DATOS_VERIFICACION_IDEMPIERE.md` del 13/Mar)
+
+| Agente | Estado | Verificado | Resultado | Notas |
+|--------|--------|------------|-----------|-------|
+| **Ventas** | ✅ Funcional | Sí | Datos correctos | Top clientes, facturación, cobranza, CxC vencidas |
+| **Finanzas** | ✅ Funcional | Sí | Datos correctos | Saldos bancarios 100% exactos, CxC top morosos exactos |
+| **RRHH** | ✅ Funcional | Sí | Datos correctos | 702 empleados exacto, nómina enero exacta |
+| **Producción** | ✅ Funcional | Sí | Datos plausibles | Proporciones ene vs año cuadran (~40-47%) |
+| **Contabilidad** | ❌ ROTO | Sí | 0 movimientos siempre | **BUG CRÍTICO**: ver sección abajo |
+| **Compras Insumos** | ⚠️ Parcial | Parcial | Algunos datos, otros alucinados | Funciones con filtro de producto OK, funciones generales tienen problemas |
+| **Compras Productores** | ⚠️ Parcial | Parcial | Inconsistencias en totales | INPROA aparece como "productor" distorsionando totales |
+
+---
+
+### BUG CRÍTICO: Contabilidad devuelve 0 movimientos
+
+**Síntoma**: Todas las consultas de detalle de cuentas (build_account_detail) devuelven 0 movimientos
+para cualquier período de 2022-2026, aunque iDempiere tiene miles de movimientos.
+
+**Causa raíz**: El routing de `_get_session()` envía consultas pre-cutoff a la DB LOCAL, pero
+`fact_acct` en la DB local **solo tiene datos hasta 2021-09-30** (2.8M filas, rango 2014-06-01 a 2021-09-30).
+
+**Detalle técnico**:
+- `HISTORICAL_DATA_ENABLED=True` en producción
+- `HISTORICAL_DATA_CUTOFF=2026-03-01`
+- `_is_before_cutoff(mes=2, anio=2026)` → `month_end = date(2026,3,1)` → `2026-03-01 <= 2026-03-01` → `True`
+- Resultado: Feb 2026 va a DB local → `fact_acct` local no tiene datos de feb 2026 → 0 movimientos
+- **Mismo problema para CUALQUIER mes/año entre 2022-01 y 2026-02**
+
+**Evidencia en iDempiere real** (consultada directamente en 192.168.1.73):
+- Cuenta 1.01.08.01: **8,522 movimientos** en feb 2026 (iDempiere) vs **0** (bot)
+- Cuenta 2.01.02.01: **5,585 movimientos** en 2026 (iDempiere) vs **0** (bot)
+- Cuenta 4.01.03.15: **14,689 movimientos** en 2026 (iDempiere) vs **0** (bot)
+
+**Datos de verificación de contabilidad** (SQL directo en iDempiere):
+```
+TOP 20 CUENTAS CON MÁS MOVIMIENTOS EN 2026:
+1.01.08.01  Activo   24,382  CUENTAS POR COBRAR CLIENTES COMERCIALES
+1.01.04.02  Activo   16,199  CHEQUES EN TRANSITO
+4.01.03.15  Ingreso  14,689  INGRESOS POR VENTA CEREALES (SNACK)
+1.01.08.01  Activo   13,192  CUENTAS POR COBRAR CLIENTES
+1.01.08.02  Activo   11,686  ANTICIPOS RECIBIDOS POR CLIENTES
+1.01.04.01  Activo    9,701  CHEQUES EN TRANSITO
+1.02.03.04  Activo    7,775  INVENTARIO PT (EXTRUSORA-CEREAL)
+2.01.04.01  Pasivo    7,087  ANTICIPOS RECIBIDOS POR CLIENTES
+5.02.04.25  Gasto     7,056  C.V. CEREALES (SNACK)
+1.01.08.03  Activo    6,365  DEPOSITOS NO IDENTIFICADOS
+2.01.02.01  Pasivo    5,585  CUENTAS POR PAGAR PROVEEDORES
+1.01.01.06  Activo    5,468  CAJA CHICA MONEDA EXTRANJERA (VENTAS)
+```
+
+**Solución propuesta** (NO implementada aún):
+- Opción A: Forzar que `build_accounting_summary` y `build_account_detail` siempre usen
+  `IdempiereSession()` directo (igual que `build_inventory_stock`)
+- Opción B: Cambiar `<=` por `<` en `_is_before_cutoff` línea 101: `month_end <= cutoff_date` → `month_end < cutoff_date`
+  (pero solo arregla feb 2026, no 2022-2025)
+- Opción C: Extraer `fact_acct` completo hasta feb 2026 a DB local (pesado, millones de filas)
+- **Opción recomendada: A** — es la más simple y segura
+
+---
+
+### Estado de la DB LOCAL (schema `adempiere` en PostgreSQL 16)
+
+| Tabla | Filas | Rango fechas | Estado |
+|-------|-------|-------------|--------|
+| c_invoice | 449,740 | hasta 2026-02-28 | ✅ OK |
+| c_payment | 802,311 | hasta 2026-02-28 | ✅ OK |
+| c_order | 278,870 | hasta 2026-02-28 | ✅ OK |
+| **fact_acct** | **2,800,000** | **2014-06-01 a 2021-09-30** | **❌ INCOMPLETO** — falta 2022-2026 |
+| hr_movement | ? | columna validfrom no existe | ⚠️ Error de esquema |
+| m_inout | ? | No verificado | ⚠️ |
+| m_production | ? | No verificado | ⚠️ |
+
+---
+
+### Problemas conocidos en Compras Insumos (pendiente de fix)
+
+1. **"Top 10 productos" sin filtro de producto**: Los códigos de producto que muestra el LLM
+   a veces son inventados (PMX-VIT-0022, AG-FERT-1120). La query `build_supply_purchases`
+   retorna datos reales pero el LLM los reinterpreta/inventa detalles.
+
+2. **"Órdenes de compra pendientes"**: `build_pending_purchase_orders` incluía `docstatus IN ('DR','IP','CO')`
+   — las CO son completadas, no pendientes. **Fix aplicado en commit 69575e4**: ahora solo DR/IP.
+
+3. **"Comparación de precios entre proveedores"**: El LLM inventa proveedores que no existen
+   (EMPAQUES DEL CARIBE, FLEXOPACK VENEZUELA). Probablemente `build_supplier_price_comparison`
+   retorna datos reales pero el LLM los ignora y fabrica.
+
+4. **"Facturas pagadas vs pendientes"**: Routing confuso — "pendientes" matcheaba con
+   `_ORDER_KEYWORDS` y ruteaba a órdenes de compra en vez de estado de pago.
+   **Fix aplicado en commit 69575e4**: `is_payment` ahora se evalúa antes que `is_orders`.
+
+5. **"Compras en dólares del 2025"**: El LLM dice 1,892 facturas / $8.7M cuando el dato real
+   es 14,056 facturas / $33.7M. La query probablemente retorna datos correctos pero el LLM
+   los resume incorrectamente. Causa posible: `_format_summary` muestra listas anidadas
+   (como `por_moneda`) como blob JSON ilegible para el LLM.
+
+6. **"Proveedores que venden azúcar"**: El LLM inventa proveedores inexistentes
+   ("ALIMENTOS AGRÍCOLAS SANTA FE", "DISTRIBUIDORA LA ESTRELLA").
+
+### Problemas conocidos en Compras Productores (pendiente de fix)
+
+1. **INPROA SANTONI aparece como "productor"** con 36M kg cuando el total del resumen dice 7.6M kg.
+   INPROA se compra arroz a sí misma en iDempiere (transferencia interna contable).
+   Esto distorsiona todos los totales y el precio promedio.
+
+2. **Precio promedio arroz inflado**: Bot dice 1,527,346 Bs/kg, dato real ~182 Bs/kg.
+   Consecuencia directa de incluir las auto-compras de INPROA a precios contables artificiales.
+
+### Módulo de Keywords (`backend/app/agents/keywords.py`) — commit d6eb13f
+
+Se creó un módulo centralizado con 2,200+ keywords en 63 frozensets para detectar
+el tipo de consulta del usuario (inventario, órdenes pendientes, comparación de precios, etc.).
+Integrado en los 7 agentes. Si causa problemas, revertir con:
+```bash
+git reset --hard pre-keywords-integration  # Vuelve a commit 69575e4
+```
 
 ### Pendiente:
-- Mapeo completo de todas las tablas iDempiere (algunas queries aún en ajuste)
+- **URGENTE**: Fix contabilidad (fact_acct routing a DB local sin datos)
+- **ALTO**: Validar y corregir compras_insumos (alucinaciones del LLM con datos generales)
+- **ALTO**: Validar y corregir compras_productores (INPROA como productor, precio promedio)
+- Mapeo completo de tablas iDempiere
 - Tests E2E
 - Sentry (monitoreo de errores)
 - WhatsApp (Fase 2, post-lanzamiento)
@@ -420,8 +475,10 @@ Consulta del usuario → Agente extrae fechas → _get_session(date_from, date_t
 
 ### Tablas copiadas
 - **Referencia** (copia completa): ad_org, c_bpartner, m_product, c_currency, hr_employee, etc.
-- **Transaccionales** (filtradas por fecha < corte): c_invoice, c_payment, c_order, fact_acct, etc.
+- **Transaccionales** (filtradas por fecha < corte): c_invoice, c_payment, c_order, etc.
 - **Snapshots** (estado actual): m_storageonhand, c_bankaccount
+- **⚠️ fact_acct**: Solo tiene datos 2014-2021. NO tiene datos 2022-2026.
+  Esto rompe contabilidad para cualquier consulta post-2021. Ver sección "BUG CRÍTICO" arriba.
 
 ### Comandos
 ```bash
@@ -448,9 +505,14 @@ HISTORICAL_DATA_CUTOFF=2026-03-01  # Fecha de corte
 ### Funciones sin fecha (siempre van a iDempiere)
 - `build_overdue_receivables` - cuentas por cobrar actuales
 - `build_employee_summary` - plantilla actual
-- `build_inventory_stock` - stock actual
+- `build_inventory_stock` - stock actual (usa `IdempiereSession()` directo)
 - `build_registered_producers` - productores registrados
 - `build_producer_pending_payments` - pagos pendientes actuales
+
+### ⚠️ Funciones que DEBERÍAN ir a iDempiere pero van a DB local (BUG)
+- `build_accounting_summary` - usa `_get_session()` → DB local tiene fact_acct solo hasta 2021
+- `build_account_detail` - mismo problema
+- **Fix necesario**: Cambiar a `IdempiereSession()` directo, igual que `build_inventory_stock`
 
 ---
 
