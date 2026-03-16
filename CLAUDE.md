@@ -392,25 +392,11 @@ TOP 20 CUENTAS CON MÁS MOVIMIENTOS EN 2026:
 
 ### Correcciones en Compras Productores
 
-1. **Exclusión de empresas internas**: Se agregó `_add_exclude_internal_orgs_filter()` con 8 empresas
-   del grupo Santoni. Usa `NOT LIKE` con match parcial para cubrir variaciones de nombre.
-   - INPROA SANTONI: 282 guías / 7.2M kg (76% del total) — transferencias internas
-   - AGROPECUARIA R.R: 11 guías / 225K kg — también interna
-
-2. **Filtro `codigoproductor` eliminado**: Excluía ~94% de los registros.
-   Se removió de `build_producer_purchases`, `build_producer_price_analysis` y
-   `build_producer_pending_payments`. Se mantiene solo en `build_registered_producers`.
-
-3. **Filtro `ol.qtyordered > 1`**: Excluye líneas de resumen/total de iDempiere que tienen
-   qtyordered=1 y priceactual=monto total de la guía. Estas líneas duplican el monto.
-
-4. **Deduplicación de productores**: JOIN de ubicación cambiado a `LATERAL` subquery con `LIMIT 1`
-   y GROUP BY por `bp.c_bpartner_id` para evitar duplicación por múltiples direcciones.
-
-5. **Datos de verificación** (DATOS_VERIFICACION_IDEMPIERE.md §19):
-   - Total arroz paddy 2026: 369 guías, 7,803,925.17 kg, 1,439,112,429.03 Bs. (184 Bs/kg)
-   - Productores externos (excl. internas): ~76 guías, ~360K kg, ~39M Bs. (~109 Bs/kg)
-   - Ver §19 para diagnóstico completo de filtros incrementales
+1. **Exclusión de empresas internas**: `_add_exclude_internal_orgs_filter()` con 8 empresas del grupo.
+2. **Filtro `codigoproductor` eliminado**: Se mantiene solo en `build_registered_producers`.
+3. **Filtro `ol.qtyordered > 1`**: Excluye líneas de resumen/total de iDempiere.
+4. **Deduplicación de productores**: LATERAL subquery + GROUP BY `bp.c_bpartner_id`.
+5. **Diagnóstico detallado**: Ver `DATOS_VERIFICACION_IDEMPIERE.md` §19.
 
 ### Módulo de Keywords (`backend/app/agents/keywords.py`) — commit d6eb13f
 
