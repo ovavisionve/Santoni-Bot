@@ -2735,7 +2735,11 @@ def build_supply_purchases(
     date_to: str | None = None,
     currency_ids: list[int] | None = None,
 ) -> dict:
-    """Supply purchases from iDempiere: purchase invoices (issotrx='N')."""
+    """Supply purchases from iDempiere: purchase invoices (issotrx='N').
+
+    When no currency filter is specified, separates results by currency
+    to avoid mixing VES and USD in totals and rankings.
+    """
     db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
     try:
         conditions = [
@@ -2748,71 +2752,83 @@ def build_supply_purchases(
         _add_date_filter(conditions, params, date_from, date_to, mes, anio, "i.dateinvoiced")
         _add_currency_filter(conditions, params, currency_ids, "i")
 
+        cur_label = _currency_label("i")
         where = " AND ".join(conditions)
 
-        # Totals
+        # Totals separated by currency
         totals_q = text(
-            f"SELECT COUNT(DISTINCT i.c_invoice_id) AS total_ordenes, "
+            f"SELECT {cur_label} AS moneda, "
+            f"COUNT(DISTINCT i.c_invoice_id) AS total_facturas, "
             f"COALESCE(SUM(i.grandtotal), 0) AS total_monto "
-            f"FROM adempiere.c_invoice i WHERE {where}"
+            f"FROM adempiere.c_invoice i WHERE {where} "
+            f"GROUP BY {cur_label} ORDER BY total_monto DESC"
         )
-        row = db.execute(totals_q, params).fetchone()
+        totals_rows = db.execute(totals_q, params).fetchall()
+        totales_por_moneda = [
+            {"moneda": r[0], "total_facturas": r[1], "total_monto": float(r[2])}
+            for r in totals_rows
+        ]
         totals = {
-            "total_ordenes": row[0] if row else 0,
-            "total_monto": float(row[1]) if row else 0.0,
+            "total_facturas": sum(r["total_facturas"] for r in totales_por_moneda),
+            "total_monto_mixto": sum(r["total_monto"] for r in totales_por_moneda),
+            "por_moneda": totales_por_moneda,
         }
 
-        # By supplier (top 20)
+        # By supplier (top 20) — include currency column
         by_supplier_q = text(
             f"SELECT bp.name AS proveedor, "
+            f"{cur_label} AS moneda, "
             f"COUNT(DISTINCT i.c_invoice_id) AS facturas, "
             f"COALESCE(SUM(i.grandtotal), 0) AS total "
             f"FROM adempiere.c_invoice i "
             f"JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id "
             f"WHERE {where} "
-            f"GROUP BY bp.name ORDER BY total DESC LIMIT 20"
+            f"GROUP BY bp.name, {cur_label} ORDER BY total DESC LIMIT 20"
         )
         by_supplier = [
-            {"proveedor": r[0], "facturas": r[1], "total": float(r[2])}
+            {"proveedor": r[0], "moneda": r[1], "facturas": r[2], "total": float(r[3])}
             for r in db.execute(by_supplier_q, params).fetchall()
         ]
 
-        # By month (include year for cross-year ranges)
+        # By month — include currency column
         by_month_q = text(
             f"SELECT EXTRACT(YEAR FROM i.dateinvoiced)::int AS anio, "
             f"EXTRACT(MONTH FROM i.dateinvoiced)::int AS mes, "
+            f"{cur_label} AS moneda, "
             f"COUNT(DISTINCT i.c_invoice_id) AS facturas, "
             f"COALESCE(SUM(i.grandtotal), 0) AS total "
             f"FROM adempiere.c_invoice i WHERE {where} "
-            f"GROUP BY EXTRACT(YEAR FROM i.dateinvoiced), EXTRACT(MONTH FROM i.dateinvoiced) "
-            f"ORDER BY anio, mes"
+            f"GROUP BY EXTRACT(YEAR FROM i.dateinvoiced), "
+            f"EXTRACT(MONTH FROM i.dateinvoiced), {cur_label} "
+            f"ORDER BY anio, mes, moneda"
         )
         by_month = [
-            {"anio": r[0], "mes": r[1], "facturas": r[2], "total": float(r[3])}
+            {"anio": r[0], "mes": r[1], "moneda": r[2], "facturas": r[3], "total": float(r[4])}
             for r in db.execute(by_month_q, params).fetchall()
         ]
 
-        # By product category (top items purchased)
+        # By product (top 20) — include currency column
         by_product_q = text(
             f"SELECT p.value AS codigo, p.name AS producto, "
+            f"{cur_label} AS moneda, "
             f"COALESCE(SUM(il.linenetamt), 0) AS total "
             f"FROM adempiere.c_invoice i "
             f"JOIN adempiere.c_invoiceline il ON i.c_invoice_id = il.c_invoice_id "
             f"JOIN adempiere.m_product p ON il.m_product_id = p.m_product_id "
             f"WHERE {where} "
-            f"GROUP BY p.value, p.name ORDER BY total DESC LIMIT 20"
+            f"GROUP BY p.value, p.name, {cur_label} ORDER BY total DESC LIMIT 20"
         )
         by_product = [
-            {"codigo": r[0], "producto": r[1], "total": float(r[2])}
+            {"codigo": r[0], "producto": r[1], "moneda": r[2], "total": float(r[3])}
             for r in db.execute(by_product_q, params).fetchall()
         ]
 
         # Determine currency label for the agent
         if currency_ids:
             _VES = [205]
-            currency_label = "USD" if currency_ids != _VES else "VES"
+            currency_label = "USD" if currency_ids != _VES else "Bs."
         else:
-            currency_label = "Todas las monedas (mixto)"
+            currency_label = "Todas las monedas (separado por Bs. y USD)"
 
         return {
             "anio": anio,
@@ -2858,13 +2874,15 @@ def build_product_purchase_history(
 
         where = " AND ".join(conditions)
 
+        cur_label = _currency_label("i")
         q = text(
             f"SELECT p.value AS codigo_producto, p.name AS producto, "
             f"bp.name AS proveedor, i.documentno AS factura, "
             f"i.dateinvoiced AS fecha, "
             f"il.qtyinvoiced AS cantidad, "
             f"il.priceactual AS precio_unitario, "
-            f"il.linenetamt AS total_linea "
+            f"il.linenetamt AS total_linea, "
+            f"{cur_label} AS moneda "
             f"FROM adempiere.c_invoice i "
             f"JOIN adempiere.c_invoiceline il ON i.c_invoice_id = il.c_invoice_id "
             f"JOIN adempiere.m_product p ON il.m_product_id = p.m_product_id "
@@ -2884,6 +2902,7 @@ def build_product_purchase_history(
                 "cantidad": float(r[5]),
                 "precio_unitario": float(r[6]),
                 "total_linea": float(r[7]),
+                "moneda": r[8],
             }
             for r in rows
         ]
@@ -2926,21 +2945,29 @@ def build_pending_purchase_orders(
             )
             params["po_prod"] = f"%{product_search}%"
 
+        cur_label = _currency_label("o")
         where = " AND ".join(conditions)
 
-        # Totals
+        # Totals separated by currency
         totals_q = text(
-            f"SELECT COUNT(DISTINCT o.c_order_id) AS total_ordenes, "
+            f"SELECT {cur_label} AS moneda, "
+            f"COUNT(DISTINCT o.c_order_id) AS total_ordenes, "
             f"COALESCE(SUM(o.grandtotal), 0) AS total_monto "
-            f"FROM adempiere.c_order o WHERE {where}"
+            f"FROM adempiere.c_order o WHERE {where} "
+            f"GROUP BY {cur_label} ORDER BY total_monto DESC"
         )
-        row = db.execute(totals_q, params).fetchone()
+        totals_rows = db.execute(totals_q, params).fetchall()
+        totales_por_moneda = [
+            {"moneda": r[0], "total_ordenes": r[1], "total_monto": float(r[2])}
+            for r in totals_rows
+        ]
         totals = {
-            "total_ordenes": row[0] if row else 0,
-            "total_monto": float(row[1]) if row else 0.0,
+            "total_ordenes": sum(r["total_ordenes"] for r in totales_por_moneda),
+            "total_monto_mixto": sum(r["total_monto"] for r in totales_por_moneda),
+            "por_moneda": totales_por_moneda,
         }
 
-        # By status
+        # By status — include currency
         by_status_q = text(
             f"SELECT "
             f"CASE o.docstatus "
@@ -2948,28 +2975,30 @@ def build_pending_purchase_orders(
             f"  WHEN 'IP' THEN 'En Proceso' "
             f"  WHEN 'CO' THEN 'Completada' "
             f"  ELSE o.docstatus END AS estado, "
+            f"{cur_label} AS moneda, "
             f"COUNT(DISTINCT o.c_order_id) AS ordenes, "
             f"COALESCE(SUM(o.grandtotal), 0) AS total "
             f"FROM adempiere.c_order o WHERE {where} "
-            f"GROUP BY o.docstatus ORDER BY total DESC"
+            f"GROUP BY o.docstatus, {cur_label} ORDER BY total DESC"
         )
         by_status = [
-            {"estado": r[0], "ordenes": r[1], "total": float(r[2])}
+            {"estado": r[0], "moneda": r[1], "ordenes": r[2], "total": float(r[3])}
             for r in db.execute(by_status_q, params).fetchall()
         ]
 
-        # By supplier (top 20)
+        # By supplier (top 20) — include currency
         by_supplier_q = text(
             f"SELECT bp.name AS proveedor, "
+            f"{cur_label} AS moneda, "
             f"COUNT(DISTINCT o.c_order_id) AS ordenes, "
             f"COALESCE(SUM(o.grandtotal), 0) AS total "
             f"FROM adempiere.c_order o "
             f"JOIN adempiere.c_bpartner bp ON o.c_bpartner_id = bp.c_bpartner_id "
             f"WHERE {where} "
-            f"GROUP BY bp.name ORDER BY total DESC LIMIT 20"
+            f"GROUP BY bp.name, {cur_label} ORDER BY total DESC LIMIT 20"
         )
         by_supplier = [
-            {"proveedor": r[0], "ordenes": r[1], "total": float(r[2])}
+            {"proveedor": r[0], "moneda": r[1], "ordenes": r[2], "total": float(r[3])}
             for r in db.execute(by_supplier_q, params).fetchall()
         ]
 
@@ -2983,7 +3012,8 @@ def build_pending_purchase_orders(
             f"  WHEN 'CO' THEN 'Completada' "
             f"  ELSE o.docstatus END AS estado, "
             f"o.grandtotal, "
-            f"COALESCE(org.name, '') AS organizacion "
+            f"COALESCE(org.name, '') AS organizacion, "
+            f"{cur_label} AS moneda "
             f"FROM adempiere.c_order o "
             f"JOIN adempiere.c_bpartner bp ON o.c_bpartner_id = bp.c_bpartner_id "
             f"LEFT JOIN adempiere.ad_org org ON o.ad_org_id = org.ad_org_id "
@@ -2998,6 +3028,7 @@ def build_pending_purchase_orders(
                 "estado": r[3],
                 "monto": float(r[4]) if r[4] else 0.0,
                 "organizacion": r[5],
+                "moneda": r[6],
             }
             for r in db.execute(detail_q, params).fetchall()
         ]
@@ -3041,9 +3072,11 @@ def build_supplier_price_comparison(
 
         where = " AND ".join(conditions)
 
+        cur_label = _currency_label("i")
         q = text(
             f"SELECT bp.name AS proveedor, "
             f"p.name AS producto, "
+            f"{cur_label} AS moneda, "
             f"COUNT(*) AS compras, "
             f"MIN(il.priceactual) AS precio_minimo, "
             f"AVG(il.priceactual) AS precio_promedio, "
@@ -3055,8 +3088,8 @@ def build_supplier_price_comparison(
             f"JOIN adempiere.m_product p ON il.m_product_id = p.m_product_id "
             f"JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id "
             f"WHERE {where} "
-            f"GROUP BY bp.name, p.name "
-            f"ORDER BY precio_promedio ASC "
+            f"GROUP BY bp.name, p.name, {cur_label} "
+            f"ORDER BY moneda, precio_promedio ASC "
             f"LIMIT 30"
         )
         rows = db.execute(q, params).fetchall()
@@ -3064,12 +3097,13 @@ def build_supplier_price_comparison(
             {
                 "proveedor": r[0],
                 "producto": r[1],
-                "compras": r[2],
-                "precio_minimo": float(r[3]) if r[3] else 0.0,
-                "precio_promedio": float(r[4]) if r[4] else 0.0,
-                "precio_maximo": float(r[5]) if r[5] else 0.0,
-                "ultima_compra": r[6].isoformat() if r[6] else None,
-                "cantidad_total": float(r[7]) if r[7] else 0.0,
+                "moneda": r[2],
+                "compras": r[3],
+                "precio_minimo": float(r[4]) if r[4] else 0.0,
+                "precio_promedio": float(r[5]) if r[5] else 0.0,
+                "precio_maximo": float(r[6]) if r[6] else 0.0,
+                "ultima_compra": r[7].isoformat() if r[7] else None,
+                "cantidad_total": float(r[8]) if r[8] else 0.0,
             }
             for r in rows
         ]
@@ -3099,19 +3133,21 @@ def build_purchase_payment_status(
         _add_org_filter(conditions, params, org_ids, "i")
         _add_date_filter(conditions, params, date_from, date_to, mes, anio, "i.dateinvoiced")
 
+        cur_label = _currency_label("i")
         where = " AND ".join(conditions)
 
         q = text(
             f"SELECT "
             f"CASE WHEN i.ispaid = 'Y' THEN 'Pagada' ELSE 'Pendiente' END AS estado_pago, "
+            f"{cur_label} AS moneda, "
             f"COUNT(*) AS facturas, "
             f"COALESCE(SUM(i.grandtotal), 0) AS total "
             f"FROM adempiere.c_invoice i WHERE {where} "
-            f"GROUP BY i.ispaid ORDER BY total DESC"
+            f"GROUP BY i.ispaid, {cur_label} ORDER BY total DESC"
         )
         rows = db.execute(q, params).fetchall()
         summary = [
-            {"estado_pago": r[0], "facturas": r[1], "total": float(r[2])}
+            {"estado_pago": r[0], "moneda": r[1], "facturas": r[2], "total": float(r[3])}
             for r in rows
         ]
 
@@ -3128,7 +3164,8 @@ def build_purchase_payment_status(
         overdue_q = text(
             f"SELECT bp.name AS proveedor, "
             f"i.documentno, i.dateinvoiced, i.grandtotal, "
-            f"CURRENT_DATE - i.dateinvoiced AS dias "
+            f"CURRENT_DATE - i.dateinvoiced AS dias, "
+            f"{cur_label} AS moneda "
             f"FROM adempiere.c_invoice i "
             f"JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id "
             f"WHERE {overdue_where} "
@@ -3141,6 +3178,7 @@ def build_purchase_payment_status(
                 "fecha": r[2].isoformat() if r[2] else None,
                 "monto": float(r[3]) if r[3] else 0.0,
                 "dias_desde_factura": r[4],
+                "moneda": r[5],
             }
             for r in db.execute(overdue_q, params).fetchall()
         ]
