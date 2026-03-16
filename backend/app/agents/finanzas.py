@@ -280,6 +280,22 @@ Datos financieros de iDempiere:
             sym = "Bs." if m["moneda"] == "Bs." else "$" if m["moneda"] == "USD" else m["moneda"]
             lines.append(f"| {m['moneda']} | {m['cantidad']:,} | {sym} {m['total']:,.2f} |")
 
+        # Monthly breakdown (when available for annual/wide-range queries)
+        _MONTH_NAMES = {
+            1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril",
+            5: "Mayo", 6: "Junio", 7: "Julio", 8: "Agosto",
+            9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre",
+        }
+        por_mes = data.get("por_mes", [])
+        if por_mes:
+            lines.append(f"\n### Desglose Mensual")
+            lines.append("| Mes | Moneda | Cantidad | Total |")
+            lines.append("|-----|--------|----------|-------|")
+            for m in por_mes:
+                sym = "Bs." if m["moneda"] == "Bs." else "$" if m["moneda"] == "USD" else m["moneda"]
+                mes_name = _MONTH_NAMES.get(m["mes"], str(m["mes"]))
+                lines.append(f"| {mes_name} {m['anio']} | {m['moneda']} | {m['cantidad']:,} | {sym} {m['total']:,.2f} |")
+
         # By payment method
         por_metodo = data.get("por_metodo_pago", [])
         if por_metodo:
@@ -300,6 +316,13 @@ Datos financieros de iDempiere:
             for i, s in enumerate(top[:20], 1):
                 sym = "Bs." if s["moneda"] == "Bs." else "$" if s["moneda"] == "USD" else s["moneda"]
                 lines.append(f"| {i} | {s['nombre']} | {s['moneda']} | {s['cantidad']:,} | {sym} {s['total']:,.2f} |")
+
+        # Anti-hallucination: explicitly state what data is NOT available
+        if not por_mes:
+            lines.append(
+                "\n⚠️ NOTA: No se dispone de desglose mensual para esta consulta. "
+                "NO inventes un desglose por meses. Presenta SOLO los totales y tablas mostrados arriba."
+            )
 
         return "\n".join(lines)
 

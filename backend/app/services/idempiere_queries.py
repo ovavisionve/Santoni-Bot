@@ -1306,13 +1306,47 @@ def build_cobros_pagos_summary(
             for r in db.execute(bp_q, params).fetchall()
         ]
 
-        return {
+        # Monthly breakdown when querying a full year (or date range > 1 month)
+        por_mes: list[dict] = []
+        is_annual = anio and not mes and not date_from and not date_to
+        is_wide_range = False
+        if date_from and date_to:
+            from datetime import datetime as _dt
+            try:
+                d0 = _dt.strptime(date_from, "%Y-%m-%d")
+                d1 = _dt.strptime(date_to, "%Y-%m-%d")
+                is_wide_range = (d1 - d0).days > 45
+            except ValueError:
+                pass
+        if is_annual or is_wide_range:
+            month_q = text(
+                f"SELECT EXTRACT(MONTH FROM p.datetrx)::int AS mes, "
+                f"EXTRACT(YEAR FROM p.datetrx)::int AS anio_val, "
+                f"{cur_label} AS moneda, "
+                f"COUNT(*) AS cantidad, "
+                f"COALESCE(SUM(p.payamt), 0) AS total "
+                f"FROM adempiere.c_payment p WHERE {where} "
+                f"GROUP BY mes, anio_val, {cur_label} "
+                f"ORDER BY anio_val, mes, moneda"
+            )
+            por_mes = [
+                {
+                    "mes": r[0], "anio": r[1], "moneda": r[2],
+                    "cantidad": r[3], "total": float(r[4]),
+                }
+                for r in db.execute(month_q, params).fetchall()
+            ]
+
+        result = {
             "tipo": "cobros" if is_receipt else "pagos",
             "total_registros": sum(m["cantidad"] for m in por_moneda),
             "por_moneda": por_moneda,
             "por_metodo_pago": por_metodo,
             "top_socios": top_socios,
         }
+        if por_mes:
+            result["por_mes"] = por_mes
+        return result
     finally:
         db.close()
 
