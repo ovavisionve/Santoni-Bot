@@ -437,8 +437,17 @@ Datos de compras de insumos en iDempiere:
                     org_name = o
                     break
 
-        # Detect currency preference
-        currency_ids = self._detect_currency(message, history)
+        # Detect currency preference.
+        # Only inherit currency from history for true follow-ups (short messages
+        # like "y en dólares?"), not for new standalone queries.
+        _broad_query_kw = {"compras", "resumen", "total", "facturas", "estado de pago",
+                           "órdenes", "ordenes", "pendientes", "pagadas", "top",
+                           "proveedores", "proveedor", "inventario", "stock"}
+        _is_broad_query = any(w in msg for w in _broad_query_kw)
+        _use_history_for_currency = not has_explicit_period and not _is_broad_query
+        currency_ids = self._detect_currency(
+            message, history if _use_history_for_currency else None
+        )
 
         # Check if user is searching for a specific product
         product_search = self._extract_product_search(message)
@@ -446,9 +455,6 @@ Datos de compras de insumos en iDempiere:
         # looks like a true follow-up (no explicit period, no broad query keywords).
         # e.g. "y en dólares?" → inherit; "compras en dólares del 2025" → don't.
         if not product_search and history:
-            _broad_query_kw = {"compras", "resumen", "total", "facturas", "estado de pago",
-                               "órdenes", "ordenes", "pendientes", "pagadas", "top"}
-            _is_broad_query = any(w in msg for w in _broad_query_kw)
             if not has_explicit_period and not _is_broad_query:
                 product_search = self._extract_product_from_history(history)
 
