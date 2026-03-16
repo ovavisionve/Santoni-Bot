@@ -2040,6 +2040,8 @@ def build_production_summary(
 ) -> dict:
     """Production/inventory movement summary from iDempiere m_inout.
 
+    Always uses live iDempiere — local DB has incomplete m_inout data.
+
     Santoni does not use the Manufacturing module (pp_order is empty).
     Instead, production activity is tracked via material movements:
     - V+ = Vendor Receipt (raw material incoming)
@@ -2047,7 +2049,7 @@ def build_production_summary(
     - M+/M- = Internal inventory movements
     - P+/P- = Production receipts (rare)
     """
-    db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
+    db = IdempiereSession()  # Always live — local DB has incomplete m_inout
     try:
         conditions = ["io.isactive = 'Y'", "io.docstatus IN ('CO', 'CL')"]
         params: dict = {}
@@ -2171,7 +2173,7 @@ def build_production_orders(
     org_name: str | None = None,
 ) -> list[dict]:
     """Recent material movement documents from iDempiere m_inout."""
-    db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
+    db = IdempiereSession()  # Always live — local DB has incomplete m_inout
     try:
         conditions = ["io.isactive = 'Y'", "io.docstatus IN ('CO', 'CL')"]
         params: dict = {}
@@ -2237,7 +2239,7 @@ def build_production_runs(
     NOTE: m_production.productionqty is NEGATIVE in Santoni's iDempiere.
     Always use m_productionline.movementqty for real quantities.
     """
-    db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
+    db = IdempiereSession()  # Always live — local DB has incomplete m_production (only 32 vs 5,919+ records)
     try:
         conditions = ["pr.isactive = 'Y'", "pr.docstatus IN ('CO', 'CL')"]
         params: dict = {}
@@ -2471,7 +2473,7 @@ def build_warehouse_movements(
 
     6,014+ completed movements in Santoni (transfers between warehouses/silos).
     """
-    db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
+    db = IdempiereSession()  # Always live — local DB has incomplete m_movement
     try:
         conditions = ["mv.isactive = 'Y'", "mv.docstatus IN ('CO', 'CL')"]
         params: dict = {}
