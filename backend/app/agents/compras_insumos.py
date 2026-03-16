@@ -269,7 +269,7 @@ Datos de compras de insumos en iDempiere:
 
         # "producto X" or "producto: X"
         prod_match = re.search(
-            r'producto[:\s]+(.+?)(?:\s+(?:en|del|desde|este)\b|\s*[?]|$)',
+            r'producto[:\s]+(.+?)(?:\s+(?:en|del|desde|este)\b|\s+\d{4}\b|\s*[?]|$)',
             msg_lower,
         )
         if prod_match and len(prod_match.group(1).strip()) >= 3:
@@ -278,13 +278,13 @@ Datos de compras de insumos en iDempiere:
         # "compras de {product}" / "historial de compras de {product}"
         compras_match = re.search(
             r'(?:compras?\s+de|historial\s+de(?:\s+compras?\s+de)?)\s+'
-            r'(.+?)(?:\s+(?:en|del|desde|este|el|último|ultima)\b|\s*[?]|$)',
+            r'(.+?)(?:\s+(?:en|del|desde|este|el|último|ultima)\b|\s+\d{4}\b|\s*[?]|$)',
             msg_lower,
         )
         if compras_match:
             product = compras_match.group(1).strip()
             product = re.sub(
-                r'\s+(?:del?|en|este|el|[úu]ltimo|ultima|trimestre|semestre|mes|año)\s*$',
+                r'(?:\s+(?:del?|en|este|el|[úu]ltimo|ultima|trimestre|semestre|mes|año)|\s+\d{4})\s*$',
                 '', product,
             )
             # Skip generic terms
@@ -306,11 +306,12 @@ Datos de compras de insumos en iDempiere:
         # "precio(s) de (las últimas N compras de) {product}"
         precio_match = re.search(
             r'precios?\s+de(?:\s+las?\s+[úu]ltim[ao]s?\s+\d+\s+compras?\s+de)?\s+'
-            r'(.+?)(?:\s+(?:en|del|desde|este|el)\b|\s*[?]|$)',
+            r'(.+?)(?:\s+(?:en|del|desde|este|el)\b|\s+\d{4}\b|\s*[?]|$)',
             msg_lower,
         )
         if precio_match:
             product = precio_match.group(1).strip()
+            product = re.sub(r'\s+\d{4}\s*$', '', product)
             if len(product) >= 3:
                 return product
 
@@ -338,7 +339,7 @@ Datos de compras de insumos en iDempiere:
         # "proveedores (que) venden X"
         prov_match = re.search(
             r'proveedores?\s+(?:que\s+)?venden\s+'
-            r'(.+?)(?:\s+(?:en|del|desde|este)\b|\s*[?]|$)',
+            r'(.+?)(?:\s+(?:en|del|desde|este)\b|\s+\d{4}\b|\s*[?]|$)',
             msg_lower,
         )
         if prov_match:
