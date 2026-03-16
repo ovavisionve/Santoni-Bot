@@ -3203,7 +3203,8 @@ def build_accounting_summary(
     date_to: str | None = None,
 ) -> dict:
     """Accounting summary from iDempiere fact_acct (posted accounting facts)."""
-    db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
+    # Always use iDempiere live — local DB fact_acct only has data up to 2021
+    db = IdempiereSession()
     try:
         conditions = [
             "fa.isactive = 'Y'",
@@ -3339,7 +3340,8 @@ def build_account_detail(
     - Debit-normal accounts (A=Activo, E=Gasto): saldo = debe - haber
     - Credit-normal accounts (L=Pasivo, O=Patrimonio, R=Ingreso): saldo = haber - debe
     """
-    db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
+    # Always use iDempiere live — local DB fact_acct only has data up to 2021
+    db = IdempiereSession()
     try:
         # 1. Find the account by code
         acct_q = text(
