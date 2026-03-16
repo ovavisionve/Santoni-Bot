@@ -2638,6 +2638,8 @@ def build_producer_purchases(
             # Only real agricultural producers (exclude internal orgs like INPROA)
             "bp.codigoproductor IS NOT NULL",
             "bp.codigoproductor != ''",
+            # Exclude data-entry errors: a real agricultural delivery is > 50 kg
+            "ol.qtyordered > 50",
         ]
         params: dict = {}
         _add_exclude_internal_orgs_filter(conditions, params, "bp")
@@ -2691,11 +2693,13 @@ def build_producer_purchases(
             for r in db.execute(by_product_q, params).fetchall()
         ]
 
-        # By producer (top 20) with location data
+        # By producer (top 20) with location data.
+        # Use a subquery to pick ONE location per producer (the first active
+        # one) so that producers with multiple addresses are not duplicated.
         by_producer_q = text(
             f"SELECT bp.name AS nombre, "
-            f"COALESCE(reg.name, '') AS estado, "
-            f"COALESCE(ci.name, loc.city, '') AS municipio, "
+            f"COALESCE(loc_data.estado, '') AS estado, "
+            f"COALESCE(loc_data.municipio, '') AS municipio, "
             f"COUNT(DISTINCT o.c_order_id) AS guias, "
             f"COALESCE(SUM(ol.qtyordered), 0) AS peso_neto_kg, "
             f"COALESCE(SUM(ol.linenetamt), 0) AS monto_total "
@@ -2703,14 +2707,18 @@ def build_producer_purchases(
             f"JOIN adempiere.c_orderline ol ON o.c_order_id = ol.c_order_id "
             f"JOIN adempiere.m_product p ON ol.m_product_id = p.m_product_id "
             f"JOIN adempiere.c_bpartner bp ON o.c_bpartner_id = bp.c_bpartner_id "
-            f"LEFT JOIN adempiere.c_bpartner_location bpl "
-            f"  ON bp.c_bpartner_id = bpl.c_bpartner_id AND bpl.isactive = 'Y' "
-            f"LEFT JOIN adempiere.c_location loc "
-            f"  ON bpl.c_location_id = loc.c_location_id "
-            f"LEFT JOIN adempiere.c_city ci ON loc.c_city_id = ci.c_city_id "
-            f"LEFT JOIN adempiere.c_region reg ON loc.c_region_id = reg.c_region_id "
+            f"LEFT JOIN LATERAL ("
+            f"  SELECT COALESCE(r.name, '') AS estado, "
+            f"         COALESCE(c.name, l.city, '') AS municipio "
+            f"  FROM adempiere.c_bpartner_location bl "
+            f"  JOIN adempiere.c_location l ON bl.c_location_id = l.c_location_id "
+            f"  LEFT JOIN adempiere.c_city c ON l.c_city_id = c.c_city_id "
+            f"  LEFT JOIN adempiere.c_region r ON l.c_region_id = r.c_region_id "
+            f"  WHERE bl.c_bpartner_id = bp.c_bpartner_id AND bl.isactive = 'Y' "
+            f"  LIMIT 1"
+            f") loc_data ON TRUE "
             f"WHERE {where} "
-            f"GROUP BY bp.name, reg.name, ci.name, loc.city "
+            f"GROUP BY bp.c_bpartner_id, bp.name, loc_data.estado, loc_data.municipio "
             f"ORDER BY monto_total DESC LIMIT 20"
         )
         by_producer = [
@@ -2865,6 +2873,8 @@ def build_producer_price_analysis(
             # Only real agricultural producers (exclude internal orgs like INPROA)
             "bp.codigoproductor IS NOT NULL",
             "bp.codigoproductor != ''",
+            # Exclude data-entry errors: a real agricultural delivery is > 50 kg
+            "ol.qtyordered > 50",
         ]
         params: dict = {}
         _add_exclude_internal_orgs_filter(conditions, params, "bp")
