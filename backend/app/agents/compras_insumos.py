@@ -155,7 +155,7 @@ Datos de compras de insumos en iDempiere:
 
     # Currency IDs in Santoni's iDempiere
     _VES_IDS = [205]
-    _USD_IDS = [1000000, 1000003, 1000006, 1000008, 1000011, 1000013, 1000017]
+    _USD_IDS = [100, 1000000, 1000003, 1000006, 1000008, 1000009, 1000011, 1000013, 1000017]
 
     # Keywords that indicate the user wants USD
     _USD_KEYWORDS = [
@@ -488,6 +488,8 @@ Datos de compras de insumos en iDempiere:
                     org_ids=org_ids,
                     product_search=product_search,
                 )
+                if not self._dict_has_data(inv_data):
+                    return None
                 filter_label = f" - '{product_search}'" if product_search else ""
                 sections.append(self._format_summary(
                     inv_data, f"Inventario / Stock Actual{filter_label}",
@@ -501,6 +503,8 @@ Datos de compras de insumos en iDempiere:
                     currency_ids=currency_ids,
                     product_search=product_search,
                 )
+                if not self._dict_has_data(orders_data):
+                    return None
                 sections.append(self._format_summary(
                     orders_data, f"Órdenes de Compra - {label}",
                 ))
@@ -511,6 +515,8 @@ Datos de compras de insumos en iDempiere:
                     mes=mes, anio=anio, org_ids=org_ids,
                     date_from=date_from, date_to=date_to,
                 )
+                if not self._dict_has_data(payment_data):
+                    return None
                 sections.append(self._format_summary(
                     payment_data, f"Estado de Pago de Facturas de Compra - {label}",
                 ))
@@ -600,6 +606,11 @@ Datos de compras de insumos en iDempiere:
                     date_from=date_from, date_to=date_to,
                     currency_ids=currency_ids,
                 )
+                # Check if there's actually data — if total_facturas==0, return None
+                # so base_agent activates anti-hallucination for empty results
+                total_facturas = summary.get("totales", {}).get("total_facturas", 0)
+                if total_facturas == 0:
+                    return None
                 sections.append(self._format_summary(summary, f"Resumen de Compras de Insumos - {label}"))
 
         except Exception as exc:

@@ -428,7 +428,10 @@ Datos de RRHH en iDempiere:
                     mes=mes, anio=anio, org_ids=org_ids,
                     date_from=date_from, date_to=date_to,
                 )
-                sections.append(self._format_summary(data, f"Resumen de Nómina - {label}"))
+                if self._dict_has_data(data):
+                    sections.append(self._format_summary(data, f"Resumen de Nómina - {label}"))
+                else:
+                    return None
 
             if any(w in msg for w in [
                 "ausentismo", "ausentimos", "ausencia", "inasistencia",
@@ -477,9 +480,10 @@ Datos de RRHH en iDempiere:
                 "renuncia", "despido", "turnover", "salida", "salidas",
             ]):
                 data = build_turnover_summary(anio=anio, org_ids=org_ids)
-                sections.append(self._format_summary(
-                    data, f"Indicadores de Rotación - Año {anio}",
-                ))
+                if self._dict_has_data(data):
+                    sections.append(self._format_summary(
+                        data, f"Indicadores de Rotación - Año {anio}",
+                    ))
 
         except Exception as exc:
             logger.error("Error consultando datos de RRHH: %s: %s", type(exc).__name__, exc, exc_info=True)

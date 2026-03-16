@@ -284,6 +284,8 @@ Datos de compras a productores en iDempiere:
                 producto=producto, mes=mes, anio=anio, org_ids=org_ids,
                 date_from=date_from, date_to=date_to, org_name=org_name,
             )
+            if not self._dict_has_data(summary):
+                return None
             sections.append(self._format_summary(summary, f"Compras a Productores - {label}"))
 
             include_productores = any(w in msg for w in self._SECTION_KEYWORDS["productores"])

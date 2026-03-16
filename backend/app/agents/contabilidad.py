@@ -272,6 +272,8 @@ Se pueden consultar cuentas específicas por código (ej: 2.01.01.10) con rango 
                     else:
                         summary = build_accounting_summary(mes=mes, anio=anio, org_ids=org_ids)
                         label = build_period_label(mes=mes, anio=anio)
+                if not self._dict_has_data(summary):
+                    return None
                 sections.append(self._format_summary(summary, f"Resumen Contable - {label}"))
 
         except Exception as exc:

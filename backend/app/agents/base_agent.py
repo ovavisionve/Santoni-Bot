@@ -126,8 +126,8 @@ class BaseAgent(ABC):
         history: list[tuple[str, str]] | None = None,
         org_ids: list[int] | None = None,
         salesrep_id: int | None = None,
-    ) -> tuple[list, bool]:
-        """Build the LLM message list. Returns (messages, has_data)."""
+    ) -> tuple[list, bool, str | None]:
+        """Build the LLM message list. Returns (messages, has_data, data_context)."""
         # Build datetime context
         datetime_ctx = _build_datetime_context()
 
@@ -293,7 +293,7 @@ class BaseAgent(ABC):
                     messages.append(AIMessage(content=clean))
 
         messages.append(HumanMessage(content=message))
-        return messages, data_context is not None
+        return messages, data_context is not None, data_context
 
     # Phrases that indicate the LLM is refusing to use provided data
     _NO_ACCESS_PHRASES = [
@@ -309,13 +309,43 @@ class BaseAgent(ABC):
     ]
 
     @staticmethod
-    def _detect_hallucination(response_text: str, has_data: bool) -> bool:
+    def _extract_data_fingerprints(data_context: str) -> set[str]:
+        """Extract key numeric fingerprints from data context for validation.
+
+        Pulls out significant numbers (>= 4 digits) that appear in the data.
+        These are used to verify the LLM response uses real data, not invented.
+        """
+        if not data_context:
+            return set()
+        # Extract formatted numbers with thousands separators: 1,234,567.89
+        numbers = re.findall(r'\d{1,3}(?:,\d{3})+(?:\.\d+)?', data_context)
+        # Also extract large plain numbers (>= 1000)
+        plain = re.findall(r'(?<!\d)\d{4,}(?:\.\d+)?(?!\d)', data_context)
+        fingerprints = set()
+        for n in numbers + plain:
+            # Normalize: remove commas
+            clean = n.replace(",", "")
+            try:
+                val = float(clean)
+                if val >= 1000:
+                    fingerprints.add(clean)
+            except ValueError:
+                pass
+        return fingerprints
+
+    @staticmethod
+    def _detect_hallucination(
+        response_text: str,
+        has_data: bool,
+        data_context: str | None = None,
+    ) -> bool:
         """Detect if the LLM likely hallucinated data.
 
         Returns True if hallucination is detected:
         - When no data was provided (has_data=False): tables with numbers = hallucination
         - When data WAS provided (has_data=True): fake invoice/doc numbers = hallucination
         - ALWAYS: "no tengo acceso" phrases when data WAS provided = hallucination
+        - When data WAS provided: response numbers don't match data = hallucination
         """
         # ALWAYS check for fake document numbers (these are never real)
         fake_docs = re.search(
@@ -337,6 +367,58 @@ class BaseAgent(ABC):
             for phrase in BaseAgent._NO_ACCESS_PHRASES:
                 if phrase in response_lower:
                     return True
+
+            # NEW: Cross-reference check — verify LLM used real numbers
+            # Extract significant numbers from the response tables
+            if data_context:
+                data_fps = BaseAgent._extract_data_fingerprints(data_context)
+                if data_fps:
+                    # Extract numbers from response tables only
+                    response_table_lines = [
+                        line for line in response_text.split("\n")
+                        if line.strip().startswith("|") and "---" not in line
+                    ]
+                    if len(response_table_lines) >= 3:  # header + separator + data
+                        response_table_text = "\n".join(response_table_lines)
+                        # Get numbers from response tables
+                        resp_nums = re.findall(
+                            r'\d{1,3}(?:[.,]\d{3})+(?:[.,]\d+)?',
+                            response_table_text,
+                        )
+                        if resp_nums:
+                            # Normalize response numbers (handle both . and , as thousands sep)
+                            resp_clean = set()
+                            for n in resp_nums:
+                                # Venezuelan format: 1.234.567,89 → 1234567.89
+                                if "," in n and "." in n:
+                                    clean = n.replace(".", "").replace(",", ".")
+                                else:
+                                    clean = n.replace(",", "")
+                                try:
+                                    val = float(clean)
+                                    if val >= 1000:
+                                        resp_clean.add(f"{val:.0f}")
+                                except ValueError:
+                                    pass
+
+                            # Normalize data fingerprints the same way
+                            data_clean = set()
+                            for fp in data_fps:
+                                try:
+                                    data_clean.add(f"{float(fp):.0f}")
+                                except ValueError:
+                                    pass
+
+                            # If response has significant numbers in tables but
+                            # NONE match any data fingerprint → hallucination
+                            if resp_clean and data_clean and not resp_clean & data_clean:
+                                logger.warning(
+                                    "Fingerprint mismatch: response numbers %s "
+                                    "don't overlap with data numbers %s",
+                                    list(resp_clean)[:5], list(data_clean)[:5],
+                                )
+                                return True
+
             return False
 
         # No data was provided — check for generated tables
@@ -430,6 +512,26 @@ class BaseAgent(ABC):
         result = re.sub(r'\n{3,}', '\n\n', result)
         return result
 
+    @staticmethod
+    def _dict_has_data(d: dict) -> bool:
+        """Check if a query result dict has any meaningful data rows.
+
+        Returns False if all list values are empty and all numeric totals are 0.
+        This prevents the LLM from receiving 'has_data=True' with empty tables,
+        which causes it to hallucinate data to fill the void.
+        """
+        for v in d.values():
+            if isinstance(v, list) and len(v) > 0:
+                return True
+            if isinstance(v, dict):
+                # Check nested totals
+                for nv in v.values():
+                    if isinstance(nv, (int, float)) and nv > 0:
+                        return True
+                    if isinstance(nv, list) and len(nv) > 0:
+                        return True
+        return False
+
     _HALLUCINATION_REPLACEMENT = (
         "La consulta a iDempiere no arrojó resultados para los filtros aplicados.\n\n"
         "**¿Qué puedes intentar?**\n"
@@ -449,13 +551,13 @@ class BaseAgent(ABC):
         salesrep_id: int | None = None,
     ) -> dict:
         """Process a user message and return a complete response."""
-        messages, has_data = self._build_messages(message, history, org_ids, salesrep_id)
+        messages, has_data, data_context = self._build_messages(message, history, org_ids, salesrep_id)
         response = await self.llm.ainvoke(messages)
 
         response_text = response.content
 
         # Post-response validation: detect hallucination
-        if self._detect_hallucination(response_text, has_data):
+        if self._detect_hallucination(response_text, has_data, data_context):
             logger.warning(
                 "Hallucination detected in %s (has_data=%s). Replacing response.",
                 self.name, has_data,
@@ -471,13 +573,17 @@ class BaseAgent(ABC):
             except Exception:
                 pass
             if has_data:
-                # LLM refused to use real data — re-invoke with stronger prompt
-                logger.info("Re-invoking %s with anti-refusal prompt", self.name)
+                # LLM refused to use real data or invented numbers — re-invoke with stronger prompt
+                logger.info("Re-invoking %s with anti-hallucination prompt", self.name)
                 retry_msg = SystemMessage(content=(
-                    "⚠️ TU RESPUESTA ANTERIOR FUE RECHAZADA porque dijiste 'no tengo acceso' "
-                    "o similar. ESTO ES INCORRECTO. Los datos reales YA fueron consultados y "
-                    "están disponibles arriba en 'DATOS REALES DE LA BASE DE DATOS'. "
-                    "DEBES usar esos datos para responder. NUNCA digas que no tienes acceso. "
+                    "⚠️ TU RESPUESTA ANTERIOR FUE RECHAZADA porque contenía datos inventados "
+                    "o dijiste 'no tengo acceso'. ESTO ES INCORRECTO.\n"
+                    "Los datos reales YA fueron consultados y están disponibles arriba en "
+                    "'DATOS REALES DE LA BASE DE DATOS'.\n"
+                    "DEBES usar EXCLUSIVAMENTE esos datos para responder.\n"
+                    "NUNCA inventes nombres de proveedores, clientes, productos ni montos.\n"
+                    "NUNCA digas que no tienes acceso.\n"
+                    "Los ÚNICOS números que puedes usar son los que aparecen LITERALMENTE en los datos.\n"
                     "Genera la respuesta ahora usando EXCLUSIVAMENTE los datos proporcionados."
                 ))
                 messages.append(retry_msg)
@@ -485,8 +591,8 @@ class BaseAgent(ABC):
                 try:
                     retry_response = await self.llm.ainvoke(messages)
                     response_text = retry_response.content
-                    # Check again - if still refusing, use fallback
-                    if self._detect_hallucination(response_text, has_data):
+                    # Check again - if still hallucinating, use fallback
+                    if self._detect_hallucination(response_text, has_data, data_context):
                         response_text = self._HALLUCINATION_REPLACEMENT
                 except Exception:
                     response_text = self._HALLUCINATION_REPLACEMENT
@@ -516,7 +622,7 @@ class BaseAgent(ABC):
         response and, if hallucination is detected (no real data but tables
         with numbers appeared), replaces the entire response.
         """
-        messages, has_data = self._build_messages(message, history, org_ids, salesrep_id)
+        messages, has_data, data_context = self._build_messages(message, history, org_ids, salesrep_id)
         accumulated = []
         async for chunk in self.llm.astream(messages):
             if chunk.content:
@@ -526,7 +632,7 @@ class BaseAgent(ABC):
         # Post-stream hallucination check
         if accumulated:
             full_response = "".join(accumulated)
-            if self._detect_hallucination(full_response, has_data):
+            if self._detect_hallucination(full_response, has_data, data_context):
                 logger.warning(
                     "Hallucination detected in streamed %s (has_data=%s).",
                     self.name, has_data,

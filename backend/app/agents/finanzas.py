@@ -271,6 +271,8 @@ Datos financieros de iDempiere:
                 mes=mes, anio=anio, org_ids=org_ids,
                 date_from=date_from, date_to=date_to,
             )
+            if not self._dict_has_data(summary):
+                return None
             sections.append(self._format_financial_summary(summary, label))
 
             include_receivables = any(w in msg for w in self._RECEIVABLES_KEYWORDS)

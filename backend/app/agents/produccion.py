@@ -346,8 +346,9 @@ Datos de producción en iDempiere:
                     org_ids=org_ids,
                     org_name=org_name,
                 )
-                sections.append(self._format_summary(bom_data, "Recetas / Bill of Materials (BOM)"))
-                sections.append(self._row_count_marker(bom_data))
+                if self._dict_has_data(bom_data):
+                    sections.append(self._format_summary(bom_data, "Recetas / Bill of Materials (BOM)"))
+                    sections.append(self._row_count_marker(bom_data))
 
             # 3. Warehouse movements (m_movement)
             if wants_movements:
@@ -356,8 +357,9 @@ Datos de producción en iDempiere:
                     date_from=date_from, date_to=date_to,
                     org_name=org_name,
                 )
-                sections.append(self._format_summary(mov_data, f"Movimientos entre Almacenes - {label}"))
-                sections.append(self._row_count_marker(mov_data))
+                if self._dict_has_data(mov_data):
+                    sections.append(self._format_summary(mov_data, f"Movimientos entre Almacenes - {label}"))
+                    sections.append(self._row_count_marker(mov_data))
 
             # 4. Material movements (m_inout) — recepciones/despachos
             if wants_documents:
