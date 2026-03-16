@@ -12,7 +12,7 @@
 |------|--------|---|
 | Backend - Core (API, Auth, RBAC) | ✅ Completo | 100% |
 | Backend - 7 Agentes IA | ✅ Completo, conectados a iDempiere real | 100% |
-| Backend - Datos demo | ✅ Completo (usado para dev/testing) | 100% |
+| Backend - Datos demo (solo para dev sin VPN, NO se usa en produccion) | ✅ Completo | 100% |
 | Frontend - Core (Chat, Admin, Export) | ✅ Completo | 100% |
 | Selector de agentes (reemplazo orchestrator) | ✅ Completo | 100% |
 | Conexion iDempiere real | ✅ Completo (7/7 agentes conectados) | 100% |
@@ -288,10 +288,14 @@ Usuario → Frontend (Next.js) → API (FastAPI) → Agente seleccionado → SQL
 1. Usuario selecciona pestana del agente (ej: "Ventas")
 2. Escribe su pregunta en lenguaje natural
 3. El agente extrae parametros (fecha, zona, moneda, organizacion)
-4. Ejecuta queries SQL contra iDempiere (read-only)
+4. Ejecuta queries SQL contra **iDempiere real** (192.168.1.73, read-only)
 5. Formatea los datos reales en tablas markdown
 6. El LLM presenta los datos con contexto y sugerencias
 7. El usuario puede exportar a CSV, Excel o PDF
+
+> **IMPORTANTE:** Todos los datos que muestra el bot vienen directamente de iDempiere
+> en tiempo real. NO se usan datos demo ni simulados en produccion. Los datos demo solo
+> existen para desarrollo local cuando no hay acceso VPN al servidor de Santoni.
 
 ### Proveedores de IA
 
