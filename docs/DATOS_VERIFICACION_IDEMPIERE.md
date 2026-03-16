@@ -2117,4 +2117,179 @@ en vez de "Dólares (USD)". Las demás 16 cuentas con saldo 0 no tienen impacto 
 - Nómina Vacaciones
 - Nómina Utilidades
 - Nómina Liquidación
+
+---
+
+## 18. Compras de Insumos
+
+> **Fecha de verificación:** 2026-03-16 05:06
+
+### 18.1 Totales por año y moneda (2024-2026)
+
+| Año | Moneda | Facturas | Total |
+|-----|--------|----------|-------|
+| 2024 | Bs. | 6,944 | 1,380,845,431.89 |
+| 2024 | USD | 12,208 | 30,859,154.10 |
+| 2025 | Bs. | 7,408 | 8,257,254,015.78 |
+| 2025 | USD | 14,056 | 33,735,187.08 |
+| 2026 | Bs. | 1,089 | 2,960,146,180.86 |
+| 2026 | USD | 2,991 | 6,094,076.73 |
+
+> Nota: Existen facturas con años erróneos (2047, 2201, 2202, 2502, 20243) con montos menores a Bs. 75.
+
+### 18.2 Compras por mes 2026 y moneda
+
+| Mes | Moneda | Facturas | Total |
+|-----|--------|----------|-------|
+| Enero | Bs. | 485 | 1,143,289,607.61 |
+| Enero | USD | 1,051 | 2,705,654.65 |
+| Febrero | Bs. | 445 | 1,688,408,303.59 |
+| Febrero | USD | 1,291 | 2,331,249.29 |
+| Marzo | Bs. | 158 | 128,444,876.98 |
+| Marzo | USD | 648 | 1,057,132.79 |
+
+> Nota: 1 factura en diciembre (Bs. 3,392.68) y 1 en diciembre USD ($40.00) - probablemente error de fecha.
+
+### 18.3 Top 20 proveedores 2026 (por monto Bs.)
+
+| # | Proveedor | Moneda | Facturas | Total |
+|---|-----------|--------|----------|-------|
+| 1 | GSI FOOD INC | Bs. | 1 | 522,284,381.85 |
+| 2 | JAMNY SALVADOR VALLTA RUSSA | Bs. | 5 | 471,846,756.99 |
+| 3 | RAFAEL ANGELINO ROJAS | Bs. | 4 | 366,639,759.68 |
+| 4 | JOSE LUIS PEREZ DEL PALOMAR MIGUEL | Bs. | 1 | 138,076,024.17 |
+| 5 | TESORO NACIONAL | Bs. | 95 | 125,100,371.25 |
+| 6 | ALCALDIA MUNICIPIO AGUA BLANCA | Bs. | 35 | 96,073,388.51 |
+| 7 | YOVANNY JOSE CORDOVA HERNANDEZ | Bs. | 2 | 67,314,745.43 |
+| 8 | JOSE GREGORIO ESCALONA | Bs. | 2 | 57,363,048.36 |
+| 9 | YSIDRO ANTONIO RIVERO CASTILLO | Bs. | 5 | 55,131,898.28 |
+| 10 | EDGAR JOSE MIRANDA CABAÑA | Bs. | 1 | 53,251,932.25 |
+| 11 | RODOLFO ANTONIO RIVERO RODRIGUEZ | Bs. | 4 | 52,601,102.98 |
+| 12 | LUIS SIMON PEREZ DEL PALOMAR GONZALEZ | Bs. | 1 | 51,883,747.63 |
+| 13 | RODRIGO JESUS PEÑA CORDERO | Bs. | 3 | 47,299,971.13 |
+| 14 | PEDRO JOSE GARCIA | Bs. | 1 | 44,901,179.24 |
+| 15 | JOSE GREGORIO SICILIANO AMATA | Bs. | 2 | 36,360,265.49 |
+| 16 | ALVARO LUIS RIERA YEPEZ | Bs. | 1 | 33,630,004.80 |
+| 17 | GROOVY LOGISTICS,C.A | Bs. | 3 | 32,190,779.86 |
+| 18 | CORRADO ATTILIO TINE DORACIO | Bs. | 1 | 31,160,358.74 |
+| 19 | BERNARDO JOSE NARDINOCCHI MARTIN | Bs. | 1 | 30,305,284.71 |
+| 20 | AGROPECUARIA R.R, C.A. | Bs. | 2 | 29,717,238.66 |
+
+> Nota: Los top proveedores 2026 en Bs. son mayormente personas naturales (productores de arroz/maíz).
+> Esto es porque `issotrx='N'` incluye tanto compras de insumos como compras agrícolas.
+> El agente de Compras Insumos filtra ambas pero los productores dominan por volumen.
+
+### 18.4 Top 20 productos más comprados 2026
+
+| # | Código | Producto | Total (mixto) |
+|---|--------|----------|---------------|
+| 1 | 01-0 | ARROZ PADDY ACONDICIONADO | 2,397,321,343.87 |
+| 2 | 1001487 | SEMILLA ASP-18 40 KG (SANTONI) | 636,285.00 |
+| 3 | I-LAM-PRE-900 | LAMINADO PREMIUN 900GR (TIPO I) | 176,495.97 |
+| 4 | IE-AZUCAR | AZUCAR REFINADA | 106,200.00 |
+| 5 | IS-CAJ-220 | CAJA DE CARTON EMPACAR PARA CEREALES | 73,394.82 |
+| 6 | IM-ARR-SEG | ARROZ DE SEGUNDA | 65,088.00 |
+| 7 | 1001615 | DOGO 1 L (IMIDACLOPRID 20%) | 60,752.16 |
+| 8 | 1001509 | DINAZOLE X 1 LT (PROPICONAZOLE) | 54,000.00 |
+| 9 | IN-BOBI-0004 | LAMINADO PARA HARINA DE MAIZ BLANCO | 48,246.01 |
+| 10 | IE-CACAO | CACAO EN POLVO ALCALINIZADO (KG) | 40,800.00 |
+
+> Nota: ARROZ PADDY ACONDICIONADO domina con Bs. 2,397M porque las compras a productores
+> se registran como facturas de compra (issotrx='N'). Esto es normal en iDempiere.
+
+### 18.5 Órdenes de compra por estado (2026)
+
+| Estado | Órdenes | Total |
+|--------|---------|-------|
+| Completada | 3,017 | 2,239,786,577.90 |
+| En Proceso | 68 | 25,718,587.80 |
+| Borrador | 57 | 9,513.00 |
+
+### 18.6 Estado de pago de facturas de compra 2026
+
+| Estado | Facturas | Total |
+|--------|----------|-------|
+| Pagada | 3,189 | 2,938,666,884.42 |
+| Pendiente | 891 | 27,573,373.17 |
+
+> Total facturas 2026: 4,080 (3,189 pagadas + 891 pendientes)
+> % pagadas: 78.2% por cantidad, 99.1% por monto
+
+### 18.7 Top 10 facturas de compra vencidas sin pagar (2026)
+
+| # | Proveedor | Factura | Fecha | Monto (Bs.) | Días |
+|---|-----------|---------|-------|-------------|------|
+| 1 | MONTANA GRAFICA C.A | 1290442 | 2026-02-13 | 4,242,002.62 | 31 |
+| 2 | MONTANA GRAFICA C.A | 1290443 | 2026-02-13 | 4,238,681.96 | 31 |
+| 3 | MAXCA C A | 1289982 | 2026-02-10 | 3,432,311.19 | 34 |
+| 4 | FLEXOVEN C.A | 1039379 | 2026-02-27 | 2,027,955.58 | 17 |
+| 5 | QUEVELUG C.A | 1290935 | 2026-02-06 | 1,230,100.35 | 38 |
+| 6 | MONTANA GRAFICA C.A | 1290440 | 2026-02-12 | 1,143,996.98 | 32 |
+| 7 | QUEVELUG C.A | 1039639 | 2026-02-18 | 1,096,590.05 | 26 |
+| 8 | QUEVELUG C.A | 1027606 | 2026-02-06 | 1,054,371.73 | 38 |
+| 9 | QUEVELUG C.A | 1289979 | 2026-01-09 | 1,050,259.37 | 66 |
+| 10 | ESAINCA, S.A | 1038452 | 2026-02-09 | 843,333.79 | 35 |
+
+### 18.8 Historial de compras de polietileno (últimas 10)
+
+| Código | Producto | Proveedor | Factura | Fecha | Cant. | P.Unit. | Total |
+|--------|----------|-----------|---------|-------|-------|---------|-------|
+| IE-BOLSA-POL | BOLSA DE POLIETILENO 60x75x | PLÁSTICOS LA DINASTÍA | PREF-024615 | 2025-11-25 | 6,000 | 0.18 | 1,080.00 |
+| REP-BOLSA-1254 | BOLSA 1/4 POLIETILENO | ENVASES BOULEVARD | PREF-024444 | 2025-11-14 | 1,000 | 0.004 | 4.14 |
+| REP-CANG-0004 | CANGILON DE POLIETILENO 10"X6" | M&G GROUP | PREF-024036 | 2025-10-03 | 40 | 9.20 | 368.00 |
+| IE-BOLSA-POL | BOLSA DE POLIETILENO 60x75x | PLÁSTICOS LA DINASTÍA | PREF-023967 | 2025-10-02 | 2,000 | 0.18 | 360.00 |
+| IE-BOLSA-POL | BOLSA DE POLIETILENO 60x75x | PLÁSTICOS LA DINASTÍA | PREF-023181 | 2025-08-06 | 2,000 | 0.18 | 360.00 |
+
+> Proveedor principal: PLÁSTICOS LA DINASTÍA, C.A. (precio estable $0.18/unidad)
+> Última compra: 2025-11-25 (no hay compras de polietileno en 2026)
+
+### 18.9 Compras por organización 2026
+
+| Organización | Moneda | Facturas | Total |
+|-------------|--------|----------|-------|
+| INPROA SANTONI C.A. | Bs. | 470 | 2,721,423,414.64 |
+| InproMaiz C.A | Bs. | 144 | 103,618,060.60 |
+| AGROPECUARIA R.R. C.A. | Bs. | 151 | 44,713,620.03 |
+| INVERSIONES AGA C.A | Bs. | 65 | 26,142,903.25 |
+| AGROINPROA C.A | Bs. | 80 | 26,132,663.59 |
+| Santoni Service C.A | Bs. | 104 | 24,277,808.99 |
+| AGA AGRICOLA C.A | Bs. | 75 | 13,837,709.76 |
+| INPROA SANTONI C.A. | USD | 788 | 2,047,342.92 |
+| AGROINPROA C.A | USD | 169 | 1,267,254.42 |
+| InproMaiz C.A | USD | 573 | 1,239,081.60 |
+| Santoni Service C.A | USD | 729 | 1,020,467.18 |
+| AGROPECUARIA R.R. C.A. | USD | 545 | 268,834.66 |
+| INVERSIONES AGA C.A | USD | 47 | 133,720.15 |
+| AGA AGRICOLA C.A | USD | 140 | 117,375.80 |
+
+### 18.10 Inventario por categoría (top 15, stock actual)
+
+| # | Categoría | Productos | Cantidad Total |
+|---|-----------|-----------|---------------|
+| 1 | Grupo 02 - ARROZ GRANEL EN PROCESO | 6 | 85,253,304.98 |
+| 2 | Grupo 02 - MAIZ GRANEL EN PROCESO | 5 | 5,805,603.93 |
+| 3 | Grupo 11 - PRODUCTOS EN PROCESO (EXTRUSORA) | 12 | 1,469,626.47 |
+| 4 | Grupo 05 - ARROZ BLANCO DE MESA PT | 18 | 1,306,905.16 |
+| 5 | I - INSUMOS MOLINO | 39 | 1,245,669.85 |
+| 6 | Grupo 03 - MAIZ PRODUCTO TERMINADO | 4 | 188,002.13 |
+| 7 | Grupo 13 - PRODUCTOS EN PROCESO (EXTRUSORA) | 22 | 169,334.50 |
+| 8 | DESPERDICIO | 1 | 110,436.50 |
+| 9 | IE - INSUMOS EXTRUSORA (BEBIDAS) | 15 | 95,033.77 |
+| 10 | MANTENIMIENTO INSTALACIONES FINCA | 2,359 | 76,843.60 |
+
+### 18.11 Observaciones importantes para validación
+
+1. **Compras de insumos vs compras agrícolas**: Las queries con `issotrx='N'` incluyen AMBAS.
+   Los productores de arroz/maíz dominan el top de proveedores y productos por volumen.
+   El agente de Compras Productores debería filtrar solo compras agrícolas.
+
+2. **Moneda mixta por defecto**: Cuando el agente no recibe filtro de moneda, `build_supply_purchases`
+   muestra "Todas las monedas (mixto)". Los totales mezclan Bs. y USD. El usuario debe especificar
+   "en bolívares" o "en dólares" para ver datos separados.
+
+3. **Polietileno**: No hay compras de polietileno en 2026. El agente debería hacer fallback
+   al historial completo y mostrar las compras de 2025.
+
+4. **QUEVELUG**: Aparece 3+ veces en facturas vencidas con variaciones de nombre
+   (mismo problema de data quality que en Finanzas).
 - Nómina Especial
