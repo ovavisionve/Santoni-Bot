@@ -200,11 +200,14 @@ def _add_exclude_internal_orgs_filter(
     params: dict,
     table_alias: str = "bp",
 ) -> None:
-    """Exclude internal Santoni group organizations from producer queries."""
-    placeholders = ", ".join(f":_intorg_{i}" for i in range(len(_INTERNAL_ORG_NAMES)))
-    conditions.append(f"LOWER({table_alias}.name) NOT IN ({placeholders})")
+    """Exclude internal Santoni group organizations from producer queries.
+
+    Uses ILIKE with partial match because iDempiere names may include
+    suffixes like ', C.A.' or variations in punctuation.
+    """
     for i, name in enumerate(_INTERNAL_ORG_NAMES):
-        params[f"_intorg_{i}"] = name
+        conditions.append(f"LOWER({table_alias}.name) NOT LIKE :_intorg_{i}")
+        params[f"_intorg_{i}"] = f"%{name}%"
 
 
 def _add_currency_filter(
