@@ -294,25 +294,41 @@ Datos de producción en iDempiere:
             if not any([wants_production, wants_bom, wants_movements, wants_documents, wants_inventory]):
                 wants_production = True
 
-            # 1. Production runs (m_production) — the core new feature
+            # 1. Production activity — primary data from m_inout + supplementary from m_production
             if wants_production:
+                # m_inout is the PRIMARY source of production data in Santoni's iDempiere.
+                # Santoni tracks production via material movements (V+=receipt, C-=shipment,
+                # P+=production), NOT via the Manufacturing module (pp_order is empty).
+                # m_production only has ~32 records (BATCH SIROPE), not representative.
+                summary = build_production_summary(
+                    mes=mes, anio=anio, org_ids=org_ids,
+                    date_from=date_from, date_to=date_to,
+                    org_name=org_name,
+                )
+                total_movs = summary.get("totales", {}).get("total_movimientos", 0)
+                if total_movs > 0:
+                    sections.append(self._format_summary(summary, f"Actividad de Producción (Movimientos) - {label}"))
+                    sections.append(self._row_count_marker(summary))
+
+                # Also include m_production data if any exists (supplementary)
                 prod_data = build_production_runs(
                     mes=mes, anio=anio, org_ids=org_ids,
                     date_from=date_from, date_to=date_to,
                     org_name=org_name, product_search=product_search,
                 )
                 total_prods = prod_data.get("totales", {}).get("total_producciones", 0)
-                if total_prods == 0:
+                if total_prods > 0:
+                    sections.append(self._format_summary(prod_data, f"Producciones Directas (m_production) - {label}"))
+                    sections.append(self._row_count_marker(prod_data))
+
+                # If neither source has data, inform the user
+                if total_movs == 0 and total_prods == 0:
                     sections.append(
-                        f"## Producciones - {label}\n"
-                        f"**RESULTADO: 0 producciones encontradas** para el período {label}.\n"
-                        f"La consulta se ejecutó correctamente contra la base de datos pero no "
-                        f"arrojó registros en la tabla m_production para los filtros aplicados.\n"
+                        f"## Producción - {label}\n"
+                        f"**RESULTADO: 0 registros de producción encontrados** para el período {label}.\n"
+                        f"No se encontraron movimientos de inventario ni producciones directas.\n"
                         f"PROHIBIDO inventar cifras. Solo informa que no hay datos y sugiere consultas alternativas."
                     )
-                else:
-                    sections.append(self._format_summary(prod_data, f"Producciones - {label}"))
-                    sections.append(self._row_count_marker(prod_data))
 
             # 2. BOMs / recipes
             if wants_bom:
@@ -338,13 +354,15 @@ Datos de producción en iDempiere:
 
             # 4. Material movements (m_inout) — recepciones/despachos
             if wants_documents:
-                summary = build_production_summary(
-                    mes=mes, anio=anio, org_ids=org_ids,
-                    date_from=date_from, date_to=date_to,
-                    org_name=org_name,
-                )
-                sections.append(self._format_summary(summary, f"Movimientos de Inventario - {label}"))
-                sections.append(self._row_count_marker(summary))
+                # Avoid duplicating build_production_summary if already called above
+                if not wants_production:
+                    summary = build_production_summary(
+                        mes=mes, anio=anio, org_ids=org_ids,
+                        date_from=date_from, date_to=date_to,
+                        org_name=org_name,
+                    )
+                    sections.append(self._format_summary(summary, f"Movimientos de Inventario - {label}"))
+                    sections.append(self._row_count_marker(summary))
 
                 data = build_production_orders(
                     mes=mes, anio=anio, org_ids=org_ids,
