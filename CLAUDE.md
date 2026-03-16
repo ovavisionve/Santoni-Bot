@@ -288,7 +288,7 @@ Se crearon cuestionarios para que cada departamento valide las respuestas del bo
 
 ### Branch de desarrollo: `claude/general-session-YZXaU`
 ### Tag de seguridad: `pre-keywords-integration` → commit `69575e4` (estado antes de keywords.py)
-### HEAD actual: `d6eb13f` (incluye keywords.py integrado en 7 agentes)
+### HEAD actual: `d7d8130` (incluye fix compras productores: outliers + deduplicación)
 
 ### Estado de Validación por Agente (verificado contra `docs/DATOS_VERIFICACION_IDEMPIERE.md` del 13/Mar)
 
@@ -300,7 +300,7 @@ Se crearon cuestionarios para que cada departamento valide las respuestas del bo
 | **Producción** | ✅ Funcional | Sí | Datos plausibles | Proporciones ene vs año cuadran (~40-47%) |
 | **Contabilidad** | ❌ ROTO | Sí | 0 movimientos siempre | **BUG CRÍTICO**: ver sección abajo |
 | **Compras Insumos** | ⚠️ Parcial | Parcial | Algunos datos, otros alucinados | Funciones con filtro de producto OK, funciones generales tienen problemas |
-| **Compras Productores** | ⚠️ Parcial | Parcial | Inconsistencias en totales | INPROA aparece como "productor" distorsionando totales |
+| **Compras Productores** | ⚠️ En corrección | Sí | Pendiente validar | Filtros ajustados para coincidir con datos verificación iDempiere |
 
 ---
 
@@ -390,14 +390,22 @@ TOP 20 CUENTAS CON MÁS MOVIMIENTOS EN 2026:
 6. **"Proveedores que venden azúcar"**: El LLM inventa proveedores inexistentes
    ("ALIMENTOS AGRÍCOLAS SANTA FE", "DISTRIBUIDORA LA ESTRELLA").
 
-### Problemas conocidos en Compras Productores (pendiente de fix)
+### Correcciones en Compras Productores
 
-1. **INPROA SANTONI aparece como "productor"** con 36M kg cuando el total del resumen dice 7.6M kg.
-   INPROA se compra arroz a sí misma en iDempiere (transferencia interna contable).
-   Esto distorsiona todos los totales y el precio promedio.
+1. **Exclusión de empresas internas**: Se agregó `_add_exclude_internal_orgs_filter()` con 8 empresas
+   del grupo Santoni. Usa `NOT LIKE` con match parcial para cubrir variaciones de nombre.
 
-2. **Precio promedio arroz inflado**: Bot dice 1,527,346 Bs/kg, dato real ~182 Bs/kg.
-   Consecuencia directa de incluir las auto-compras de INPROA a precios contables artificiales.
+2. **Filtro `codigoproductor` eliminado**: Excluía ~94% de los registros (21 guías vs 356 reales).
+   Los datos de verificación de iDempiere no filtran por este campo. Se removió de
+   `build_producer_purchases`, `build_producer_price_analysis` y `build_producer_pending_payments`.
+   Se mantiene solo en `build_registered_producers` donde SÍ es el criterio correcto.
+
+3. **Deduplicación de productores**: JOIN de ubicación cambiado a `LATERAL` subquery con `LIMIT 1`
+   y GROUP BY por `bp.c_bpartner_id` para evitar duplicación por múltiples direcciones.
+
+4. **Datos de verificación objetivo** (DATOS_VERIFICACION_IDEMPIERE.md):
+   - Arroz Paddy 2026: 356 guías, 7,657,696.79 kg, 1,397,225,883.67 Bs.
+   - Precio promedio esperado: ~182 Bs/kg
 
 ### Módulo de Keywords (`backend/app/agents/keywords.py`) — commit d6eb13f
 

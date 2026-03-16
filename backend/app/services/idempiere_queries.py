@@ -2635,11 +2635,6 @@ def build_producer_purchases(
             "o.issotrx = 'N'",
             "o.docstatus IN ('CO', 'CL')",
             "o.isactive = 'Y'",
-            # Only real agricultural producers (exclude internal orgs like INPROA)
-            "bp.codigoproductor IS NOT NULL",
-            "bp.codigoproductor != ''",
-            # Exclude data-entry errors: a real agricultural delivery is > 50 kg
-            "ol.qtyordered > 50",
         ]
         params: dict = {}
         _add_exclude_internal_orgs_filter(conditions, params, "bp")
@@ -2652,7 +2647,7 @@ def build_producer_purchases(
 
         where = " AND ".join(conditions)
 
-        # Totals (JOIN c_bpartner to apply codigoproductor filter)
+        # Totals
         totals_q = text(
             f"SELECT COUNT(DISTINCT o.c_order_id) AS total_guias, "
             f"COALESCE(SUM(ol.qtyordered), 0) AS total_peso_neto_kg, "
@@ -2812,9 +2807,6 @@ def build_producer_pending_payments(
             "i.ispaid = 'N'",
             "i.isactive = 'Y'",
             "i.dateinvoiced >= (CURRENT_DATE - INTERVAL '2 years')",
-            # Only real agricultural producers (exclude internal orgs like INPROA)
-            "bp.codigoproductor IS NOT NULL",
-            "bp.codigoproductor != ''",
         ]
         params: dict = {}
         _add_exclude_internal_orgs_filter(conditions, params, "bp")
@@ -2870,11 +2862,6 @@ def build_producer_price_analysis(
             "o.issotrx = 'N'",
             "o.docstatus IN ('CO', 'CL')",
             "o.isactive = 'Y'",
-            # Only real agricultural producers (exclude internal orgs like INPROA)
-            "bp.codigoproductor IS NOT NULL",
-            "bp.codigoproductor != ''",
-            # Exclude data-entry errors: a real agricultural delivery is > 50 kg
-            "ol.qtyordered > 50",
         ]
         params: dict = {}
         _add_exclude_internal_orgs_filter(conditions, params, "bp")
