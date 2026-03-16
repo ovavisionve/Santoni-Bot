@@ -213,10 +213,11 @@ export default function ChatWindow({
         </div>
       </div>
 
-      {/* Agent Selector */}
-      {agents.length > 0 && (
-        <div className="border-b border-gray-200 bg-gray-50 px-4 py-2 shrink-0">
+      {/* Agent Selector — always visible */}
+      <div className="border-b border-gray-200 bg-gray-50 px-4 py-2 shrink-0">
+        {agents.length > 0 ? (
           <div className="flex items-center gap-1.5 overflow-x-auto hide-scrollbar">
+            <span className="text-xs text-gray-400 font-medium mr-1 shrink-0">Agente:</span>
             {agents.map((agent) => (
               <button
                 key={agent.name}
@@ -234,8 +235,12 @@ export default function ChatWindow({
               </button>
             ))}
           </div>
-        </div>
-      )}
+        ) : (
+          <p className="text-xs text-amber-600 font-medium">
+            Cargando agentes disponibles...
+          </p>
+        )}
+      </div>
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto chat-scroll p-4 space-y-4">
@@ -362,11 +367,17 @@ export default function ChatWindow({
               value={input}
               onChange={handleInputChange}
               onKeyDown={handleKeyDown}
-              placeholder={attachedFile ? "Escribe tu consulta sobre el documento..." : "Escribe tu consulta..."}
+              placeholder={
+                !selectedAgent
+                  ? "Selecciona un agente arriba antes de consultar..."
+                  : attachedFile
+                  ? "Escribe tu consulta sobre el documento..."
+                  : "Escribe tu consulta..."
+              }
               rows={1}
               className="input-field resize-none pr-4 max-h-32"
               style={{ minHeight: "44px" }}
-              disabled={isBusy}
+              disabled={isBusy || !selectedAgent}
             />
             {/* Character count */}
             {charCount > 0 && (
@@ -385,9 +396,9 @@ export default function ChatWindow({
           </div>
           <button
             type="submit"
-            disabled={!input.trim() || isBusy}
+            disabled={!input.trim() || isBusy || !selectedAgent}
             className="btn-primary p-3 rounded-xl"
-            title="Enviar mensaje"
+            title={!selectedAgent ? "Selecciona un agente primero" : "Enviar mensaje"}
           >
             {isBusy ? (
               <div className="w-[18px] h-[18px] border-2 border-white border-t-transparent rounded-full animate-spin" />

@@ -141,22 +141,24 @@ async def stream_message(
     db.commit()
 
     history = _get_history(db, conversation.id)
-    last_agent = _get_last_agent(db, conversation.id)
 
-    # Direct agent selection: if agent_name is provided and valid, skip orchestrator
-    if data.agent_name and data.agent_name in _VALID_AGENTS:
-        # Verify user has access to this agent's department
-        if data.agent_name not in current_user.allowed_departments:
-            from fastapi.responses import JSONResponse
-            return JSONResponse(
-                status_code=403,
-                content={"detail": f"No tienes acceso al agente de {data.agent_name}"},
-            )
-        agent_name = data.agent_name
-        routing_score = 1.0
-        match_type = "direct_selection"
-    else:
-        agent_name, routing_score, match_type = await orchestrator.get_stream_agent_name(data.message, current_user, last_agent=last_agent)
+    # Agent selection is required — orchestrator removed
+    if not data.agent_name or data.agent_name not in _VALID_AGENTS:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=400,
+            content={"detail": "Debes seleccionar un agente antes de enviar tu consulta."},
+        )
+    # Verify user has access to this agent's department
+    if data.agent_name not in current_user.allowed_departments:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=403,
+            content={"detail": f"No tienes acceso al agente de {data.agent_name}"},
+        )
+    agent_name = data.agent_name
+    routing_score = 1.0
+    match_type = "direct_selection"
 
     # Send initial metadata
     conv_id = conversation.id
@@ -180,27 +182,17 @@ async def stream_message(
             yield f"data: {json.dumps({'type': 'token', 'content': cached['response']})}\n\n"
         else:
             try:
-                # Direct agent selection: call agent directly, skip orchestrator routing
-                if data.agent_name and data.agent_name in _VALID_AGENTS and agent_name in orchestrator.agents:
-                    agent = orchestrator.agents[agent_name]
-                    async for token in agent.stream(
-                        message=message_text,
-                        history=history,
-                        user_departments=current_user.allowed_departments,
-                        org_ids=current_user.org_ids,
-                        salesrep_id=current_user.idempiere_salesrep_id,
-                    ):
-                        full_response.append(token)
-                        yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
-                else:
-                    async for token in orchestrator.stream(
-                        message=message_text,
-                        user=current_user,
-                        history=history,
-                        last_agent=last_agent,
-                    ):
-                        full_response.append(token)
-                        yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
+                # Call the selected agent directly
+                agent = orchestrator.agents[agent_name]
+                async for token in agent.stream(
+                    message=message_text,
+                    history=history,
+                    user_departments=current_user.allowed_departments,
+                    org_ids=current_user.org_ids,
+                    salesrep_id=current_user.idempiere_salesrep_id,
+                ):
+                    full_response.append(token)
+                    yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
             except Exception as exc:
                 logger.error("Streaming error: %s: %s", type(exc).__name__, exc, exc_info=True)
                 error_msg = f"Error al consultar el modelo de IA: {type(exc).__name__}"
@@ -307,8 +299,22 @@ async def send_message(
             logger.info("Document attached: %s (%s)", document.get("filename"), document["type"])
 
     try:
-        # Direct agent selection: bypass orchestrator
-        if data.agent_name and data.agent_name in _VALID_AGENTS and not document:
+        # Document analysis: use orchestrator for Claude-based document analysis
+        if document:
+            result = await orchestrator.process(
+                message=data.message,
+                user=current_user,
+                history=history,
+                document=document,
+                last_agent=last_agent,
+            )
+        else:
+            # Agent selection is required
+            if not data.agent_name or data.agent_name not in _VALID_AGENTS:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Debes seleccionar un agente antes de enviar tu consulta.",
+                )
             if data.agent_name not in current_user.allowed_departments:
                 raise HTTPException(
                     status_code=403,
@@ -325,14 +331,6 @@ async def send_message(
             score, breakdown = compute_confidence_score(1.0, result.get("metadata", {}).get("has_data", False), data.agent_name)
             result["confidence_score"] = score
             result["score_breakdown"] = {**breakdown, "match_type": "direct_selection"}
-        else:
-            result = await orchestrator.process(
-                message=data.message,
-                user=current_user,
-                history=history,
-                document=document,
-                last_agent=last_agent,
-            )
     except HTTPException:
         raise
     except Exception as exc:
