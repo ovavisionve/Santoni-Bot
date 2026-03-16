@@ -1876,6 +1876,214 @@ def check_finanzas(db):
     table(rows)
 
 
+def check_compras_insumos(db):
+    """Verificar datos de compras de insumos (facturas de compra issotrx='N')."""
+    header("VERIFICACIÓN: COMPRAS DE INSUMOS")
+
+    cur_label = (
+        "CASE WHEN i.c_currency_id = 205 THEN 'Bs.' "
+        "WHEN i.c_currency_id IN "
+        "(100,1000000,1000003,1000006,1000008,1000009,1000011,1000013,1000017) "
+        "THEN 'USD' ELSE 'Otro' END"
+    )
+
+    # --- 1. Totales por año y moneda ---
+    subheader("1. Totales de compras por año y moneda (2024-2026)")
+    q = text(f"""
+        SELECT EXTRACT(YEAR FROM i.dateinvoiced)::int AS anio,
+               {cur_label} AS moneda,
+               COUNT(DISTINCT i.c_invoice_id) AS facturas,
+               COALESCE(SUM(i.grandtotal), 0) AS total_monto
+        FROM adempiere.c_invoice i
+        WHERE i.issotrx = 'N' AND i.docstatus IN ('CO', 'CL') AND i.isactive = 'Y'
+          AND EXTRACT(YEAR FROM i.dateinvoiced) >= 2024
+        GROUP BY EXTRACT(YEAR FROM i.dateinvoiced), {cur_label}
+        ORDER BY anio, moneda
+    """)
+    rows = [{"anio": r[0], "moneda": r[1], "facturas": r[2],
+             "total_monto": float(r[3])} for r in db.execute(q).fetchall()]
+    table(rows)
+
+    # --- 2. Compras por mes 2026 y moneda ---
+    subheader("2. Compras por mes 2026 y moneda")
+    q = text(f"""
+        SELECT EXTRACT(MONTH FROM i.dateinvoiced)::int AS mes,
+               {cur_label} AS moneda,
+               COUNT(DISTINCT i.c_invoice_id) AS facturas,
+               COALESCE(SUM(i.grandtotal), 0) AS total_monto
+        FROM adempiere.c_invoice i
+        WHERE i.issotrx = 'N' AND i.docstatus IN ('CO', 'CL') AND i.isactive = 'Y'
+          AND EXTRACT(YEAR FROM i.dateinvoiced) = 2026
+        GROUP BY EXTRACT(MONTH FROM i.dateinvoiced), {cur_label}
+        ORDER BY mes, moneda
+    """)
+    rows = [{"mes": r[0], "moneda": r[1], "facturas": r[2],
+             "total_monto": float(r[3])} for r in db.execute(q).fetchall()]
+    table(rows)
+
+    # --- 3. Top 20 proveedores 2026 (todas las monedas) ---
+    subheader("3. Top 20 proveedores 2026 (todas las monedas)")
+    q = text(f"""
+        SELECT bp.name AS proveedor,
+               {cur_label} AS moneda,
+               COUNT(DISTINCT i.c_invoice_id) AS facturas,
+               COALESCE(SUM(i.grandtotal), 0) AS total
+        FROM adempiere.c_invoice i
+        JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id
+        WHERE i.issotrx = 'N' AND i.docstatus IN ('CO', 'CL') AND i.isactive = 'Y'
+          AND EXTRACT(YEAR FROM i.dateinvoiced) = 2026
+        GROUP BY bp.name, {cur_label}
+        ORDER BY total DESC
+        LIMIT 20
+    """)
+    rows = [{"proveedor": r[0], "moneda": r[1], "facturas": r[2],
+             "total": float(r[3])} for r in db.execute(q).fetchall()]
+    table(rows)
+
+    # --- 4. Top 20 productos más comprados 2026 ---
+    subheader("4. Top 20 productos más comprados 2026")
+    q = text("""
+        SELECT p.value AS codigo, p.name AS producto,
+               COALESCE(SUM(il.linenetamt), 0) AS total
+        FROM adempiere.c_invoice i
+        JOIN adempiere.c_invoiceline il ON i.c_invoice_id = il.c_invoice_id
+        JOIN adempiere.m_product p ON il.m_product_id = p.m_product_id
+        WHERE i.issotrx = 'N' AND i.docstatus IN ('CO', 'CL') AND i.isactive = 'Y'
+          AND EXTRACT(YEAR FROM i.dateinvoiced) = 2026
+        GROUP BY p.value, p.name
+        ORDER BY total DESC
+        LIMIT 20
+    """)
+    rows = [{"codigo": r[0], "producto": r[1],
+             "total": float(r[2])} for r in db.execute(q).fetchall()]
+    table(rows)
+
+    # --- 5. Órdenes de compra pendientes (c_order) ---
+    subheader("5. Órdenes de compra por estado (2026)")
+    q = text("""
+        SELECT CASE o.docstatus
+                 WHEN 'DR' THEN 'Borrador'
+                 WHEN 'IP' THEN 'En Proceso'
+                 WHEN 'CO' THEN 'Completada'
+                 ELSE o.docstatus END AS estado,
+               COUNT(DISTINCT o.c_order_id) AS ordenes,
+               COALESCE(SUM(o.grandtotal), 0) AS total
+        FROM adempiere.c_order o
+        WHERE o.issotrx = 'N' AND o.isactive = 'Y'
+          AND o.docstatus IN ('DR', 'IP', 'CO')
+          AND EXTRACT(YEAR FROM o.dateordered) = 2026
+        GROUP BY o.docstatus
+        ORDER BY total DESC
+    """)
+    rows = [{"estado": r[0], "ordenes": r[1],
+             "total": float(r[2])} for r in db.execute(q).fetchall()]
+    table(rows)
+
+    # --- 6. Estado de pago de facturas de compra 2026 ---
+    subheader("6. Estado de pago de facturas de compra 2026")
+    q = text("""
+        SELECT CASE WHEN i.ispaid = 'Y' THEN 'Pagada' ELSE 'Pendiente' END AS estado_pago,
+               COUNT(*) AS facturas,
+               COALESCE(SUM(i.grandtotal), 0) AS total
+        FROM adempiere.c_invoice i
+        WHERE i.issotrx = 'N' AND i.docstatus IN ('CO', 'CL') AND i.isactive = 'Y'
+          AND EXTRACT(YEAR FROM i.dateinvoiced) = 2026
+        GROUP BY i.ispaid
+        ORDER BY total DESC
+    """)
+    rows = [{"estado_pago": r[0], "facturas": r[1],
+             "total": float(r[2])} for r in db.execute(q).fetchall()]
+    table(rows)
+
+    # --- 7. Top 10 facturas vencidas sin pagar 2026 ---
+    subheader("7. Top 10 facturas de compra vencidas sin pagar (2026)")
+    q = text("""
+        SELECT bp.name AS proveedor, i.documentno AS factura,
+               i.dateinvoiced AS fecha, i.grandtotal AS monto,
+               CURRENT_DATE - i.dateinvoiced AS dias
+        FROM adempiere.c_invoice i
+        JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id
+        WHERE i.issotrx = 'N' AND i.docstatus IN ('CO', 'CL') AND i.isactive = 'Y'
+          AND i.ispaid = 'N'
+          AND EXTRACT(YEAR FROM i.dateinvoiced) = 2026
+          AND i.dateinvoiced + COALESCE(
+              (SELECT pt.netdays FROM adempiere.c_paymentterm pt
+               WHERE pt.c_paymentterm_id = i.c_paymentterm_id), 30
+          ) < CURRENT_DATE
+        ORDER BY i.grandtotal DESC
+        LIMIT 10
+    """)
+    rows = [{"proveedor": r[0], "factura": r[1],
+             "fecha": str(r[2]), "monto": float(r[3]),
+             "dias": r[4]} for r in db.execute(q).fetchall()]
+    table(rows)
+
+    # --- 8. Ejemplo historial de un producto conocido (polietileno) ---
+    subheader("8. Historial de compras de 'polietileno' (últimas 10)")
+    q = text("""
+        SELECT p.value AS codigo, p.name AS producto,
+               bp.name AS proveedor, i.documentno AS factura,
+               i.dateinvoiced AS fecha,
+               il.qtyinvoiced AS cantidad,
+               il.priceactual AS precio_unitario,
+               il.linenetamt AS total_linea
+        FROM adempiere.c_invoice i
+        JOIN adempiere.c_invoiceline il ON i.c_invoice_id = il.c_invoice_id
+        JOIN adempiere.m_product p ON il.m_product_id = p.m_product_id
+        JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id
+        WHERE i.issotrx = 'N' AND i.docstatus IN ('CO', 'CL') AND i.isactive = 'Y'
+          AND LOWER(TRANSLATE(p.name, 'áéíóúÁÉÍÓÚ', 'aeiouAEIOU')) ILIKE '%polietileno%'
+        ORDER BY i.dateinvoiced DESC
+        LIMIT 10
+    """)
+    rows = [{"codigo": r[0], "producto": r[1], "proveedor": r[2],
+             "factura": r[3], "fecha": str(r[4]),
+             "cantidad": float(r[5]), "precio_unitario": float(r[6]),
+             "total_linea": float(r[7])} for r in db.execute(q).fetchall()]
+    table(rows)
+
+    # --- 9. Compras por organización 2026 ---
+    subheader("9. Compras por organización 2026")
+    q = text(f"""
+        SELECT COALESCE(o.name, 'Sin Org') AS organizacion,
+               {cur_label} AS moneda,
+               COUNT(DISTINCT i.c_invoice_id) AS facturas,
+               COALESCE(SUM(i.grandtotal), 0) AS total
+        FROM adempiere.c_invoice i
+        LEFT JOIN adempiere.ad_org o ON i.ad_org_id = o.ad_org_id
+        WHERE i.issotrx = 'N' AND i.docstatus IN ('CO', 'CL') AND i.isactive = 'Y'
+          AND EXTRACT(YEAR FROM i.dateinvoiced) = 2026
+        GROUP BY o.name, {cur_label}
+        ORDER BY total DESC
+    """)
+    rows = [{"organizacion": r[0], "moneda": r[1], "facturas": r[2],
+             "total": float(r[3])} for r in db.execute(q).fetchall()]
+    table(rows)
+
+    # --- 10. Inventario/stock resumen por categoría ---
+    subheader("10. Inventario por categoría (top 15, stock actual)")
+    q = text("""
+        SELECT COALESCE(pc.name, 'Sin Categoría') AS categoria,
+               COUNT(DISTINCT p.m_product_id) AS productos,
+               SUM(s.qtyonhand) AS cantidad_total
+        FROM adempiere.m_storageonhand s
+        JOIN adempiere.m_locator l ON s.m_locator_id = l.m_locator_id
+        JOIN adempiere.m_warehouse w ON l.m_warehouse_id = w.m_warehouse_id
+        JOIN adempiere.m_product p ON s.m_product_id = p.m_product_id
+        LEFT JOIN adempiere.m_product_category pc
+            ON p.m_product_category_id = pc.m_product_category_id
+        WHERE s.isactive = 'Y' AND s.qtyonhand <> 0
+        GROUP BY pc.name
+        ORDER BY cantidad_total DESC
+        LIMIT 15
+    """)
+    rows = [{"categoria": r[0], "productos": r[1],
+             "cantidad_total": float(r[2])} for r in db.execute(q).fetchall()]
+    table(rows)
+
+    print(f"\n  {Colors.GREEN}✅ check_compras_insumos completado{Colors.RESET}")
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -1897,6 +2105,7 @@ ALL_CHECKS = {
     "ventas": check_ventas,
     "cobranza": check_cobranza,
     "finanzas": check_finanzas,
+    "compras_insumos": check_compras_insumos,
 }
 
 
