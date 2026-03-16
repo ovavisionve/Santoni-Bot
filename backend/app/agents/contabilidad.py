@@ -185,6 +185,90 @@ Se pueden consultar cuentas específicas por código (ej: 2.01.01.10) con rango 
                 return None, None, m, a
         return None, None, None, None
 
+    @staticmethod
+    def _format_account_detail(detail: dict) -> str:
+        """Format account detail as explicit markdown."""
+        code = detail.get("cuenta_codigo", "")
+        name = detail.get("cuenta_nombre", "")
+        acct_type = detail.get("tipo_cuenta", "")
+        nature = detail.get("naturaleza", "")
+        period = detail.get("periodo", "")
+        currency = detail.get("moneda", "VES")
+        movs = detail.get("movimientos", 0)
+
+        lines = [
+            f"## Cuenta {code} — {name}",
+            f"- **Tipo:** {acct_type} | **Naturaleza:** {nature} | **Moneda:** {currency}",
+            f"- **Período:** {period}",
+            "",
+            f"| Concepto | Monto ({currency}) |",
+            "|---|---:|",
+            f"| Saldo Inicial | {detail.get('saldo_inicial', 0):,.2f} |",
+            f"| Movimientos | {movs:,} |",
+            f"| Total Debe | {detail.get('total_debe', 0):,.2f} |",
+            f"| Total Haber | {detail.get('total_haber', 0):,.2f} |",
+            f"| **Saldo Final** | **{detail.get('saldo_final', 0):,.2f}** |",
+        ]
+
+        daily = detail.get("detalle_diario", [])
+        if daily:
+            lines.append(f"\n### Detalle diario ({len(daily)} días con movimiento)")
+            lines.append("| Fecha | Asientos | Debe | Haber | Saldo |")
+            lines.append("|-------|--------:|-----:|------:|------:|")
+            for row in daily:
+                lines.append(
+                    f"| {row['fecha']} | {row['asientos']:,} | "
+                    f"{row['debe']:,.2f} | {row['haber']:,.2f} | {row['saldo']:,.2f} |"
+                )
+
+        return "\n".join(lines)
+
+    @staticmethod
+    def _format_accounting_summary(data: dict, label: str) -> str:
+        """Format accounting summary as explicit markdown so the LLM doesn't omit data."""
+        lines = [f"## Resumen Contable — {label}"]
+
+        # Totals
+        totals = data.get("totales", {})
+        lines.append(f"\n**Total asientos:** {totals.get('total_asientos', 0):,}")
+        lines.append(f"**Total debe:** {totals.get('total_debe', 0):,.2f}")
+        lines.append(f"**Total haber:** {totals.get('total_haber', 0):,.2f}")
+
+        # By account type
+        by_type = data.get("por_tipo_cuenta", [])
+        if by_type:
+            lines.append("\n### Movimientos por tipo de cuenta")
+            lines.append("| Tipo | Debe | Haber | Saldo |")
+            lines.append("|------|-----:|------:|------:|")
+            for row in by_type:
+                lines.append(
+                    f"| {row['tipo_cuenta']} | {row['debe']:,.2f} | "
+                    f"{row['haber']:,.2f} | {row['saldo']:,.2f} |"
+                )
+
+        # Balance
+        balance = data.get("balance", [])
+        if balance:
+            lines.append("\n### Balance")
+            lines.append("| Tipo | Saldo |")
+            lines.append("|------|------:|")
+            for row in balance:
+                lines.append(f"| {row['tipo']} | {row['saldo']:,.2f} |")
+
+        # Top accounts — THIS is what was being lost by the LLM
+        top = data.get("cuentas_con_mayor_movimiento", [])
+        if top:
+            lines.append(f"\n### Top {len(top)} cuentas con mayor movimiento")
+            lines.append("| # | Código | Cuenta | Debe | Haber |")
+            lines.append("|---|--------|--------|-----:|------:|")
+            for i, row in enumerate(top, 1):
+                lines.append(
+                    f"| {i} | {row['codigo']} | {row['cuenta'][:50]} | "
+                    f"{row['debe']:,.2f} | {row['haber']:,.2f} |"
+                )
+
+        return "\n".join(lines)
+
     def fetch_data(self, message: str, org_ids: list[int] | None = None, salesrep_id: int | None = None, history: list[tuple[str, str]] | None = None) -> str | None:
         sections = []
 
@@ -245,7 +329,7 @@ Se pueden consultar cuentas específicas por código (ej: 2.01.01.10) con rango 
                     if detail.get("movimientos", 0) == 0:
                         sections.append(self._format_zero_movement(detail))
                     else:
-                        sections.append(self._format_summary(detail, f"Cuenta {account_code}"))
+                        sections.append(self._format_account_detail(detail))
             else:
                 # General accounting summary (no specific account)
                 date_from, date_to = extract_date_range(message)
@@ -274,7 +358,7 @@ Se pueden consultar cuentas específicas por código (ej: 2.01.01.10) con rango 
                         label = build_period_label(mes=mes, anio=anio)
                 if not self._dict_has_data(summary):
                     return None
-                sections.append(self._format_summary(summary, f"Resumen Contable - {label}"))
+                sections.append(self._format_accounting_summary(summary, label))
 
         except Exception as exc:
             logger.error("Error consultando datos contables: %s: %s", type(exc).__name__, exc, exc_info=True)
