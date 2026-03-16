@@ -14,6 +14,7 @@ from app.agents.date_utils import (
     extract_month_year,
     build_period_label,
 )
+from app.agents.keywords import FINANZAS_CXC, matches_any
 from app.services.query_service import (
     build_financial_summary,
     build_overdue_receivables,
@@ -119,8 +120,6 @@ Datos financieros de iDempiere:
 - c_paymentterm: Términos de pago (netdays)
 - c_allocationline: Asignación de pagos a facturas
 """
-
-    _RECEIVABLES_KEYWORDS = ["cobrar", "morosidad", "vencid", "atras"]
 
     # -- helpers for currency-aware bank formatting --
     _BANK_COLUMNS = ["banco", "numero_cuenta", "tipo", "organizacion", "saldo"]
@@ -275,13 +274,11 @@ Datos financieros de iDempiere:
                 return None
             sections.append(self._format_financial_summary(summary, label))
 
-            include_receivables = any(w in msg for w in self._RECEIVABLES_KEYWORDS)
+            include_receivables = matches_any(msg, FINANZAS_CXC)
             # Follow-up: carry over receivables section from history
             if not include_receivables and history:
                 for role, content in reversed(history):
-                    if role == "user" and any(
-                        w in content.lower() for w in self._RECEIVABLES_KEYWORDS
-                    ):
+                    if role == "user" and matches_any(content.lower(), FINANZAS_CXC):
                         include_receivables = True
                         break
 

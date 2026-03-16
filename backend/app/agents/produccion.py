@@ -16,6 +16,15 @@ from app.agents.date_utils import (
     extract_month_year,
     build_period_label,
 )
+from app.agents.keywords import (
+    PRODUCCION_GENERAL,
+    PRODUCCION_MATERIA_PRIMA,
+    PRODUCCION_RECETAS,
+    PRODUCCION_ALMACENES,
+    PRODUCCION_DOCUMENTOS,
+    COMPRAS_INVENTARIO,
+    matches_any,
+)
 
 logger = logging.getLogger("santonibot.agents.produccion")
 from app.services.query_service import (
@@ -157,46 +166,12 @@ Datos de producción en iDempiere:
                 return val
         return None
 
-    _DOCUMENT_KEYWORDS = [
-        "documento", "detalle", "reciente", "último", "ultimos",
-        "recepci", "despacho", "fecha", "fechas",
-        "exacto", "exactos", "exactas", "cuáles", "cuales",
-    ]
-
-    _INVENTORY_KEYWORDS = [
-        "inventario", "stock", "existencia", "existencias",
-        "materia prima", "materias primas", "almacén", "almacen",
-        "disponible", "disponibilidad", "cuánto hay", "cuanto hay",
-        "cuánto queda", "cuanto queda", "cuánto tenemos", "cuanto tenemos",
-    ]
-
-    _PRODUCTION_KEYWORDS = [
-        "producción", "produccion", "producciones", "produjo",
-        "producido", "fabricó", "fabricado", "fabricar",
-        "fabricación", "fabricacion", "manufactura",
-        "orden de producción", "orden de produccion",
-        "órdenes de producción", "ordenes de produccion",
-        "producto terminado", "productos terminados",
-        "insumo", "insumos", "consumo", "consumido",
-        "consumieron", "gastó", "gastaron", "usaron",
-    ]
-
-    _BOM_KEYWORDS = [
-        "receta", "recetas", "bom", "bill of material",
-        "ingrediente", "ingredientes", "componente", "componentes",
-        "fórmula", "formula", "composición", "composicion",
-        "qué lleva", "que lleva", "qué tiene", "que tiene",
-        "cómo se hace", "como se hace", "de qué está hecho",
-        "de que esta hecho",
-    ]
-
-    _MOVEMENT_KEYWORDS = [
-        "traslado", "traslados", "transferencia", "transferencias",
-        "movimiento interno", "movimientos internos",
-        "entre almacen", "entre almacén", "entre almacenes",
-        "entre silo", "entre silos",
-        "mover", "movió", "trasladó", "trasladaron",
-    ]
+    # Keyword sets — from centralized keywords.py
+    _PRODUCTION_KW_SET = PRODUCCION_GENERAL | PRODUCCION_MATERIA_PRIMA
+    _BOM_KW_SET = PRODUCCION_RECETAS
+    _MOVEMENT_KW_SET = PRODUCCION_ALMACENES
+    _DOCUMENT_KW_SET = PRODUCCION_DOCUMENTOS
+    _INVENTORY_KW_SET = COMPRAS_INVENTARIO
 
     @classmethod
     def _extract_product_search(cls, msg: str) -> str | None:
@@ -287,11 +262,11 @@ Datos de producción en iDempiere:
 
         try:
             # Detect what the user is asking about
-            wants_production = any(w in msg for w in self._PRODUCTION_KEYWORDS)
-            wants_bom = any(w in msg for w in self._BOM_KEYWORDS)
-            wants_movements = any(w in msg for w in self._MOVEMENT_KEYWORDS)
-            wants_documents = any(w in msg for w in self._DOCUMENT_KEYWORDS)
-            wants_inventory = any(w in msg for w in self._INVENTORY_KEYWORDS)
+            wants_production = matches_any(msg, self._PRODUCTION_KW_SET)
+            wants_bom = matches_any(msg, self._BOM_KW_SET)
+            wants_movements = matches_any(msg, self._MOVEMENT_KW_SET)
+            wants_documents = matches_any(msg, self._DOCUMENT_KW_SET)
+            wants_inventory = matches_any(msg, self._INVENTORY_KW_SET)
 
             # Follow-up: inherit intent from history
             if not any([wants_production, wants_bom, wants_movements, wants_documents, wants_inventory]) and history:
@@ -299,19 +274,19 @@ Datos de producción en iDempiere:
                     if role != "user":
                         continue
                     c = content.lower()
-                    if any(w in c for w in self._PRODUCTION_KEYWORDS):
+                    if matches_any(c, self._PRODUCTION_KW_SET):
                         wants_production = True
                         break
-                    if any(w in c for w in self._BOM_KEYWORDS):
+                    if matches_any(c, self._BOM_KW_SET):
                         wants_bom = True
                         break
-                    if any(w in c for w in self._MOVEMENT_KEYWORDS):
+                    if matches_any(c, self._MOVEMENT_KW_SET):
                         wants_movements = True
                         break
-                    if any(w in c for w in self._DOCUMENT_KEYWORDS):
+                    if matches_any(c, self._DOCUMENT_KW_SET):
                         wants_documents = True
                         break
-                    if any(w in c for w in self._INVENTORY_KEYWORDS):
+                    if matches_any(c, self._INVENTORY_KW_SET):
                         wants_inventory = True
                         break
 

@@ -17,6 +17,14 @@ from app.agents.date_utils import (
     build_period_label,
     detect_currency,
 )
+from app.agents.keywords import (
+    VENTAS_CLIENTES,
+    VENTAS_FACTURACION,
+    VENTAS_COBRANZA,
+    VENTAS_CXC,
+    VENTAS_ZONAS,
+    matches_any,
+)
 from app.services.query_service import (
     build_sales_summary,
     build_collection_summary,
@@ -178,14 +186,6 @@ Datos de ventas de iDempiere:
         ("agroinproa", "AGROINPROA"),
         ("inversiones aga", "INVERSIONES AGA"),
     ]
-    _QUERY_TYPES = {
-        "top": ["top", "mejor", "ranking", "pareto", "principales"],
-        "cobranza": ["cobran", "cobro", "cobrad", "recauda", "pago"],
-        "vencidas": ["atrasa", "vencid", "pendiente", "deuda", "mora", "deben", "moroso"],
-        "ventas": ["venta", "factur", "ingreso", "volumen"],
-        "region": ["region", "región", "regiones"],
-    }
-
     @classmethod
     def _extract_zona(cls, msg: str) -> str | None:
         msg_lower = msg.lower()
@@ -212,10 +212,18 @@ Datos de ventas de iDempiere:
 
     @classmethod
     def _detect_query_type(cls, msg: str) -> str | None:
+        """Detect query type using centralized keywords."""
         msg_lower = msg.lower()
-        for qtype, kws in cls._QUERY_TYPES.items():
-            if any(w in msg_lower for w in kws):
-                return qtype
+        if matches_any(msg_lower, VENTAS_CLIENTES):
+            return "top"
+        if matches_any(msg_lower, VENTAS_COBRANZA):
+            return "cobranza"
+        if matches_any(msg_lower, VENTAS_CXC):
+            return "vencidas"
+        if matches_any(msg_lower, VENTAS_FACTURACION):
+            return "ventas"
+        if matches_any(msg_lower, VENTAS_ZONAS):
+            return "region"
         return None
 
     def _extract_context_from_history(
@@ -328,7 +336,7 @@ Datos de ventas de iDempiere:
             query_type = hist_ctx.get("query_type")
 
         try:
-            if query_type == "top" or any(w in msg for w in self._QUERY_TYPES["top"]):
+            if query_type == "top" or matches_any(msg, VENTAS_CLIENTES):
                 limit = 20
                 limit_match = re.search(r'top\s*(\d+)', msg)
                 if limit_match:
@@ -372,7 +380,7 @@ Datos de ventas de iDempiere:
                     sections.append(f"## Top {limit} Clientes por Ventas ({label}{org_label})")
                     sections.append(self._format_table(data))
 
-            if query_type == "cobranza" or any(w in msg for w in self._QUERY_TYPES["cobranza"]):
+            if query_type == "cobranza" or matches_any(msg, VENTAS_COBRANZA):
                 data = build_collection_summary(
                     zona=zona, vendedor=vendedor, mes=mes, anio=anio,
                     org_ids=org_ids, salesrep_id=salesrep_id,
@@ -381,7 +389,7 @@ Datos de ventas de iDempiere:
                 )
                 sections.append(self._format_summary(data, f"Resumen de Cobranza - {label}"))
 
-            if query_type == "vencidas" or any(w in msg for w in self._QUERY_TYPES["vencidas"]):
+            if query_type == "vencidas" or matches_any(msg, VENTAS_CXC):
                 # Use aggregated view (by client) for morosos/deudores questions
                 delinquent_data = build_top_delinquent_clients(org_ids=org_ids, salesrep_id=salesrep_id)
                 sections.append("## Top Clientes Morosos (agregado por cliente)")
@@ -391,7 +399,7 @@ Datos de ventas de iDempiere:
                 sections.append("## Detalle de Facturas Vencidas (top 50)")
                 sections.append(self._format_table(data))
 
-            if query_type == "ventas" or any(w in msg for w in self._QUERY_TYPES["ventas"]) or not sections:
+            if query_type == "ventas" or matches_any(msg, VENTAS_FACTURACION) or not sections:
                 data = build_sales_summary(
                     zona=zona, vendedor=vendedor, mes=mes, anio=anio,
                     org_ids=org_ids, salesrep_id=salesrep_id,

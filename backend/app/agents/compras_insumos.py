@@ -157,59 +157,16 @@ Datos de compras de insumos en iDempiere:
     _VES_IDS = [205]
     _USD_IDS = [100, 1000000, 1000003, 1000006, 1000008, 1000009, 1000011, 1000013, 1000017]
 
-    # Keywords that indicate the user wants USD
-    _USD_KEYWORDS = [
-        "dólares", "dolares", "dólar", "dolar", "usd", "dol",
-        "en dólares", "en dolares", "en dólar", "en dolar",
-        "en usd", "en dol", "moneda dol", "moneda usd",
-        "moneda dólar", "moneda dolares",
-    ]
+    from app.agents.keywords import MONEDA_USD as _USD_KW_SET
+    from app.agents.keywords import MONEDA_VES as _VES_KW_SET
 
-    # Keywords that indicate the user wants VES
-    _VES_KEYWORDS = [
-        "bolívares", "bolivares", "bolívar", "bolivar", "ves",
-        "en bolívares", "en bolivares", "en ves",
-        "moneda ves", "moneda bolivar", "moneda bolívares",
-    ]
-
-    # Words that indicate a general query (not a specific product search)
-    _GENERAL_KEYWORDS = [
-        "resumen", "total", "proveedor", "proveedores", "mensual",
-        "principales", "inventario", "stock", "existencia", "almacén",
-        "almacen", "todos los insumos",
-        "cuánto se", "cuanto se", "cuánto factur", "cuanto factur",
-    ]
-
-    # Keywords that indicate an inventory/stock query
-    _INVENTORY_KEYWORDS = [
-        "inventario", "stock", "existencia", "existencias",
-        "almacén", "almacen", "almacenes",
-        "disponible", "disponibilidad", "disponibles",
-        "cuánto hay", "cuanto hay", "cuánto queda", "cuanto queda",
-        "cuánto tenemos", "cuanto tenemos",
-        "en almacén", "en almacen", "en bodega",
-    ]
-
-    # Keywords that indicate pending purchase orders query
-    # NOTE: "pendiente" and "pendientes" removed — too generic, conflicts with payment status.
-    # Use "orden/órdenes pendiente(s)" or "pedido(s) pendiente(s)" instead.
-    _ORDER_KEYWORDS = [
-        "orden de compra", "órdenes de compra", "ordenes de compra",
-        "orden pendiente", "órdenes pendientes", "ordenes pendientes",
-        "pedido pendiente", "pedidos pendientes",
-        "por recibir", "por recepcionar", "por recepción", "por recepcion",
-    ]
-
-    # Keywords that indicate price comparison query
-    _PRICE_COMPARE_KEYWORDS = [
-        "comparar precio", "comparar precios",
-        "comparación de precio", "comparacion de precio",
-        "comparación de precios", "comparacion de precios",
-        "mejor precio", "precio más bajo", "precio mas bajo",
-        "quién vende más barato", "quien vende mas barato",
-        "entre proveedores",
-        "proveedores que venden", "alternativas de proveedor",
-    ]
+    # Import centralized keyword sets for query type detection
+    from app.agents.keywords import (
+        COMPRAS_GENERAL as _GENERAL_KW_SET,
+        COMPRAS_INVENTARIO as _INVENTORY_KW_SET,
+        COMPRAS_ORDENES as _ORDER_KW_SET,
+        COMPRAS_PRECIOS as _PRICE_COMPARE_KW_SET,
+    )
 
     # Organization name mapping (keyword → iDempiere org name)
     _ORG_MAP = [
@@ -233,13 +190,7 @@ Datos de compras de insumos en iDempiere:
                 return val
         return None
 
-    # Keywords that indicate payment status query
-    _PAYMENT_KEYWORDS = [
-        "estado de pago", "pagada", "pagadas", "pendiente de pago",
-        "por pagar", "facturas pagadas", "facturas pendientes",
-        "facturas vencidas", "vencida", "vencidas", "morosidad",
-        "cuentas por pagar", "deuda", "adeudado",
-    ]
+    from app.agents.keywords import COMPRAS_PAGOS as _PAYMENT_KW_SET
 
     def _extract_product_search(self, message: str) -> str | None:
         """Extract product code or name from user message.
@@ -423,11 +374,11 @@ Datos de compras de insumos en iDempiere:
         msg_lower = message.lower()
 
         # Check current message for USD keywords
-        if any(kw in msg_lower for kw in self._USD_KEYWORDS):
+        if any(kw in msg_lower for kw in self._USD_KW_SET):
             return self._USD_IDS
 
         # Check current message for VES keywords
-        if any(kw in msg_lower for kw in self._VES_KEYWORDS):
+        if any(kw in msg_lower for kw in self._VES_KW_SET):
             return self._VES_IDS
 
         # Check history for currency context (follow-ups)
@@ -435,9 +386,9 @@ Datos de compras de insumos en iDempiere:
             for role, content in reversed(history):
                 if role == "user":
                     content_lower = content.lower()
-                    if any(kw in content_lower for kw in self._USD_KEYWORDS):
+                    if any(kw in content_lower for kw in self._USD_KW_SET):
                         return self._USD_IDS
-                    if any(kw in content_lower for kw in self._VES_KEYWORDS):
+                    if any(kw in content_lower for kw in self._VES_KW_SET):
                         return self._VES_IDS
                     # Stop at first user message that doesn't mention currency
                     break
@@ -491,11 +442,11 @@ Datos de compras de insumos en iDempiere:
         if not product_search and history:
             product_search = self._extract_product_from_history(history)
 
-        # Detect query type
-        is_inventory = any(w in msg for w in self._INVENTORY_KEYWORDS)
-        is_orders = any(w in msg for w in self._ORDER_KEYWORDS)
-        is_price_compare = any(w in msg for w in self._PRICE_COMPARE_KEYWORDS)
-        is_payment = any(w in msg for w in self._PAYMENT_KEYWORDS)
+        # Detect query type using centralized keyword sets
+        is_inventory = any(w in msg for w in self._INVENTORY_KW_SET)
+        is_orders = any(w in msg for w in self._ORDER_KW_SET)
+        is_price_compare = any(w in msg for w in self._PRICE_COMPARE_KW_SET)
+        is_payment = any(w in msg for w in self._PAYMENT_KW_SET)
 
         product_found = False
 
