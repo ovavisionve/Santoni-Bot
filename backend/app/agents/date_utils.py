@@ -114,6 +114,24 @@ def extract_date_range(message: str) -> tuple[str | None, str | None]:
             date_from = f"{year}-{month_num:02d}-01"
             return date_from, today
 
+    # Pattern: "desde [year] a la fecha / hasta hoy" (year only, no month)
+    # e.g. "desde 2024 hasta hoy", "desde el 2024 a la fecha"
+    desde_year_match = re.search(r'desde\s+(?:el\s+)?(\d{4})', msg)
+    if desde_year_match and has_today_end:
+        year = int(desde_year_match.group(1))
+        return f"{year}-01-01", today
+
+    # Pattern: "del [year] al [year]" or "[year] a [year]" (year-to-year range)
+    # e.g. "del 2024 al 2026", "2024 a 2026", "de 2024 a 2026"
+    year_range_match = re.search(
+        r'(?:del?\s+)?(\d{4})\s+(?:a|al|hasta)\s+(?:el\s+)?(\d{4})', msg
+    )
+    if year_range_match:
+        y1 = int(year_range_match.group(1))
+        y2 = int(year_range_match.group(2))
+        last_day = calendar.monthrange(y2, 12)[1]
+        return f"{y1}-01-01", f"{y2}-12-{last_day:02d}"
+
     # Pattern: "mes1 [year1] a/al mes2 [year2]" → cross-year range
     # e.g. "junio 2025 a enero 2026" → 2025-06-01 al 2026-01-31
     # e.g. "enero a marzo 2026" → 2026-01-01 al 2026-03-31
