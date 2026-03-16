@@ -183,6 +183,8 @@ Se pueden consultar cuentas específicas por código (ej: 2.01.01.10) con rango 
             m, a = extract_month_year(content)
             if m is not None:
                 return None, None, m, a
+            elif re.search(r'20\d{2}', content):
+                return None, None, None, a
         return None, None, None, None
 
     @staticmethod
@@ -312,6 +314,8 @@ Se pueden consultar cuentas específicas por código (ej: 2.01.01.10) con rango 
                         date_from, date_to = h_df, h_dt
                     elif h_mes is not None:
                         mes, anio = h_mes, h_anio
+                    elif h_anio:
+                        anio = h_anio
 
                 if date_from and date_to:
                     detail = build_account_detail(
@@ -357,6 +361,8 @@ Se pueden consultar cuentas específicas por código (ej: 2.01.01.10) con rango 
                             date_from, date_to = h_df, h_dt
                         elif h_mes is not None:
                             mes, anio = h_mes, h_anio
+                        elif h_anio:
+                            anio = h_anio
                     if date_from and date_to:
                         summary = build_accounting_summary(
                             date_from=date_from, date_to=date_to, org_ids=org_ids,

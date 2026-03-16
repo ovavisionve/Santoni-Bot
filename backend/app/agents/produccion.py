@@ -9,6 +9,7 @@ m_storageonhand, m_product, ad_org en iDempiere (PostgreSQL 13).
 """
 
 import logging
+import re
 
 from app.agents.base_agent import BaseAgent
 from app.agents.date_utils import (
@@ -247,6 +248,9 @@ Datos de producción en iDempiere:
                 m, a = extract_month_year(content)
                 if m:
                     mes, anio = m, a
+                    break
+                elif re.search(r'20\d{2}', content):
+                    anio = a
                     break
         if not org_name and history:
             for role, content in reversed(history):

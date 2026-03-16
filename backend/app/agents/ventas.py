@@ -263,10 +263,12 @@ Datos de ventas de iDempiere:
                 if df and dt:
                     ctx["date_from"] = df
                     ctx["date_to"] = dt
-            if "mes" not in ctx and "date_from" not in ctx:
+            if "mes" not in ctx and "date_from" not in ctx and "anio" not in ctx:
                 m, a = extract_month_year(content)
                 if m:
                     ctx["mes"] = m
+                    ctx["anio"] = a
+                elif re.search(r'20\d{2}', content):
                     ctx["anio"] = a
             if len(ctx) >= 8:
                 break
@@ -327,6 +329,8 @@ Datos de ventas de iDempiere:
             elif hist_ctx.get("mes"):
                 mes = hist_ctx["mes"]
                 anio = hist_ctx.get("anio", anio)
+            elif hist_ctx.get("anio"):
+                anio = hist_ctx["anio"]
 
         label = build_period_label(date_from, date_to, mes, anio)
 

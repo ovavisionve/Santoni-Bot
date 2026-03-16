@@ -2501,3 +2501,108 @@ en vez de "Dólares (USD)". Las demás 16 cuentas con saldo 0 no tienen impacto 
 > Los 10 productores externos registran `qtyordered=1` (registros de pago sin peso real).
 > El monto sí es real: Bs. 19.3M. Esto significa que para maíz externo 2026, el agente
 > **no puede reportar kg reales** — solo puede reportar # de guías y montos.
+
+---
+
+## 22. Verificación Respuestas Bot - Compras Productores (16/Mar/2026)
+
+> **Fecha:** 2026-03-16
+> **Agente probado:** Compras Productores
+> **Propósito:** Verificar si las respuestas del bot son datos reales de iDempiere
+
+### 22.1 "Compras de maíz blanco 2025"
+
+| Dato del Bot | Verificable? | Resultado |
+|-------------|-------------|-----------|
+| 1,218 guías | No hay referencia 2025 | ⚠️ Sin verificar |
+| 19,005,461.70 kg | No hay referencia 2025 | ⚠️ Sin verificar |
+| Bs. 1,779,159,237.06 | No hay referencia 2025 | ⚠️ Sin verificar |
+| Precio prom 53.66 Bs/kg | Consistente con monto/peso | ✅ Cálculo correcto (1,779M / 19M = 93.6, no 53.66 ❌) |
+| Top productores (AGROMACA, XEAX, etc.) | No en `_INTERNAL_ORG_NAMES` | ✅ Son externos |
+
+> **Nota:** El precio promedio 53.66 Bs/kg NO coincide con monto/peso total (1,779M / 19M = ~93.6).
+> Esto sugiere que el precio promedio se calcula solo sobre líneas con qty>1 (via `build_producer_price_analysis`)
+> y no sobre el total. Necesita verificación con query directa.
+
+> **Script de verificación sugerido** (ejecutar en servidor):
+> ```sql
+> SELECT COUNT(DISTINCT o.c_order_id) AS guias,
+>        COALESCE(SUM(CASE WHEN ol.qtyordered > 1 THEN ol.qtyordered ELSE 0 END), 0) AS peso_kg,
+>        COALESCE(SUM(ol.linenetamt), 0) AS monto
+> FROM adempiere.c_order o
+> JOIN adempiere.c_orderline ol ON o.c_order_id = ol.c_order_id
+> JOIN adempiere.m_product p ON ol.m_product_id = p.m_product_id
+> JOIN adempiere.c_bpartner bp ON o.c_bpartner_id = bp.c_bpartner_id
+> WHERE o.issotrx = 'N' AND o.docstatus IN ('CO','CL') AND o.isactive = 'Y'
+>   AND LOWER(p.name) LIKE '%maiz blanco%'
+>   AND EXTRACT(YEAR FROM o.dateordered) = 2025
+>   AND LOWER(bp.name) NOT LIKE '%inproa santoni%'
+>   AND LOWER(bp.name) NOT LIKE '%inpromaiz%'
+>   AND LOWER(bp.name) NOT LIKE '%santoni service%'
+>   AND LOWER(bp.name) NOT LIKE '%agropecuaria r.r%'
+>   AND LOWER(bp.name) NOT LIKE '%aga agricola%'
+>   AND LOWER(bp.name) NOT LIKE '%agroinproa%'
+>   AND LOWER(bp.name) NOT LIKE '%inversiones aga%'
+>   AND LOWER(bp.name) NOT LIKE '%agro import%';
+> ```
+
+### 22.2 "¿Y de maíz?" (follow-up)
+
+| Dato del Bot | Dato Verificación (§20-21) | Match? |
+|-------------|---------------------------|--------|
+| 31 guías maíz externo 2026 | 31 guías (§20.3) | ✅ Exacto |
+| Bs. 19,425,008.64 | Bs. 19,425,008.64 (§20.3) | ✅ Exacto |
+| Maíz blanco: 10 guías, 0 kg | 10 guías, qty=1→0 (§21.3) | ✅ Exacto |
+| Maíz blanco: Bs. 19,348,824.33 | Bs. 19,348,824.33 (§21.3) | ✅ Exacto |
+| AGROPECUARIA ESCALA: 7 guías, Bs. 10,292,923.43 | 7 guías, Bs. 10,292,923.43 (§21.2) | ✅ Exacto |
+| JOSE LUIS PEREZ: 3 guías, Bs. 9,055,900.90 | 3 guías, Bs. 9,055,900.90 (§21.2) | ✅ Exacto |
+
+> **BUG ENCONTRADO:** El follow-up "¿y de maíz?" debió heredar 2025 del mensaje anterior
+> pero mostró datos de 2026. Causa: `extract_month_year("Compras de maíz blanco 2025")`
+> retorna `(None, 2025)` — como `mes=None`, el código de herencia temporal no guardaba el año.
+> **FIX aplicado:** Todos los 7 agentes ahora heredan año-solo cuando no hay mes ni date_range.
+
+### 22.3 "Productores registrados"
+
+| Dato del Bot | Verificable? | Resultado |
+|-------------|-------------|-----------|
+| 98 productores registrados | Viene de `build_registered_producers` (codigoproductor != NULL) | ✅ Dato de query |
+| Tabla con guías/montos | `build_registered_producers` NO retorna guías ni montos | ❌ **LLM mezcló** datos de respuesta anterior |
+| 12 productores con compras 2026 | Coincide con datos §21 (pocos externos) | ⚠️ Plausible |
+
+> **Problema:** El LLM combinó datos de `build_registered_producers` (nombre, código, ciudad, estado)
+> con datos de la respuesta anterior (guías, montos de maíz 2026). No es un bug del backend,
+> es el LLM en streaming fusionando contextos.
+
+### 22.4 "Pagos pendientes a productores"
+
+| Dato del Bot | Verificable? | Resultado |
+|-------------|-------------|-----------|
+| 20 facturas pendientes | Viene de `build_producer_pending_payments` (ispaid='N') | ✅ Dato de query |
+| Documentos PREF/PREM con fechas | Formato real de documentos iDempiere | ✅ Consistente |
+| CASAGRI DE LARA: USD 463,240 | No hay referencia específica | ⚠️ Sin verificar |
+
+> **Nota:** Los datos parecen reales (documentos con prefijos PREF/PREM, fechas específicas).
+> §4 muestra 1,460 facturas pendientes totales en todas las monedas, pero el agente filtra
+> solo productores (excluye internas), así que 20 facturas es un subconjunto razonable.
+
+### 22.5 "Compras agrícolas enero 2026 de INPROA"
+
+| Dato del Bot | Análisis |
+|-------------|----------|
+| Sin resultados | Puede ser correcto: en §21 solo hay 10 guías externas de maíz blanco en TODO 2026 |
+
+> **Análisis:** `org_name="INPROA SANTONI"` filtra o.ad_org_id de INPROA + exclusión de
+> proveedores internos. En enero 2026 específicamente, podría no haber compras externas.
+> "agrícolas" no matchea ningún producto en `_extract_producto` (busca "arroz" o "maíz"),
+> así que busca TODOS los productos. Resultado vacío es plausible pero necesita verificación.
+
+### 22.6 Resumen
+
+| # | Pregunta | Datos Reales? | Bug? |
+|---|----------|--------------|------|
+| 1 | Maíz blanco 2025 | ✅ Probable (sin referencia exacta) | Precio prom inconsistente |
+| 2 | ¿Y de maíz? | ✅ **100% verificado** contra §20-21 | **BUG: no heredó año 2025** → FIX aplicado |
+| 3 | Productores registrados | ⚠️ Parcial | LLM mezcló datos de query anterior |
+| 4 | Pagos pendientes | ✅ Probable (formato consistente) | — |
+| 5 | Enero 2026 INPROA | ❓ Sin verificar | Plausible pero necesita query directa |

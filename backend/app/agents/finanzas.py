@@ -7,6 +7,7 @@ Fuente de datos: c_bankaccount, c_payment, c_invoice en iDempiere (PostgreSQL 13
 """
 
 import logging
+import re
 
 from app.agents.base_agent import BaseAgent
 from app.agents.date_utils import (
@@ -349,6 +350,9 @@ Datos financieros de iDempiere:
                 m, a = extract_month_year(content)
                 if m:
                     mes, anio = m, a
+                    break
+                elif re.search(r'20\d{2}', content):
+                    anio = a
                     break
 
         label = build_period_label(date_from, date_to, mes, anio)

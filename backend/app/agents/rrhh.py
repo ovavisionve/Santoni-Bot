@@ -7,6 +7,7 @@ hr_payroll + c_bpartner en iDempiere (PostgreSQL 13).
 """
 
 import logging
+import re
 
 from app.agents.base_agent import BaseAgent
 from app.agents.date_utils import (
@@ -299,6 +300,9 @@ Datos de RRHH en iDempiere:
                 m, a = extract_month_year(content)
                 if m:
                     mes, anio = m, a
+                    break
+                elif re.search(r'20\d{2}', content):
+                    anio = a
                     break
         # Only inherit org_name if user didn't explicitly ask for all orgs
         # and the current message looks like a follow-up (short, no new topic keywords)
