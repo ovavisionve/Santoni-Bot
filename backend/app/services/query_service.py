@@ -1295,6 +1295,21 @@ def build_accounting_summary(
         db.close()
 
 
+def build_loan_balances(
+    org_ids: list[int] | None = None,
+    org_name: str | None = None,
+    anio: int | None = None,
+    mes: int | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> dict:
+    """Loan/promissory-note balances - routes to demo or iDempiere."""
+    if _is_production():
+        from app.services.idempiere_queries import build_loan_balances as _prod
+        return _prod(org_ids=org_ids, org_name=org_name, anio=anio, mes=mes, date_from=date_from, date_to=date_to)
+    return {"cuentas": [], "total_obligaciones": 0.0}
+
+
 def search_accounts_by_name(
     name_search: str,
     org_ids: list[int] | None = None,

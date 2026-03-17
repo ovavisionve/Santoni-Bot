@@ -3533,6 +3533,114 @@ def build_accounting_summary(
         db.close()
 
 
+# ──────────────────────────────────────────────────────────────────
+#  PRÉSTAMOS / PAGARÉS / OBLIGACIONES BANCARIAS
+# ──────────────────────────────────────────────────────────────────
+
+# Cuentas contables de préstamos y pagarés en el plan de Santoni
+_LOAN_ACCOUNTS = {
+    "2.01.01.01": "PAGARE CORTO PLAZO",
+    "2.01.04.01": "PRESTAMOS BANCARIOS CORTO PLAZO",
+    "2.02.01.01": "PAGARE LARGO PLAZO",
+    "2.02.02.01": "PRESTAMOS BANCARIOS LARGO PLAZO",
+    "2.02.03.01": "ARRENDAMIENTO FINANCIERO",
+}
+
+
+def build_loan_balances(
+    org_ids: list[int] | None = None,
+    org_name: str | None = None,
+    anio: int | None = None,
+    mes: int | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> dict:
+    """Query loan/promissory-note account balances from fact_acct.
+
+    Returns current balances (credit-normal) for accounts
+    2.01.01.01, 2.01.04.01, 2.02.01.01, 2.02.02.01, 2.02.03.01.
+    """
+    db = IdempiereSession()
+    try:
+        codes = list(_LOAN_ACCOUNTS.keys())
+        placeholders = ", ".join(f":code_{i}" for i in range(len(codes)))
+        params: dict = {}
+        for i, c in enumerate(codes):
+            params[f"code_{i}"] = c
+
+        # Build optional filters
+        extra_conds = []
+        _add_org_filter(extra_conds, params, org_ids, "fa")
+        _add_org_name_filter(extra_conds, params, org_name, "fa")
+
+        # Date filter: if specific period requested, show balance UP TO that date
+        if date_from and date_to:
+            extra_conds.append("fa.dateacct <= :dt_end")
+            params["dt_end"] = date_to
+        elif mes and anio:
+            from calendar import monthrange
+            last_day = monthrange(anio, mes)[1]
+            extra_conds.append(f"fa.dateacct <= :dt_end")
+            params["dt_end"] = f"{anio}-{mes:02d}-{last_day:02d}"
+        elif anio:
+            extra_conds.append("fa.dateacct <= :dt_end")
+            params["dt_end"] = f"{anio}-12-31"
+
+        extra_where = (" AND " + " AND ".join(extra_conds)) if extra_conds else ""
+
+        # Query: credit-normal accounts → saldo = haber - debe
+        q = text(
+            f"SELECT ev.value AS codigo, ev.name AS cuenta, "
+            f"COALESCE(SUM(fa.amtacctcr - fa.amtacctdr), 0) AS saldo, "
+            f"COUNT(*) AS movimientos, "
+            f"MIN(fa.dateacct) AS primer_mov, "
+            f"MAX(fa.dateacct) AS ultimo_mov "
+            f"FROM adempiere.fact_acct fa "
+            f"JOIN adempiere.c_elementvalue ev ON fa.account_id = ev.c_elementvalue_id "
+            f"WHERE ev.value IN ({placeholders}) "
+            f"AND fa.isactive = 'Y'"
+            f"{extra_where} "
+            f"GROUP BY ev.value, ev.name "
+            f"ORDER BY ev.value"
+        )
+        rows = db.execute(q, params).fetchall()
+
+        cuentas = []
+        total = 0.0
+        for r in rows:
+            saldo = float(r[2])
+            total += saldo
+            cuentas.append({
+                "codigo": r[0],
+                "cuenta": r[1],
+                "saldo": saldo,
+                "movimientos": r[3],
+                "primer_mov": str(r[4]) if r[4] else None,
+                "ultimo_mov": str(r[5]) if r[5] else None,
+            })
+
+        # Add accounts with zero balance that had no movements
+        found_codes = {c["codigo"] for c in cuentas}
+        for code, name in _LOAN_ACCOUNTS.items():
+            if code not in found_codes:
+                cuentas.append({
+                    "codigo": code,
+                    "cuenta": name,
+                    "saldo": 0.0,
+                    "movimientos": 0,
+                    "primer_mov": None,
+                    "ultimo_mov": None,
+                })
+        cuentas.sort(key=lambda x: x["codigo"])
+
+        return {
+            "cuentas": cuentas,
+            "total_obligaciones": total,
+        }
+    finally:
+        db.close()
+
+
 def search_accounts_by_name(
     name_search: str,
     org_ids: list[int] | None = None,

@@ -20,6 +20,7 @@ from app.services.query_service import (
     build_financial_summary,
     build_overdue_receivables,
     build_cobros_pagos_summary,
+    build_loan_balances,
 )
 
 logger = logging.getLogger("santonibot.agents.finanzas")
@@ -110,6 +111,7 @@ IMPORTANTE SOBRE PERÍODOS:
             "✅ Cobros recibidos por período, moneda y método de pago\n"
             "✅ Pagos emitidos por período, moneda y método de pago\n"
             "✅ Resumen financiero general (bancos + CxC + CxP)\n"
+            "✅ Saldos de préstamos bancarios, pagarés y obligaciones bancarias por organización\n"
             "\n❌ NO puedo consultar: presupuestos, flujo de caja proyectado o indicadores financieros calculados. "
             "Redirige al usuario al departamento correspondiente."
         )
@@ -141,6 +143,38 @@ Datos financieros de iDempiere:
         "cuánto se ha pagado", "cuanto se ha pagado",
         "cuánto hemos pagado", "cuanto hemos pagado",
     })
+    _LOANS_KW = frozenset({
+        "préstamo", "prestamo", "préstamos", "prestamos",
+        "pagaré", "pagare", "pagarés", "pagares",
+        "compromiso bancario", "compromisos bancarios",
+        "crédito bancario", "credito bancario",
+        "créditos bancarios", "creditos bancarios",
+        "obligación bancaria", "obligacion bancaria",
+        "obligaciones bancarias",
+        "deuda bancaria", "deudas bancarias",
+        "arrendamiento financiero",
+    })
+
+    _ORG_MAP = [
+        ("inpromaiz", "InproMaiz"),
+        ("inpro maiz", "InproMaiz"),
+        ("inproa santoni", "INPROA SANTONI"),
+        ("inproa", "INPROA SANTONI"),
+        ("santoni service", "Santoni Service"),
+        ("agropecuaria", "AGROPECUARIA"),
+        ("aga agricola", "AGA AGRICOLA"),
+        ("aga agrícola", "AGA AGRICOLA"),
+        ("agroinproa", "AGROINPROA"),
+        ("inversiones aga", "INVERSIONES AGA"),
+    ]
+
+    @classmethod
+    def _extract_org_name(cls, msg: str) -> str | None:
+        msg_lower = msg.lower()
+        for kw, val in cls._ORG_MAP:
+            if kw in msg_lower:
+                return val
+        return None
 
     # -- helpers for currency-aware bank formatting --
     _BANK_COLUMNS = ["banco", "numero_cuenta", "tipo", "organizacion", "saldo"]
@@ -327,6 +361,28 @@ Datos financieros de iDempiere:
 
         return "\n".join(lines)
 
+    @staticmethod
+    def _format_loan_balances(data: dict, label: str, org_label: str = "") -> str:
+        """Format loan/promissory note balances as explicit markdown."""
+        lines = [f"## Obligaciones Bancarias{org_label} — {label}"]
+        cuentas = data.get("cuentas", [])
+        if not cuentas or all(c["saldo"] == 0 and c["movimientos"] == 0 for c in cuentas):
+            lines.append("\nNo se encontraron saldos en cuentas de préstamos/pagarés para los filtros indicados.")
+            return "\n".join(lines)
+
+        lines.append("\n| Código | Cuenta | Saldo (Bs.) | Movimientos | Último Mov. |")
+        lines.append("|--------|--------|------------:|:-----------:|:-----------:|")
+        for c in cuentas:
+            ult = c["ultimo_mov"][:10] if c["ultimo_mov"] else "—"
+            lines.append(
+                f"| {c['codigo']} | {c['cuenta']} | {c['saldo']:,.2f} | "
+                f"{c['movimientos']:,} | {ult} |"
+            )
+        total = data.get("total_obligaciones", 0.0)
+        lines.append(f"\n**Total obligaciones bancarias: Bs. {total:,.2f}**")
+        lines.append("\n*Nota: Saldo positivo = deuda vigente (naturaleza crédito para cuentas de pasivo).*")
+        return "\n".join(lines)
+
     def fetch_data(self, message: str, org_ids: list[int] | None = None, salesrep_id: int | None = None, history: list[tuple[str, str]] | None = None) -> str | None:
         msg = message.lower()
         sections = []
@@ -371,13 +427,27 @@ Datos financieros de iDempiere:
         # Detect if user is asking specifically about cobros or pagos
         is_cobros = matches_any(msg, self._COBROS_KW)
         is_pagos = matches_any(msg, self._PAGOS_KW)
+        is_loans = matches_any(msg, self._LOANS_KW)
 
-        # Inherit cobros/pagos context from history (follow-ups)
-        if not is_cobros and not is_pagos and history:
+        # Extract org_name from message or history
+        org_name = self._extract_org_name(message)
+        if not org_name and history:
+            for role, content in reversed(history):
+                if role == "user":
+                    o = self._extract_org_name(content)
+                    if o:
+                        org_name = o
+                        break
+
+        # Inherit cobros/pagos/loans context from history (follow-ups)
+        if not is_cobros and not is_pagos and not is_loans and history:
             for role, content in reversed(history):
                 if role != "user":
                     continue
                 c = content.lower()
+                if matches_any(c, self._LOANS_KW):
+                    is_loans = True
+                    break
                 if matches_any(c, self._COBROS_KW):
                     is_cobros = True
                     break
@@ -386,8 +456,17 @@ Datos financieros de iDempiere:
                     break
 
         try:
+            # If asking about loans/pagarés/compromisos bancarios
+            if is_loans:
+                org_label = f" - {org_name}" if org_name else ""
+                loan_data = build_loan_balances(
+                    org_ids=org_ids, org_name=org_name,
+                    anio=anio, mes=mes,
+                    date_from=date_from, date_to=date_to,
+                )
+                sections.append(self._format_loan_balances(loan_data, label, org_label))
             # If asking about cobros or pagos, use the dedicated function
-            if is_cobros or is_pagos:
+            elif is_cobros or is_pagos:
                 if is_cobros:
                     cobros_data = build_cobros_pagos_summary(
                         is_receipt=True, mes=mes, anio=anio,

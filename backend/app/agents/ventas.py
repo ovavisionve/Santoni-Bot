@@ -250,8 +250,8 @@ Datos de ventas de iDempiere:
     def _extract_context_from_history(
         self, history: list[tuple[str, str]],
     ) -> dict:
-        """Extract zona, vendedor, org_name, currency, query_type, and
-        temporal context (date_from, date_to, mes, anio) from history."""
+        """Extract zona, vendedor, org_name, currency, query_type, doctype,
+        and temporal context (date_from, date_to, mes, anio) from history."""
         ctx: dict = {}
         if not history:
             return ctx
@@ -274,6 +274,10 @@ Datos de ventas de iDempiere:
                 c = detect_currency(content)
                 if c:
                     ctx["currency"] = c
+            if "doctype" not in ctx:
+                dt = self._extract_doctype(content)
+                if dt:
+                    ctx["doctype"] = dt
             if "query_type" not in ctx:
                 qt = self._detect_query_type(content)
                 if qt:
@@ -291,7 +295,7 @@ Datos de ventas de iDempiere:
                     ctx["anio"] = a
                 elif re.search(r'20\d{2}', content):
                     ctx["anio"] = a
-            if len(ctx) >= 8:
+            if len(ctx) >= 9:
                 break
         return ctx
 
@@ -343,6 +347,8 @@ Datos de ventas de iDempiere:
             org_name = hist_ctx.get("org_name")
         if not currency_ids:
             currency_ids = hist_ctx.get("currency")
+        if not doctype_name:
+            doctype_name = hist_ctx.get("doctype")
         # Inherit temporal context from history for follow-ups
         _has_explicit_year = bool(re.search(r'20\d{2}', message))
         if not date_from and not date_to and not mes:

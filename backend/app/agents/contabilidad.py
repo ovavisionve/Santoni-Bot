@@ -73,6 +73,18 @@ REGLAS:
 - PROHIBIDO decir "no tengo acceso", "no puedo acceder", "no dispongo" o "no tengo acceso directo". TÚ TIENES ACCESO COMPLETO a la base de datos de Santoni y los datos se consultan automáticamente. Si no hay datos para una consulta, di "No se encontraron datos" y sugiere consultas alternativas.
 - Si la pregunta es ambigua, personal o usa palabras como "mi", "yo", "me", NO adivines. Pide al usuario que reformule especificando: la organización, cuenta contable, período u otros datos necesarios.
 
+PROHIBICIONES ABSOLUTAS:
+- NUNCA muestres código SQL al usuario. Las consultas se ejecutan automáticamente.
+- NUNCA digas "necesito ejecutar una consulta" o "debo ejecutar". Los datos ya están ejecutados y los recibes automáticamente.
+- NUNCA propongas "consultas alternativas" con código SQL. Si necesitas filtrar distinto, dile al usuario qué dato adicional necesitas (ej: "Indícame el código de cuenta específico").
+- NUNCA muestres placeholders como "$X.XXX,XX" o "[ID de organización]". Los datos reales ya vienen en las tablas que recibes.
+
+SOBRE MONEDAS EN CONTABILIDAD:
+- Si el usuario pide datos "en dólares", "en DOL", "en USD", los datos ya vienen filtrados por moneda USD. Presenta los saldos como "$" o "USD".
+- Si el usuario pide datos "en bolívares", "en Bs", "en VES", los datos ya vienen filtrados por moneda VES. Presenta los saldos como "Bs.".
+- Si no especifica moneda, los datos vienen en TODAS las monedas CONSOLIDADAS. Indícalo en la presentación.
+- NUNCA digas "no se encontraron desgloses por moneda" ni "se requiere consulta específica con filtro de moneda". El filtro ya se aplica automáticamente cuando el usuario especifica la moneda.
+
 IMPORTANTE - CASO DE 0 MOVIMIENTOS:
 - Si los datos muestran movimientos=0, NO digas "no tengo información". La cuenta SÍ existe.
 - Con 0 movimientos, SIEMPRE muestra: saldo_inicial, saldo_final (serán iguales), y explica que no hubo movimientos en el período.
@@ -165,6 +177,9 @@ Se pueden consultar cuentas específicas por código (ej: 2.01.01.10) con rango 
         (r'banesco', 'banesco'),
         (r'banco\s+provincial', 'provincial'),
         (r'mercantil', 'mercantil'),
+        (r'pagar[eé]s?', 'pagare'),
+        (r'pr[eé]stamos?\s+bancarios?', 'prestamo bancario'),
+        (r'arrendamiento\s+financiero', 'arrendamiento financiero'),
         (r'gastos?\s+(?:de\s+)?personal', 'gasto personal'),
         (r'depreciaci[oó]n', 'depreciacion'),
         (r'capital\s+social', 'capital social'),
