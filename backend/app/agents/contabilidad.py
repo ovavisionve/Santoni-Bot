@@ -207,6 +207,27 @@ Se pueden consultar cuentas específicas por código (ej: 2.01.01.10) con rango 
                 return search_term
         return None
 
+    # Detect if user wants only a specific account type
+    _ACCOUNT_TYPE_PATTERNS = [
+        (r'gastos?\b', ['E']),
+        (r'egresos?\b', ['E']),
+        (r'ingresos?\b', ['R']),
+        (r'activos?\b', ['A']),
+        (r'pasivos?\b', ['L']),
+        (r'patrimonio', ['O']),
+        (r'estado\s+de\s+resultados', ['R', 'E']),
+        (r'kpi\s+(?:de\s+)?gastos?', ['E']),
+    ]
+
+    @classmethod
+    def _detect_account_types(cls, msg: str) -> list[str] | None:
+        """Detect account type filter from user message."""
+        msg_lower = msg.lower()
+        for pattern, types in cls._ACCOUNT_TYPE_PATTERNS:
+            if re.search(pattern, msg_lower):
+                return types
+        return None
+
     @staticmethod
     def _extract_account_from_history(
         history: list[tuple[str, str]],
@@ -426,10 +447,21 @@ Se pueden consultar cuentas específicas por código (ej: 2.01.01.10) con rango 
                 # General accounting summary (no specific account)
                 date_from, date_to = extract_date_range(message)
                 mes, anio = None, None
+
+                # Detect account type filter (e.g. "gastos", "ingresos")
+                account_types = self._detect_account_types(message)
+                if not account_types and history:
+                    for role, content in reversed(history):
+                        if role == "user":
+                            at = self._detect_account_types(content)
+                            if at:
+                                account_types = at
+                                break
+
                 if date_from and date_to:
                     summary = build_accounting_summary(
                         date_from=date_from, date_to=date_to, org_ids=org_ids,
-                        currency_ids=currency_ids,
+                        currency_ids=currency_ids, account_types=account_types,
                     )
                     label = build_period_label(date_from=date_from, date_to=date_to)
                 else:
@@ -452,12 +484,22 @@ Se pueden consultar cuentas específicas por código (ej: 2.01.01.10) con rango 
                     if date_from and date_to:
                         summary = build_accounting_summary(
                             date_from=date_from, date_to=date_to, org_ids=org_ids,
-                            currency_ids=currency_ids,
+                            currency_ids=currency_ids, account_types=account_types,
                         )
                         label = build_period_label(date_from=date_from, date_to=date_to)
                     else:
-                        summary = build_accounting_summary(mes=mes, anio=anio, org_ids=org_ids, currency_ids=currency_ids)
+                        summary = build_accounting_summary(
+                            mes=mes, anio=anio, org_ids=org_ids,
+                            currency_ids=currency_ids, account_types=account_types,
+                        )
                         label = build_period_label(mes=mes, anio=anio)
+
+                # Add account type label to header
+                _type_labels = {'E': 'Gastos', 'R': 'Ingresos', 'A': 'Activos', 'L': 'Pasivos', 'O': 'Patrimonio'}
+                if account_types:
+                    type_names = [_type_labels.get(t, t) for t in account_types]
+                    label = f"{' y '.join(type_names)} — {label}"
+
                 if not self._dict_has_data(summary):
                     return None
                 sections.append(self._format_accounting_summary(summary, label))

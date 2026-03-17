@@ -466,6 +466,22 @@ Datos de ventas de iDempiere:
                 else:
                     sections.append(self._format_summary(data, f"Resumen de Ventas - {label}"))
 
+                # When doctype is specified, also include top clients so the
+                # LLM has real client names (prevents hallucination of clients)
+                if doctype_name and not self._is_empty_result(data):
+                    org_label = f" - {org_name}" if org_name else ""
+                    top_currency = currency_ids if currency_ids else None
+                    top_data = build_top_clients(
+                        limit=20, zona=zona, vendedor=vendedor, mes=mes, anio=anio,
+                        org_ids=org_ids, salesrep_id=salesrep_id,
+                        date_from=date_from, date_to=date_to,
+                        currency_ids=top_currency, org_name=org_name,
+                        doctype_name=doctype_name,
+                    )
+                    if not self._is_empty_result(top_data):
+                        sections.append(f"## Top 20 Clientes — {doctype_name}{org_label} ({label})")
+                        sections.append(self._format_table(top_data))
+
         except Exception as exc:
             logger.error("Error consultando datos de ventas: %s: %s", type(exc).__name__, exc, exc_info=True)
             sections.append(

@@ -3418,8 +3418,14 @@ def build_accounting_summary(
     date_from: str | None = None,
     date_to: str | None = None,
     currency_ids: list[int] | None = None,
+    account_types: list[str] | None = None,
 ) -> dict:
-    """Accounting summary from iDempiere fact_acct (posted accounting facts)."""
+    """Accounting summary from iDempiere fact_acct (posted accounting facts).
+
+    Parameters:
+        account_types: Filter by c_elementvalue.accounttype, e.g. ['E'] for expenses,
+                       ['R'] for income, ['A'] for assets, ['L'] for liabilities.
+    """
     # Always use iDempiere live — local DB fact_acct only has data up to 2021
     db = IdempiereSession()
     try:
@@ -3431,14 +3437,26 @@ def build_accounting_summary(
         _add_currency_filter(conditions, params, currency_ids, "fa")
         _add_date_filter(conditions, params, date_from, date_to, mes, anio, "fa.dateacct")
 
+        # Account type filter — handled per-query below (each has its own ev JOIN alias)
+        _acct_type_cond = ""
+        if account_types:
+            placeholders = ", ".join(f":accttype_{i}" for i in range(len(account_types)))
+            for i, at in enumerate(account_types):
+                params[f"accttype_{i}"] = at
+            _acct_type_cond = f" AND ev.accounttype IN ({placeholders})"
+
         where = " AND ".join(conditions)
 
-        # Totals
+        # Totals (needs ev JOIN when filtering by account type)
+        _totals_join = (
+            "JOIN adempiere.c_elementvalue ev ON fa.account_id = ev.c_elementvalue_id "
+            if account_types else ""
+        )
         totals_q = text(
             f"SELECT COUNT(*) AS total_asientos, "
             f"COALESCE(SUM(fa.amtacctdr), 0) AS total_debe, "
             f"COALESCE(SUM(fa.amtacctcr), 0) AS total_haber "
-            f"FROM adempiere.fact_acct fa WHERE {where}"
+            f"FROM adempiere.fact_acct fa {_totals_join}WHERE {where}{_acct_type_cond}"
         )
         row = db.execute(totals_q, params).fetchone()
         totals = {
@@ -3462,7 +3480,7 @@ def build_accounting_summary(
             f"COALESCE(SUM(fa.amtacctdr), 0) - COALESCE(SUM(fa.amtacctcr), 0) AS saldo "
             f"FROM adempiere.fact_acct fa "
             f"JOIN adempiere.c_elementvalue ev ON fa.account_id = ev.c_elementvalue_id "
-            f"WHERE {where} "
+            f"WHERE {where}{_acct_type_cond} "
             f"GROUP BY ev.accounttype ORDER BY ev.accounttype"
         )
         by_account_type = [
@@ -3471,38 +3489,41 @@ def build_accounting_summary(
         ]
 
         # Balance: Assets, Liabilities, Equity
-        # Use correct sign convention: A=debit-normal, L/O=credit-normal
-        balance_conds = [
-            "ev.accounttype IN ('A', 'L', 'O')",
-            "fa.isactive = 'Y'",
-        ]
-        balance_params: dict = {}
-        _add_org_filter(balance_conds, balance_params, org_ids, "fa")
-        _add_currency_filter(balance_conds, balance_params, currency_ids, "fa")
-        if anio:
-            balance_conds.append("EXTRACT(YEAR FROM fa.dateacct) <= :anio")
-            balance_params["anio"] = anio
+        # Skip when filtering only expenses/income (balance is A/L/O only)
+        balance = []
+        _balance_types = {'A', 'L', 'O'}
+        if not account_types or _balance_types.intersection(account_types):
+            balance_conds = [
+                "ev.accounttype IN ('A', 'L', 'O')",
+                "fa.isactive = 'Y'",
+            ]
+            balance_params: dict = {}
+            _add_org_filter(balance_conds, balance_params, org_ids, "fa")
+            _add_currency_filter(balance_conds, balance_params, currency_ids, "fa")
+            if anio:
+                balance_conds.append("EXTRACT(YEAR FROM fa.dateacct) <= :anio")
+                balance_params["anio"] = anio
 
-        balance_where = " AND ".join(balance_conds)
-        balance_q = text(
-            f"SELECT CASE "
-            f"  WHEN ev.accounttype = 'A' THEN 'Activo' "
-            f"  WHEN ev.accounttype = 'L' THEN 'Pasivo' "
-            f"  WHEN ev.accounttype = 'O' THEN 'Patrimonio' "
-            f"  END AS tipo, "
-            f"CASE "
-            f"  WHEN ev.accounttype = 'A' THEN COALESCE(SUM(fa.amtacctdr - fa.amtacctcr), 0) "
-            f"  ELSE COALESCE(SUM(fa.amtacctcr - fa.amtacctdr), 0) "
-            f"END AS saldo "
-            f"FROM adempiere.fact_acct fa "
-            f"JOIN adempiere.c_elementvalue ev ON fa.account_id = ev.c_elementvalue_id "
-            f"WHERE {balance_where} "
-            f"GROUP BY ev.accounttype ORDER BY ev.accounttype"
-        )
-        balance = [
-            {"tipo": r[0], "saldo": float(r[1])}
-            for r in db.execute(balance_q, balance_params).fetchall()
-        ]
+            balance_where = " AND ".join(balance_conds)
+            balance_q = text(
+                f"SELECT CASE "
+                f"  WHEN ev.accounttype = 'A' THEN 'Activo' "
+                f"  WHEN ev.accounttype = 'L' THEN 'Pasivo' "
+                f"  WHEN ev.accounttype = 'O' THEN 'Patrimonio' "
+                f"  END AS tipo, "
+                f"CASE "
+                f"  WHEN ev.accounttype = 'A' THEN COALESCE(SUM(fa.amtacctdr - fa.amtacctcr), 0) "
+                f"  ELSE COALESCE(SUM(fa.amtacctcr - fa.amtacctdr), 0) "
+                f"END AS saldo "
+                f"FROM adempiere.fact_acct fa "
+                f"JOIN adempiere.c_elementvalue ev ON fa.account_id = ev.c_elementvalue_id "
+                f"WHERE {balance_where} "
+                f"GROUP BY ev.accounttype ORDER BY ev.accounttype"
+            )
+            balance = [
+                {"tipo": r[0], "saldo": float(r[1])}
+                for r in db.execute(balance_q, balance_params).fetchall()
+            ]
 
         # Top accounts by movement (current period)
         top_accounts_q = text(
@@ -3511,7 +3532,7 @@ def build_accounting_summary(
             f"COALESCE(SUM(fa.amtacctcr), 0) AS haber "
             f"FROM adempiere.fact_acct fa "
             f"JOIN adempiere.c_elementvalue ev ON fa.account_id = ev.c_elementvalue_id "
-            f"WHERE {where} "
+            f"WHERE {where}{_acct_type_cond} "
             f"GROUP BY ev.value, ev.name "
             f"ORDER BY (COALESCE(SUM(fa.amtacctdr), 0) + COALESCE(SUM(fa.amtacctcr), 0)) DESC "
             f"LIMIT 20"

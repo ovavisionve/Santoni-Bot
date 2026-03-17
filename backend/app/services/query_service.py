@@ -1263,11 +1263,12 @@ def build_accounting_summary(
     date_from: str | None = None,
     date_to: str | None = None,
     currency_ids: list[int] | None = None,
+    account_types: list[str] | None = None,
 ) -> dict:
     """Accounting summary - routes to demo or iDempiere."""
     if _is_production():
         from app.services.idempiere_queries import build_accounting_summary as _prod
-        return _prod(mes=mes, anio=anio, org_ids=org_ids, date_from=date_from, date_to=date_to, currency_ids=currency_ids)
+        return _prod(mes=mes, anio=anio, org_ids=org_ids, date_from=date_from, date_to=date_to, currency_ids=currency_ids, account_types=account_types)
 
     # Demo fallback
     db = SessionLocal()
