@@ -2606,3 +2606,295 @@ en vez de "Dólares (USD)". Las demás 16 cuentas con saldo 0 no tienen impacto 
 | 3 | Productores registrados | ⚠️ Parcial | LLM mezcló datos de query anterior |
 | 4 | Pagos pendientes | ✅ Probable (formato consistente) | — |
 | 5 | Enero 2026 INPROA | ❓ Sin verificar | Plausible pero necesita query directa |
+
+---
+
+## 23. Diagnóstico de Tablas No Mapeadas en iDempiere (17/Mar/2026)
+
+> **Fecha:** 2026-03-17
+> **Script:** `backend/scripts/explore_idempiere_schema.py`
+> **Propósito:** Identificar tablas y datos financieros en iDempiere que el bot no puede responder actualmente
+
+### 23.1 Tablas Financieras Descubiertas
+
+#### Pagarés / Promissory Notes (plugin DCS)
+
+| Tabla | Columnas | Descripción |
+|-------|----------|-------------|
+| `dcs_chargepromissorynote` | 18 cols | Pagarés vinculados a cargos |
+| `dcs_internalpromissory` | tiene `interestamt` | Pagarés internos con monto de interés |
+| `dcs_quota` | tiene `interestamt` | Cuotas de pago con interés |
+| `dcs_rv_promissorynote` | tiene `totalinterestamt` | Vista resumen de pagarés con interés total |
+
+> **Nota:** Estas tablas del plugin DCS contienen información de pagarés bancarios que los usuarios preguntan frecuentemente. Actualmente ningún agente las consulta.
+
+#### Tablas con "bank" en el nombre
+
+| Tabla | Columnas | Filas estimadas |
+|-------|----------|-----------------|
+| `c_bank` | 36 cols | ~10 |
+| `c_bankaccount` | 66 cols | ~113 |
+| `c_bankaccount_acct` | 14 cols | ~115 |
+| `c_bankstatement` | 36 cols | **~40,490** |
+| `c_bankstatementline` | 49 cols | **~475,099** |
+| `c_bankstatementloader` | 14 cols | ~0 |
+| `c_bankstatementmatcher` | 18 cols | ~0 |
+
+> **Nota:** `c_bankstatement` y `c_bankstatementline` tienen datos masivos. Los estados de cuenta bancarios son consultables pero ningún agente los mapea actualmente.
+
+#### Otras tablas financieras con datos
+
+| Tabla | Filas estimadas |
+|-------|-----------------|
+| `c_cash` | ~6,693 |
+| `c_cashbook` | ~15 |
+| `c_cashline` | ~23,549 |
+| `c_charge` | ~174 |
+| `c_charge_acct` | ~1,652 |
+| `c_commission` | ~3 |
+| `c_commissionamt` | ~6 |
+| `c_commissiondetail` | ~34 |
+| `c_commissionline` | ~6 |
+| `c_commissionrun` | ~6 |
+| `c_conversion_rate` | ~11,413 |
+| `c_conversiontype` | ~5 |
+| `c_paymentterm` | ~14 |
+| `c_tax` | ~11 |
+| `c_tax_acct` | ~40 |
+| `c_taxcategory` | ~5 |
+| `c_withholding` | ~2 |
+| `c_withholding_acct` | ~6 |
+
+#### Columnas financieras en tablas existentes
+
+| Tabla.Columna | Tipo |
+|---------------|------|
+| `c_bankaccount.creditlimit` | numeric |
+| `c_bpartner.so_creditlimit` | numeric |
+| `c_bpartner.so_creditused` | numeric |
+| `c_bpartner.socreditstatus` | character(1) |
+| `c_bpartner.totalopenbalance` | numeric |
+| `c_invoice.creditapproved` | character(1) |
+
+#### Préstamos de empleados
+
+| Tabla | Descripción |
+|-------|-------------|
+| `hr_prestamos_v` | Vista de préstamos a empleados |
+
+#### Flujo de caja
+
+| Tabla | Descripción |
+|-------|-------------|
+| `t_cashflow` | Tabla temporal de flujo de caja |
+
+---
+
+### 23.2 Tipos de Documento Completos (c_doctype)
+
+#### Facturas de Venta (ARI - AR Invoice)
+
+| Nombre | Facturas 2025+ |
+|--------|----------------|
+| AR Invoice | 1,428 |
+| AR Invoice B | 1,230 |
+| AR Invoice Dolares | **8,881** |
+| AR Invoice ProDolares | **8,635** |
+| AR Invoice V | 245 |
+| Factura de Comision ProDolares | 104 |
+| Factura de Comision en BS | 3 |
+| Factura de Comision en Dolares | 2 |
+
+> **Nota:** "Factura B" = `AR Invoice B`, "Factura V" = `AR Invoice V`, "Factura en dólares" = `AR Invoice Dolares` + `AR Invoice ProDolares`. Fix de filtro por doctype aplicado en ventas.py (17/Mar).
+
+#### Notas de Crédito Venta (ARC - AR Credit Memo)
+
+| Nombre | Cantidad 2025+ |
+|--------|----------------|
+| AR Credit Memo | 104 |
+| AR Credit Memo Dolares | 327 |
+| NC Produccion Bs | 0 |
+| NC Produccion Dolares | 0 |
+| Nota de Credito ProDolares | 185 |
+
+#### Facturas de Compra (API - AP Invoice)
+
+| Nombre | Cantidad 2025+ |
+|--------|----------------|
+| AP Invoice | 3,735 |
+| AP Invoice Dolares | **10,321** |
+| Fact. Productor Arroz Paddy Bs. | 295 |
+| Fact. Productor Dolares | 0 |
+| Factura Anticipo Proveedor Bs. | 0 |
+| Factura Anticipo Proveedor Dolares | 0 |
+| Factura de Flete Bs | 15 |
+| Factura de Flete Dolares | 5 |
+| Nota de debito al Proveedor Bs | 0 |
+| Nota de debito al Proveedor Dolares | 0 |
+
+#### Notas de Crédito Compra (APC - AP Credit Memo)
+
+| Nombre | Cantidad 2025+ |
+|--------|----------------|
+| AP Credit Memo | 54 |
+| AP Credit Memo Dolares | 28 |
+| NC al Proveedor Bs | 0 |
+| NC al Proveedor Dolares | 0 |
+
+#### Otros tipos de documento relevantes
+
+| DocBaseType | Tipos |
+|-------------|-------|
+| **ARR** (AR Receipt) | AR Receipt, AR Receipt Dolares, AR Receipt ProDolares |
+| **APP** (AP Payment) | AP Payment, AP Payment Dolares |
+| **CMB** (Bank Statement) | Bank Statement |
+| **CMC** (Cash Journal) | Cash Journal |
+| **GLD** (GL Document) | GL Document |
+| **GLJ** (GL Journal) | GL Journal, GL Journal Dolares |
+| **MCC** (Manufacturing Cost Collector) | Manufacturing Cost Collector |
+| **MMI** (Material Physical Inventory) | Material Physical Inventory |
+| **MMM** (Material Movement) | Material Movement |
+| **MMR** (Material Receipt) | Material Receipt, Material Receipt (Produccion) |
+| **MMS** (Material Shipment) | Material Shipment, Material Shipment Dolares, Material Shipment Liquidacion |
+| **MOP** (Manufacturing Order) | Manufacturing Order, Manufacturing Order Dolares |
+| **MOQ** (Quality Order) | Quality Order |
+| **MXI** (Match Invoice) | Match Invoice |
+| **MXP** (Match PO) | Match PO |
+| **POO** (Purchase Order) | Purchase Order, Purchase Order Dolares |
+| **POR** (Purchase Requisition) | Purchase Requisition, Purchase Requisition Dolares |
+| **SOO** (Sales Order) | Orden de Liquidacion, Presupuesto de Venta, Sales Order, Standard Order Dolares |
+
+---
+
+### 23.3 Cuentas Contables de Préstamos/Obligaciones Bancarias
+
+| Código | Cuenta | Tipo | Summary |
+|--------|--------|------|---------|
+| 2.01.01 | PAGARE | Pasivo | Y |
+| 2.01.01.01 | PAGARE CORTO PLAZO | Pasivo | N |
+| 2.01.04 | PRESTAMOS BANCARIOS | Pasivo | Y |
+| 2.01.04.01 | PRESTAMOS BANCARIOS CORTO PLAZO | Pasivo | N |
+| 2.02.01 | PAGARE | Pasivo | Y |
+| 2.02.01.01 | PAGARE LARGO PLAZO | Pasivo | N |
+| 2.02.02 | PRESTAMOS BANCARIOS | Pasivo | Y |
+| 2.02.02.01 | PRESTAMOS BANCARIOS LARGO PLAZO | Pasivo | N |
+| 2.02.03 | OBLIGACIONES POR ARRENDAMIENTO FINANCIERO | Pasivo | Y |
+| 2.02.03.01 | ARRENDAMIENTO FINANCIERO | Pasivo | N |
+
+> **Nota:** Estas cuentas existen en el plan contable y tienen movimientos activos en `fact_acct`. El agente de Contabilidad ya puede consultarlas por código (ej: "movimientos de la cuenta 2.01.01.01"), pero el agente de Finanzas debería poder responder "¿cuánto debemos en pagarés?" consultando saldos de estas cuentas.
+
+---
+
+### 23.4 Movimientos Contables en Cuentas de Préstamos (2024-2026)
+
+| Código | Cuenta | Movimientos | Total Debe | Total Haber | Desde | Hasta |
+|--------|--------|-------------|------------|-------------|-------|-------|
+| 2.01.01.01 | PAGARE CORTO PLAZO | activo | con saldo | con saldo | 2024+ | 2026 |
+| 2.01.04.01 | PRESTAMOS BANCARIOS CORTO PLAZO | activo | con saldo | con saldo | 2024+ | 2026 |
+| 2.02.01.01 | PAGARE LARGO PLAZO | activo | con saldo | con saldo | 2024+ | 2026 |
+| 2.02.02.01 | PRESTAMOS BANCARIOS LARGO PLAZO | activo | con saldo | con saldo | 2024+ | 2026 |
+
+> **Nota:** Estos movimientos confirman que los préstamos bancarios y pagarés están ACTIVOS en iDempiere con transacciones recientes. El bot PUEDE y DEBE poder reportar saldos y movimientos de estas cuentas.
+
+---
+
+### 23.5 Estados de Cuenta Bancarios Recientes (2025+)
+
+Datos de `c_bankstatement` con líneas en `c_bankstatementline`:
+
+| Banco | Cuenta | Estados recientes | Líneas por estado |
+|-------|--------|-------------------|-------------------|
+| EBNA BANK | Múltiples cuentas | Sí (2025+) | Variables |
+
+**Columnas clave de `c_bankstatement`:**
+- `c_bankstatement_id`, `c_bankaccount_id`, `name`, `statementdate`, `beginningbalance`, `endingbalance`, `statementdifference`, `docstatus`, `ismanual`, `isapproved`
+
+**Columnas clave de `c_bankstatementline`:**
+- `c_bankstatementline_id`, `c_bankstatement_id`, `c_payment_id`, `c_charge_id`, `c_invoice_id`, `c_bpartner_id`, `dateacct`, `valutadate`, `stmtamt`, `trxamt`, `chargeamt`, `interestamt`, `memo`, `description`, `isreversal`, `eftreference`
+
+> **Nota:** Las líneas de estado de cuenta incluyen `interestamt` (monto de interés), `c_charge_id` (cargo asociado), `c_invoice_id` (factura asociada) y `c_payment_id` (pago asociado). Esto permite cruzar movimientos bancarios con facturas y pagos.
+
+---
+
+### 23.6 Tablas GL (General Ledger) No Mapeadas
+
+| Tabla | Filas estimadas |
+|-------|-----------------|
+| `gl_budget` | ~2 |
+| `gl_budgetcontrol` | ~2 |
+| `gl_category` | ~20 |
+| `gl_distribution` | ~1 |
+| `gl_distributionline` | ~5 |
+| `gl_fund` | ~0 |
+| `gl_fundrestriction` | ~0 |
+| `gl_journal` | **~22,141** |
+| `gl_journalbatch` | ~11,744 |
+| `gl_journalline` | **~341,303** |
+
+> **Nota:** `gl_journal` y `gl_journalline` tienen datos significativos. Los diarios contables (asientos manuales) son una fuente importante que el agente de Contabilidad podría consultar directamente, además de `fact_acct`.
+
+---
+
+### 23.7 Campos de Crédito en Socios de Negocio (c_bpartner)
+
+| Campo | Tipo |
+|-------|------|
+| `acqusitioncost` | numeric |
+| `actuallifetimevalue` | numeric |
+| `bpartner_parent_id` | numeric |
+| `firstsale` | timestamp |
+| `potentiallifetimevalue` | numeric |
+| `salesvolume` | numeric |
+| `shareofcustomer` | numeric |
+| `so_creditlimit` | numeric |
+| `so_creditused` | numeric |
+| `socreditstatus` | character(1) |
+| `totalopenbalance` | numeric |
+
+> **Nota:** `so_creditlimit` y `so_creditused` permiten responder "¿cuál es el límite de crédito de X cliente?" y "¿cuánto crédito ha usado?". `totalopenbalance` da el saldo abierto total del socio de negocio. Actualmente ningún agente expone estos datos.
+
+---
+
+### 23.8 Resumen de Capacidades No Mapeadas
+
+| Pregunta que el bot NO puede responder | Tabla(s) fuente | Agente destino | Prioridad |
+|-----------------------------------------|-----------------|----------------|-----------|
+| "¿Cuánto debemos en pagarés?" | `fact_acct` (cuentas 2.01.01.01, 2.02.01.01) + `dcs_*` | Finanzas | **ALTA** |
+| "¿Cuánto debemos en préstamos bancarios?" | `fact_acct` (cuentas 2.01.04.01, 2.02.02.01) | Finanzas | **ALTA** |
+| "Detalle de pagarés vigentes" | `dcs_chargepromissorynote`, `dcs_quota` | Finanzas | **ALTA** |
+| "Movimientos bancarios del mes" | `c_bankstatement` + `c_bankstatementline` | Finanzas | **MEDIA** |
+| "¿Cuál es el límite de crédito de X cliente?" | `c_bpartner.so_creditlimit` | Ventas/Finanzas | **MEDIA** |
+| "Clientes que excedieron su crédito" | `c_bpartner.so_creditused > so_creditlimit` | Ventas/Finanzas | **MEDIA** |
+| "Asientos contables manuales del mes" | `gl_journal` + `gl_journalline` | Contabilidad | **MEDIA** |
+| "Préstamos a empleados" | `hr_prestamos_v` | RRHH | **MEDIA** |
+| "Flujo de caja proyectado" | `t_cashflow` | Finanzas | **BAJA** |
+| "Movimientos de caja chica" | `c_cash` + `c_cashline` | Finanzas | **BAJA** |
+| "Comisiones de vendedores" | `c_commission*` | Ventas | **BAJA** |
+| "Presupuesto del área" | `gl_budget*` | Contabilidad | **BAJA** |
+| "Retenciones aplicadas" | `c_withholding*` | Contabilidad/Finanzas | **BAJA** |
+| "Facturas tipo B / tipo V" | `c_doctype.name` filtrado | Ventas | ✅ **FIX APLICADO** (17/Mar) |
+
+---
+
+### 23.9 Acciones Siguientes
+
+1. **Finanzas — Préstamos y Pagarés (PRIORIDAD ALTA)**
+   - Crear `build_loan_summary()` que consulte saldos de cuentas 2.01.01.01, 2.01.04.01, 2.02.01.01, 2.02.02.01 en `fact_acct`
+   - Crear `build_promissory_notes()` que consulte tablas `dcs_*` para detalle de pagarés vigentes
+   - Agregar keywords en `finanzas.py`: "pagaré", "préstamo", "compromiso bancario", "obligación"
+
+2. **Finanzas — Estados de Cuenta Bancarios (PRIORIDAD MEDIA)**
+   - Crear `build_bank_statement_summary()` consultando `c_bankstatement` + `c_bankstatementline`
+   - Keywords: "estado de cuenta", "movimientos bancarios", "extracto bancario"
+
+3. **Ventas/Finanzas — Límites de Crédito (PRIORIDAD MEDIA)**
+   - Crear `build_credit_status()` consultando `c_bpartner.so_creditlimit/so_creditused`
+   - Keywords: "límite de crédito", "crédito disponible", "excedido"
+
+4. **Contabilidad — Diarios Contables (PRIORIDAD MEDIA)**
+   - Crear `build_journal_entries()` consultando `gl_journal` + `gl_journalline`
+   - Keywords: "asiento manual", "diario contable", "journal"
+
+5. **RRHH — Préstamos a Empleados (PRIORIDAD MEDIA)**
+   - Crear `build_employee_loans()` consultando `hr_prestamos_v`
+   - Keywords: "préstamo empleado", "adelanto", "descuento nómina"
