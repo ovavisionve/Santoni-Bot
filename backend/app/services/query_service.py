@@ -1262,11 +1262,12 @@ def build_accounting_summary(
     org_ids: list[int] | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    currency_ids: list[int] | None = None,
 ) -> dict:
     """Accounting summary - routes to demo or iDempiere."""
     if _is_production():
         from app.services.idempiere_queries import build_accounting_summary as _prod
-        return _prod(mes=mes, anio=anio, org_ids=org_ids, date_from=date_from, date_to=date_to)
+        return _prod(mes=mes, anio=anio, org_ids=org_ids, date_from=date_from, date_to=date_to, currency_ids=currency_ids)
 
     # Demo fallback
     db = SessionLocal()
@@ -1292,6 +1293,18 @@ def build_accounting_summary(
         }
     finally:
         db.close()
+
+
+def search_accounts_by_name(
+    name_search: str,
+    org_ids: list[int] | None = None,
+    limit: int = 10,
+) -> list[dict]:
+    """Search accounting accounts by name - routes to demo or iDempiere."""
+    if _is_production():
+        from app.services.idempiere_queries import search_accounts_by_name as _prod
+        return _prod(name_search=name_search, org_ids=org_ids, limit=limit)
+    return []
 
 
 def build_account_detail(

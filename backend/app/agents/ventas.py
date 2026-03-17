@@ -167,6 +167,27 @@ Datos de ventas de iDempiere:
 
     # ---- Extraction helpers (reused for history) ----
 
+    # Doctype series pattern: "factura(s) B", "documento(s) B", "serie B", etc.
+    _DOCTYPE_RE = re.compile(
+        r'(?:facturas?|documentos?|serie)\s+'
+        r'([A-Za-z])\b',
+        re.IGNORECASE,
+    )
+
+    @classmethod
+    def _extract_doctype(cls, msg: str) -> str | None:
+        """Extract document type series from message.
+
+        Maps user-facing series letters to iDempiere doctype name patterns:
+        - "factura B" → "Invoice B" (matches "AR Invoice B")
+        - "factura V" → "Invoice V" (matches "AR Invoice V")
+        """
+        m = cls._DOCTYPE_RE.search(msg)
+        if m:
+            letter = m.group(1).upper()
+            return f"Invoice {letter}"
+        return None
+
     _ZONES = [
         "portuguesa", "barinas", "lara", "carabobo", "aragua", "zulia",
         "maracaibo", "falcon", "margarita", "trujillo", "merida", "mérida",
@@ -308,6 +329,7 @@ Datos de ventas de iDempiere:
         vendedor = self._extract_vendedor(message)
         zona = self._extract_zona(message)
         org_name = self._extract_org_name(message)
+        doctype_name = self._extract_doctype(message)
 
         # Follow-up: carry over context from history
         hist_ctx: dict = {}
@@ -363,6 +385,7 @@ Datos de ventas de iDempiere:
                     org_ids=org_ids, salesrep_id=salesrep_id,
                     date_from=date_from, date_to=date_to,
                     currency_ids=top_currency, org_name=org_name,
+                    doctype_name=doctype_name,
                 )
                 logger.info("Top clients result: %d rows", len(data) if isinstance(data, list) else -1)
                 # If specific period returned empty, retry with full year
@@ -373,6 +396,7 @@ Datos de ventas de iDempiere:
                         org_ids=org_ids, salesrep_id=salesrep_id,
                         date_from=None, date_to=None,
                         currency_ids=top_currency, org_name=org_name,
+                        doctype_name=doctype_name,
                     )
                     logger.info("Fallback result: %d rows", len(data_year) if isinstance(data_year, list) else -1)
                     if not self._is_empty_result(data_year):
@@ -414,6 +438,7 @@ Datos de ventas de iDempiere:
                     org_ids=org_ids, salesrep_id=salesrep_id,
                     date_from=date_from, date_to=date_to,
                     currency_ids=currency_ids, org_name=org_name,
+                    doctype_name=doctype_name,
                 )
                 # If specific period returned empty, retry with full year
                 if self._is_empty_result(data) and (mes or (date_from and date_to)):
@@ -422,6 +447,7 @@ Datos de ventas de iDempiere:
                         org_ids=org_ids, salesrep_id=salesrep_id,
                         date_from=None, date_to=None,
                         currency_ids=currency_ids, org_name=org_name,
+                        doctype_name=doctype_name,
                     )
                     if not self._is_empty_result(data_year):
                         sections.append(

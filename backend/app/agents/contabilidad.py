@@ -16,7 +16,7 @@ from app.agents.date_utils import (
     build_period_label,
     detect_currency,
 )
-from app.services.query_service import build_accounting_summary, build_account_detail
+from app.services.query_service import build_accounting_summary, build_account_detail, search_accounts_by_name
 
 logger = logging.getLogger("santonibot.agents.contabilidad")
 
@@ -153,6 +153,44 @@ Se pueden consultar cuentas específicas por código (ej: 2.01.01.10) con rango 
             "El saldo se mantiene sin cambios al no haber movimientos en el período consultado.",
         ]
         return "\n".join(lines)
+
+    # Account names users might search by (mapped to search terms)
+    _ACCOUNT_NAME_PATTERNS = [
+        (r'caja\s+chica', 'caja chica'),
+        (r'caja\s+general', 'caja general'),
+        (r'cuentas?\s+por\s+cobrar', 'cuentas por cobrar'),
+        (r'cuentas?\s+por\s+pagar', 'cuentas por pagar'),
+        (r'bancos?\s+nacionales?', 'banco nacional'),
+        (r'banco\s+de\s+venezuela', 'banco venezuela'),
+        (r'banesco', 'banesco'),
+        (r'banco\s+provincial', 'provincial'),
+        (r'mercantil', 'mercantil'),
+        (r'gastos?\s+(?:de\s+)?personal', 'gasto personal'),
+        (r'depreciaci[oó]n', 'depreciacion'),
+        (r'capital\s+social', 'capital social'),
+        (r'utilidad(?:es)?(?:\s+retenidas)?', 'utilidad'),
+        (r'inventarios?', 'inventario'),
+        (r'impuestos?', 'impuesto'),
+        (r'iva', 'iva'),
+        (r'islr', 'islr'),
+        (r'retenciones?', 'retencion'),
+        (r'ingresos?\s+(?:por\s+)?ventas?', 'ingreso venta'),
+        (r'costos?\s+(?:de\s+)?ventas?', 'costo venta'),
+        (r'saldo\s+(?:de\s+la?\s+)?cuenta\s+(.+?)(?:\s+de\s+|\s+al\s+|\s*$)', None),  # generic
+    ]
+
+    @classmethod
+    def _extract_account_name(cls, msg: str) -> str | None:
+        """Extract account name search term from user message."""
+        msg_lower = msg.lower()
+        for pattern, search_term in cls._ACCOUNT_NAME_PATTERNS:
+            m = re.search(pattern, msg_lower)
+            if m:
+                if search_term is None and m.lastindex:
+                    # Generic pattern with capture group
+                    return m.group(1).strip()
+                return search_term
+        return None
 
     @staticmethod
     def _extract_account_from_history(
@@ -301,6 +339,26 @@ Se pueden consultar cuentas específicas por código (ej: 2.01.01.10) con rango 
         if not account_code and history and not _is_summary_query:
             account_code = self._extract_account_from_history(history)
 
+        # If no account code found and not a summary query, try searching by name
+        # e.g. "caja chica", "bancos nacionales", "cuentas por cobrar"
+        if not account_code and not _is_summary_query:
+            account_name_search = self._extract_account_name(message)
+            if account_name_search:
+                matches = search_accounts_by_name(account_name_search, org_ids=org_ids)
+                if matches:
+                    if len(matches) == 1:
+                        # Exact single match → use it directly
+                        account_code = matches[0]["codigo"]
+                    else:
+                        # Multiple matches → show list and let user pick
+                        lines = [f"Se encontraron {len(matches)} cuentas que coinciden con **\"{account_name_search}\"**:\n"]
+                        lines.append("| # | Código | Cuenta | Tipo |")
+                        lines.append("|---|--------|--------|------|")
+                        for i, m in enumerate(matches, 1):
+                            lines.append(f"| {i} | {m['codigo']} | {m['cuenta']} | {m['tipo']} |")
+                        lines.append("\nIndica el **código de cuenta** (ej: 1.01.01.01) para ver el detalle de movimientos.")
+                        return "\n".join(lines)
+
         try:
             if account_code:
                 # Try to extract date range first (dd/mm/yyyy al dd/mm/yyyy)
@@ -356,6 +414,7 @@ Se pueden consultar cuentas específicas por código (ej: 2.01.01.10) con rango 
                 if date_from and date_to:
                     summary = build_accounting_summary(
                         date_from=date_from, date_to=date_to, org_ids=org_ids,
+                        currency_ids=currency_ids,
                     )
                     label = build_period_label(date_from=date_from, date_to=date_to)
                 else:
@@ -378,10 +437,11 @@ Se pueden consultar cuentas específicas por código (ej: 2.01.01.10) con rango 
                     if date_from and date_to:
                         summary = build_accounting_summary(
                             date_from=date_from, date_to=date_to, org_ids=org_ids,
+                            currency_ids=currency_ids,
                         )
                         label = build_period_label(date_from=date_from, date_to=date_to)
                     else:
-                        summary = build_accounting_summary(mes=mes, anio=anio, org_ids=org_ids)
+                        summary = build_accounting_summary(mes=mes, anio=anio, org_ids=org_ids, currency_ids=currency_ids)
                         label = build_period_label(mes=mes, anio=anio)
                 if not self._dict_has_data(summary):
                     return None

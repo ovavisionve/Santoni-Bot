@@ -291,11 +291,18 @@ def _add_product_search_filter(
     - If 3+ words: at least 2 must match (OR groups)
     With accent normalization and de-pluralization.
     """
-    # Product code: exact substring match
+    # Product code: exact substring match (standard codes like REP-LAMI-0037)
     if re.search(r'[A-Za-z]{2,}-[A-Za-z]{2,}-\d+', product_search):
         params[f"{prefix}_search"] = f"%{product_search}%"
         conditions.append(
             f"(p.name ILIKE :{prefix}_search OR p.value ILIKE :{prefix}_search)"
+        )
+        return
+    # Short/numeric codes with dashes (e.g. "01-0", "-9010", "HBL-920")
+    if re.search(r'^-?\d+[-\d]*$|^[A-Za-z]+-\d+', product_search.strip()):
+        params[f"{prefix}_search"] = f"%{product_search.strip()}%"
+        conditions.append(
+            f"(p.value ILIKE :{prefix}_search OR p.name ILIKE :{prefix}_search)"
         )
         return
 
@@ -450,6 +457,7 @@ def build_sales_summary(
     date_to: str | None = None,
     currency_ids: list[int] | None = None,
     org_name: str | None = None,
+    doctype_name: str | None = None,
 ) -> dict:
     """Sales summary from iDempiere c_invoice (issotrx='Y').
 
@@ -476,6 +484,9 @@ def build_sales_summary(
         if zona:
             conditions.append("COALESCE(cz.zona_name, '') ILIKE :zona")
             params["zona"] = f"%{zona}%"
+        if doctype_name:
+            conditions.append("dt.name ILIKE :doctype_name")
+            params["doctype_name"] = f"%{doctype_name}%"
 
         where = " AND ".join(conditions)
 
@@ -772,6 +783,7 @@ def build_top_clients(
     date_to: str | None = None,
     currency_ids: list[int] | None = None,
     org_name: str | None = None,
+    doctype_name: str | None = None,
 ) -> list[dict]:
     """Top clients by net invoiced amount from iDempiere.
 
@@ -794,6 +806,9 @@ def build_top_clients(
         _add_salesrep_filter(conditions, params, salesrep_id, "i")
         _add_currency_filter(conditions, params, currency_ids, "i")
         _add_date_filter(conditions, params, date_from, date_to, mes, anio, "i.dateinvoiced")
+        if doctype_name:
+            conditions.append("dt.name ILIKE :doctype_name")
+            params["doctype_name"] = f"%{doctype_name}%"
 
         where = " AND ".join(conditions)
 
@@ -2225,11 +2240,18 @@ def build_production_orders(
             f"  WHEN 'P-' THEN 'Producción -' "
             f"  ELSE io.movementtype END AS tipo, "
             f"org.name AS organizacion, "
-            f"COALESCE(bp.name, '') AS socio_negocio "
+            f"COALESCE(bp.name, '') AS socio_negocio, "
+            f"STRING_AGG(DISTINCT p.name, ', ' ORDER BY p.name) AS productos, "
+            f"SUM(ABS(iol.movementqty)) AS cantidad_total, "
+            f"MIN(u.name) AS unidad "
             f"FROM adempiere.m_inout io "
             f"JOIN adempiere.ad_org org ON io.ad_org_id = org.ad_org_id "
             f"LEFT JOIN adempiere.c_bpartner bp ON io.c_bpartner_id = bp.c_bpartner_id "
+            f"LEFT JOIN adempiere.m_inoutline iol ON io.m_inout_id = iol.m_inout_id "
+            f"LEFT JOIN adempiere.m_product p ON iol.m_product_id = p.m_product_id "
+            f"LEFT JOIN adempiere.c_uom u ON iol.c_uom_id = u.c_uom_id "
             f"WHERE {where} "
+            f"GROUP BY io.documentno, io.movementdate, io.movementtype, org.name, bp.name "
             f"ORDER BY io.movementdate DESC LIMIT 50"
         )
         return [
@@ -2239,6 +2261,9 @@ def build_production_orders(
                 "tipo": r[2],
                 "organizacion": r[3] or "",
                 "socio_negocio": r[4] or "",
+                "productos": r[5] or "",
+                "cantidad": float(r[6]) if r[6] else 0.0,
+                "unidad": r[7] or "",
             }
             for r in db.execute(q, params).fetchall()
         ]
@@ -3392,6 +3417,7 @@ def build_accounting_summary(
     org_ids: list[int] | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    currency_ids: list[int] | None = None,
 ) -> dict:
     """Accounting summary from iDempiere fact_acct (posted accounting facts)."""
     # Always use iDempiere live — local DB fact_acct only has data up to 2021
@@ -3402,6 +3428,7 @@ def build_accounting_summary(
         ]
         params: dict = {}
         _add_org_filter(conditions, params, org_ids, "fa")
+        _add_currency_filter(conditions, params, currency_ids, "fa")
         _add_date_filter(conditions, params, date_from, date_to, mes, anio, "fa.dateacct")
 
         where = " AND ".join(conditions)
@@ -3451,6 +3478,7 @@ def build_accounting_summary(
         ]
         balance_params: dict = {}
         _add_org_filter(balance_conds, balance_params, org_ids, "fa")
+        _add_currency_filter(balance_conds, balance_params, currency_ids, "fa")
         if anio:
             balance_conds.append("EXTRACT(YEAR FROM fa.dateacct) <= :anio")
             balance_params["anio"] = anio
@@ -3501,6 +3529,50 @@ def build_accounting_summary(
             "balance": balance,
             "cuentas_con_mayor_movimiento": top_accounts,
         }
+    finally:
+        db.close()
+
+
+def search_accounts_by_name(
+    name_search: str,
+    org_ids: list[int] | None = None,
+    limit: int = 10,
+) -> list[dict]:
+    """Search accounting accounts (c_elementvalue) by name.
+
+    Useful when user asks about 'caja chica', 'bancos', etc.
+    without knowing the account code.
+    """
+    db = IdempiereSession()
+    try:
+        words = [w for w in name_search.lower().split() if len(w) >= 2]
+        if not words:
+            return []
+        word_conds = []
+        params: dict = {"limit": limit}
+        for i, w in enumerate(words):
+            pk = f"w{i}"
+            params[pk] = f"%{w}%"
+            word_conds.append(f"LOWER(ev.name) ILIKE :{pk}")
+        name_filter = " AND ".join(word_conds)
+
+        q = text(
+            f"SELECT ev.value AS codigo, ev.name AS cuenta, "
+            f"CASE ev.accounttype "
+            f"  WHEN 'A' THEN 'Activo' WHEN 'L' THEN 'Pasivo' "
+            f"  WHEN 'O' THEN 'Patrimonio' WHEN 'R' THEN 'Ingreso' "
+            f"  WHEN 'E' THEN 'Gasto' WHEN 'M' THEN 'Memo' "
+            f"  ELSE ev.accounttype END AS tipo "
+            f"FROM adempiere.c_elementvalue ev "
+            f"WHERE ev.isactive = 'Y' AND ev.issummary = 'N' "
+            f"AND {name_filter} "
+            f"ORDER BY ev.value "
+            f"LIMIT :limit"
+        )
+        return [
+            {"codigo": r[0], "cuenta": r[1], "tipo": r[2]}
+            for r in db.execute(q, params).fetchall()
+        ]
     finally:
         db.close()
 
