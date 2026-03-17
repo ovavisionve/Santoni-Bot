@@ -272,8 +272,11 @@ Datos de compras a productores en iDempiere:
         # e.g. "¿Y en enero?" after "compras 2025" → use enero 2025, not 2026
         elif mes and not _has_explicit_year and not date_from:
             if hist_ctx.get("anio"):
+                logger.info("[YEAR-FIX] Heredando año %s del historial (mes=%s del mensaje actual)", hist_ctx["anio"], mes)
                 anio = hist_ctx["anio"]
 
+        logger.info("[TEMPORAL] mes=%s, anio=%s, date_from=%s, date_to=%s, explicit_year=%s, hist_ctx=%s",
+                    mes, anio, date_from, date_to, _has_explicit_year, hist_ctx)
         label = build_period_label(date_from, date_to, mes, anio)
 
         # Extract organization name from message (e.g. "en INPROA SANTONI", "de inpromaiz")
