@@ -25,6 +25,12 @@ _MAX_TABLE_ROWS = 100
 _MAX_HISTORY_MESSAGES = 40
 _MAX_TOKENS = 4096
 
+# Marker prefix: when fetch_data returns a string starting with this,
+# stream/process bypass the LLM and return the data directly.
+# Use this for responses that are already complete (tables, summaries)
+# where the LLM would only add fabricated interpretation.
+DIRECT_RESPONSE_MARKER = "<!-- DIRECT_RESPONSE -->\n"
+
 # Days of week in Spanish
 _DIAS_SEMANA = {
     0: "Lunes", 1: "Martes", 2: "Miércoles", 3: "Jueves",
@@ -569,6 +575,22 @@ class BaseAgent(ABC):
                 },
             }
 
+        # Direct response bypass: return pre-formatted data without LLM
+        if data_context and data_context.startswith(DIRECT_RESPONSE_MARKER):
+            logger.info(
+                "Direct response for %s — bypassing LLM (data already formatted)",
+                self.name,
+            )
+            return {
+                "response": data_context[len(DIRECT_RESPONSE_MARKER):],
+                "agent_used": self.name,
+                "metadata": {
+                    "department": self.department,
+                    "has_data": True,
+                    "direct_response": True,
+                },
+            }
+
         response = await self.llm.ainvoke(messages)
 
         response_text = response.content
@@ -650,6 +672,18 @@ class BaseAgent(ABC):
                 self.name,
             )
             yield self._HALLUCINATION_REPLACEMENT
+            return
+
+        # Direct response bypass: when fetch_data returns pre-formatted data
+        # with the DIRECT_RESPONSE_MARKER, skip the LLM entirely and return
+        # the data as-is. This prevents the LLM from fabricating alternative
+        # names, numbers, or categories when real tabular data is available.
+        if data_context and data_context.startswith(DIRECT_RESPONSE_MARKER):
+            logger.info(
+                "Direct response for %s — bypassing LLM (data already formatted)",
+                self.name,
+            )
+            yield data_context[len(DIRECT_RESPONSE_MARKER):]
             return
 
         accumulated = []

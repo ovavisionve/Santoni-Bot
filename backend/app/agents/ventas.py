@@ -10,7 +10,7 @@ c_bpartner en iDempiere (PostgreSQL 13).
 import logging
 import re
 
-from app.agents.base_agent import BaseAgent
+from app.agents.base_agent import BaseAgent, DIRECT_RESPONSE_MARKER
 from app.agents.date_utils import (
     extract_date_range,
     extract_month_year,
@@ -505,4 +505,10 @@ Datos de ventas de iDempiere:
                 )
             sections.insert(0, currency_note)
 
-        return "\n\n".join(sections) if sections else None
+        if not sections:
+            return None
+        result = "\n\n".join(sections)
+        # Bypass LLM: the data contains real tables with client names,
+        # zone breakdowns, etc.  The LLM consistently replaces these with
+        # fabricated names, so return the formatted data directly.
+        return DIRECT_RESPONSE_MARKER + result

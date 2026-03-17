@@ -9,7 +9,7 @@ Fuente de datos: fact_acct y c_elementvalue en iDempiere (PostgreSQL 13).
 import logging
 import re
 
-from app.agents.base_agent import BaseAgent
+from app.agents.base_agent import BaseAgent, DIRECT_RESPONSE_MARKER
 from app.agents.date_utils import (
     extract_date_range,
     extract_month_year,
@@ -512,4 +512,10 @@ Se pueden consultar cuentas específicas por código (ej: 2.01.01.10) con rango 
                 f"Intenta de nuevo en unos momentos."
             )
 
-        return "\n\n".join(sections) if sections else None
+        if not sections:
+            return None
+        result = "\n\n".join(sections)
+        # Bypass LLM: accounting data contains real account codes and names.
+        # The LLM replaces real account names with fabricated categories
+        # like "Importaciones agrícolas" or invented supplier names.
+        return DIRECT_RESPONSE_MARKER + result
