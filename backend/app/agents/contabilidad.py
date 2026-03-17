@@ -308,6 +308,7 @@ Se pueden consultar cuentas específicas por código (ej: 2.01.01.10) con rango 
                 mes, anio = extract_month_year(message) if not (date_from and date_to) else (None, None)
 
                 # Inherit temporal context from history for follow-ups
+                _has_explicit_year = bool(re.search(r'20\d{2}', message))
                 if not date_from and not date_to and not mes and history:
                     h_df, h_dt, h_mes, h_anio = self._extract_dates_from_history(history)
                     if h_df:
@@ -315,6 +316,11 @@ Se pueden consultar cuentas específicas por código (ej: 2.01.01.10) con rango 
                     elif h_mes is not None:
                         mes, anio = h_mes, h_anio
                     elif h_anio:
+                        anio = h_anio
+                # Month extracted but no explicit year → inherit year from history
+                elif mes and not _has_explicit_year and not date_from and history:
+                    _, _, _, h_anio = self._extract_dates_from_history(history)
+                    if h_anio:
                         anio = h_anio
 
                 if date_from and date_to:
@@ -354,6 +360,7 @@ Se pueden consultar cuentas específicas por código (ej: 2.01.01.10) con rango 
                     label = build_period_label(date_from=date_from, date_to=date_to)
                 else:
                     mes, anio = extract_month_year(message)
+                    _has_explicit_year2 = bool(re.search(r'20\d{2}', message))
                     # Inherit temporal context from history for follow-ups
                     if not mes and history:
                         h_df, h_dt, h_mes, h_anio = self._extract_dates_from_history(history)
@@ -362,6 +369,11 @@ Se pueden consultar cuentas específicas por código (ej: 2.01.01.10) con rango 
                         elif h_mes is not None:
                             mes, anio = h_mes, h_anio
                         elif h_anio:
+                            anio = h_anio
+                    # Month extracted but no explicit year → inherit year from history
+                    elif mes and not _has_explicit_year2 and history:
+                        _, _, _, h_anio = self._extract_dates_from_history(history)
+                        if h_anio:
                             anio = h_anio
                     if date_from and date_to:
                         summary = build_accounting_summary(

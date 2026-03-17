@@ -423,6 +423,12 @@ Datos de compras de insumos en iDempiere:
                 if date_from and date_to:
                     mes = None
                     anio = None
+        # Month extracted but no explicit year → inherit year from history
+        # e.g. "¿Y en enero?" after "compras 2025" → use enero 2025, not 2026
+        elif mes is not None and not _has_explicit_year and date_from is None and history:
+            _, _, _, h_anio = self._extract_dates_from_history(history)
+            if h_anio is not None:
+                anio = h_anio
 
         label = build_period_label(date_from, date_to, mes, anio)
 

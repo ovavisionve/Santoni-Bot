@@ -322,6 +322,7 @@ Datos de ventas de iDempiere:
         if not currency_ids:
             currency_ids = hist_ctx.get("currency")
         # Inherit temporal context from history for follow-ups
+        _has_explicit_year = bool(re.search(r'20\d{2}', message))
         if not date_from and not date_to and not mes:
             if hist_ctx.get("date_from"):
                 date_from = hist_ctx["date_from"]
@@ -330,6 +331,10 @@ Datos de ventas de iDempiere:
                 mes = hist_ctx["mes"]
                 anio = hist_ctx.get("anio", anio)
             elif hist_ctx.get("anio"):
+                anio = hist_ctx["anio"]
+        # Month extracted but no explicit year → inherit year from history
+        elif mes and not _has_explicit_year and not date_from:
+            if hist_ctx.get("anio"):
                 anio = hist_ctx["anio"]
 
         label = build_period_label(date_from, date_to, mes, anio)

@@ -237,6 +237,7 @@ Datos de producción en iDempiere:
         org_name = self._extract_org_name(message)
 
         # Inherit temporal context and org_name from history for follow-ups
+        _has_explicit_year = bool(re.search(r'20\d{2}', message))
         if not date_from and not date_to and not mes and history:
             for role, content in reversed(history):
                 if role != "user":
@@ -251,6 +252,16 @@ Datos de producción en iDempiere:
                     break
                 elif re.search(r'20\d{2}', content):
                     anio = a
+                    break
+        # Month extracted but no explicit year → inherit year from history
+        # e.g. "¿Y en enero?" after "producción 2025" → use enero 2025, not 2026
+        elif mes and not _has_explicit_year and not date_from and history:
+            for role, content in reversed(history):
+                if role != "user":
+                    continue
+                yr = re.search(r'20\d{2}', content)
+                if yr:
+                    anio = int(yr.group())
                     break
         if not org_name and history:
             for role, content in reversed(history):

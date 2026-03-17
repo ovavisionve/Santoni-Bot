@@ -289,6 +289,7 @@ Datos de RRHH en iDempiere:
         wants_all_orgs = any(phrase in msg for phrase in _ALL_ORGS_PHRASES)
 
         # Inherit temporal context and org_name from history for follow-ups
+        _has_explicit_year = bool(re.search(r'20\d{2}', message))
         if not date_from and not date_to and not mes and history:
             for role, content in reversed(history):
                 if role != "user":
@@ -303,6 +304,16 @@ Datos de RRHH en iDempiere:
                     break
                 elif re.search(r'20\d{2}', content):
                     anio = a
+                    break
+        # Month extracted but no explicit year → inherit year from history
+        # e.g. "¿Y en enero?" after "nómina 2025" → use enero 2025, not 2026
+        elif mes and not _has_explicit_year and not date_from and history:
+            for role, content in reversed(history):
+                if role != "user":
+                    continue
+                yr = re.search(r'20\d{2}', content)
+                if yr:
+                    anio = int(yr.group())
                     break
         # Only inherit org_name if user didn't explicitly ask for all orgs
         # and the current message looks like a follow-up (short, no new topic keywords)
