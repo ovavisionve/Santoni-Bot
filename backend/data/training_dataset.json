@@ -1,32 +1,32 @@
 {
-  "version": "2.7",
+  "version": "2.8",
   "created": "2026-03-14",
-  "description": "Dataset v2.7: 40 nuevos escenarios. Cobranza con 19 métodos de pago mapeados (Transferencia, Dólar Transferencia, Transferencia Empresas, Dólar Efectivo, etc. - verificados contra ad_ref_list 14/Mar/2026). Producción con 3 nuevas fuentes (m_production, BOM/recetas, movimientos de almacén). RRHH: fix nómina devengado/deducciones, ausentismo total_activos, vacaciones org_name, cumpleaños DISTINCT. Cross-year date ranges. Ventas por distribuidor/organización/moneda.",
+  "description": "Dataset v2.8: +19 escenarios nuevos para capacidades faltantes. Fix préstamos (build_loan_balances ahora funcional). Nuevos: cobros/pagos detallados (finanzas), búsqueda cuentas por nombre (contabilidad), follow-ups moneda/método pago, comparación precios con anti-alucinación, vacaciones por org.",
   "stats": {
-    "total_entries": 404,
+    "total_entries": 423,
     "por_agente": {
-      "compras_insumos": 86,
-      "rrhh": 77,
-      "ventas": 72,
-      "produccion": 61,
-      "finanzas": 37,
+      "compras_insumos": 89,
+      "rrhh": 78,
+      "ventas": 74,
+      "produccion": 63,
+      "finanzas": 45,
       "compras_productores": 29,
-      "contabilidad": 22,
-      "general": 9,
-      "sin_agente": 11
+      "contabilidad": 25,
+      "sin_agente": 11,
+      "general": 9
     },
     "por_fuente": {
       "cuestionario_word": 107,
       "conversacion_real": 93,
+      "nuevas_capacidades": 66,
+      "correccion_bug": 65,
       "patron_comun": 41,
       "cuestionario_validacion": 39,
-      "correccion_bug": 68,
-      "excel_compras": 12,
-      "nuevas_capacidades": 44
+      "excel_compras": 12
     },
     "escenarios_negativos": 0,
     "con_respuesta_esperada": 15,
-    "followups": 86,
+    "followups": 89,
     "escenarios_alucinacion": 22,
     "escenarios_routing_error": 2
   },
@@ -3651,8 +3651,11 @@
       "fuente": "cuestionario_word",
       "categoria": "prestamos",
       "usuario": "oartahona",
-      "es_negativo": true,
-      "limitacion": "Finanzas reportó: limitado a saldos bancarios, CxC y CxP"
+      "resultado_real": {
+        "agente_usado": "finanzas",
+        "exito": true,
+        "notas": "build_loan_balances() ahora consulta fact_acct para cuentas de préstamos (2.01.01.01, 2.01.04.01, 2.02.01.01, 2.02.02.01, 2.02.03.01). Muestra saldo, movimientos, primer/último movimiento."
+      }
     },
     {
       "id": 185,
@@ -5356,12 +5359,22 @@
       "pregunta": "¿Cuáles son los top 10 clientes de este mes?",
       "agente_esperado": "ventas",
       "departamento_usuario": "ventas",
-      "contexto": { "last_agent": null, "historial": [] },
-      "extracciones": { "mes": 3, "anio": 2026 },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "mes": 3,
+        "anio": 2026
+      },
       "es_followup": false,
       "fuente": "correccion_bug",
       "categoria": "ranking_clientes",
-      "resultado_real": { "agente_usado": "ventas", "exito": true, "bug_corregido": "sin_datos_fallback_anual" },
+      "resultado_real": {
+        "agente_usado": "ventas",
+        "exito": true,
+        "bug_corregido": "sin_datos_fallback_anual"
+      },
       "nota": "Si no hay datos del mes, el agente ahora hace fallback al año completo e informa al usuario."
     },
     {
@@ -5369,12 +5382,27 @@
       "pregunta": "¿Y por zona?",
       "agente_esperado": "ventas",
       "departamento_usuario": "ventas",
-      "contexto": { "last_agent": "ventas", "historial": [["user", "¿Cuáles son los top 10 clientes de este mes?"]] },
-      "extracciones": { "mes": 3, "anio": 2026 },
+      "contexto": {
+        "last_agent": "ventas",
+        "historial": [
+          [
+            "user",
+            "¿Cuáles son los top 10 clientes de este mes?"
+          ]
+        ]
+      },
+      "extracciones": {
+        "mes": 3,
+        "anio": 2026
+      },
       "es_followup": true,
       "fuente": "correccion_bug",
       "categoria": "ventas_zona",
-      "resultado_real": { "agente_usado": "ventas", "exito": true, "bug_corregido": "herencia_temporal_followup" },
+      "resultado_real": {
+        "agente_usado": "ventas",
+        "exito": true,
+        "bug_corregido": "herencia_temporal_followup"
+      },
       "nota": "Follow-up hereda mes/año del historial. Antes se perdía el contexto temporal y devolvía sin datos."
     },
     {
@@ -5382,12 +5410,31 @@
       "pregunta": "Dame información de las ventas brutas/netas por región",
       "agente_esperado": "ventas",
       "departamento_usuario": "ventas",
-      "contexto": { "last_agent": "ventas", "historial": [["user", "¿Cuáles son los top 10 clientes de este mes?"], ["user", "¿Y por zona?"]] },
-      "extracciones": { "mes": 3, "anio": 2026 },
+      "contexto": {
+        "last_agent": "ventas",
+        "historial": [
+          [
+            "user",
+            "¿Cuáles son los top 10 clientes de este mes?"
+          ],
+          [
+            "user",
+            "¿Y por zona?"
+          ]
+        ]
+      },
+      "extracciones": {
+        "mes": 3,
+        "anio": 2026
+      },
       "es_followup": true,
       "fuente": "correccion_bug",
       "categoria": "ventas_zona",
-      "resultado_real": { "agente_usado": "ventas", "exito": true, "bug_corregido": "herencia_temporal_followup" },
+      "resultado_real": {
+        "agente_usado": "ventas",
+        "exito": true,
+        "bug_corregido": "herencia_temporal_followup"
+      },
       "nota": "Follow-up encadenado: hereda contexto temporal de 2 mensajes atrás."
     },
     {
@@ -5395,12 +5442,23 @@
       "pregunta": "Compras de arroz paddy en enero 2026",
       "agente_esperado": "compras_productores",
       "departamento_usuario": "compras_productores",
-      "contexto": { "last_agent": null, "historial": [] },
-      "extracciones": { "producto": "arroz paddy", "mes": 1, "anio": 2026 },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "producto": "arroz paddy",
+        "mes": 1,
+        "anio": 2026
+      },
       "es_followup": false,
       "fuente": "correccion_bug",
       "categoria": "compras_materia_prima",
-      "resultado_real": { "agente_usado": "compras_productores", "exito": true, "bug_corregido": "herencia_temporal_followup" },
+      "resultado_real": {
+        "agente_usado": "compras_productores",
+        "exito": true,
+        "bug_corregido": "herencia_temporal_followup"
+      },
       "nota": "Consulta base con producto y mes para validar herencia en follow-ups."
     },
     {
@@ -5408,12 +5466,28 @@
       "pregunta": "¿Y los pagos pendientes?",
       "agente_esperado": "compras_productores",
       "departamento_usuario": "compras_productores",
-      "contexto": { "last_agent": "compras_productores", "historial": [["user", "Compras de arroz paddy en enero 2026"]] },
-      "extracciones": { "producto": "arroz paddy", "mes": 1, "anio": 2026 },
+      "contexto": {
+        "last_agent": "compras_productores",
+        "historial": [
+          [
+            "user",
+            "Compras de arroz paddy en enero 2026"
+          ]
+        ]
+      },
+      "extracciones": {
+        "producto": "arroz paddy",
+        "mes": 1,
+        "anio": 2026
+      },
       "es_followup": true,
       "fuente": "correccion_bug",
       "categoria": "pagos_pendientes",
-      "resultado_real": { "agente_usado": "compras_productores", "exito": true, "bug_corregido": "herencia_temporal_followup" },
+      "resultado_real": {
+        "agente_usado": "compras_productores",
+        "exito": true,
+        "bug_corregido": "herencia_temporal_followup"
+      },
       "nota": "Follow-up hereda producto y mes/año del historial para pagos pendientes."
     },
     {
@@ -5421,12 +5495,32 @@
       "pregunta": "¿Y los precios?",
       "agente_esperado": "compras_productores",
       "departamento_usuario": "compras_productores",
-      "contexto": { "last_agent": "compras_productores", "historial": [["user", "Compras de arroz paddy en enero 2026"], ["user", "¿Y los pagos pendientes?"]] },
-      "extracciones": { "producto": "arroz paddy", "mes": 1, "anio": 2026 },
+      "contexto": {
+        "last_agent": "compras_productores",
+        "historial": [
+          [
+            "user",
+            "Compras de arroz paddy en enero 2026"
+          ],
+          [
+            "user",
+            "¿Y los pagos pendientes?"
+          ]
+        ]
+      },
+      "extracciones": {
+        "producto": "arroz paddy",
+        "mes": 1,
+        "anio": 2026
+      },
       "es_followup": true,
       "fuente": "correccion_bug",
       "categoria": "precios",
-      "resultado_real": { "agente_usado": "compras_productores", "exito": true, "bug_corregido": "herencia_temporal_followup" },
+      "resultado_real": {
+        "agente_usado": "compras_productores",
+        "exito": true,
+        "bug_corregido": "herencia_temporal_followup"
+      },
       "nota": "Follow-up encadenado: hereda producto, sección y contexto temporal del historial."
     },
     {
@@ -5434,12 +5528,22 @@
       "pregunta": "Nómina de febrero 2026",
       "agente_esperado": "rrhh",
       "departamento_usuario": "rrhh",
-      "contexto": { "last_agent": null, "historial": [] },
-      "extracciones": { "mes": 2, "anio": 2026 },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "mes": 2,
+        "anio": 2026
+      },
       "es_followup": false,
       "fuente": "correccion_bug",
       "categoria": "nomina",
-      "resultado_real": { "agente_usado": "rrhh", "exito": true, "bug_corregido": "herencia_temporal_followup" },
+      "resultado_real": {
+        "agente_usado": "rrhh",
+        "exito": true,
+        "bug_corregido": "herencia_temporal_followup"
+      },
       "nota": "Consulta base de nómina con período para validar herencia temporal."
     },
     {
@@ -5447,12 +5551,27 @@
       "pregunta": "¿Y el ausentismo?",
       "agente_esperado": "rrhh",
       "departamento_usuario": "rrhh",
-      "contexto": { "last_agent": "rrhh", "historial": [["user", "Nómina de febrero 2026"]] },
-      "extracciones": { "mes": 2, "anio": 2026 },
+      "contexto": {
+        "last_agent": "rrhh",
+        "historial": [
+          [
+            "user",
+            "Nómina de febrero 2026"
+          ]
+        ]
+      },
+      "extracciones": {
+        "mes": 2,
+        "anio": 2026
+      },
       "es_followup": true,
       "fuente": "correccion_bug",
       "categoria": "ausentismo",
-      "resultado_real": { "agente_usado": "rrhh", "exito": true, "bug_corregido": "herencia_temporal_followup" },
+      "resultado_real": {
+        "agente_usado": "rrhh",
+        "exito": true,
+        "bug_corregido": "herencia_temporal_followup"
+      },
       "nota": "Follow-up hereda mes/año de la consulta anterior de nómina."
     },
     {
@@ -5460,12 +5579,26 @@
       "pregunta": "¿Cuántos obreros integrales tenemos?",
       "agente_esperado": "rrhh",
       "departamento_usuario": "rrhh",
-      "contexto": { "last_agent": "rrhh", "historial": [["user", "Nómina de febrero 2026"]] },
-      "extracciones": { "cargo_search": "obrero integral" },
+      "contexto": {
+        "last_agent": "rrhh",
+        "historial": [
+          [
+            "user",
+            "Nómina de febrero 2026"
+          ]
+        ]
+      },
+      "extracciones": {
+        "cargo_search": "obrero integral"
+      },
       "es_followup": true,
       "fuente": "correccion_bug",
       "categoria": "busqueda_cargo",
-      "resultado_real": { "agente_usado": "rrhh", "exito": true, "bug_corregido": "herencia_temporal_followup" },
+      "resultado_real": {
+        "agente_usado": "rrhh",
+        "exito": true,
+        "bug_corregido": "herencia_temporal_followup"
+      },
       "nota": "Follow-up con búsqueda de cargo, hereda contexto temporal si aplica."
     },
     {
@@ -5473,12 +5606,22 @@
       "pregunta": "Recepciones de materia prima en enero",
       "agente_esperado": "produccion",
       "departamento_usuario": "produccion",
-      "contexto": { "last_agent": null, "historial": [] },
-      "extracciones": { "mes": 1, "anio": 2026 },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "mes": 1,
+        "anio": 2026
+      },
       "es_followup": false,
       "fuente": "correccion_bug",
       "categoria": "resumen_produccion",
-      "resultado_real": { "agente_usado": "produccion", "exito": true, "bug_corregido": "herencia_temporal_followup" },
+      "resultado_real": {
+        "agente_usado": "produccion",
+        "exito": true,
+        "bug_corregido": "herencia_temporal_followup"
+      },
       "nota": "Consulta base de producción con mes."
     },
     {
@@ -5486,12 +5629,27 @@
       "pregunta": "¿Y los despachos?",
       "agente_esperado": "produccion",
       "departamento_usuario": "produccion",
-      "contexto": { "last_agent": "produccion", "historial": [["user", "Recepciones de materia prima en enero"]] },
-      "extracciones": { "mes": 1, "anio": 2026 },
+      "contexto": {
+        "last_agent": "produccion",
+        "historial": [
+          [
+            "user",
+            "Recepciones de materia prima en enero"
+          ]
+        ]
+      },
+      "extracciones": {
+        "mes": 1,
+        "anio": 2026
+      },
       "es_followup": true,
       "fuente": "correccion_bug",
       "categoria": "resumen_produccion",
-      "resultado_real": { "agente_usado": "produccion", "exito": true, "bug_corregido": "herencia_temporal_followup" },
+      "resultado_real": {
+        "agente_usado": "produccion",
+        "exito": true,
+        "bug_corregido": "herencia_temporal_followup"
+      },
       "nota": "Follow-up hereda mes de la consulta anterior. Despacho activa keyword 'documento'."
     },
     {
@@ -5499,12 +5657,24 @@
       "pregunta": "¿Cuánto inventario hay en almacén?",
       "agente_esperado": "produccion",
       "departamento_usuario": "produccion",
-      "contexto": { "last_agent": "produccion", "historial": [["user", "Recepciones de materia prima en enero"]] },
+      "contexto": {
+        "last_agent": "produccion",
+        "historial": [
+          [
+            "user",
+            "Recepciones de materia prima en enero"
+          ]
+        ]
+      },
       "extracciones": {},
       "es_followup": true,
       "fuente": "correccion_bug",
       "categoria": "inventario",
-      "resultado_real": { "agente_usado": "produccion", "exito": true, "bug_corregido": "herencia_temporal_followup" },
+      "resultado_real": {
+        "agente_usado": "produccion",
+        "exito": true,
+        "bug_corregido": "herencia_temporal_followup"
+      },
       "nota": "Follow-up de inventario hereda contexto de producción. Keywords: inventario, almacén."
     },
     {
@@ -5512,12 +5682,19 @@
       "pregunta": "Saldos bancarios actuales",
       "agente_esperado": "finanzas",
       "departamento_usuario": "finanzas",
-      "contexto": { "last_agent": null, "historial": [] },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
       "extracciones": {},
       "es_followup": false,
       "fuente": "correccion_bug",
       "categoria": "saldos_bancarios",
-      "resultado_real": { "agente_usado": "finanzas", "exito": true, "bug_corregido": "herencia_temporal_followup" },
+      "resultado_real": {
+        "agente_usado": "finanzas",
+        "exito": true,
+        "bug_corregido": "herencia_temporal_followup"
+      },
       "nota": "Consulta base de finanzas."
     },
     {
@@ -5525,12 +5702,24 @@
       "pregunta": "¿Y las cuentas por cobrar?",
       "agente_esperado": "finanzas",
       "departamento_usuario": "finanzas",
-      "contexto": { "last_agent": "finanzas", "historial": [["user", "Saldos bancarios actuales"]] },
+      "contexto": {
+        "last_agent": "finanzas",
+        "historial": [
+          [
+            "user",
+            "Saldos bancarios actuales"
+          ]
+        ]
+      },
       "extracciones": {},
       "es_followup": true,
       "fuente": "correccion_bug",
       "categoria": "cuentas_por_cobrar",
-      "resultado_real": { "agente_usado": "finanzas", "exito": true, "bug_corregido": "herencia_temporal_followup" },
+      "resultado_real": {
+        "agente_usado": "finanzas",
+        "exito": true,
+        "bug_corregido": "herencia_temporal_followup"
+      },
       "nota": "Follow-up de finanzas hereda contexto. CxC usa keywords 'cuenta' + 'cobrar'."
     },
     {
@@ -5538,12 +5727,22 @@
       "pregunta": "Balance general de enero 2026",
       "agente_esperado": "contabilidad",
       "departamento_usuario": "contabilidad",
-      "contexto": { "last_agent": null, "historial": [] },
-      "extracciones": { "mes": 1, "anio": 2026 },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "mes": 1,
+        "anio": 2026
+      },
       "es_followup": false,
       "fuente": "correccion_bug",
       "categoria": "balance_general",
-      "resultado_real": { "agente_usado": "contabilidad", "exito": true, "bug_corregido": "herencia_temporal_followup" },
+      "resultado_real": {
+        "agente_usado": "contabilidad",
+        "exito": true,
+        "bug_corregido": "herencia_temporal_followup"
+      },
       "nota": "Consulta base de contabilidad con período."
     },
     {
@@ -5551,12 +5750,28 @@
       "pregunta": "Detalle de la cuenta 2.01.01.10",
       "agente_esperado": "contabilidad",
       "departamento_usuario": "contabilidad",
-      "contexto": { "last_agent": "contabilidad", "historial": [["user", "Balance general de enero 2026"]] },
-      "extracciones": { "cuenta": "2.01.01.10", "mes": 1, "anio": 2026 },
+      "contexto": {
+        "last_agent": "contabilidad",
+        "historial": [
+          [
+            "user",
+            "Balance general de enero 2026"
+          ]
+        ]
+      },
+      "extracciones": {
+        "cuenta": "2.01.01.10",
+        "mes": 1,
+        "anio": 2026
+      },
       "es_followup": true,
       "fuente": "correccion_bug",
       "categoria": "saldo_cuenta",
-      "resultado_real": { "agente_usado": "contabilidad", "exito": true, "bug_corregido": "herencia_temporal_followup" },
+      "resultado_real": {
+        "agente_usado": "contabilidad",
+        "exito": true,
+        "bug_corregido": "herencia_temporal_followup"
+      },
       "nota": "Follow-up de cuenta específica hereda mes/año del historial."
     },
     {
@@ -5564,12 +5779,23 @@
       "pregunta": "Compras de insumos de empaques en febrero",
       "agente_esperado": "compras_insumos",
       "departamento_usuario": "compras_insumos",
-      "contexto": { "last_agent": null, "historial": [] },
-      "extracciones": { "producto": "empaques", "mes": 2, "anio": 2026 },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "producto": "empaques",
+        "mes": 2,
+        "anio": 2026
+      },
       "es_followup": false,
       "fuente": "correccion_bug",
       "categoria": "resumen_compras",
-      "resultado_real": { "agente_usado": "compras_insumos", "exito": true, "bug_corregido": "herencia_temporal_followup" },
+      "resultado_real": {
+        "agente_usado": "compras_insumos",
+        "exito": true,
+        "bug_corregido": "herencia_temporal_followup"
+      },
       "nota": "Consulta base de compras insumos con producto y período."
     },
     {
@@ -5577,12 +5803,28 @@
       "pregunta": "¿Y los proveedores principales?",
       "agente_esperado": "compras_insumos",
       "departamento_usuario": "compras_insumos",
-      "contexto": { "last_agent": "compras_insumos", "historial": [["user", "Compras de insumos de empaques en febrero"]] },
-      "extracciones": { "producto": "empaques", "mes": 2, "anio": 2026 },
+      "contexto": {
+        "last_agent": "compras_insumos",
+        "historial": [
+          [
+            "user",
+            "Compras de insumos de empaques en febrero"
+          ]
+        ]
+      },
+      "extracciones": {
+        "producto": "empaques",
+        "mes": 2,
+        "anio": 2026
+      },
       "es_followup": true,
       "fuente": "correccion_bug",
       "categoria": "proveedores",
-      "resultado_real": { "agente_usado": "compras_insumos", "exito": true, "bug_corregido": "herencia_temporal_followup" },
+      "resultado_real": {
+        "agente_usado": "compras_insumos",
+        "exito": true,
+        "bug_corregido": "herencia_temporal_followup"
+      },
       "nota": "Follow-up hereda producto y mes/año del historial para consulta de proveedores."
     },
     {
@@ -5590,12 +5832,22 @@
       "pregunta": "¿Cuánto hemos comprado del 01/01/2026 al 15/01/2026?",
       "agente_esperado": "compras_insumos",
       "departamento_usuario": "compras_insumos",
-      "contexto": { "last_agent": null, "historial": [] },
-      "extracciones": { "fecha_desde": "2026-01-01", "fecha_hasta": "2026-01-15" },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "fecha_desde": "2026-01-01",
+        "fecha_hasta": "2026-01-15"
+      },
       "es_followup": false,
       "fuente": "correccion_bug",
       "categoria": "resumen_compras",
-      "resultado_real": { "agente_usado": "compras_insumos", "exito": true, "bug_corregido": "herencia_temporal_followup" },
+      "resultado_real": {
+        "agente_usado": "compras_insumos",
+        "exito": true,
+        "bug_corregido": "herencia_temporal_followup"
+      },
       "nota": "Consulta con rango de fechas explícito. El agente extrae date_from/date_to."
     },
     {
@@ -5603,12 +5855,28 @@
       "pregunta": "¿Y en dólares?",
       "agente_esperado": "compras_insumos",
       "departamento_usuario": "compras_insumos",
-      "contexto": { "last_agent": "compras_insumos", "historial": [["user", "¿Cuánto hemos comprado del 01/01/2026 al 15/01/2026?"]] },
-      "extracciones": { "moneda": "USD", "fecha_desde": "2026-01-01", "fecha_hasta": "2026-01-15" },
+      "contexto": {
+        "last_agent": "compras_insumos",
+        "historial": [
+          [
+            "user",
+            "¿Cuánto hemos comprado del 01/01/2026 al 15/01/2026?"
+          ]
+        ]
+      },
+      "extracciones": {
+        "moneda": "USD",
+        "fecha_desde": "2026-01-01",
+        "fecha_hasta": "2026-01-15"
+      },
       "es_followup": true,
       "fuente": "correccion_bug",
       "categoria": "moneda_followup",
-      "resultado_real": { "agente_usado": "compras_insumos", "exito": true, "bug_corregido": "herencia_temporal_followup" },
+      "resultado_real": {
+        "agente_usado": "compras_insumos",
+        "exito": true,
+        "bug_corregido": "herencia_temporal_followup"
+      },
       "nota": "Follow-up hereda rango de fechas del historial y agrega filtro de moneda USD."
     },
     {
@@ -5616,12 +5884,22 @@
       "pregunta": "Ventas del 01/03/2026 al 09/03/2026",
       "agente_esperado": "ventas",
       "departamento_usuario": "ventas",
-      "contexto": { "last_agent": null, "historial": [] },
-      "extracciones": { "fecha_desde": "2026-03-01", "fecha_hasta": "2026-03-09" },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "fecha_desde": "2026-03-01",
+        "fecha_hasta": "2026-03-09"
+      },
       "es_followup": false,
       "fuente": "correccion_bug",
       "categoria": "resumen_ventas",
-      "resultado_real": { "agente_usado": "ventas", "exito": true, "bug_corregido": "sin_datos_fallback_anual" },
+      "resultado_real": {
+        "agente_usado": "ventas",
+        "exito": true,
+        "bug_corregido": "sin_datos_fallback_anual"
+      },
       "nota": "Si el rango específico no tiene datos, el agente hace fallback al año completo con nota informativa."
     },
     {
@@ -5629,12 +5907,27 @@
       "pregunta": "¿Y los vendedores top?",
       "agente_esperado": "ventas",
       "departamento_usuario": "ventas",
-      "contexto": { "last_agent": "ventas", "historial": [["user", "Ventas del 01/03/2026 al 09/03/2026"]] },
-      "extracciones": { "fecha_desde": "2026-03-01", "fecha_hasta": "2026-03-09" },
+      "contexto": {
+        "last_agent": "ventas",
+        "historial": [
+          [
+            "user",
+            "Ventas del 01/03/2026 al 09/03/2026"
+          ]
+        ]
+      },
+      "extracciones": {
+        "fecha_desde": "2026-03-01",
+        "fecha_hasta": "2026-03-09"
+      },
       "es_followup": true,
       "fuente": "correccion_bug",
       "categoria": "ranking_vendedores",
-      "resultado_real": { "agente_usado": "ventas", "exito": true, "bug_corregido": "herencia_temporal_followup" },
+      "resultado_real": {
+        "agente_usado": "ventas",
+        "exito": true,
+        "bug_corregido": "herencia_temporal_followup"
+      },
       "nota": "Follow-up hereda rango de fechas exacto del historial. Vendedores top activa keyword 'vendedor'."
     },
     {
@@ -5642,12 +5935,21 @@
       "pregunta": "Top 10 clientes de este mes",
       "agente_esperado": "ventas",
       "departamento_usuario": "finanzas",
-      "contexto": { "last_agent": null, "historial": [] },
-      "extracciones": { "mes": 3, "anio": 2026 },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "mes": 3,
+        "anio": 2026
+      },
       "es_followup": false,
       "fuente": "conversacion_real",
       "usuario": "admin",
-      "resultado_real": { "agente_usado": "ventas", "exito": true },
+      "resultado_real": {
+        "agente_usado": "ventas",
+        "exito": true
+      },
       "categoria": "ranking_clientes",
       "nota": "Marzo 2026 no tiene datos. Bot debe decir 'sin datos' sin inventar tabla. Escenario anti-alucinación."
     },
@@ -5656,12 +5958,26 @@
       "pregunta": "Si, de marzo de 2026",
       "agente_esperado": "ventas",
       "departamento_usuario": "finanzas",
-      "contexto": { "last_agent": "ventas", "historial": [["user", "Top 10 clientes de este mes"]] },
-      "extracciones": { "mes": 3, "anio": 2026 },
+      "contexto": {
+        "last_agent": "ventas",
+        "historial": [
+          [
+            "user",
+            "Top 10 clientes de este mes"
+          ]
+        ]
+      },
+      "extracciones": {
+        "mes": 3,
+        "anio": 2026
+      },
       "es_followup": true,
       "fuente": "conversacion_real",
       "usuario": "admin",
-      "resultado_real": { "agente_usado": "ventas", "exito": true },
+      "resultado_real": {
+        "agente_usado": "ventas",
+        "exito": true
+      },
       "categoria": "ranking_clientes",
       "nota": "Follow-up confirmando período. Sin datos para marzo 2026 = respuesta sin datos, no inventar."
     },
@@ -5670,12 +5986,31 @@
       "pregunta": "Beuno, de febrero de 2026",
       "agente_esperado": "ventas",
       "departamento_usuario": "finanzas",
-      "contexto": { "last_agent": "ventas", "historial": [["user", "Top 10 clientes de este mes"], ["user", "Si, de marzo de 2026"]] },
-      "extracciones": { "mes": 2, "anio": 2026 },
+      "contexto": {
+        "last_agent": "ventas",
+        "historial": [
+          [
+            "user",
+            "Top 10 clientes de este mes"
+          ],
+          [
+            "user",
+            "Si, de marzo de 2026"
+          ]
+        ]
+      },
+      "extracciones": {
+        "mes": 2,
+        "anio": 2026
+      },
       "es_followup": true,
       "fuente": "conversacion_real",
       "usuario": "admin",
-      "resultado_real": { "agente_usado": "ventas", "exito": false, "tipo_error": "alucinacion" },
+      "resultado_real": {
+        "agente_usado": "ventas",
+        "exito": false,
+        "tipo_error": "alucinacion"
+      },
       "categoria": "ranking_clientes",
       "nota": "ALUCINACIÓN DETECTADA: Bot inventó top 10 con nombres falsos (DISTRIBUIDORA EL RAYO, ALIMENTOS LA FORTALEZA, etc.) y montos redondeados. Los datos reales de febrero 2026 tienen otros clientes (ALIMENTOS PARADAYS, LACTEOS JUNIOR, etc.)."
     },
@@ -5684,12 +6019,27 @@
       "pregunta": "Dime el ranking de venta por zona",
       "agente_esperado": "ventas",
       "departamento_usuario": "finanzas",
-      "contexto": { "last_agent": "ventas", "historial": [["user", "Beuno, de febrero de 2026"]] },
-      "extracciones": { "mes": 2, "anio": 2026 },
+      "contexto": {
+        "last_agent": "ventas",
+        "historial": [
+          [
+            "user",
+            "Beuno, de febrero de 2026"
+          ]
+        ]
+      },
+      "extracciones": {
+        "mes": 2,
+        "anio": 2026
+      },
       "es_followup": true,
       "fuente": "conversacion_real",
       "usuario": "admin",
-      "resultado_real": { "agente_usado": "ventas", "exito": false, "tipo_error": "alucinacion" },
+      "resultado_real": {
+        "agente_usado": "ventas",
+        "exito": false,
+        "tipo_error": "alucinacion"
+      },
       "categoria": "ventas_zona",
       "nota": "ALUCINACIÓN DETECTADA: Bot inventó zonas macro (Centro, Centro-Occidente, Capital) que NO coinciden con las zonas reales del ERP (Sin Zona, Barquisimeto, Maracaibo, Mérida, etc.)."
     },
@@ -5698,12 +6048,21 @@
       "pregunta": "Ranking de ventas por zona del mes de enero 2026",
       "agente_esperado": "ventas",
       "departamento_usuario": "finanzas",
-      "contexto": { "last_agent": "ventas", "historial": [] },
-      "extracciones": { "mes": 1, "anio": 2026 },
+      "contexto": {
+        "last_agent": "ventas",
+        "historial": []
+      },
+      "extracciones": {
+        "mes": 1,
+        "anio": 2026
+      },
       "es_followup": false,
       "fuente": "conversacion_real",
       "usuario": "admin",
-      "resultado_real": { "agente_usado": "ventas", "exito": true },
+      "resultado_real": {
+        "agente_usado": "ventas",
+        "exito": true
+      },
       "categoria": "ventas_zona",
       "nota": "DATOS REALES: Enero 2026 tiene datos. Zonas reales: Sin Zona (44.2%), Barquisimeto, Maracaibo, Mérida, Trujillo-Valera, Falcón-Coro, etc."
     },
@@ -5712,12 +6071,21 @@
       "pregunta": "Top 10 mejores vendedores de InproMaiz",
       "agente_esperado": "ventas",
       "departamento_usuario": "finanzas",
-      "contexto": { "last_agent": "ventas", "historial": [] },
-      "extracciones": { "organizacion": "InproMaiz" },
+      "contexto": {
+        "last_agent": "ventas",
+        "historial": []
+      },
+      "extracciones": {
+        "organizacion": "InproMaiz"
+      },
       "es_followup": false,
       "fuente": "conversacion_real",
       "usuario": "admin",
-      "resultado_real": { "agente_usado": "ventas", "exito": false, "tipo_error": "alucinacion" },
+      "resultado_real": {
+        "agente_usado": "ventas",
+        "exito": false,
+        "tipo_error": "alucinacion"
+      },
       "categoria": "ranking_vendedores",
       "nota": "ALUCINACIÓN PARCIAL: Correctamente explicó que vendedores internos no están vinculados a facturas. Pero luego inventó distribuidores ficticios (COMERCIAL LA ESPERANZA, ALIMENTOS CRUZ VERDE) con montos redondeados."
     },
@@ -5726,12 +6094,22 @@
       "pregunta": "¿Cuánto se facturó en dólares en febrero 2026?",
       "agente_esperado": "ventas",
       "departamento_usuario": "finanzas",
-      "contexto": { "last_agent": "ventas", "historial": [] },
-      "extracciones": { "moneda": "USD", "mes": 2, "anio": 2026 },
+      "contexto": {
+        "last_agent": "ventas",
+        "historial": []
+      },
+      "extracciones": {
+        "moneda": "USD",
+        "mes": 2,
+        "anio": 2026
+      },
       "es_followup": false,
       "fuente": "conversacion_real",
       "usuario": "admin",
-      "resultado_real": { "agente_usado": "ventas", "exito": true },
+      "resultado_real": {
+        "agente_usado": "ventas",
+        "exito": true
+      },
       "categoria": "facturacion",
       "nota": "DATOS REALES: $2,361,329.49 facturado, NC $161,637.21, neta $2,199,692.28. Montos específicos no redondeados."
     },
@@ -5740,12 +6118,20 @@
       "pregunta": "Top 20 clientes por ventas del 2025",
       "agente_esperado": "ventas",
       "departamento_usuario": "finanzas",
-      "contexto": { "last_agent": "ventas", "historial": [] },
-      "extracciones": { "anio": 2025 },
+      "contexto": {
+        "last_agent": "ventas",
+        "historial": []
+      },
+      "extracciones": {
+        "anio": 2025
+      },
       "es_followup": false,
       "fuente": "conversacion_real",
       "usuario": "admin",
-      "resultado_real": { "agente_usado": "ventas", "exito": true },
+      "resultado_real": {
+        "agente_usado": "ventas",
+        "exito": true
+      },
       "categoria": "ranking_clientes",
       "nota": "DATOS REALES: Códigos reales (B-0109, A-0291, Z-0219-C). ALIMENTOS PARADAYS #1 con $1,724,945.80."
     },
@@ -5754,12 +6140,22 @@
       "pregunta": "Top 20 clientes de InproMaiz en febrero 2026",
       "agente_esperado": "ventas",
       "departamento_usuario": "finanzas",
-      "contexto": { "last_agent": "ventas", "historial": [] },
-      "extracciones": { "organizacion": "InproMaiz", "mes": 2, "anio": 2026 },
+      "contexto": {
+        "last_agent": "ventas",
+        "historial": []
+      },
+      "extracciones": {
+        "organizacion": "InproMaiz",
+        "mes": 2,
+        "anio": 2026
+      },
       "es_followup": false,
       "fuente": "conversacion_real",
       "usuario": "admin",
-      "resultado_real": { "agente_usado": "ventas", "exito": true },
+      "resultado_real": {
+        "agente_usado": "ventas",
+        "exito": true
+      },
       "categoria": "ranking_clientes",
       "nota": "DATOS REALES: ALIMENTOS PARADAYS $322,912, LACTEOS JUNIOR $154,570. Códigos y nombres consistentes."
     },
@@ -5768,12 +6164,28 @@
       "pregunta": "Puedes hacer este análisis pero por zona?",
       "agente_esperado": "ventas",
       "departamento_usuario": "finanzas",
-      "contexto": { "last_agent": "ventas", "historial": [["user", "Top 20 clientes de InproMaiz en febrero 2026"]] },
-      "extracciones": { "organizacion": "InproMaiz", "mes": 2, "anio": 2026 },
+      "contexto": {
+        "last_agent": "ventas",
+        "historial": [
+          [
+            "user",
+            "Top 20 clientes de InproMaiz en febrero 2026"
+          ]
+        ]
+      },
+      "extracciones": {
+        "organizacion": "InproMaiz",
+        "mes": 2,
+        "anio": 2026
+      },
       "es_followup": true,
       "fuente": "conversacion_real",
       "usuario": "admin",
-      "resultado_real": { "agente_usado": "ventas", "exito": false, "tipo_error": "alucinacion" },
+      "resultado_real": {
+        "agente_usado": "ventas",
+        "exito": false,
+        "tipo_error": "alucinacion"
+      },
       "categoria": "ventas_zona",
       "nota": "ALUCINACIÓN PARCIAL: Usó datos reales de la query anterior para agrupar por zona, pero inventó detalles: 'Producto estrella: Harina precocida (92%)', '+12% vs enero 2026', totales por Región Macro."
     },
@@ -5782,12 +6194,20 @@
       "pregunta": "¿Cuántos empleados activos hay en INPROA SANTONI?",
       "agente_esperado": "rrhh",
       "departamento_usuario": "finanzas",
-      "contexto": { "last_agent": "ventas", "historial": [] },
-      "extracciones": { "organizacion": "INPROA SANTONI" },
+      "contexto": {
+        "last_agent": "ventas",
+        "historial": []
+      },
+      "extracciones": {
+        "organizacion": "INPROA SANTONI"
+      },
       "es_followup": false,
       "fuente": "conversacion_real",
       "usuario": "admin",
-      "resultado_real": { "agente_usado": "rrhh", "exito": true },
+      "resultado_real": {
+        "agente_usado": "rrhh",
+        "exito": true
+      },
       "categoria": "empleados",
       "nota": "Dato dudoso. El número 450 podría ser real pero los desgloses por área parecen embellecidos por el LLM."
     },
@@ -5796,12 +6216,25 @@
       "pregunta": "¿Cuántos empleados hay por departamento?",
       "agente_esperado": "rrhh",
       "departamento_usuario": "finanzas",
-      "contexto": { "last_agent": "rrhh", "historial": [["user", "¿Cuántos empleados activos hay en INPROA SANTONI?"]] },
-      "extracciones": { "organizacion": "INPROA SANTONI" },
+      "contexto": {
+        "last_agent": "rrhh",
+        "historial": [
+          [
+            "user",
+            "¿Cuántos empleados activos hay en INPROA SANTONI?"
+          ]
+        ]
+      },
+      "extracciones": {
+        "organizacion": "INPROA SANTONI"
+      },
       "es_followup": true,
       "fuente": "conversacion_real",
       "usuario": "admin",
-      "resultado_real": { "agente_usado": "rrhh", "exito": true },
+      "resultado_real": {
+        "agente_usado": "rrhh",
+        "exito": true
+      },
       "categoria": "empleados",
       "nota": "Nombres de departamentos reales del ERP (EMPAQUE, CAMPO, EXTRUSION CEREALES). Datos parcialmente reales."
     },
@@ -5810,12 +6243,23 @@
       "pregunta": "¿Cuántos obreros integrales hay?",
       "agente_esperado": "rrhh",
       "departamento_usuario": "finanzas",
-      "contexto": { "last_agent": "rrhh", "historial": [["user", "¿Cuántos empleados hay por departamento?"]] },
+      "contexto": {
+        "last_agent": "rrhh",
+        "historial": [
+          [
+            "user",
+            "¿Cuántos empleados hay por departamento?"
+          ]
+        ]
+      },
       "extracciones": {},
       "es_followup": true,
       "fuente": "conversacion_real",
       "usuario": "admin",
-      "resultado_real": { "agente_usado": "rrhh", "exito": true },
+      "resultado_real": {
+        "agente_usado": "rrhh",
+        "exito": true
+      },
       "categoria": "busqueda_cargo",
       "nota": "Búsqueda por cargo 'obrero integral'. El total 58 podría ser real si la query por cargo funciona."
     },
@@ -5824,12 +6268,19 @@
       "pregunta": "¿Cuántos choferes tiene la empresa?",
       "agente_esperado": "rrhh",
       "departamento_usuario": "finanzas",
-      "contexto": { "last_agent": "rrhh", "historial": [] },
+      "contexto": {
+        "last_agent": "rrhh",
+        "historial": []
+      },
       "extracciones": {},
       "es_followup": false,
       "fuente": "conversacion_real",
       "usuario": "admin",
-      "resultado_real": { "agente_usado": "rrhh", "exito": false, "tipo_error": "alucinacion" },
+      "resultado_real": {
+        "agente_usado": "rrhh",
+        "exito": false,
+        "tipo_error": "alucinacion"
+      },
       "categoria": "busqueda_cargo",
       "nota": "ALUCINACIÓN PROBABLE: Desglose por 5 organizaciones con subtotales (46+22+18+12+8=106) demasiado organizado. El LLM probablemente embellece datos reales con subtotales inventados."
     },
@@ -5838,12 +6289,23 @@
       "pregunta": "Indicadores de ausentismo de INPROA SANTONI de septiembre 2025",
       "agente_esperado": "rrhh",
       "departamento_usuario": "finanzas",
-      "contexto": { "last_agent": "rrhh", "historial": [] },
-      "extracciones": { "organizacion": "INPROA SANTONI", "mes": 9, "anio": 2025 },
+      "contexto": {
+        "last_agent": "rrhh",
+        "historial": []
+      },
+      "extracciones": {
+        "organizacion": "INPROA SANTONI",
+        "mes": 9,
+        "anio": 2025
+      },
       "es_followup": false,
       "fuente": "conversacion_real",
       "usuario": "admin",
-      "resultado_real": { "agente_usado": "rrhh", "exito": false, "tipo_error": "alucinacion" },
+      "resultado_real": {
+        "agente_usado": "rrhh",
+        "exito": false,
+        "tipo_error": "alucinacion"
+      },
       "categoria": "ausentismo",
       "nota": "ALUCINACIÓN: Datos demasiado detallados y organizados. 'Empaque: 28 casos (30% del total)' y '+15% vs agosto' son inventados."
     },
@@ -5852,12 +6314,22 @@
       "pregunta": "¿Cuántos empleados ingresaron entre enero y junio 2025?",
       "agente_esperado": "rrhh",
       "departamento_usuario": "finanzas",
-      "contexto": { "last_agent": "rrhh", "historial": [] },
-      "extracciones": { "fecha_desde": "2025-01-01", "fecha_hasta": "2025-06-30" },
+      "contexto": {
+        "last_agent": "rrhh",
+        "historial": []
+      },
+      "extracciones": {
+        "fecha_desde": "2025-01-01",
+        "fecha_hasta": "2025-06-30"
+      },
       "es_followup": false,
       "fuente": "conversacion_real",
       "usuario": "admin",
-      "resultado_real": { "agente_usado": "rrhh", "exito": false, "tipo_error": "alucinacion" },
+      "resultado_real": {
+        "agente_usado": "rrhh",
+        "exito": false,
+        "tipo_error": "alucinacion"
+      },
       "categoria": "ingresos_personal",
       "nota": "ALUCINACIÓN: No existe query para ingresos por rango de fecha. Números mensual (12,8,15,11,9,14=69) inventados. El agente debe decir que no puede consultar ingresos por fecha."
     },
@@ -5866,12 +6338,20 @@
       "pregunta": "Cumpleañeros del mes de marzo",
       "agente_esperado": "rrhh",
       "departamento_usuario": "finanzas",
-      "contexto": { "last_agent": "rrhh", "historial": [] },
-      "extracciones": { "mes": 3 },
+      "contexto": {
+        "last_agent": "rrhh",
+        "historial": []
+      },
+      "extracciones": {
+        "mes": 3
+      },
       "es_followup": false,
       "fuente": "conversacion_real",
       "usuario": "admin",
-      "resultado_real": { "agente_usado": "rrhh", "exito": true },
+      "resultado_real": {
+        "agente_usado": "rrhh",
+        "exito": true
+      },
       "categoria": "cumpleanos",
       "nota": "Respuesta honesta: dijo 'no hay empleados registrados con cumpleaños en marzo'. Podría ser real o fallo de query."
     },
@@ -5880,12 +6360,18 @@
       "pregunta": "¿Cuáles son los saldos bancarios actuales?",
       "agente_esperado": "finanzas",
       "departamento_usuario": "finanzas",
-      "contexto": { "last_agent": null, "historial": [] },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
       "extracciones": {},
       "es_followup": false,
       "fuente": "conversacion_real",
       "usuario": "admin",
-      "resultado_real": { "agente_usado": "finanzas", "exito": true },
+      "resultado_real": {
+        "agente_usado": "finanzas",
+        "exito": true
+      },
       "categoria": "saldos_bancarios",
       "nota": "DATOS PARCIALMENTE REALES: Números de cuenta específicos y montos no redondeados sugieren datos reales. Pero '317 cuentas adicionales' parece embellecido. Bot dijo 'Julio 2024' en vez de fecha actual — requiere inyección de fecha."
     },
@@ -5894,12 +6380,24 @@
       "pregunta": "¿Cuánto tenemos en cuentas por cobrar vencidas?",
       "agente_esperado": "finanzas",
       "departamento_usuario": "finanzas",
-      "contexto": { "last_agent": "finanzas", "historial": [["user", "¿Cuáles son los saldos bancarios actuales?"]] },
+      "contexto": {
+        "last_agent": "finanzas",
+        "historial": [
+          [
+            "user",
+            "¿Cuáles son los saldos bancarios actuales?"
+          ]
+        ]
+      },
       "extracciones": {},
       "es_followup": true,
       "fuente": "conversacion_real",
       "usuario": "admin",
-      "resultado_real": { "agente_usado": "finanzas", "exito": false, "tipo_error": "alucinacion" },
+      "resultado_real": {
+        "agente_usado": "finanzas",
+        "exito": false,
+        "tipo_error": "alucinacion"
+      },
       "categoria": "cxc_vencidas",
       "nota": "ALUCINACIÓN PARCIAL: Totales (Bs.6.846M y $13.1M) podrían ser reales. Pero Top 5 clientes (POLAR, UNICASA, PLAZA'S) son marcas famosas inventadas. Análisis por antigüedad inventado."
     },
@@ -5908,12 +6406,24 @@
       "pregunta": "¿Cuánto debemos en cuentas por pagar?",
       "agente_esperado": "finanzas",
       "departamento_usuario": "finanzas",
-      "contexto": { "last_agent": "finanzas", "historial": [["user", "¿Cuánto tenemos en cuentas por cobrar vencidas?"]] },
+      "contexto": {
+        "last_agent": "finanzas",
+        "historial": [
+          [
+            "user",
+            "¿Cuánto tenemos en cuentas por cobrar vencidas?"
+          ]
+        ]
+      },
       "extracciones": {},
       "es_followup": true,
       "fuente": "conversacion_real",
       "usuario": "admin",
-      "resultado_real": { "agente_usado": "finanzas", "exito": false, "tipo_error": "alucinacion" },
+      "resultado_real": {
+        "agente_usado": "finanzas",
+        "exito": false,
+        "tipo_error": "alucinacion"
+      },
       "categoria": "cuentas_por_pagar",
       "nota": "ALUCINACIÓN: Proveedores genéricos (CORPOGROUP INTERNATIONAL, AGROINSUMOS DEL SUR). Errores tipográficos ('Clíticas'). Vencimientos en julio 2024."
     },
@@ -5922,12 +6432,19 @@
       "pregunta": "¿Cuál es el banco con mayor disponibilidad actualmente?",
       "agente_esperado": "finanzas",
       "departamento_usuario": "finanzas",
-      "contexto": { "last_agent": "finanzas", "historial": [] },
+      "contexto": {
+        "last_agent": "finanzas",
+        "historial": []
+      },
       "extracciones": {},
       "es_followup": false,
       "fuente": "conversacion_real",
       "usuario": "admin",
-      "resultado_real": { "agente_usado": "finanzas", "exito": false, "tipo_error": "alucinacion" },
+      "resultado_real": {
+        "agente_usado": "finanzas",
+        "exito": false,
+        "tipo_error": "alucinacion"
+      },
       "categoria": "saldos_bancarios",
       "nota": "ALUCINACIÓN PARCIAL: Reutilizó datos reales de saldos pero añadió 'recomendaciones' inventadas."
     },
@@ -5936,26 +6453,44 @@
       "pregunta": "Cuotas de préstamos vencidos a la fecha",
       "agente_esperado": "finanzas",
       "departamento_usuario": "finanzas",
-      "contexto": { "last_agent": "finanzas", "historial": [] },
+      "contexto": {
+        "last_agent": "finanzas",
+        "historial": []
+      },
       "extracciones": {},
       "es_followup": false,
       "fuente": "conversacion_real",
       "usuario": "admin",
-      "resultado_real": { "agente_usado": "finanzas", "exito": false, "tipo_error": "alucinacion" },
+      "resultado_real": {
+        "agente_usado": "finanzas",
+        "exito": false,
+        "tipo_error": "alucinacion",
+        "notas": "BUG HISTÓRICO (pre-build_loan_balances): Bot inventaba números de préstamo. CORREGIDO: build_loan_balances() ahora consulta fact_acct con cuentas predefinidas de pasivos bancarios."
+      },
       "categoria": "prestamos",
-      "nota": "ALUCINACIÓN COMPLETA: No existe query para préstamos. Bot inventó números de préstamo (P-2057, CR-8892), bancos y montos. Errores tipográficos evidentes."
+      "nota": "HISTÓRICO: Antes de build_loan_balances, el bot alucinaba datos de préstamos. Ahora build_loan_balances() consulta cuentas de pasivo en fact_acct y retorna saldos reales."
     },
     {
       "id": 323,
       "pregunta": "¿Cuánto se produjo en enero 2026?",
       "agente_esperado": "produccion",
       "departamento_usuario": "finanzas",
-      "contexto": { "last_agent": "finanzas", "historial": [] },
-      "extracciones": { "mes": 1, "anio": 2026 },
+      "contexto": {
+        "last_agent": "finanzas",
+        "historial": []
+      },
+      "extracciones": {
+        "mes": 1,
+        "anio": 2026
+      },
       "es_followup": false,
       "fuente": "conversacion_real",
       "usuario": "admin",
-      "resultado_real": { "agente_usado": "finanzas", "exito": false, "tipo_error": "routing_general" },
+      "resultado_real": {
+        "agente_usado": "finanzas",
+        "exito": false,
+        "tipo_error": "routing_general"
+      },
       "categoria": "produccion_producto",
       "nota": "DOBLE ERROR: 1) Routing incorrecto — fue a finanzas en vez de producción. 2) Alucinación completa con plantas ficticias (Guatire, Acarigua, San Carlos) y productos falsos (MaizPlus, PanRápido, Doraditos)."
     },
@@ -5964,12 +6499,19 @@
       "pregunta": "¿Cuáles son las órdenes de producción del mes?",
       "agente_esperado": "produccion",
       "departamento_usuario": "finanzas",
-      "contexto": { "last_agent": null, "historial": [] },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
       "extracciones": {},
       "es_followup": false,
       "fuente": "conversacion_real",
       "usuario": "admin",
-      "resultado_real": { "agente_usado": "produccion", "exito": false, "tipo_error": "alucinacion" },
+      "resultado_real": {
+        "agente_usado": "produccion",
+        "exito": false,
+        "tipo_error": "alucinacion"
+      },
       "categoria": "ordenes_produccion",
       "nota": "ALUCINACIÓN: Módulo pp_order no está activo en Santoni. Bot inventó 75 órdenes con códigos ficticios (PP-2024-078). Agente debe informar que las órdenes de producción no están disponibles."
     },
@@ -5978,12 +6520,27 @@
       "pregunta": "¿Cuáles son las órdenes de producción del mes de enero de 2026?",
       "agente_esperado": "produccion",
       "departamento_usuario": "finanzas",
-      "contexto": { "last_agent": "produccion", "historial": [["user", "¿Cuáles son las órdenes de producción del mes?"]] },
-      "extracciones": { "mes": 1, "anio": 2026 },
+      "contexto": {
+        "last_agent": "produccion",
+        "historial": [
+          [
+            "user",
+            "¿Cuáles son las órdenes de producción del mes?"
+          ]
+        ]
+      },
+      "extracciones": {
+        "mes": 1,
+        "anio": 2026
+      },
       "es_followup": true,
       "fuente": "conversacion_real",
       "usuario": "admin",
-      "resultado_real": { "agente_usado": "produccion", "exito": false, "tipo_error": "alucinacion" },
+      "resultado_real": {
+        "agente_usado": "produccion",
+        "exito": false,
+        "tipo_error": "alucinacion"
+      },
       "categoria": "ordenes_produccion",
       "nota": "ALUCINACIÓN: Misma situación. Códigos PP-0126-018 inventados, 'incidentes' narrativos ficticios, eficiencia por turno fabricada."
     },
@@ -5992,12 +6549,19 @@
       "pregunta": "Dame el Inventario de materia prima actual",
       "agente_esperado": "produccion",
       "departamento_usuario": "finanzas",
-      "contexto": { "last_agent": null, "historial": [] },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
       "extracciones": {},
       "es_followup": false,
       "fuente": "conversacion_real",
       "usuario": "admin",
-      "resultado_real": { "agente_usado": "compras_insumos", "exito": false, "tipo_error": "alucinacion" },
+      "resultado_real": {
+        "agente_usado": "compras_insumos",
+        "exito": false,
+        "tipo_error": "alucinacion"
+      },
       "categoria": "inventario_mp",
       "nota": "ALUCINACIÓN: Códigos de producto ficticios (MP-1007, MP-3099), almacenes inventados (Guatire, Acarigua, San Carlos). 'Días de stock' calculados ficticiamente."
     },
@@ -6006,12 +6570,27 @@
       "pregunta": "Me refería al mes de enero de 2026",
       "agente_esperado": "produccion",
       "departamento_usuario": "finanzas",
-      "contexto": { "last_agent": "compras_insumos", "historial": [["user", "Dame el Inventario de materia prima actual"]] },
-      "extracciones": { "mes": 1, "anio": 2026 },
+      "contexto": {
+        "last_agent": "compras_insumos",
+        "historial": [
+          [
+            "user",
+            "Dame el Inventario de materia prima actual"
+          ]
+        ]
+      },
+      "extracciones": {
+        "mes": 1,
+        "anio": 2026
+      },
       "es_followup": true,
       "fuente": "conversacion_real",
       "usuario": "admin",
-      "resultado_real": { "agente_usado": "compras_insumos", "exito": false, "tipo_error": "alucinacion" },
+      "resultado_real": {
+        "agente_usado": "compras_insumos",
+        "exito": false,
+        "tipo_error": "alucinacion"
+      },
       "categoria": "inventario_mp",
       "nota": "ALUCINACIÓN: El inventario en m_storageonhand es solo snapshot actual, no histórico. Bot inventó 'inventario al 31/01/2026' con incidentes narrativos."
     },
@@ -6020,12 +6599,22 @@
       "pregunta": "Producción de arroz blanco en enero 2026",
       "agente_esperado": "produccion",
       "departamento_usuario": "finanzas",
-      "contexto": { "last_agent": null, "historial": [] },
-      "extracciones": { "mes": 1, "anio": 2026 },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "mes": 1,
+        "anio": 2026
+      },
       "es_followup": false,
       "fuente": "conversacion_real",
       "usuario": "admin",
-      "resultado_real": { "agente_usado": "produccion", "exito": false, "tipo_error": "alucinacion" },
+      "resultado_real": {
+        "agente_usado": "produccion",
+        "exito": false,
+        "tipo_error": "alucinacion"
+      },
       "categoria": "produccion_producto",
       "nota": "ALUCINACIÓN COMPLETA: Códigos ARZ-001 inventados, parámetros de calidad fabricados, 'incidentes' narrativos con fechas y detalles ficticios."
     },
@@ -6034,12 +6623,19 @@
       "pregunta": "¿Cuánto desperdicio hubo en empaque este mes?",
       "agente_esperado": "produccion",
       "departamento_usuario": "finanzas",
-      "contexto": { "last_agent": "produccion", "historial": [] },
+      "contexto": {
+        "last_agent": "produccion",
+        "historial": []
+      },
       "extracciones": {},
       "es_followup": false,
       "fuente": "conversacion_real",
       "usuario": "admin",
-      "resultado_real": { "agente_usado": "produccion", "exito": false, "tipo_error": "alucinacion" },
+      "resultado_real": {
+        "agente_usado": "produccion",
+        "exito": false,
+        "tipo_error": "alucinacion"
+      },
       "categoria": "desperdicios",
       "nota": "ALUCINACIÓN COMPLETA: No existe query para desperdicios. Bot inventó causas (Bolsas Mal Selladas: 1,200 kg), comparativos ficticios y hasta un incidente con 'Selladora máquina #4'."
     },
@@ -6048,12 +6644,22 @@
       "pregunta": "¿Cuántas cajas de cartón recibimos en enero 2026?",
       "agente_esperado": "produccion",
       "departamento_usuario": "finanzas",
-      "contexto": { "last_agent": "produccion", "historial": [] },
-      "extracciones": { "mes": 1, "anio": 2026 },
+      "contexto": {
+        "last_agent": "produccion",
+        "historial": []
+      },
+      "extracciones": {
+        "mes": 1,
+        "anio": 2026
+      },
       "es_followup": false,
       "fuente": "conversacion_real",
       "usuario": "admin",
-      "resultado_real": { "agente_usado": "produccion", "exito": false, "tipo_error": "alucinacion" },
+      "resultado_real": {
+        "agente_usado": "produccion",
+        "exito": false,
+        "tipo_error": "alucinacion"
+      },
       "categoria": "inventario",
       "nota": "ALUCINACIÓN: Proveedores ficticios (ENVASES DEL CENTRO, EMPAQUES POLIMÉRICOS), documentos inventados (REC-0126-045), cantidades redondeadas."
     },
@@ -6062,12 +6668,19 @@
       "pregunta": "Dame el historial de compras de azúcar del último trimestre",
       "agente_esperado": "compras_insumos",
       "departamento_usuario": "finanzas",
-      "contexto": { "last_agent": null, "historial": [] },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
       "extracciones": {},
       "es_followup": false,
       "fuente": "conversacion_real",
       "usuario": "admin",
-      "resultado_real": { "agente_usado": "compras_insumos", "exito": false, "tipo_error": "alucinacion" },
+      "resultado_real": {
+        "agente_usado": "compras_insumos",
+        "exito": false,
+        "tipo_error": "alucinacion"
+      },
       "categoria": "historial_compras",
       "nota": "ALUCINACIÓN: Interpretó 'último trimestre' como abril-junio 2026 (¡FUTURO!). Inventó proveedores (AZUCARERA DEL LAGO) y montos. Luego al corregir a enero-marzo, honestamente dijo 0 resultados."
     },
@@ -6076,12 +6689,26 @@
       "pregunta": "Disculpa el trimestre a analizar es de, enero a marzo",
       "agente_esperado": "compras_insumos",
       "departamento_usuario": "finanzas",
-      "contexto": { "last_agent": "compras_insumos", "historial": [["user", "Dame el historial de compras de azúcar del último trimestre"]] },
-      "extracciones": { "fecha_desde": "2026-01-01", "fecha_hasta": "2026-03-31" },
+      "contexto": {
+        "last_agent": "compras_insumos",
+        "historial": [
+          [
+            "user",
+            "Dame el historial de compras de azúcar del último trimestre"
+          ]
+        ]
+      },
+      "extracciones": {
+        "fecha_desde": "2026-01-01",
+        "fecha_hasta": "2026-03-31"
+      },
       "es_followup": true,
       "fuente": "conversacion_real",
       "usuario": "admin",
-      "resultado_real": { "agente_usado": "compras_insumos", "exito": true },
+      "resultado_real": {
+        "agente_usado": "compras_insumos",
+        "exito": true
+      },
       "categoria": "historial_compras",
       "nota": "RESPUESTA CORRECTA: Honestamente reportó 0 facturas de compra de azúcar en el período enero-marzo 2026."
     },
@@ -6090,12 +6717,23 @@
       "pregunta": "Top 10 clientes de InproMaíz en enero 2026",
       "agente_esperado": "ventas",
       "departamento_usuario": "finanzas",
-      "contexto": { "last_agent": null, "historial": [] },
-      "extracciones": { "organizacion": "InproMaiz", "mes": 1, "anio": 2026 },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "organizacion": "InproMaiz",
+        "mes": 1,
+        "anio": 2026
+      },
       "es_followup": false,
       "fuente": "conversacion_real",
       "usuario": "admin",
-      "resultado_real": { "agente_usado": "ventas", "exito": false, "tipo_error": "alucinacion" },
+      "resultado_real": {
+        "agente_usado": "ventas",
+        "exito": false,
+        "tipo_error": "alucinacion"
+      },
       "categoria": "ranking_clientes",
       "nota": "ALUCINACIÓN PARCIAL: Dijo 'no tengo datos' pero inventó un 'dato referencial' con DISTRIBUIDORA EL RAYO y Bs. 8.2M."
     },
@@ -6104,12 +6742,22 @@
       "pregunta": "¿Cuánto se produjo en enero 2026?",
       "agente_esperado": "produccion",
       "departamento_usuario": "finanzas",
-      "contexto": { "last_agent": "finanzas", "historial": [] },
-      "extracciones": { "mes": 1, "anio": 2026 },
+      "contexto": {
+        "last_agent": "finanzas",
+        "historial": []
+      },
+      "extracciones": {
+        "mes": 1,
+        "anio": 2026
+      },
       "es_followup": false,
       "fuente": "conversacion_real",
       "usuario": "admin",
-      "resultado_real": { "agente_usado": "finanzas", "exito": false, "tipo_error": "routing_general" },
+      "resultado_real": {
+        "agente_usado": "finanzas",
+        "exito": false,
+        "tipo_error": "routing_general"
+      },
       "categoria": "produccion_producto",
       "nota": "ERROR DE ROUTING: 'Cuánto se produjo' fue a finanzas por el fallback 'cuánto→ventas/finanzas'. Corregido: ahora el fallback detecta 'produjo/producción' y rutea a produccion."
     },
@@ -6118,12 +6766,19 @@
       "pregunta": "Inventario de producto terminado actual",
       "agente_esperado": "produccion",
       "departamento_usuario": "finanzas",
-      "contexto": { "last_agent": null, "historial": [] },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
       "extracciones": {},
       "es_followup": false,
       "fuente": "conversacion_real",
       "usuario": "admin",
-      "resultado_real": { "agente_usado": "produccion", "exito": false, "tipo_error": "alucinacion" },
+      "resultado_real": {
+        "agente_usado": "produccion",
+        "exito": false,
+        "tipo_error": "alucinacion"
+      },
       "categoria": "inventario",
       "nota": "ALUCINACIÓN: Bot respondía con datos de 'julio 2024' cuando se decía 'actual'. Requiere inyección de fecha actual para que el bot sepa que 'actual' = marzo 2026."
     },
@@ -6132,12 +6787,21 @@
       "pregunta": "Órdenes de compra pendientes por recepción de insumos del mes de febrero",
       "agente_esperado": "compras_insumos",
       "departamento_usuario": "compras_insumos",
-      "contexto": { "last_agent": null, "historial": [] },
-      "extracciones": { "fecha_desde": null, "fecha_hasta": null },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "fecha_desde": null,
+        "fecha_hasta": null
+      },
       "es_followup": false,
       "fuente": "nuevas_capacidades",
       "usuario": "admin",
-      "resultado_real": { "agente_usado": "compras_insumos", "exito": true },
+      "resultado_real": {
+        "agente_usado": "compras_insumos",
+        "exito": true
+      },
       "categoria": "ordenes_compra",
       "nota": "Nueva capacidad: consulta c_order para órdenes de compra pendientes"
     },
@@ -6146,7 +6810,10 @@
       "pregunta": "¿Cuántas órdenes de compra hay pendientes este mes?",
       "agente_esperado": "compras_insumos",
       "departamento_usuario": "compras_insumos",
-      "contexto": { "last_agent": null, "historial": [] },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
       "extracciones": {},
       "es_followup": false,
       "fuente": "nuevas_capacidades",
@@ -6158,8 +6825,14 @@
       "pregunta": "Órdenes de compra en proceso de enero a marzo 2026",
       "agente_esperado": "compras_insumos",
       "departamento_usuario": "compras_insumos",
-      "contexto": { "last_agent": null, "historial": [] },
-      "extracciones": { "fecha_desde": "2026-01-01", "fecha_hasta": "2026-03-31" },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "fecha_desde": "2026-01-01",
+        "fecha_hasta": "2026-03-31"
+      },
       "es_followup": false,
       "fuente": "nuevas_capacidades",
       "usuario": "admin",
@@ -6170,7 +6843,10 @@
       "pregunta": "¿Qué proveedores tienen órdenes de compra pendientes?",
       "agente_esperado": "compras_insumos",
       "departamento_usuario": "compras_insumos",
-      "contexto": { "last_agent": null, "historial": [] },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
       "extracciones": {},
       "es_followup": false,
       "fuente": "nuevas_capacidades",
@@ -6182,8 +6858,13 @@
       "pregunta": "Comparar precios de harina de avena entre proveedores",
       "agente_esperado": "compras_insumos",
       "departamento_usuario": "compras_insumos",
-      "contexto": { "last_agent": null, "historial": [] },
-      "extracciones": { "producto": "harina de avena" },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "producto": "harina de avena"
+      },
       "es_followup": false,
       "fuente": "nuevas_capacidades",
       "usuario": "admin",
@@ -6194,8 +6875,13 @@
       "pregunta": "¿Quién vende más barato las cajas de cartón?",
       "agente_esperado": "compras_insumos",
       "departamento_usuario": "compras_insumos",
-      "contexto": { "last_agent": null, "historial": [] },
-      "extracciones": { "producto": "cajas de cartón" },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "producto": "cajas de cartón"
+      },
       "es_followup": false,
       "fuente": "nuevas_capacidades",
       "usuario": "admin",
@@ -6206,7 +6892,10 @@
       "pregunta": "¿Cuántas facturas de compra están pendientes de pago este mes?",
       "agente_esperado": "compras_insumos",
       "departamento_usuario": "compras_insumos",
-      "contexto": { "last_agent": null, "historial": [] },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
       "extracciones": {},
       "es_followup": false,
       "fuente": "nuevas_capacidades",
@@ -6218,7 +6907,10 @@
       "pregunta": "Facturas de compra vencidas sin pagar",
       "agente_esperado": "compras_insumos",
       "departamento_usuario": "compras_insumos",
-      "contexto": { "last_agent": null, "historial": [] },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
       "extracciones": {},
       "es_followup": false,
       "fuente": "nuevas_capacidades",
@@ -6230,7 +6922,10 @@
       "pregunta": "Estado de pago de las facturas de compra de febrero",
       "agente_esperado": "compras_insumos",
       "departamento_usuario": "compras_insumos",
-      "contexto": { "last_agent": null, "historial": [] },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
       "extracciones": {},
       "es_followup": false,
       "fuente": "nuevas_capacidades",
@@ -6242,7 +6937,10 @@
       "pregunta": "¿Cuánto debemos a los proveedores de insumos?",
       "agente_esperado": "compras_insumos",
       "departamento_usuario": "compras_insumos",
-      "contexto": { "last_agent": null, "historial": [] },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
       "extracciones": {},
       "es_followup": false,
       "fuente": "nuevas_capacidades",
@@ -6254,8 +6952,13 @@
       "pregunta": "Precio de las últimas 6 compras de harina de avena",
       "agente_esperado": "compras_insumos",
       "departamento_usuario": "compras_insumos",
-      "contexto": { "last_agent": null, "historial": [] },
-      "extracciones": { "producto": "harina de avena" },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "producto": "harina de avena"
+      },
       "es_followup": false,
       "fuente": "nuevas_capacidades",
       "usuario": "admin",
@@ -6269,8 +6972,14 @@
       "contexto": {
         "last_agent": "compras_insumos",
         "historial": [
-          ["user", "En gastos?"],
-          ["assistant", "Gastos en Compras de Insumos - Marzo 2026"]
+          [
+            "user",
+            "En gastos?"
+          ],
+          [
+            "assistant",
+            "Gastos en Compras de Insumos - Marzo 2026"
+          ]
         ]
       },
       "extracciones": {},
@@ -6285,8 +6994,13 @@
       "pregunta": "¿Qué proveedores venden láminas de hierro negro?",
       "agente_esperado": "compras_insumos",
       "departamento_usuario": "compras_insumos",
-      "contexto": { "last_agent": null, "historial": [] },
-      "extracciones": { "producto": "láminas de hierro negro" },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "producto": "láminas de hierro negro"
+      },
       "es_followup": false,
       "fuente": "nuevas_capacidades",
       "usuario": "admin",
@@ -6297,8 +7011,14 @@
       "pregunta": "¿Cuántas cajas de cartón para cereales quedan en inventario de inproa santoni?",
       "agente_esperado": "compras_insumos",
       "departamento_usuario": "compras_insumos",
-      "contexto": { "last_agent": null, "historial": [] },
-      "extracciones": { "producto": "cajas de cartón para cereales", "organizacion": "inproa santoni" },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "producto": "cajas de cartón para cereales",
+        "organizacion": "inproa santoni"
+      },
       "es_followup": false,
       "fuente": "nuevas_capacidades",
       "usuario": "admin",
@@ -6309,8 +7029,16 @@
       "pregunta": "¿Cuánto gasoil se compró en Inproa Santoni desde el 01-01-2026 al 23-02-2026?",
       "agente_esperado": "compras_insumos",
       "departamento_usuario": "compras_insumos",
-      "contexto": { "last_agent": null, "historial": [] },
-      "extracciones": { "producto": "gasoil", "organizacion": "inproa santoni", "fecha_desde": "2026-01-01", "fecha_hasta": "2026-02-23" },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "producto": "gasoil",
+        "organizacion": "inproa santoni",
+        "fecha_desde": "2026-01-01",
+        "fecha_hasta": "2026-02-23"
+      },
       "es_followup": false,
       "fuente": "nuevas_capacidades",
       "usuario": "admin",
@@ -6321,8 +7049,14 @@
       "pregunta": "¿Quién fue el último proveedor del producto REP-LAMI-0037 en INPROA SANTONI?",
       "agente_esperado": "compras_insumos",
       "departamento_usuario": "compras_insumos",
-      "contexto": { "last_agent": null, "historial": [] },
-      "extracciones": { "producto": "REP-LAMI-0037", "organizacion": "inproa santoni" },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "producto": "REP-LAMI-0037",
+        "organizacion": "inproa santoni"
+      },
       "es_followup": false,
       "fuente": "nuevas_capacidades",
       "usuario": "admin",
@@ -6333,8 +7067,14 @@
       "pregunta": "¿Quién fue el último proveedor del siguiente producto REP-TUER-0115 en la empresa INPROA SANTONI?",
       "agente_esperado": "compras_insumos",
       "departamento_usuario": "compras_insumos",
-      "contexto": { "last_agent": null, "historial": [] },
-      "extracciones": { "producto": "REP-TUER-0115", "organizacion": "INPROA SANTONI" },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "producto": "REP-TUER-0115",
+        "organizacion": "INPROA SANTONI"
+      },
       "es_followup": false,
       "fuente": "correccion_bug",
       "usuario": "admin",
@@ -6351,8 +7091,13 @@
       "pregunta": "Quisiera saber cuántas cajas de cartón quedan en inventario",
       "agente_esperado": "compras_insumos",
       "departamento_usuario": "compras_insumos",
-      "contexto": { "last_agent": null, "historial": [] },
-      "extracciones": { "producto": "cajas de carton" },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "producto": "cajas de carton"
+      },
       "es_followup": false,
       "fuente": "conversacion_real",
       "usuario": "admin",
@@ -6368,8 +7113,15 @@
       "pregunta": "¿Cuántas cajas de cartón compramos en enero 2026?",
       "agente_esperado": "compras_insumos",
       "departamento_usuario": "compras_insumos",
-      "contexto": { "last_agent": null, "historial": [] },
-      "extracciones": { "producto": "cajas de carton", "mes": 1, "anio": 2026 },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "producto": "cajas de carton",
+        "mes": 1,
+        "anio": 2026
+      },
       "es_followup": false,
       "fuente": "conversacion_real",
       "usuario": "admin",
@@ -6385,8 +7137,14 @@
       "pregunta": "¿Cuánto se compró de REP-TUER-0115 en InproMaiz?",
       "agente_esperado": "compras_insumos",
       "departamento_usuario": "compras_insumos",
-      "contexto": { "last_agent": null, "historial": [] },
-      "extracciones": { "producto": "REP-TUER-0115", "organizacion": "InproMaiz" },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "producto": "REP-TUER-0115",
+        "organizacion": "InproMaiz"
+      },
       "es_followup": false,
       "fuente": "correccion_bug",
       "usuario": "admin",
@@ -6402,16 +7160,18 @@
       "pregunta": "Cuotas de préstamos que vencen hoy",
       "agente_esperado": "finanzas",
       "departamento_usuario": "finanzas",
-      "contexto": { "last_agent": null, "historial": [] },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
       "extracciones": {},
       "es_followup": false,
       "fuente": "correccion_bug",
       "usuario": "admin",
       "resultado_real": {
         "agente_usado": "finanzas",
-        "exito": false,
-        "error": "no_access_text",
-        "notas": "LLM decía 'no tengo acceso directo a préstamos'. Fix: agregar regla PROHIBIDO decir 'no tengo acceso' en system prompt de TODOS los 7 agentes (antes solo compras_insumos la tenía)."
+        "exito": true,
+        "notas": "Fix aplicado: build_loan_balances() consulta cuentas de préstamos en fact_acct. Regla PROHIBIDO 'no tengo acceso' aplicada en system prompts de todos los agentes."
       },
       "categoria": "prestamos"
     },
@@ -6420,8 +7180,14 @@
       "pregunta": "Compras de maíz acondicionado de InproMaiz",
       "agente_esperado": "compras_productores",
       "departamento_usuario": "compras_productores",
-      "contexto": { "last_agent": null, "historial": [] },
-      "extracciones": { "producto": "maiz", "organizacion": "InproMaiz" },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "producto": "maiz",
+        "organizacion": "InproMaiz"
+      },
       "es_followup": false,
       "fuente": "correccion_bug",
       "usuario": "mfigueredo",
@@ -6437,8 +7203,14 @@
       "pregunta": "Control de vacaciones de enero 2026",
       "agente_esperado": "rrhh",
       "departamento_usuario": "rrhh",
-      "contexto": { "last_agent": null, "historial": [] },
-      "extracciones": { "mes": 1, "anio": 2026 },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "mes": 1,
+        "anio": 2026
+      },
       "es_followup": false,
       "fuente": "correccion_bug",
       "usuario": "esalas",
@@ -6456,9 +7228,16 @@
       "departamento_usuario": "rrhh",
       "contexto": {
         "last_agent": "rrhh",
-        "historial": [["user", "Cumpleañeros del mes de marzo"]]
+        "historial": [
+          [
+            "user",
+            "Cumpleañeros del mes de marzo"
+          ]
+        ]
       },
-      "extracciones": { "mes": 5 },
+      "extracciones": {
+        "mes": 5
+      },
       "es_followup": true,
       "fuente": "correccion_bug",
       "usuario": "esalas",
@@ -6474,7 +7253,10 @@
       "pregunta": "Cuentas por cobrar vencidas",
       "agente_esperado": "finanzas",
       "departamento_usuario": "finanzas",
-      "contexto": { "last_agent": null, "historial": [] },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
       "extracciones": {},
       "es_followup": false,
       "fuente": "correccion_bug",
@@ -6492,7 +7274,10 @@
       "pregunta": "¿Cuánto es la cuenta por pagar?",
       "agente_esperado": "finanzas",
       "departamento_usuario": "finanzas",
-      "contexto": { "last_agent": null, "historial": [] },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
       "extracciones": {},
       "es_followup": false,
       "fuente": "conversacion_real",
@@ -6509,7 +7294,10 @@
       "pregunta": "¿Cuál es la producción de hoy?",
       "agente_esperado": "produccion",
       "departamento_usuario": "produccion",
-      "contexto": { "last_agent": null, "historial": [] },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
       "extracciones": {},
       "es_followup": false,
       "fuente": "conversacion_real",
@@ -6527,7 +7315,10 @@
       "pregunta": "Top productores por volumen",
       "agente_esperado": "compras_productores",
       "departamento_usuario": "compras_productores",
-      "contexto": { "last_agent": null, "historial": [] },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
       "extracciones": {},
       "es_followup": false,
       "fuente": "conversacion_real",
@@ -6544,7 +7335,10 @@
       "pregunta": "Inventario actual en almacén",
       "agente_esperado": "produccion",
       "departamento_usuario": "produccion",
-      "contexto": { "last_agent": null, "historial": [] },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
       "extracciones": {},
       "es_followup": false,
       "fuente": "conversacion_real",
@@ -6561,8 +7355,13 @@
       "pregunta": "¿Cuánto se cobró por pago móvil en 2025?",
       "agente_esperado": "ventas",
       "departamento_usuario": "ventas",
-      "contexto": { "last_agent": null, "historial": [] },
-      "extracciones": { "anio": 2025 },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "anio": 2025
+      },
       "es_followup": false,
       "fuente": "nuevas_capacidades",
       "usuario": "admin",
@@ -6578,8 +7377,13 @@
       "pregunta": "Desglose de cobranza por método de pago del año 2025",
       "agente_esperado": "ventas",
       "departamento_usuario": "ventas",
-      "contexto": { "last_agent": null, "historial": [] },
-      "extracciones": { "anio": 2025 },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "anio": 2025
+      },
       "es_followup": false,
       "fuente": "nuevas_capacidades",
       "usuario": "admin",
@@ -6595,8 +7399,13 @@
       "pregunta": "¿Cuánto se cobró por Dólar Transferencia en 2025?",
       "agente_esperado": "ventas",
       "departamento_usuario": "ventas",
-      "contexto": { "last_agent": null, "historial": [] },
-      "extracciones": { "anio": 2025 },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "anio": 2025
+      },
       "es_followup": false,
       "fuente": "nuevas_capacidades",
       "usuario": "admin",
@@ -6612,8 +7421,14 @@
       "pregunta": "¿Cuánto se cobró por transferencia en enero 2025?",
       "agente_esperado": "ventas",
       "departamento_usuario": "ventas",
-      "contexto": { "last_agent": null, "historial": [] },
-      "extracciones": { "mes": 1, "anio": 2025 },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "mes": 1,
+        "anio": 2025
+      },
       "es_followup": false,
       "fuente": "nuevas_capacidades",
       "usuario": "admin",
@@ -6631,9 +7446,17 @@
       "departamento_usuario": "ventas",
       "contexto": {
         "last_agent": "ventas",
-        "historial": [["user", "¿Cuánto se cobró por transferencia en enero 2025?"]]
+        "historial": [
+          [
+            "user",
+            "¿Cuánto se cobró por transferencia en enero 2025?"
+          ]
+        ]
       },
-      "extracciones": { "mes": 1, "anio": 2025 },
+      "extracciones": {
+        "mes": 1,
+        "anio": 2025
+      },
       "es_followup": true,
       "fuente": "nuevas_capacidades",
       "usuario": "admin",
@@ -6649,8 +7472,13 @@
       "pregunta": "Ventas por distribuidor en 2025",
       "agente_esperado": "ventas",
       "departamento_usuario": "ventas",
-      "contexto": { "last_agent": null, "historial": [] },
-      "extracciones": { "anio": 2025 },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "anio": 2025
+      },
       "es_followup": false,
       "fuente": "nuevas_capacidades",
       "usuario": "admin",
@@ -6666,8 +7494,13 @@
       "pregunta": "Ventas por organización del año 2025",
       "agente_esperado": "ventas",
       "departamento_usuario": "ventas",
-      "contexto": { "last_agent": null, "historial": [] },
-      "extracciones": { "anio": 2025 },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "anio": 2025
+      },
       "es_followup": false,
       "fuente": "nuevas_capacidades",
       "usuario": "admin",
@@ -6683,8 +7516,14 @@
       "pregunta": "Ventas mensuales de octubre 2024 a marzo 2025",
       "agente_esperado": "ventas",
       "departamento_usuario": "ventas",
-      "contexto": { "last_agent": null, "historial": [] },
-      "extracciones": { "fecha_desde": "2024-10-01", "fecha_hasta": "2025-03-31" },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "fecha_desde": "2024-10-01",
+        "fecha_hasta": "2025-03-31"
+      },
       "es_followup": false,
       "fuente": "correccion_bug",
       "usuario": "admin",
@@ -6700,8 +7539,14 @@
       "pregunta": "Ventas del 15 de diciembre 2024 al 15 de enero 2025",
       "agente_esperado": "ventas",
       "departamento_usuario": "ventas",
-      "contexto": { "last_agent": null, "historial": [] },
-      "extracciones": { "fecha_desde": "2024-12-15", "fecha_hasta": "2025-01-15" },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "fecha_desde": "2024-12-15",
+        "fecha_hasta": "2025-01-15"
+      },
       "es_followup": false,
       "fuente": "correccion_bug",
       "usuario": "admin",
@@ -6717,8 +7562,14 @@
       "pregunta": "¿Cuánto se produjo en febrero 2026?",
       "agente_esperado": "produccion",
       "departamento_usuario": "produccion",
-      "contexto": { "last_agent": null, "historial": [] },
-      "extracciones": { "mes": 2, "anio": 2026 },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "mes": 2,
+        "anio": 2026
+      },
       "es_followup": false,
       "fuente": "nuevas_capacidades",
       "usuario": "admin",
@@ -6734,8 +7585,13 @@
       "pregunta": "¿Cuáles son los principales productos terminados este año?",
       "agente_esperado": "produccion",
       "departamento_usuario": "produccion",
-      "contexto": { "last_agent": null, "historial": [] },
-      "extracciones": { "anio": 2026 },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "anio": 2026
+      },
       "es_followup": false,
       "fuente": "nuevas_capacidades",
       "usuario": "admin",
@@ -6751,7 +7607,10 @@
       "pregunta": "¿Cuáles son las materias primas más consumidas en producción?",
       "agente_esperado": "produccion",
       "departamento_usuario": "produccion",
-      "contexto": { "last_agent": null, "historial": [] },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
       "extracciones": {},
       "es_followup": false,
       "fuente": "nuevas_capacidades",
@@ -6768,8 +7627,15 @@
       "pregunta": "¿Cuánto arroz se produjo en enero 2026?",
       "agente_esperado": "produccion",
       "departamento_usuario": "produccion",
-      "contexto": { "last_agent": null, "historial": [] },
-      "extracciones": { "producto": "arroz", "mes": 1, "anio": 2026 },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "producto": "arroz",
+        "mes": 1,
+        "anio": 2026
+      },
       "es_followup": false,
       "fuente": "nuevas_capacidades",
       "usuario": "admin",
@@ -6785,8 +7651,13 @@
       "pregunta": "¿Cuál es la receta del producto arroz blanco?",
       "agente_esperado": "produccion",
       "departamento_usuario": "produccion",
-      "contexto": { "last_agent": null, "historial": [] },
-      "extracciones": { "producto": "arroz blanco" },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "producto": "arroz blanco"
+      },
       "es_followup": false,
       "fuente": "nuevas_capacidades",
       "usuario": "admin",
@@ -6802,7 +7673,10 @@
       "pregunta": "¿Cuáles son las recetas registradas en el sistema?",
       "agente_esperado": "produccion",
       "departamento_usuario": "produccion",
-      "contexto": { "last_agent": null, "historial": [] },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
       "extracciones": {},
       "es_followup": false,
       "fuente": "nuevas_capacidades",
@@ -6819,8 +7693,13 @@
       "pregunta": "¿Cuántos ingredientes tiene la fórmula de harina de maíz?",
       "agente_esperado": "produccion",
       "departamento_usuario": "produccion",
-      "contexto": { "last_agent": null, "historial": [] },
-      "extracciones": { "producto": "harina de maiz" },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "producto": "harina de maiz"
+      },
       "es_followup": false,
       "fuente": "nuevas_capacidades",
       "usuario": "admin",
@@ -6836,8 +7715,14 @@
       "pregunta": "¿Qué traslados de almacén hubo en febrero 2026?",
       "agente_esperado": "produccion",
       "departamento_usuario": "produccion",
-      "contexto": { "last_agent": null, "historial": [] },
-      "extracciones": { "mes": 2, "anio": 2026 },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "mes": 2,
+        "anio": 2026
+      },
       "es_followup": false,
       "fuente": "nuevas_capacidades",
       "usuario": "admin",
@@ -6853,7 +7738,10 @@
       "pregunta": "¿Cuáles son los productos más transferidos entre almacenes?",
       "agente_esperado": "produccion",
       "departamento_usuario": "produccion",
-      "contexto": { "last_agent": null, "historial": [] },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
       "extracciones": {},
       "es_followup": false,
       "fuente": "nuevas_capacidades",
@@ -6870,8 +7758,14 @@
       "pregunta": "Movimientos internos de arroz paddy en INPROA SANTONI",
       "agente_esperado": "produccion",
       "departamento_usuario": "produccion",
-      "contexto": { "last_agent": null, "historial": [] },
-      "extracciones": { "producto": "arroz paddy", "organizacion": "INPROA SANTONI" },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "producto": "arroz paddy",
+        "organizacion": "INPROA SANTONI"
+      },
       "es_followup": false,
       "fuente": "nuevas_capacidades",
       "usuario": "admin",
@@ -6887,7 +7781,10 @@
       "pregunta": "¿Cuánto se produjo ayer?",
       "agente_esperado": "produccion",
       "departamento_usuario": "produccion",
-      "contexto": { "last_agent": null, "historial": [] },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
       "extracciones": {},
       "es_followup": false,
       "fuente": "nuevas_capacidades",
@@ -6904,8 +7801,15 @@
       "pregunta": "Producción de InproMaiz en enero 2026",
       "agente_esperado": "produccion",
       "departamento_usuario": "produccion",
-      "contexto": { "last_agent": null, "historial": [] },
-      "extracciones": { "organizacion": "InproMaiz", "mes": 1, "anio": 2026 },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "organizacion": "InproMaiz",
+        "mes": 1,
+        "anio": 2026
+      },
       "es_followup": false,
       "fuente": "nuevas_capacidades",
       "usuario": "admin",
@@ -6923,9 +7827,18 @@
       "departamento_usuario": "produccion",
       "contexto": {
         "last_agent": "produccion",
-        "historial": [["user", "Producción de InproMaiz en enero 2026"]]
+        "historial": [
+          [
+            "user",
+            "Producción de InproMaiz en enero 2026"
+          ]
+        ]
       },
-      "extracciones": { "organizacion": "INPROA SANTONI", "mes": 1, "anio": 2026 },
+      "extracciones": {
+        "organizacion": "INPROA SANTONI",
+        "mes": 1,
+        "anio": 2026
+      },
       "es_followup": true,
       "fuente": "nuevas_capacidades",
       "usuario": "admin",
@@ -6941,8 +7854,15 @@
       "pregunta": "¿Cuánto es la nómina de febrero 2026 en INPROA SANTONI?",
       "agente_esperado": "rrhh",
       "departamento_usuario": "rrhh",
-      "contexto": { "last_agent": null, "historial": [] },
-      "extracciones": { "mes": 2, "anio": 2026, "organizacion": "INPROA SANTONI" },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "mes": 2,
+        "anio": 2026,
+        "organizacion": "INPROA SANTONI"
+      },
       "es_followup": false,
       "fuente": "correccion_bug",
       "usuario": "esalas",
@@ -6960,9 +7880,18 @@
       "departamento_usuario": "rrhh",
       "contexto": {
         "last_agent": "rrhh",
-        "historial": [["user", "¿Cuánto es la nómina de febrero 2026 en INPROA SANTONI?"]]
+        "historial": [
+          [
+            "user",
+            "¿Cuánto es la nómina de febrero 2026 en INPROA SANTONI?"
+          ]
+        ]
       },
-      "extracciones": { "mes": 2, "anio": 2026, "organizacion": "INPROA SANTONI" },
+      "extracciones": {
+        "mes": 2,
+        "anio": 2026,
+        "organizacion": "INPROA SANTONI"
+      },
       "es_followup": true,
       "fuente": "correccion_bug",
       "usuario": "esalas",
@@ -6978,8 +7907,14 @@
       "pregunta": "Tasa de ausentismo de enero 2026",
       "agente_esperado": "rrhh",
       "departamento_usuario": "rrhh",
-      "contexto": { "last_agent": null, "historial": [] },
-      "extracciones": { "mes": 1, "anio": 2026 },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "mes": 1,
+        "anio": 2026
+      },
       "es_followup": false,
       "fuente": "correccion_bug",
       "usuario": "esalas",
@@ -6995,8 +7930,13 @@
       "pregunta": "¿Cuántos empleados activos hay en InproMaiz?",
       "agente_esperado": "rrhh",
       "departamento_usuario": "rrhh",
-      "contexto": { "last_agent": null, "historial": [] },
-      "extracciones": { "organizacion": "InproMaiz" },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "organizacion": "InproMaiz"
+      },
       "es_followup": false,
       "fuente": "correccion_bug",
       "usuario": "esalas",
@@ -7012,8 +7952,15 @@
       "pregunta": "Vacaciones de enero 2026 en InproMaiz",
       "agente_esperado": "rrhh",
       "departamento_usuario": "rrhh",
-      "contexto": { "last_agent": null, "historial": [] },
-      "extracciones": { "mes": 1, "anio": 2026, "organizacion": "InproMaiz" },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "mes": 1,
+        "anio": 2026,
+        "organizacion": "InproMaiz"
+      },
       "es_followup": false,
       "fuente": "correccion_bug",
       "usuario": "esalas",
@@ -7029,8 +7976,14 @@
       "pregunta": "Cumpleañeros de marzo en INPROA SANTONI",
       "agente_esperado": "rrhh",
       "departamento_usuario": "rrhh",
-      "contexto": { "last_agent": null, "historial": [] },
-      "extracciones": { "mes": 3, "organizacion": "INPROA SANTONI" },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "mes": 3,
+        "organizacion": "INPROA SANTONI"
+      },
       "es_followup": false,
       "fuente": "correccion_bug",
       "usuario": "esalas",
@@ -7046,8 +7999,13 @@
       "pregunta": "¿Quiénes son los obreros de InproMaiz?",
       "agente_esperado": "rrhh",
       "departamento_usuario": "rrhh",
-      "contexto": { "last_agent": null, "historial": [] },
-      "extracciones": { "organizacion": "InproMaiz" },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "organizacion": "InproMaiz"
+      },
       "es_followup": false,
       "fuente": "nuevas_capacidades",
       "usuario": "esalas",
@@ -7063,7 +8021,10 @@
       "pregunta": "Buscar empleado de apellido Rodríguez",
       "agente_esperado": "rrhh",
       "departamento_usuario": "rrhh",
-      "contexto": { "last_agent": null, "historial": [] },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
       "extracciones": {},
       "es_followup": false,
       "fuente": "nuevas_capacidades",
@@ -7080,8 +8041,14 @@
       "pregunta": "Nómina de INPROA SANTONI vs InproMaiz en enero 2026",
       "agente_esperado": "rrhh",
       "departamento_usuario": "rrhh",
-      "contexto": { "last_agent": null, "historial": [] },
-      "extracciones": { "mes": 1, "anio": 2026 },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "mes": 1,
+        "anio": 2026
+      },
       "es_followup": false,
       "fuente": "nuevas_capacidades",
       "usuario": "esalas",
@@ -7097,8 +8064,13 @@
       "pregunta": "Rotación de personal en 2025",
       "agente_esperado": "rrhh",
       "departamento_usuario": "rrhh",
-      "contexto": { "last_agent": null, "historial": [] },
-      "extracciones": { "anio": 2025 },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "anio": 2025
+      },
       "es_followup": false,
       "fuente": "nuevas_capacidades",
       "usuario": "esalas",
@@ -7114,8 +8086,14 @@
       "pregunta": "Cobranza de octubre 2024 a febrero 2025",
       "agente_esperado": "ventas",
       "departamento_usuario": "ventas",
-      "contexto": { "last_agent": null, "historial": [] },
-      "extracciones": { "fecha_desde": "2024-10-01", "fecha_hasta": "2025-02-28" },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "fecha_desde": "2024-10-01",
+        "fecha_hasta": "2025-02-28"
+      },
       "es_followup": false,
       "fuente": "correccion_bug",
       "usuario": "admin",
@@ -7131,8 +8109,13 @@
       "pregunta": "¿Cuánto se cobró por criptomoneda en 2025?",
       "agente_esperado": "ventas",
       "departamento_usuario": "ventas",
-      "contexto": { "last_agent": null, "historial": [] },
-      "extracciones": { "anio": 2025 },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "anio": 2025
+      },
       "es_followup": false,
       "fuente": "nuevas_capacidades",
       "usuario": "admin",
@@ -7148,8 +8131,13 @@
       "pregunta": "Top 20 clientes con más cobranza en 2025",
       "agente_esperado": "ventas",
       "departamento_usuario": "ventas",
-      "contexto": { "last_agent": null, "historial": [] },
-      "extracciones": { "anio": 2025 },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "anio": 2025
+      },
       "es_followup": false,
       "fuente": "nuevas_capacidades",
       "usuario": "admin",
@@ -7165,7 +8153,10 @@
       "pregunta": "Producción diaria de la última semana",
       "agente_esperado": "produccion",
       "departamento_usuario": "produccion",
-      "contexto": { "last_agent": null, "historial": [] },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
       "extracciones": {},
       "es_followup": false,
       "fuente": "nuevas_capacidades",
@@ -7182,8 +8173,13 @@
       "pregunta": "¿Qué insumos se usaron para producir maíz?",
       "agente_esperado": "produccion",
       "departamento_usuario": "produccion",
-      "contexto": { "last_agent": null, "historial": [] },
-      "extracciones": { "producto": "maiz" },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "producto": "maiz"
+      },
       "es_followup": false,
       "fuente": "nuevas_capacidades",
       "usuario": "admin",
@@ -7199,8 +8195,14 @@
       "pregunta": "Ventas en USD del 2025",
       "agente_esperado": "ventas",
       "departamento_usuario": "ventas",
-      "contexto": { "last_agent": null, "historial": [] },
-      "extracciones": { "moneda": "USD", "anio": 2025 },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "moneda": "USD",
+        "anio": 2025
+      },
       "es_followup": false,
       "fuente": "nuevas_capacidades",
       "usuario": "admin",
@@ -7218,9 +8220,17 @@
       "departamento_usuario": "ventas",
       "contexto": {
         "last_agent": "ventas",
-        "historial": [["user", "Ventas en USD del 2025"]]
+        "historial": [
+          [
+            "user",
+            "Ventas en USD del 2025"
+          ]
+        ]
       },
-      "extracciones": { "moneda": "VES", "anio": 2025 },
+      "extracciones": {
+        "moneda": "VES",
+        "anio": 2025
+      },
       "es_followup": true,
       "fuente": "nuevas_capacidades",
       "usuario": "admin",
@@ -7236,8 +8246,13 @@
       "pregunta": "Ventas por zona en 2025",
       "agente_esperado": "ventas",
       "departamento_usuario": "ventas",
-      "contexto": { "last_agent": null, "historial": [] },
-      "extracciones": { "anio": 2025 },
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "anio": 2025
+      },
       "es_followup": false,
       "fuente": "nuevas_capacidades",
       "usuario": "admin",
@@ -7247,6 +8262,442 @@
         "notas": "Desglose por zona: Barquisimeto, Maracaibo, Mérida, Guanare, Falcón, etc. 'Sin Zona' agrupa clientes sin zona asignada."
       },
       "categoria": "ventas_zona"
+    },
+    {
+      "id": 405,
+      "pregunta": "¿Cuánto se cobró en enero 2026?",
+      "agente_esperado": "finanzas",
+      "departamento_usuario": "finanzas",
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "mes": 1,
+        "anio": 2026
+      },
+      "es_followup": false,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "finanzas",
+        "exito": true,
+        "notas": "build_cobros_pagos_summary(is_receipt=True). Desglose por moneda, método de pago y top socios."
+      },
+      "categoria": "cobranza"
+    },
+    {
+      "id": 406,
+      "pregunta": "Pagos realizados en febrero 2026",
+      "agente_esperado": "finanzas",
+      "departamento_usuario": "finanzas",
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "mes": 2,
+        "anio": 2026
+      },
+      "es_followup": false,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "finanzas",
+        "exito": true,
+        "notas": "build_cobros_pagos_summary(is_receipt=False). Muestra egresos por moneda, método y top proveedores pagados."
+      },
+      "categoria": "pagos"
+    },
+    {
+      "id": 407,
+      "pregunta": "¿Y por método de pago?",
+      "agente_esperado": "finanzas",
+      "departamento_usuario": "finanzas",
+      "contexto": {
+        "last_agent": "finanzas",
+        "historial": [
+          [
+            "user",
+            "¿Cuánto se cobró en enero 2026?"
+          ]
+        ]
+      },
+      "extracciones": {
+        "mes": 1,
+        "anio": 2026
+      },
+      "es_followup": true,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "finanzas",
+        "exito": true,
+        "notas": "Follow-up: hereda mes=1, anio=2026 y is_cobros=True. por_metodo_pago incluye Transferencia, Efectivo, Dólar Transferencia, etc."
+      },
+      "categoria": "cobranza"
+    },
+    {
+      "id": 408,
+      "pregunta": "¿A qué proveedores les pagamos más en 2025?",
+      "agente_esperado": "finanzas",
+      "departamento_usuario": "finanzas",
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "anio": 2025
+      },
+      "es_followup": false,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "finanzas",
+        "exito": true,
+        "notas": "build_cobros_pagos_summary(is_receipt=False). top_socios muestra top 30 proveedores por monto pagado."
+      },
+      "categoria": "pagos"
+    },
+    {
+      "id": 409,
+      "pregunta": "Saldo de préstamos bancarios actuales",
+      "agente_esperado": "finanzas",
+      "departamento_usuario": "finanzas",
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {},
+      "es_followup": false,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "finanzas",
+        "exito": true,
+        "notas": "build_loan_balances() consulta 5 cuentas predefinidas en fact_acct. Saldo = haber - debe (naturaleza crédito). Retorna código, cuenta, saldo, movimientos, primer/último movimiento."
+      },
+      "categoria": "prestamos"
+    },
+    {
+      "id": 410,
+      "pregunta": "¿Cuánto debemos en pagarés?",
+      "agente_esperado": "finanzas",
+      "departamento_usuario": "finanzas",
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {},
+      "es_followup": false,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "finanzas",
+        "exito": true,
+        "notas": "build_loan_balances(). Pagarés = cuentas 2.01.04.01 (efectos por pagar CP) y 2.02.02.01 (efectos por pagar LP). total_obligaciones suma todos los saldos."
+      },
+      "categoria": "prestamos"
+    },
+    {
+      "id": 411,
+      "pregunta": "Compromisos bancarios de INPROA SANTONI",
+      "agente_esperado": "finanzas",
+      "departamento_usuario": "finanzas",
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "organizacion": "INPROA SANTONI"
+      },
+      "es_followup": false,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "finanzas",
+        "exito": true,
+        "notas": "build_loan_balances(org_name='INPROA SANTONI'). Filtra fact_acct por ad_org_id de INPROA SANTONI."
+      },
+      "categoria": "prestamos"
+    },
+    {
+      "id": 412,
+      "pregunta": "¿Cuál es el saldo de caja chica?",
+      "agente_esperado": "contabilidad",
+      "departamento_usuario": "contabilidad",
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "cuenta_nombre": "caja chica"
+      },
+      "es_followup": false,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "contabilidad",
+        "exito": true,
+        "notas": "search_accounts_by_name('caja chica') busca en c_elementvalue por nombre. Si encuentra 1 resultado, llama build_account_detail con el código encontrado."
+      },
+      "categoria": "saldo_cuenta"
+    },
+    {
+      "id": 413,
+      "pregunta": "Movimientos de la cuenta de bancos en enero 2026",
+      "agente_esperado": "contabilidad",
+      "departamento_usuario": "contabilidad",
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "cuenta_nombre": "bancos",
+        "mes": 1,
+        "anio": 2026
+      },
+      "es_followup": false,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "contabilidad",
+        "exito": true,
+        "notas": "search_accounts_by_name('bancos'). Si retorna múltiples cuentas, muestra lista para que el usuario seleccione el código específico."
+      },
+      "categoria": "saldo_cuenta"
+    },
+    {
+      "id": 414,
+      "pregunta": "Buscar cuenta de gastos de personal",
+      "agente_esperado": "contabilidad",
+      "departamento_usuario": "contabilidad",
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "cuenta_nombre": "gastos de personal"
+      },
+      "es_followup": false,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "contabilidad",
+        "exito": true,
+        "notas": "search_accounts_by_name('gastos personal'). Normaliza búsqueda: split palabras, busca ILIKE en c_elementvalue.name."
+      },
+      "categoria": "busqueda_cuenta"
+    },
+    {
+      "id": 415,
+      "pregunta": "¿Y en dólares?",
+      "agente_esperado": "finanzas",
+      "departamento_usuario": "finanzas",
+      "contexto": {
+        "last_agent": "finanzas",
+        "historial": [
+          [
+            "user",
+            "¿Cuánto se cobró en enero 2026?"
+          ]
+        ]
+      },
+      "extracciones": {
+        "moneda": "USD",
+        "mes": 1,
+        "anio": 2026
+      },
+      "es_followup": true,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "finanzas",
+        "exito": true,
+        "notas": "Follow-up: hereda mes=1, anio=2026 y is_cobros=True. Filtra por currency_ids de USD."
+      },
+      "categoria": "cobranza"
+    },
+    {
+      "id": 416,
+      "pregunta": "¿Qué lleva la harina de maíz?",
+      "agente_esperado": "produccion",
+      "departamento_usuario": "produccion",
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "producto": "harina de maiz"
+      },
+      "es_followup": false,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "produccion",
+        "exito": true,
+        "notas": "build_bom_info(product_search='harina maiz'). Busca en pp_product_bom JOIN m_product. Muestra componentes con cantidades y unidades."
+      },
+      "categoria": "receta_produccion"
+    },
+    {
+      "id": 417,
+      "pregunta": "Movimientos entre almacenes de InproMaiz en febrero 2026",
+      "agente_esperado": "produccion",
+      "departamento_usuario": "produccion",
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "organizacion": "InproMaiz",
+        "mes": 2,
+        "anio": 2026
+      },
+      "es_followup": false,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "produccion",
+        "exito": true,
+        "notas": "build_warehouse_movements(org_name='InproMaiz', mes=2, anio=2026). Usa m_movement + m_movementline. Muestra flujo almacén origen→destino."
+      },
+      "categoria": "movimientos_almacen"
+    },
+    {
+      "id": 418,
+      "pregunta": "¿Qué proveedores nos venden azúcar y a qué precio?",
+      "agente_esperado": "compras_insumos",
+      "departamento_usuario": "compras",
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "producto": "azucar"
+      },
+      "es_followup": false,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "compras_insumos",
+        "exito": true,
+        "notas": "build_supplier_price_comparison(product_search='azucar'). Lista proveedores reales con precio_min, precio_promedio, precio_max, cantidad_total. NO inventa proveedores."
+      },
+      "categoria": "comparacion_precios"
+    },
+    {
+      "id": 419,
+      "pregunta": "¿Cuántas facturas de compra están pendientes de pago en 2026?",
+      "agente_esperado": "compras_insumos",
+      "departamento_usuario": "compras",
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "anio": 2026
+      },
+      "es_followup": false,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "compras_insumos",
+        "exito": true,
+        "notas": "build_purchase_payment_status(anio=2026). Clasifica facturas en Pagadas vs Pendientes con desglose por moneda. facturas_vencidas lista top 20 más antiguas."
+      },
+      "categoria": "estado_pago"
+    },
+    {
+      "id": 420,
+      "pregunta": "¿Hay órdenes de compra pendientes de sacos?",
+      "agente_esperado": "compras_insumos",
+      "departamento_usuario": "compras",
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "producto": "sacos"
+      },
+      "es_followup": false,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "compras_insumos",
+        "exito": true,
+        "notas": "build_pending_purchase_orders(product_search='sacos'). Solo docstatus IN ('DR','IP'), excluye CO. Filtra por producto."
+      },
+      "categoria": "ordenes_compra"
+    },
+    {
+      "id": 421,
+      "pregunta": "Vacaciones pagadas en AGROPECUARIA R.R. en enero 2026",
+      "agente_esperado": "rrhh",
+      "departamento_usuario": "rrhh",
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {
+        "organizacion": "AGROPECUARIA R.R.",
+        "mes": 1,
+        "anio": 2026
+      },
+      "es_followup": false,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "rrhh",
+        "exito": true,
+        "notas": "build_vacation_summary(org_name='AGROPECUARIA R.R.', mes=1, anio=2026). Filtra hr_concept con '%vacacion%' o '%bono vacacional%'. Muestra detalle_empleados top 30."
+      },
+      "categoria": "vacaciones"
+    },
+    {
+      "id": 422,
+      "pregunta": "¿Quiénes son los clientes más morosos?",
+      "agente_esperado": "ventas",
+      "departamento_usuario": "ventas",
+      "contexto": {
+        "last_agent": null,
+        "historial": []
+      },
+      "extracciones": {},
+      "es_followup": false,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "ventas",
+        "exito": true,
+        "notas": "build_top_delinquent_clients(). Agrega facturas vencidas por cliente: total_adeudado, num_facturas, max_dias_vencido, por moneda."
+      },
+      "categoria": "cxc_vencidas"
+    },
+    {
+      "id": 423,
+      "pregunta": "¿Y cuántas facturas vencidas tienen?",
+      "agente_esperado": "ventas",
+      "departamento_usuario": "ventas",
+      "contexto": {
+        "last_agent": "ventas",
+        "historial": [
+          [
+            "user",
+            "¿Quiénes son los clientes más morosos?"
+          ]
+        ]
+      },
+      "extracciones": {},
+      "es_followup": true,
+      "fuente": "nuevas_capacidades",
+      "usuario": "admin",
+      "resultado_real": {
+        "agente_usado": "ventas",
+        "exito": true,
+        "notas": "Follow-up: hereda query_type='vencidas'. build_overdue_receivables() muestra detalle de facturas con num_facturas, monto, dias_vencido."
+      },
+      "categoria": "cxc_vencidas"
     }
   ],
   "tipos_error": {
@@ -7288,9 +8739,11 @@
     "ayuda",
     "balance_general",
     "busqueda_cargo",
+    "busqueda_cuenta",
     "cantidad_producto",
     "cobranza",
     "codigo_producto",
+    "comparacion_precios",
     "compras_materia_prima",
     "confirmacion",
     "correccion",
@@ -7298,17 +8751,25 @@
     "cuentas_por_cobrar",
     "cuentas_por_pagar",
     "cumpleanos",
+    "cxc_por_moneda",
     "cxc_vencidas",
+    "cxp_por_moneda",
     "desperdicios",
     "empleados",
+    "estado_pago",
     "estado_resultados",
     "facturacion",
+    "facturacion_distribuidor",
+    "facturacion_moneda",
+    "facturacion_zona",
     "flujo_caja",
     "followup",
     "followup_fecha",
     "followup_org",
+    "followup_zona_a_region",
     "gastos",
     "historial_compras",
+    "historial_producto",
     "identidad",
     "impuestos",
     "indicadores_rrhh",
@@ -7316,14 +8777,19 @@
     "ingresos",
     "ingresos_personal",
     "inventario",
+    "inventario_materia_prima",
     "inventario_mp",
+    "inventario_producto",
     "libro_mayor",
     "liquidaciones",
     "mantenimiento",
+    "materia_prima_disponible",
     "moneda_followup",
+    "movimientos_almacen",
     "nomina",
     "ordenes_compra",
     "ordenes_produccion",
+    "pagos",
     "pagos_pendientes",
     "precios",
     "prestamos",
@@ -7333,6 +8799,7 @@
     "proveedores",
     "ranking_clientes",
     "ranking_vendedores",
+    "receta_produccion",
     "resumen_compras",
     "resumen_produccion",
     "resumen_ventas",
@@ -7341,23 +8808,16 @@
     "saldos_bancarios",
     "saludo",
     "situacion_financiera",
+    "stock_producto_especifico",
+    "top_clientes",
     "vacaciones",
     "ventas_categoria",
+    "ventas_comparacion_regiones",
+    "ventas_por_region",
+    "ventas_por_zona",
+    "ventas_region_especifica",
     "ventas_zona",
-    "visitas_clientes",
-    "stock_producto_especifico",
-    "materia_prima_disponible",
-    "inventario_producto",
-    "prestamos",
-    "produccion_producto",
-    "ingresos_personal",
-    "ordenes_compra",
-    "comparacion_precios",
-    "estado_pago",
-    "moneda_por_organizacion",
-    "receta_produccion",
-    "movimientos_almacen",
-    "historial_producto"
+    "visitas_clientes"
   ],
-  "updated": "2026-03-14"
+  "updated": "2026-03-19"
 }

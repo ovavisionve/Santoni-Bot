@@ -1,6 +1,6 @@
 # Mapeo Completo de Tablas iDempiere - SantoniBot
 
-**Referencia tecnica de produccion** | Ultima actualizacion: Marzo 2026
+**Referencia tecnica de produccion** | Ultima actualizacion: 19 Marzo 2026
 
 ---
 
@@ -21,7 +21,7 @@
 
 ## 2. Resumen de Tablas por Agente
 
-La siguiente tabla muestra las **35 tablas** del schema `adempiere` que SantoniBot consulta activamente, agrupadas por el agente que las utiliza.
+La siguiente tabla muestra las **46 tablas** del schema `adempiere` que SantoniBot consulta activamente, agrupadas por el agente que las utiliza.
 
 | # | Tabla | Ventas | Finanzas | Contabilidad | RRHH | Produccion | Compras Insumos | Compras Productores |
 |---|-------|:------:|:--------:|:------------:|:----:|:----------:|:---------------:|:-------------------:|
@@ -34,13 +34,13 @@ La siguiente tabla muestra las **35 tablas** del schema `adempiere` que SantoniB
 | 7 | `c_salesregion` | x | - | - | - | - | - | - |
 | 8 | `c_bp_group` | x | - | - | - | - | - | - |
 | 9 | `c_doctype` | x | x | - | - | - | - | - |
-| 10 | `c_currency` | - | x | - | - | - | - | - |
-| 11 | `c_paymentterm` | x | x | - | - | - | - | - |
+| 10 | `c_currency` | - | x | x | - | - | - | - |
+| 11 | `c_paymentterm` | x | x | - | - | - | x | - |
 | 12 | `c_allocationline` | - | x | - | - | - | - | - |
 | 13 | `c_bankaccount` | - | x | - | - | - | - | - |
 | 14 | `c_bank` | - | x | - | - | - | - | - |
-| 15 | `fact_acct` | - | - | x | - | - | - | - |
-| 16 | `c_elementvalue` | - | - | x | - | - | - | - |
+| 15 | `fact_acct` | - | x | x | - | - | - | - |
+| 16 | `c_elementvalue` | - | x | x | - | - | - | - |
 | 17 | `c_acctschema` | - | - | x | - | - | - | - |
 | 18 | `c_period` | - | - | x | - | - | - | - |
 | 19 | `hr_employee` | - | - | - | x | - | - | - |
@@ -51,16 +51,26 @@ La siguiente tabla muestra las **35 tablas** del schema `adempiere` que SantoniB
 | 24 | `hr_concept` | - | - | - | x | - | - | - |
 | 25 | `hr_payroll` | - | - | - | x | - | - | - |
 | 26 | `lve_c_bpartner` | - | - | - | x | - | - | - |
-| 27 | `m_inout` | - | - | - | - | x | - | - |
-| 28 | `m_inoutline` | - | - | - | - | x | - | - |
-| 29 | `m_product` | - | - | - | - | x | x | x |
-| 30 | `m_product_category` | - | - | - | - | - | x | - |
-| 31 | `m_storageonhand` | - | - | - | - | x | x | - |
-| 32 | `m_locator` | - | - | - | - | - | x | - |
-| 33 | `m_warehouse` | - | - | - | - | x | x | - |
-| 34 | `c_order` | - | - | - | - | - | - | x |
-| 35 | `c_orderline` | - | - | - | - | - | - | x |
-| 36 | `c_uom` | - | - | - | - | - | x | - |
+| 27 | `ad_user` | - | - | - | x | - | - | - |
+| 28 | `m_inout` | - | - | - | - | x | - | - |
+| 29 | `m_inoutline` | - | - | - | - | x | - | - |
+| 30 | `m_product` | - | - | - | - | x | x | x |
+| 31 | `m_product_category` | - | - | - | - | - | x | - |
+| 32 | `m_storageonhand` | - | - | - | - | x | x | - |
+| 33 | `m_locator` | - | - | - | - | x | x | - |
+| 34 | `m_warehouse` | - | - | - | - | x | x | - |
+| 35 | `m_production` | - | - | - | - | x | - | - |
+| 36 | `m_productionline` | - | - | - | - | x | - | - |
+| 37 | `pp_product_bom` | - | - | - | - | x | - | - |
+| 38 | `pp_product_bomline` | - | - | - | - | x | - | - |
+| 39 | `m_movement` | - | - | - | - | x | - | - |
+| 40 | `m_movementline` | - | - | - | - | x | - | - |
+| 41 | `c_order` | - | - | - | - | - | x | x |
+| 42 | `c_orderline` | - | - | - | - | - | x | x |
+| 43 | `c_uom` | - | - | - | - | x | x | - |
+| 44 | `c_location` | - | - | - | - | - | - | x |
+| 45 | `c_city` | - | - | - | - | - | - | x |
+| 46 | `c_region` | - | - | - | - | - | - | x |
 
 ---
 
@@ -318,7 +328,7 @@ Verificado contra `ad_ref_list` (C_Payment Tender Type) en iDempiere el 14/Mar/2
 ### 4.2 FINANZAS (Finance Agent)
 
 **Archivo:** `backend/app/agents/finanzas.py`
-**Queries:** `idempiere_queries.py` -- `build_financial_summary`, `build_overdue_receivables`
+**Queries:** `idempiere_queries.py` -- `build_financial_summary`, `build_cobros_pagos_summary`, `build_loan_balances`, `build_overdue_receivables`
 
 #### Tablas utilizadas
 
@@ -369,6 +379,30 @@ c_invoice (i) [CxC]
 END)::date AS fecha_vencimiento
 ```
 
+#### Funcion `build_cobros_pagos_summary` (Cobros y Pagos)
+
+Consulta detallada de cobros (isreceipt='Y') o pagos (isreceipt='N') con desglose.
+
+| Tabla | Alias | Rol |
+|-------|-------|-----|
+| `c_payment` | `p` | Registros de cobros/pagos |
+| `c_bpartner` | `bp` | Socios de negocio |
+
+**Retorna:** total_registros, por_moneda, por_metodo_pago, top_socios (top 30), por_mes (si consulta anual o >45 dias).
+
+#### Funcion `build_loan_balances` (Prestamos y Pagares)
+
+Consulta saldos de cuentas de prestamos/pagares via asientos contables.
+
+| Tabla | Alias | Rol |
+|-------|-------|-----|
+| `fact_acct` | `fa` | Asientos contables |
+| `c_elementvalue` | `ev` | Cuentas contables de prestamos |
+
+**Cuentas predefinidas:** 2.01.01.01, 2.01.04.01, 2.02.01.01, 2.02.02.01, 2.02.03.01
+**Convencion:** Saldo = haber - debe (cuentas de pasivo, naturaleza credito)
+**Retorna:** lista de cuentas con {codigo, cuenta, saldo, movimientos, primer_mov, ultimo_mov}, total_obligaciones.
+
 #### Separacion de datos por moneda
 
 Los saldos bancarios y CxC/CxP se presentan **separados por moneda** (VES y USD). Nunca se suman montos de diferentes monedas.
@@ -378,7 +412,7 @@ Los saldos bancarios y CxC/CxP se presentan **separados por moneda** (VES y USD)
 ### 4.3 CONTABILIDAD (Accounting Agent)
 
 **Archivo:** `backend/app/agents/contabilidad.py`
-**Queries:** `idempiere_queries.py` -- `build_accounting_summary`, `build_account_detail`
+**Queries:** `idempiere_queries.py` -- `build_accounting_summary`, `build_account_detail`, `search_accounts_by_name`
 
 #### Tablas utilizadas
 
@@ -433,6 +467,21 @@ saldo = SUM(fa.amtacctdr - fa.amtacctcr)
 saldo = SUM(fa.amtacctcr - fa.amtacctdr)
 ```
 
+#### Busqueda de cuentas por nombre (`search_accounts_by_name`)
+
+Cuando el usuario menciona una cuenta por nombre (ej: "caja chica", "bancos") sin codigo:
+
+```sql
+SELECT ev.value AS codigo, ev.name AS cuenta, ev.accounttype AS tipo
+FROM adempiere.c_elementvalue ev
+WHERE ev.isactive = 'Y' AND ev.issummary = 'N'
+  AND (ev.name ILIKE '%caja%' AND ev.name ILIKE '%chica%')
+ORDER BY ev.value
+LIMIT 10
+```
+
+Si retorna multiples resultados, se muestra lista para que el usuario seleccione.
+
 #### Detalle de cuenta especifica
 
 Cuando el usuario consulta una cuenta por codigo (ej: `2.01.01.10`):
@@ -447,7 +496,7 @@ Cuando el usuario consulta una cuenta por codigo (ej: `2.01.01.10`):
 ### 4.4 RRHH (Human Resources Agent)
 
 **Archivo:** `backend/app/agents/rrhh.py`
-**Queries:** `idempiere_queries.py` -- `build_employee_summary`, `build_employee_list`, `build_birthday_list`, `build_payroll_summary`, `build_attendance_summary`, `build_turnover_summary`
+**Queries:** `idempiere_queries.py` -- `build_employee_summary`, `build_employee_list`, `build_birthday_list`, `build_payroll_summary`, `build_attendance_summary`, `build_turnover_summary`, `build_vacation_summary`
 
 #### Tablas utilizadas
 
@@ -462,6 +511,7 @@ Cuando el usuario consulta una cuenta por codigo (ej: `2.01.01.10`):
 | `hr_payroll` | `hpy` | Definiciones de nomina |
 | `c_bpartner` | `bp` | Datos maestros del empleado |
 | `lve_c_bpartner` | `lbp` | Extension venezolana (posible campo de cumpleanos) |
+| `ad_user` | `u` | Usuarios del sistema (campo birthday para cumpleanos) |
 | `ad_org` | `o` | Organizacion del empleado |
 
 #### Relaciones (JOINs)
@@ -537,14 +587,35 @@ LOWER(hc.name) LIKE '%ausent%'
   OR LOWER(hc.name) LIKE '%licencia%'
 ```
 
+#### Conceptos de vacaciones buscados (`build_vacation_summary`)
+
+```sql
+LOWER(hc.name) LIKE '%vacacion%'
+  OR LOWER(hc.name) LIKE '%bono vacacional%'
+```
+
+**Retorna:** total_empleados, total_monto, total_ocurrencias, por_concepto, por_organizacion, detalle_empleados (top 30).
+
+#### Cumpleanos (`build_birthday_list`)
+
+Usa LATERAL subquery para seleccionar UNA fecha de cumpleanos por empleado, evitando duplicados cuando hay multiples registros en `ad_user`:
+
+```sql
+LATERAL (
+  SELECT u.birthday FROM adempiere.ad_user u
+  WHERE u.c_bpartner_id = bp.c_bpartner_id AND u.birthday IS NOT NULL
+  ORDER BY u.ad_user_id LIMIT 1
+) bday
+```
+
 ---
 
 ### 4.5 PRODUCCION (Production Agent)
 
 **Archivo:** `backend/app/agents/produccion.py`
-**Queries:** `idempiere_queries.py` -- `build_production_summary`, `build_production_orders`, `build_inventory_stock`
+**Queries:** `idempiere_queries.py` -- `build_production_summary`, `build_production_orders`, `build_production_runs`, `build_bom_info`, `build_warehouse_movements`, `build_inventory_stock`
 
-> **NOTA:** Santoni NO utiliza el modulo de Manufactura (`pp_order`) de iDempiere. La actividad productiva se rastrea mediante movimientos de inventario (`m_inout`).
+> **NOTA:** Santoni NO utiliza el modulo de Manufactura (`pp_order`) de iDempiere. La actividad productiva se rastrea mediante movimientos de inventario (`m_inout`) como fuente primaria, y `m_production` como fuente secundaria (~32 registros BATCH SIROPE). Las recetas/BOM se consultan desde `pp_product_bom`.
 
 #### Tablas utilizadas
 
@@ -556,6 +627,13 @@ LOWER(hc.name) LIKE '%ausent%'
 | `m_warehouse` | `w` | Almacenes |
 | `m_storageonhand` | `s` | Stock actual en almacenes |
 | `m_locator` | `l` | Ubicaciones de almacen |
+| `m_production` | `mp` | Producciones simplificadas (~32 BATCH SIROPE) |
+| `m_productionline` | `mpl` | Lineas de produccion (terminado/insumos) |
+| `pp_product_bom` | `bom` | Listas de materiales / recetas |
+| `pp_product_bomline` | `bl` | Componentes de BOM |
+| `m_movement` | `mv` | Movimientos internos entre almacenes |
+| `m_movementline` | `mvl` | Lineas de movimiento interno |
+| `c_uom` | `u` | Unidades de medida |
 | `c_bpartner` | `bp` | Socio de negocio del movimiento |
 | `ad_org` | `org` | Organizaciones |
 
@@ -611,12 +689,59 @@ m_storageonhand (s)
 
 **NOTA:** `m_storageonhand` tiene multiples filas por producto (una por lote). Las queries agregan con `SUM(s.qtyonhand)` agrupando por producto.
 
+#### Funcion `build_production_runs` (Producciones Directas)
+
+Consulta la tabla `m_production` (produccion simplificada, no manufactura `pp_order`).
+
+```
+m_production (mp)
+  └── JOIN m_productionline (mpl) ON mp.m_production_id = mpl.m_production_id
+        └── JOIN m_product (p) ON mpl.m_product_id = p.m_product_id
+```
+
+| Columna de `m_productionline` | Descripcion |
+|-------------------------------|-------------|
+| `isendproduct` | 'Y'=Producto terminado, 'N'=Insumo consumido |
+| `movementqty` | Cantidad (positivo=producido, negativo=consumido) |
+
+**Nota:** Siempre usa `IdempiereSession()` directo — la DB local solo tiene ~32 registros vs 5,919+ en iDempiere.
+
+#### Funcion `build_bom_info` (Recetas / Listas de Materiales)
+
+```
+pp_product_bom (bom)
+  ├── JOIN m_product (p) ON bom.m_product_id = p.m_product_id
+  ├── LEFT JOIN ad_org (o) ON bom.ad_org_id = o.ad_org_id
+  └── JOIN pp_product_bomline (bl) ON bom.pp_product_bom_id = bl.pp_product_bom_id
+        ├── JOIN m_product (cp) ON bl.m_product_id = cp.m_product_id
+        └── LEFT JOIN c_uom (u) ON bl.c_uom_id = u.c_uom_id
+```
+
+**Retorna:** Lista de BOMs con componentes (componente, cantidad, unidad, tipo).
+**Nota:** Siempre usa `IdempiereSession()` (datos de referencia, no temporales).
+
+#### Funcion `build_warehouse_movements` (Movimientos Internos)
+
+```
+m_movement (mv)
+  ├── JOIN m_movementline (mvl) ON mv.m_movement_id = mvl.m_movement_id
+  │     ├── JOIN m_product (p) ON mvl.m_product_id = p.m_product_id
+  │     ├── JOIN m_locator (lf) ON mvl.m_locator_id = lf.m_locator_id [origen]
+  │     │     └── JOIN m_warehouse (wf) ON lf.m_warehouse_id = wf.m_warehouse_id
+  │     └── JOIN m_locator (lt) ON mvl.m_locatorto_id = lt.m_locator_id [destino]
+  │           └── JOIN m_warehouse (wt) ON lt.m_warehouse_id = wt.m_warehouse_id
+  └── LEFT JOIN ad_org (o) ON mv.ad_org_id = o.ad_org_id
+```
+
+**Retorna:** total_movimientos, por_producto (top 20), flujo_almacenes (origen→destino top 15), documentos_recientes.
+**Nota:** Siempre usa `IdempiereSession()` (6,014+ movimientos; DB local incompleta).
+
 ---
 
 ### 4.6 COMPRAS INSUMOS (Supply Purchases Agent)
 
 **Archivo:** `backend/app/agents/compras_insumos.py`
-**Queries:** `idempiere_queries.py` -- `build_supply_purchases`, `build_product_purchase_history`, `build_inventory_stock`
+**Queries:** `idempiere_queries.py` -- `build_supply_purchases`, `build_product_purchase_history`, `build_inventory_stock`, `build_pending_purchase_orders`, `build_supplier_price_comparison`, `build_purchase_payment_status`
 
 #### Tablas utilizadas
 
@@ -630,6 +755,9 @@ m_storageonhand (s)
 | `m_storageonhand` | `s` | Stock actual |
 | `m_locator` | `l` | Ubicaciones de almacen |
 | `m_warehouse` | `w` | Almacenes |
+| `c_order` | `o` | Ordenes de compra (issotrx='N', para pendientes) |
+| `c_orderline` | `ol` | Lineas de orden de compra |
+| `c_paymentterm` | `pt` | Terminos de pago (para vencimiento) |
 | `c_uom` | `u` | Unidades de medida |
 | `ad_org` | `o` | Organizaciones |
 
@@ -639,7 +767,13 @@ m_storageonhand (s)
 c_invoice (i) [issotrx='N']
   ├── JOIN c_invoiceline (il) ON i.c_invoice_id = il.c_invoice_id
   │     └── JOIN m_product (p) ON il.m_product_id = p.m_product_id
-  └── JOIN c_bpartner (bp) ON i.c_bpartner_id = bp.c_bpartner_id
+  ├── JOIN c_bpartner (bp) ON i.c_bpartner_id = bp.c_bpartner_id
+  └── LEFT JOIN c_paymentterm (pt) ON i.c_paymentterm_id = pt.c_paymentterm_id
+
+c_order (o) [issotrx='N', para ordenes pendientes]
+  ├── JOIN c_orderline (ol) ON o.c_order_id = ol.c_order_id
+  ├── JOIN c_bpartner (bp) ON o.c_bpartner_id = bp.c_bpartner_id
+  └── LEFT JOIN ad_org (org) ON o.ad_org_id = org.ad_org_id
 
 m_storageonhand (s)
   ├── JOIN m_locator (l) ON s.m_locator_id = l.m_locator_id
@@ -661,6 +795,42 @@ m_storageonhand (s)
 | `linenetamt` | numeric | Monto neto de la linea |
 | `priceactual` | numeric | Precio unitario |
 
+#### Funcion `build_pending_purchase_orders` (Ordenes Pendientes)
+
+Consulta ordenes de compra con `docstatus IN ('DR','IP')` solamente (excluye CO=completadas).
+
+```sql
+-- DR = Borrador (Draft), IP = En Proceso (In Progress)
+-- CO = Completada (EXCLUIDA — no es pendiente)
+WHERE o.docstatus IN ('DR', 'IP') AND o.issotrx = 'N'
+```
+
+**Retorna:** total_ordenes, total_monto_mixto, por_moneda, por_estado, por_proveedor (top 20), detalle_ordenes (ultimas 30).
+
+#### Funcion `build_supplier_price_comparison` (Comparacion de Precios)
+
+Compara precios de un producto entre proveedores basado en facturas reales.
+
+```sql
+SELECT bp.name AS proveedor, p.name AS producto,
+  _currency_label('i') AS moneda,
+  COUNT(*) AS compras,
+  MIN(il.priceactual), AVG(il.priceactual), MAX(il.priceactual),
+  MAX(i.dateinvoiced) AS ultima_compra,
+  SUM(il.qtyinvoiced) AS cantidad_total
+FROM c_invoice i JOIN c_invoiceline il ...
+WHERE i.issotrx = 'N' AND product_search_filter
+GROUP BY proveedor, producto, moneda
+```
+
+**Retorna:** Lista de proveedores con precio_minimo, precio_promedio, precio_maximo, ultima_compra (limit 30).
+
+#### Funcion `build_purchase_payment_status` (Estado de Pago)
+
+Clasifica facturas de compra en Pagadas vs Pendientes, con detalle de vencidas.
+
+**Retorna:** resumen_pago (estado_pago, moneda, facturas, total), facturas_vencidas (top 20 mas antiguas).
+
 ---
 
 ### 4.7 COMPRAS PRODUCTORES (Producer Purchases Agent)
@@ -676,6 +846,9 @@ m_storageonhand (s)
 | `c_orderline` | `ol` | Lineas de orden (producto, cantidad, precio) |
 | `c_bpartner` | `bp` | Productores (isagricultor='Y') |
 | `c_bpartner_location` | `bpl` | Ubicacion del productor |
+| `c_location` | `loc` | Coordenadas/direccion |
+| `c_city` | `ci` | Ciudad/municipio |
+| `c_region` | `r` | Estado/region |
 | `m_product` | `p` | Productos agricolas (arroz paddy, maiz) |
 | `c_invoice` | `i` | Facturas impagas (para pagos pendientes) |
 | `c_invoiceline` | `il` | Lineas de factura (filtro por producto en pendientes) |
@@ -907,11 +1080,9 @@ Las siguientes tablas existen en iDempiere pero **no son consultadas actualmente
 | Tabla | Descripcion | Potencial uso futuro |
 |-------|-------------|---------------------|
 | `pp_order` | Ordenes de produccion (manufactura) | **Vacio en Santoni** - modulo no activado |
-| `pp_order_bomline` | Lista de materiales de produccion | Vacio (depende de pp_order) |
+| `pp_order_bomline` | Lineas de ordenes de manufactura | Vacio (depende de pp_order) |
 | `c_order` (issotrx='Y') | Pedidos de venta (antes de facturar) | Ventas: cotizaciones y pedidos en proceso |
-| `m_movement` | Movimientos internos de inventario | Produccion: trazabilidad interna |
 | `m_inventory` | Inventario fisico / conteo | Produccion: ajustes de inventario |
-| `m_production` | Produccion simplificada | Produccion: alternativa a pp_order |
 | `c_projectline` | Lineas de proyecto | Produccion: seguimiento de proyectos |
 | `c_tax` | Impuestos (IVA, retenciones) | Contabilidad: reportes fiscales |
 | `c_taxcategory` | Categorias de impuestos | Contabilidad: analisis fiscal |
@@ -922,12 +1093,13 @@ Las siguientes tablas existen en iDempiere pero **no son consultadas actualmente
 | `c_campaign` | Campanas comerciales | Ventas: analisis por campana |
 | `hr_attendance` | Asistencia de empleados | RRHH: control de horarios (si se activa) |
 | `hr_leave` | Solicitudes de vacaciones | RRHH: gestion de ausencias |
-| `ad_user` | Usuarios del sistema | Admin: auditoria de accesos |
 | `ad_changelog` | Log de cambios | Admin: trazabilidad de modificaciones |
 | `c_subscription` | Suscripciones | Ventas: clientes recurrentes |
 | `a_asset` | Activos fijos | Contabilidad: gestion de activos |
 | `gl_journal` | Asientos manuales | Contabilidad: ajustes contables |
 | `gl_journalline` | Lineas de asientos manuales | Contabilidad: detalle de ajustes |
+
+> **Tablas movidas a "en uso" desde la ultima revision:** `m_production`, `m_movement`, `pp_product_bom`, `pp_product_bomline`, `ad_user` (para cumpleanos en RRHH)
 
 ---
 
@@ -946,6 +1118,9 @@ Datos aproximados del ambiente de produccion (Marzo 2026):
 | `fact_acct` | ~7,700,000 | Asientos contables |
 | `c_elementvalue` | ~3,556 | Plan de cuentas |
 | `hr_employee` | Variable | Multiples filas por persona |
+| `m_production` | ~5,919 | Producciones simplificadas (en iDempiere) |
+| `m_movement` | ~6,014 | Movimientos internos entre almacenes |
+| `pp_product_bom` | ~15+ | Recetas / listas de materiales |
 
 ---
 
