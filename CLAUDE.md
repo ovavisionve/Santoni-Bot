@@ -84,6 +84,8 @@ Santoni-Bot/
 ├── docs/                        # Documentación del proyecto
 │   ├── ESTATUS_PROYECTO.md      # Tracking detallado de tareas
 │   ├── DOCUMENTO_TECNICO.md     # Documento técnico completo
+│   ├── MAPEO_TABLAS_IDEMPIERE.md # Mapeo técnico: 46 tablas, queries, columnas por agente
+│   ├── DATOS_VERIFICACION_IDEMPIERE.md # Datos de verificación contra iDempiere (23 secciones)
 │   ├── cuestionario_validacion_agentes.md # Formularios de validación
 │   └── manuales varios
 ├── docker-compose.yml           # Desarrollo (5 servicios)
@@ -137,10 +139,10 @@ docker compose build --no-cache backend frontend && docker compose up -d
 | # | Agente | Archivo | Capacidades principales |
 |---|--------|---------|------------------------|
 | 1 | **Ventas** | `ventas.py` | Top clientes, facturación, cobranza, zonas, tipología, por moneda (VES/USD), por organización |
-| 2 | **Finanzas** | `finanzas.py` | Saldos bancarios, cuentas por cobrar/pagar, flujo de caja |
-| 3 | **Contabilidad** | `contabilidad.py` | Balance general, estado de resultados, libro diario/mayor, cuentas contables |
-| 4 | **RRHH** | `rrhh.py` | Empleados activos, búsqueda por cargo, ausentismo, nómina, rotación, cumpleañeros |
-| 5 | **Producción** | `produccion.py` | Órdenes de producción, cantidades, desperdicios, inventario (m_storageonhand) |
+| 2 | **Finanzas** | `finanzas.py` | Saldos bancarios, cuentas por cobrar/pagar, cobros/pagos detallados, préstamos/pagarés (build_loan_balances) |
+| 3 | **Contabilidad** | `contabilidad.py` | Balance general, estado de resultados, libro diario/mayor, cuentas contables, búsqueda de cuentas por nombre |
+| 4 | **RRHH** | `rrhh.py` | Empleados activos, búsqueda por cargo, ausentismo, nómina, rotación, cumpleañeros, vacaciones |
+| 5 | **Producción** | `produccion.py` | Movimientos de inventario (m_inout), producción directa (m_production), recetas/BOM (pp_product_bom), movimientos entre almacenes (m_movement), stock actual |
 | 6 | **Compras Insumos** | `compras_insumos.py` | Compras por producto/proveedor, historial, precios, separación por moneda, órdenes de compra pendientes (c_order), comparación de precios entre proveedores, estado de pago de facturas |
 | 7 | **Compras Productores** | `compras_productores.py` | Compras agrícolas (arroz, maíz), productores registrados, pagos pendientes, precios |
 
@@ -265,11 +267,13 @@ Ahora el usuario selecciona el agente directamente desde pestañas en el UI.
 
 Se mantiene un dataset de escenarios de entrenamiento/validación:
 - **Archivo**: `backend/data/training_dataset.json`
-- **356+ escenarios** (v2.5+) cubriendo los 7 agentes
-- Incluye: pregunta, agente esperado, tipo de consulta, follow-ups
-- 78 escenarios de follow-up con herencia de contexto
+- **423 escenarios** (v2.8, actualizado 19/Mar/2026) cubriendo los 7 agentes
+- 76 categorías únicas, 89 escenarios de follow-up con herencia de contexto
+- Incluye: pregunta, agente esperado, tipo de consulta, follow-ups, extracciones esperadas
+- Distribución: compras_insumos (89), rrhh (78), ventas (74), producción (63), finanzas (45), compras_productores (29), contabilidad (25)
 - Tipos de error rastreados: routing, herencia temporal, fallback sin datos, errores DB,
-  docstatus_incompleto, org_name_no_extraido, no_access_text
+  docstatus_incompleto, org_name_no_extraido, no_access_text, alucinacion_completa, alucinacion_parcial
+- Escenarios de alucinación: 22 (documentados para prevención)
 - Usado para medir confidence score y validación de respuestas
 
 ---
@@ -284,11 +288,11 @@ Se crearon cuestionarios para que cada departamento valide las respuestas del bo
 
 ---
 
-## Estado Actual del Proyecto (16/Mar/2026)
+## Estado Actual del Proyecto (20/Mar/2026)
 
 ### Branch de desarrollo: `claude/general-session-YZXaU`
 ### Tag de seguridad: `pre-keywords-integration` → commit `69575e4` (estado antes de keywords.py)
-### HEAD actual: `d7d8130` (incluye fix compras productores: outliers + deduplicación)
+### HEAD actual: `a2871b5` (docs: mapeo técnico iDempiere actualizado + dataset v2.8)
 
 ### Estado de Validación por Agente (verificado contra `docs/DATOS_VERIFICACION_IDEMPIERE.md` del 13/Mar)
 
@@ -367,12 +371,23 @@ Integrado en los 7 agentes. Si causa problemas, revertir con:
 git reset --hard pre-keywords-integration  # Vuelve a commit 69575e4
 ```
 
+### Commits recientes relevantes (Mar 2026)
+
+| Commit | Descripción |
+|--------|-------------|
+| `a2871b5` | docs: mapeo técnico iDempiere actualizado + dataset v2.8 |
+| `7a54745` | fix: bypass LLM para ventas y contabilidad (DIRECT_RESPONSE_MARKER) |
+| `aa8e2db` | fix: queries devuelven datos precisos para que el LLM no alucine |
+| `3bffd7e` | fix: 4 correcciones basadas en prueba de usuario en tiempo real |
+| `3539d88` | docs: documentar tablas financieras no mapeadas (§23) |
+
 ### Pendiente:
 - ~~**URGENTE**: Fix contabilidad~~ ✅ Resuelto (IdempiereSession directo)
 - ~~**ALTO**: Compras productores~~ ✅ Resuelto (qtyordered=1, MAIZ BLANCO aparece)
 - ~~**ALTO**: Anti-hallucination streaming~~ ✅ Resuelto (skip LLM cuando no hay datos)
+- ~~**MEDIO**: Mapeo completo de tablas iDempiere~~ ✅ Resuelto (docs/MAPEO_TABLAS_IDEMPIERE.md — 46 tablas, 1142 líneas)
 - **MEDIO**: Compras insumos — LLM a veces ignora datos reales en streaming (mitigado con skip-LLM sin datos)
-- Mapeo completo de tablas iDempiere
+- **MEDIO**: Ventas y Contabilidad usan DIRECT_RESPONSE_MARKER para bypass LLM — validar que funciona en todos los casos
 - Tests E2E
 - Sentry (monitoreo de errores)
 - WhatsApp (Fase 2, post-lanzamiento)
@@ -469,10 +484,10 @@ HISTORICAL_DATA_CUTOFF=2026-03-01  # Fecha de corte
 - `build_registered_producers` - productores registrados
 - `build_producer_pending_payments` - pagos pendientes actuales
 
-### ⚠️ Funciones que DEBERÍAN ir a iDempiere pero van a DB local (BUG)
-- `build_accounting_summary` - usa `_get_session()` → DB local tiene fact_acct solo hasta 2021
-- `build_account_detail` - mismo problema
-- **Fix necesario**: Cambiar a `IdempiereSession()` directo, igual que `build_inventory_stock`
+### ✅ Funciones que iban a DB local pero ya fueron corregidas
+- `build_accounting_summary` - ~~usa `_get_session()`~~ → ahora usa `IdempiereSession()` directo
+- `build_account_detail` - ~~mismo problema~~ → ahora usa `IdempiereSession()` directo
+- **Fix aplicado**: Cambiado a `IdempiereSession()` directo, igual que `build_inventory_stock`
 
 ---
 
@@ -484,21 +499,21 @@ Auditoría completa de los 7 agentes + orchestrator + base_agent.
 
 | Agente | Queries | Herencia temporal | Anti-alucinación | Error handling | org_name | Moneda |
 |--------|---------|-------------------|------------------|----------------|----------|--------|
-| Ventas | 4 funciones | ✅ Completa | ✅ Fuerte | ✅ try/except | ✅ | ✅ VES/USD |
-| Finanzas | 2 funciones | ✅ Completa | ✅ Fuerte | ✅ try/except | ❌ No extrae | N/A (separado en query) |
-| Contabilidad | 2 funciones | ✅ Completa + cuenta | ✅ + zero-movement | ✅ try/except | ❌ | ✅ currency_ids |
-| RRHH | 7 funciones | ✅ Completa + cargo | ✅ Fuerte | ✅ try/except anidados | ❌ | N/A |
-| Producción | 3 funciones | ✅ Completa | ✅ Fuerte | ✅ try/except | ❌ No extrae | N/A |
+| Ventas | 5 funciones | ✅ Completa | ✅ DIRECT_RESPONSE_MARKER | ✅ try/except | ✅ | ✅ VES/USD |
+| Finanzas | 4 funciones | ✅ Completa | ✅ Fuerte | ✅ try/except | ✅ _extract_org_name | N/A (separado en query) |
+| Contabilidad | 3 funciones | ✅ Completa + cuenta | ✅ DIRECT_RESPONSE_MARKER + zero-movement | ✅ try/except | ❌ | ✅ currency_ids |
+| RRHH | 7 funciones | ✅ Completa + cargo | ✅ Fuerte | ✅ try/except anidados | ✅ _extract_org_name | N/A |
+| Producción | 6 funciones | ✅ Completa | ✅ Fuerte + row count markers | ✅ try/except | ✅ _extract_org_name | N/A |
 | Compras Insumos | 6 funciones | ✅ Completa | ✅ Fuerte | ✅ try/except | ✅ _extract_org_name | ✅ _detect_currency |
 | Compras Productores | 4 funciones | ✅ Completa + producto | ✅ Fuerte | ✅ try/except anidados | ✅ _extract_org_name | ✅ detect_currency |
 
 ### Funciones de Query por Agente
 
-- **Ventas**: `build_top_clients`, `build_sales_summary`, `build_collection_summary`, `build_overdue_receivables`
-- **Finanzas**: `build_financial_summary`, `build_overdue_receivables`
-- **Contabilidad**: `build_accounting_summary`, `build_account_detail`
+- **Ventas**: `build_top_clients`, `build_sales_summary`, `build_collection_summary`, `build_overdue_receivables`, `build_top_delinquent_clients`
+- **Finanzas**: `build_financial_summary`, `build_cobros_pagos_summary`, `build_loan_balances`, `build_overdue_receivables`
+- **Contabilidad**: `build_accounting_summary`, `build_account_detail`, `search_accounts_by_name`
 - **RRHH**: `build_employee_summary`, `build_employee_list`, `build_birthday_list`, `build_payroll_summary`, `build_attendance_summary`, `build_turnover_summary`, `build_vacation_summary`
-- **Producción**: `build_production_summary`, `build_production_orders`, `build_inventory_stock`
+- **Producción**: `build_production_summary`, `build_production_orders`, `build_production_runs`, `build_bom_info`, `build_warehouse_movements`, `build_inventory_stock`
 - **Compras Insumos**: `build_supply_purchases`, `build_product_purchase_history`, `build_inventory_stock`, `build_pending_purchase_orders`, `build_supplier_price_comparison`, `build_purchase_payment_status`
 - **Compras Productores**: `build_producer_purchases`, `build_registered_producers`, `build_producer_pending_payments`, `build_producer_price_analysis`
 
@@ -510,12 +525,69 @@ Auditoría completa de los 7 agentes + orchestrator + base_agent.
 4. **`_region_case_sql()`** en ventas: Usa string interpolation pero con datos hardcodeados (no es inyección SQL, pero no es parameterizado)
 5. **Currency IDs hardcodeados**: 9 IDs para USD en `date_utils.py` y `compras_insumos.py` — si Santoni agrega nuevos, requiere actualización manual
 
+### Anti-alucinación: DIRECT_RESPONSE_MARKER (implementado 19/Mar/2026)
+
+Ventas y Contabilidad ahora retornan `DIRECT_RESPONSE_MARKER + resultado` desde `fetch_data()`.
+Esto hace que `base_agent.py` envíe los datos directamente al usuario SIN pasar por el LLM,
+eliminando completamente la posibilidad de que el LLM invente nombres de clientes, montos, etc.
+
+Flujo:
+1. Agente ejecuta query SQL → obtiene datos reales
+2. Agente formatea en markdown (tablas, secciones)
+3. Retorna `DIRECT_RESPONSE_MARKER + markdown`
+4. `base_agent.py` detecta el marker y envía directo, sin streaming LLM
+
+Otros agentes usan técnicas diferentes:
+- **Compras Insumos**: Retorna `None` si `total_facturas==0` → base_agent genera mensaje "sin datos"
+- **Producción**: Agrega `[N filas reales]` a las tablas para que el LLM no invente más filas
+- **RRHH/Finanzas**: Formateadores markdown custom que el LLM no puede alterar
+
 ### Routing del Orchestrator (orden de prioridad)
 
 1. Greetings → `general` (si < 60 chars)
 2. Código contable (`\d\.\d{2}\.\d{2}`) → `contabilidad`
 3. Keywords en orden: `compras_productores` → `produccion` → `compras_insumos` → `contabilidad` → `finanzas` → `ventas` → `rrhh`
 4. Fallback: `last_agent` (follow-up) → keywords genéricos → `general`
+
+---
+
+## Funciones Nuevas por Agente (agregadas Feb-Mar 2026)
+
+### Finanzas — `build_cobros_pagos_summary` y `build_loan_balances`
+- **Cobros/Pagos**: Desglose detallado de `c_payment` por moneda, método de pago y top socios.
+  Parámetro `is_receipt=True` para cobros, `False` para pagos. Keywords: "cobros", "pagos", "desembolsos".
+- **Préstamos/Pagarés**: `build_loan_balances()` consulta 5 cuentas predefinidas de pasivos bancarios
+  en `fact_acct` (2.01.01.01, 2.01.04.01, 2.02.01.01, 2.02.02.01, 2.02.03.01).
+  Saldo = haber - debe (naturaleza crédito). Keywords: "préstamo", "pagaré", "compromiso bancario".
+
+### Producción — `build_production_runs`, `build_bom_info`, `build_warehouse_movements`
+- **Producción directa**: Consulta `m_production` + `m_productionline`. Solo ~32 registros BATCH SIROPE
+  en DB local vs 5,919+ en iDempiere → siempre usa `IdempiereSession()` directo.
+- **Recetas/BOM**: Consulta `pp_product_bom` + `pp_product_bomline`. Datos de referencia, no temporales.
+  Keywords: "receta", "qué lleva", "componentes", "lista de materiales".
+- **Movimientos de almacén**: Consulta `m_movement` + `m_movementline` con JOINs a locator/warehouse
+  para mostrar flujo origen→destino. 6,014+ movimientos en iDempiere.
+
+### Contabilidad — `search_accounts_by_name`
+- Permite buscar cuentas por nombre ("caja chica", "bancos", "gastos de personal") sin necesidad
+  de conocer el código contable. Busca en `c_elementvalue` con ILIKE normalizado.
+  Si retorna múltiples resultados, muestra lista para que el usuario seleccione.
+
+### Ventas — `build_top_delinquent_clients`
+- Agrega facturas vencidas por cliente: total_adeudado, num_facturas, max_dias_vencido, por moneda.
+  Complementa `build_overdue_receivables` (que lista facturas individuales) con vista por cliente.
+
+---
+
+## Mapeo Técnico de Tablas iDempiere
+
+Referencia completa en `docs/MAPEO_TABLAS_IDEMPIERE.md` (1142 líneas, actualizado 19/Mar/2026):
+- **46 tablas** mapeadas con uso por agente (matriz en Sección 2)
+- Detalle por agente: tablas, JOINs, columnas, funciones SQL
+- Patrones de consulta: filtros de fecha, organización, moneda, producto
+- Mapeo completo de monedas (c_currency_id → etiqueta)
+- 19 tablas disponibles para futuro (Sección 8)
+- Volumetría de referencia (~450K facturas, ~800K pagos, ~7.7M asientos contables)
 
 ---
 
