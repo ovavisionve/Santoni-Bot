@@ -220,11 +220,10 @@ def classify_by_keywords(
             # Mark that we found a match but user lacks access; keep scanning
             hit_no_access = True
 
-    # If keywords matched a blocked department, try last_agent fallback
-    # before returning no_access (e.g. Jorge in compras_insumos says "cliente")
+    # If keywords matched a blocked department, return no_access.
+    # Don't fallback to last_agent here — it would route a ventas query
+    # to compras_insumos just because the user was last in compras.
     if hit_no_access:
-        if last_agent and last_agent in allowed_departments and last_agent != "general":
-            return last_agent
         return "no_access"
 
     # Fallback 1: continue with last agent for follow-up messages
@@ -393,7 +392,9 @@ def compute_confidence_score(
 
     if agent_used == "general":
         # General handler: lower confidence overall
-        overall = min(routing_score * 0.5, 0.5)
+        # Use routing_score * 0.5 directly — a greeting (1.0) → 0.5,
+        # a sin_match (0.3) → 0.15. No need for min() cap.
+        overall = round(routing_score * 0.5, 2)
         breakdown = {
             "routing": routing_score,
             "data": 0.0,

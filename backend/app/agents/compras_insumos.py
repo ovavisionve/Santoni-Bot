@@ -486,6 +486,7 @@ Datos de compras de insumos en iDempiere:
                 inv_data = build_inventory_stock(
                     org_ids=org_ids,
                     product_search=product_search,
+                    org_name=org_name,
                 )
                 filter_label = f" - '{product_search}'" if product_search else ""
                 sections.append(self._format_summary(
@@ -493,29 +494,31 @@ Datos de compras de insumos en iDempiere:
                 ))
                 product_found = True
 
-            elif is_orders:
+            if is_orders:
                 orders_data = build_pending_purchase_orders(
                     mes=mes, anio=anio, org_ids=org_ids,
                     date_from=date_from, date_to=date_to,
                     currency_ids=currency_ids,
                     product_search=product_search,
+                    org_name=org_name,
                 )
                 sections.append(self._format_summary(
                     orders_data, f"Órdenes de Compra - {label}",
                 ))
                 product_found = True
 
-            elif is_payment:
+            if is_payment:
                 payment_data = build_purchase_payment_status(
                     mes=mes, anio=anio, org_ids=org_ids,
                     date_from=date_from, date_to=date_to,
+                    org_name=org_name,
                 )
                 sections.append(self._format_summary(
                     payment_data, f"Estado de Pago de Facturas de Compra - {label}",
                 ))
                 product_found = True
 
-            elif is_price_compare and product_search:
+            if is_price_compare and product_search:
                 compare_data = build_supplier_price_comparison(
                     product_search=product_search,
                     org_ids=org_ids, anio=anio,
@@ -534,7 +537,7 @@ Datos de compras de insumos en iDempiere:
                         f"No se encontraron datos de precios para '{product_search}' en el período {label}."
                     )
 
-            elif product_search:
+            if not product_found and product_search:
                 try:
                     # Check if user is asking for suppliers of a product
                     is_supplier_query = any(w in msg for w in ["proveedores", "proveedor", "quien vende", "quién vende"])
@@ -598,6 +601,7 @@ Datos de compras de insumos en iDempiere:
                     mes=mes, anio=anio, org_ids=org_ids,
                     date_from=date_from, date_to=date_to,
                     currency_ids=currency_ids,
+                    org_name=org_name,
                 )
                 sections.append(self._format_summary(summary, f"Resumen de Compras de Insumos - {label}"))
 

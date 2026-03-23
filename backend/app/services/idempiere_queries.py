@@ -2126,6 +2126,7 @@ def build_supply_purchases(
     date_from: str | None = None,
     date_to: str | None = None,
     currency_ids: list[int] | None = None,
+    org_name: str | None = None,
 ) -> dict:
     """Supply purchases from iDempiere: purchase invoices (issotrx='N')."""
     db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
@@ -2137,6 +2138,7 @@ def build_supply_purchases(
         ]
         params: dict = {}
         _add_org_filter(conditions, params, org_ids, "i")
+        _add_org_name_filter(conditions, params, org_name, "i")
         _add_date_filter(conditions, params, date_from, date_to, mes, anio, "i.dateinvoiced")
         _add_currency_filter(conditions, params, currency_ids, "i")
 
@@ -2289,6 +2291,7 @@ def build_pending_purchase_orders(
     date_to: str | None = None,
     currency_ids: list[int] | None = None,
     product_search: str | None = None,
+    org_name: str | None = None,
 ) -> dict:
     """Pending purchase orders from iDempiere c_order (issotrx='N').
 
@@ -2304,6 +2307,7 @@ def build_pending_purchase_orders(
         ]
         params: dict = {}
         _add_org_filter(conditions, params, org_ids, "o")
+        _add_org_name_filter(conditions, params, org_name, "o")
         _add_date_filter(conditions, params, date_from, date_to, mes, anio, "o.dateordered")
         _add_currency_filter(conditions, params, currency_ids, "o")
 
@@ -2473,6 +2477,7 @@ def build_purchase_payment_status(
     org_ids: list[int] | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    org_name: str | None = None,
 ) -> dict:
     """Purchase invoice payment status from iDempiere.
 
@@ -2487,6 +2492,7 @@ def build_purchase_payment_status(
         ]
         params: dict = {}
         _add_org_filter(conditions, params, org_ids, "i")
+        _add_org_name_filter(conditions, params, org_name, "i")
         _add_date_filter(conditions, params, date_from, date_to, mes, anio, "i.dateinvoiced")
 
         where = " AND ".join(conditions)
@@ -2885,6 +2891,7 @@ def build_inventory_stock(
     product_search: str | None = None,
     category_search: str | None = None,
     warehouse_search: str | None = None,
+    org_name: str | None = None,
 ) -> dict:
     """Inventory stock from iDempiere m_storageonhand.
 
@@ -2917,6 +2924,9 @@ def build_inventory_stock(
         if warehouse_search:
             conditions.append("w.name ILIKE :wh_search")
             params["wh_search"] = f"%{warehouse_search}%"
+
+        if org_name:
+            _add_org_name_filter(conditions, params, org_name, "w")
 
         where = " AND ".join(conditions)
 

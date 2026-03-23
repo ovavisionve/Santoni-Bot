@@ -167,7 +167,21 @@ async def stream_message(
             try:
                 # Compute confidence score for streamed response
                 from app.agents.orchestrator import compute_confidence_score
-                has_data = bool(complete_text) and "Error al consultar" not in complete_text
+                # has_data should check for actual data markers, not just non-empty text.
+                # A response with "no se encontraron datos" or errors is NOT real data.
+                _no_data_markers = [
+                    "Error al consultar",
+                    "no se encontraron datos",
+                    "no arrojó resultados",
+                    "no hay registros",
+                    "no hay datos",
+                    "no tengo esa información",
+                    "intente de nuevo",
+                ]
+                has_data = (
+                    bool(complete_text)
+                    and not any(marker in complete_text for marker in _no_data_markers)
+                )
                 conf_score, score_breakdown = compute_confidence_score(
                     routing_score, has_data, agent_name,
                 )
