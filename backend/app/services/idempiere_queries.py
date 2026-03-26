@@ -1030,7 +1030,7 @@ def build_sales_orders(
     db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
     try:
         if only_pending:
-            statuses = "('DR', 'IP', 'CO')"
+            statuses = "('DR', 'IP')"
         else:
             statuses = "('DR', 'IP', 'CO', 'CL')"
 
