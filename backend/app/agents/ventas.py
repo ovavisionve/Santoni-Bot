@@ -23,6 +23,10 @@ from app.services.query_service import (
     build_top_clients,
     build_overdue_receivables,
     build_sales_by_product,
+    build_sales_orders,
+    build_exchange_rates,
+    build_sales_tax_summary,
+    build_sales_by_branch,
 )
 
 
@@ -59,6 +63,11 @@ CAPACIDADES PRINCIPALES:
 6. Ranking de cobranza por zona, vendedores y tipología
 7. Detección de cuentas por cobrar más atrasadas
 8. Cobranza diaria/semanal y comparativo vs metas
+9. Ventas por producto: top productos vendidos, ventas por categoría, SKUs
+10. Órdenes de venta: pipeline por estado (borrador, en proceso, completada), vendedor, cliente, sucursal
+11. Impuestos: IVA, retenciones y base imponible por factura de venta
+12. Ventas por sucursal (C_Project)
+13. Tasas de cambio recientes VES/USD
 
 CONTEXTO iDEMPIERE (tablas de ventas):
 - C_ORDER: Órdenes de venta (issotrx='Y')
@@ -149,7 +158,11 @@ SOBRE NOTAS DE CRÉDITO:
             "✅ Resumen de cobranza: totales por método de pago y por cliente\n"
             "✅ Cuentas por cobrar vencidas: facturas impagadas con días de atraso\n"
             "✅ Ventas por producto: top productos vendidos, ventas por categoría, filtro por SKU\n"
-            "\n❌ NO puedo consultar: metas de venta, presupuestos, cotizaciones ni listas de precios. "
+            "✅ Órdenes de venta: pipeline por estado, vendedor, cliente, sucursal\n"
+            "✅ Impuestos: desglose IVA/retenciones por factura de venta\n"
+            "✅ Ventas por sucursal (C_Project)\n"
+            "✅ Tasas de cambio recientes (VES/USD)\n"
+            "\n❌ NO puedo consultar: metas de venta, presupuestos ni cotizaciones. "
             "Redirige al usuario al departamento correspondiente."
         )
 
@@ -203,6 +216,22 @@ Datos de ventas de iDempiere:
             "sku", "categoria de producto", "categoría de producto",
             "que se vende", "qué se vende", "más vendido", "mas vendido",
             "top producto", "ranking de producto",
+        ],
+        "ordenes": [
+            "orden de venta", "ordenes de venta", "órdenes de venta",
+            "pedido", "pedidos", "orden pendiente", "ordenes pendientes",
+            "pipeline",
+        ],
+        "impuestos": [
+            "impuesto", "iva", "retencion", "retención", "retenciones",
+            "islr", "base imponible", "fiscal", "tributario",
+        ],
+        "sucursal": [
+            "sucursal", "sucursales", "proyecto", "sede", "sedes",
+        ],
+        "tasa": [
+            "tasa de cambio", "tasa", "tipo de cambio", "cambio del dolar",
+            "cambio del dólar", "dolar oficial", "dólar oficial",
         ],
     }
 
@@ -451,6 +480,39 @@ Datos de ventas de iDempiere:
                 if data.get("por_categoria"):
                     sections.append(f"## Ventas por Categoría de Producto ({label})")
                     sections.append(self._format_table(data["por_categoria"]))
+
+            if query_type == "ordenes" or any(w in msg for w in self._QUERY_TYPES["ordenes"]):
+                only_pending = any(w in msg for w in ["pendiente", "borrador", "proceso", "pipeline"])
+                data = build_sales_orders(
+                    mes=mes, anio=anio, org_ids=org_ids,
+                    date_from=date_from, date_to=date_to,
+                    currency_ids=currency_ids, org_name=org_name,
+                    only_pending=only_pending,
+                )
+                pending_label = " Pendientes" if only_pending else ""
+                sections.append(self._format_summary(data, f"Órdenes de Venta{pending_label} - {label}"))
+
+            if query_type == "impuestos" or any(w in msg for w in self._QUERY_TYPES["impuestos"]):
+                data = build_sales_tax_summary(
+                    mes=mes, anio=anio, org_ids=org_ids,
+                    date_from=date_from, date_to=date_to,
+                    currency_ids=currency_ids, org_name=org_name,
+                )
+                sections.append(self._format_summary(data, f"Desglose de Impuestos en Ventas - {label}"))
+
+            if query_type == "sucursal" or any(w in msg for w in self._QUERY_TYPES["sucursal"]):
+                data = build_sales_by_branch(
+                    mes=mes, anio=anio, org_ids=org_ids,
+                    date_from=date_from, date_to=date_to,
+                    currency_ids=currency_ids, org_name=org_name,
+                )
+                sections.append(f"## Ventas por Sucursal - {label}")
+                sections.append(self._format_table(data))
+
+            if query_type == "tasa" or any(w in msg for w in self._QUERY_TYPES["tasa"]):
+                data = build_exchange_rates(limit=20)
+                sections.append("## Tasas de Cambio Recientes")
+                sections.append(self._format_table(data))
 
             if query_type == "ventas" or any(w in msg for w in self._QUERY_TYPES["ventas"]) or not sections:
                 data = build_sales_summary(

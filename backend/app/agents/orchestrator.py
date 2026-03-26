@@ -142,6 +142,10 @@ _KEYWORD_RULES: list[tuple[str, list[str]]] = [
         "producto más vendido", "productos más vendidos",
         "top producto", "ventas por producto", "ventas por categoria",
         "ventas por categoría", "sku",
+        "orden de venta", "ordenes de venta", "órdenes de venta",
+        "pedido de venta", "pedidos de venta", "pipeline de venta",
+        "ventas por sucursal", "sucursal",
+        "tasa de cambio", "tipo de cambio",
     ]),
     # RRHH
     ("rrhh", [

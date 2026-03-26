@@ -454,6 +454,76 @@ def build_sales_by_product(
     return {"anio": anio, "top_productos": [], "por_categoria": []}
 
 
+def build_sales_orders(
+    mes: int | None = None,
+    anio: int | None = None,
+    org_ids: list[int] | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    currency_ids: list[int] | None = None,
+    org_name: str | None = None,
+    only_pending: bool = False,
+) -> dict:
+    """Sales orders - routes to iDempiere."""
+    if _is_production():
+        from app.services.idempiere_queries import build_sales_orders as _prod
+        return _prod(
+            mes=mes, anio=anio, org_ids=org_ids,
+            date_from=date_from, date_to=date_to,
+            currency_ids=currency_ids, org_name=org_name,
+            only_pending=only_pending,
+        )
+    return {"anio": anio, "por_estado": [], "por_vendedor": [], "por_cliente": [], "por_moneda": [], "por_sucursal": []}
+
+
+def build_exchange_rates(limit: int = 30) -> list[dict]:
+    """Exchange rates - routes to iDempiere."""
+    if _is_production():
+        from app.services.idempiere_queries import build_exchange_rates as _prod
+        return _prod(limit=limit)
+    return []
+
+
+def build_sales_tax_summary(
+    mes: int | None = None,
+    anio: int | None = None,
+    org_ids: list[int] | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    currency_ids: list[int] | None = None,
+    org_name: str | None = None,
+) -> dict:
+    """Sales tax summary - routes to iDempiere."""
+    if _is_production():
+        from app.services.idempiere_queries import build_sales_tax_summary as _prod
+        return _prod(
+            mes=mes, anio=anio, org_ids=org_ids,
+            date_from=date_from, date_to=date_to,
+            currency_ids=currency_ids, org_name=org_name,
+        )
+    return {"anio": anio, "por_impuesto": [], "retenciones": []}
+
+
+def build_sales_by_branch(
+    mes: int | None = None,
+    anio: int | None = None,
+    org_ids: list[int] | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    currency_ids: list[int] | None = None,
+    org_name: str | None = None,
+) -> list[dict]:
+    """Sales by branch - routes to iDempiere."""
+    if _is_production():
+        from app.services.idempiere_queries import build_sales_by_branch as _prod
+        return _prod(
+            mes=mes, anio=anio, org_ids=org_ids,
+            date_from=date_from, date_to=date_to,
+            currency_ids=currency_ids, org_name=org_name,
+        )
+    return []
+
+
 # ---------------------------------------------------------------------------
 # Pre-built queries: PRODUCCION (Production)
 # ---------------------------------------------------------------------------
