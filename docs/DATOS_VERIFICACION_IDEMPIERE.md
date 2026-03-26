@@ -2898,3 +2898,306 @@ Datos de `c_bankstatement` con líneas en `c_bankstatementline`:
 5. **RRHH — Préstamos a Empleados (PRIORIDAD MEDIA)**
    - Crear `build_employee_loans()` consultando `hr_prestamos_v`
    - Keywords: "préstamo empleado", "adelanto", "descuento nómina"
+
+---
+
+## 18. NUEVAS QUERIES DE VENTAS (verificación 26/Mar/2026)
+
+> **Fuente:** `scripts/verificar_nuevas_queries_ventas.sql` contra iDempiere producción (192.168.1.73)
+> **Propósito:** Referencia para validar las 5 nuevas funciones del agente de ventas:
+> `build_sales_by_product`, `build_sales_orders`, `build_sales_by_branch`,
+> `build_sales_tax_summary`, `build_exchange_rates`
+
+---
+
+### 18.1 Top 20 productos más vendidos 2026 (Bs.)
+
+> Función: `build_sales_by_product` con `c_currency_id = 205`
+
+| # | Código | Producto | Categoría | Unidad | Cantidad | Total neto |
+|---|--------|----------|-----------|--------|----------|------------|
+| 1 | -010180I | ARROZ SANTONI PREMIUN 900GR X 24UND | Grupo 05 - ARROZ BLANCO DE MESA PT | Bulto | 339,304 | 3,981,820,825.49 |
+| 2 | HBL-920 | HARINA DE MAIZ BLANCO () MASANTONI 900GR X 20UND (ALMOHADA) | Grupo 03 - MAIZ PRODUCTO TERMINADO | Bulto | 174,340 | 1,345,539,997.35 |
+| 3 | HBL-900 | HARINA DE MAIZ BLANCO [] MASANTONI 900GR X 20UND (LADRILLO) | Grupo 03 - MAIZ PRODUCTO TERMINADO | Bulto | 143,774 | 1,148,747,305.65 |
+| 4 | -9040 | HARINA AMARILLA DE ARROZ | Grupo 02 - ARROZ GRANEL EN PROCESO | Kg | 1,249,320 | 227,431,863.83 |
+| 5 | -010480Z | ARROZ SANTONI ZAFIRO 800GRX24UND | Grupo 05 - ARROZ BLANCO DE MESA PT | Bulto | 12,171 | 170,439,506.70 |
+| 6 | CHI-003 | CHICHA TONI 12UNID DE 250Gr | Grupo 15 - Bebidas (EXTRUSORA) PT | Bulto | 21,583 | 106,869,470.13 |
+| 7 | -1020 | AFRECHO DE MAIZ BLANCO (GERMEN DE 1RA) - TORTA | Grupo 02 -MAIZ GRANEL EN PROCESO | Kg | 737,860 | 103,076,241.94 |
+| 8 | PLAFRU240 | PLANET FRUIT 240GR X 12UND | Grupo 17 - Cereales (EXTRUSORA) PT | Caja | 11,880 | 81,466,943.92 |
+| 9 | -010102I | ARROZ SANTONI PREMIUN 900GR. (UNIDAD) | Grupo 05 - ARROZ BLANCO DE MESA PT | Each | 124,306 | 61,354,516.21 |
+| 10 | 1001334 | NPK 8-20-30 50 KG | FERTILIZANTES | Saco | 3,000 | 57,078,780.00 |
+| 11 | NUT-003 | NUTRI TONI 12UNID DE 400GR | Grupo 15 - Bebidas (EXTRUSORA) PT | Bulto | 13,193 | 53,944,082.33 |
+| 12 | CRE-004 | CREMA DE ARROZ SANTONI 12 UNID DE 400GR | Grupo 15 - Bebidas (EXTRUSORA) PT | Bulto | 12,656 | 45,904,148.86 |
+| 13 | ROCCHO120 | ROCKET PLANET CHOCOLATE 120GR X 20UND | Grupo 17 - Cereales (EXTRUSORA) PT | Caja | 5,739 | 45,486,465.15 |
+| 14 | ROCCHO220 | ROCKET PLANET CHOCOLATE 220GR X 12UND | Grupo 17 - Cereales (EXTRUSORA) PT | Caja | 4,965 | 42,441,135.31 |
+| 15 | SPACHO240 | SPACE POP CHOCOLATE 240GR X 12UND | Grupo 17 - Cereales (EXTRUSORA) PT | Caja | 5,399 | 34,709,137.98 |
+| 16 | -9050 | CASCARILLA DE ARROZ GRANEL | Grupo 02 - ARROZ GRANEL EN PROCESO | Kg. | 2,548,180 | 33,499,462.42 |
+| 17 | SH-003 | HARINA CRUDA EN SACO 40,00KG | Grupo 16 - Harinas (EXTRUSORA) | Saco | 1,533 | 32,420,226.25 |
+| 18 | ROCDLE220 | ROCKET PLANET DULCE DE LECHE 220GR X 12UND | Grupo 17 - Cereales (EXTRUSORA) PT | Caja | 3,417 | 29,169,774.82 |
+| 19 | SH-002 | HARINA PRECOCIDA EN SACO 40,00KG | Grupo 16 - Harinas (EXTRUSORA) | Saco | 1,430 | 26,549,278.82 |
+| 20 | ROCDLE120 | ROCKET PLANET DULCE DE LECHE 120GR X 20UND | Grupo 17 - Cereales (EXTRUSORA) PT | Caja | 3,250 | 25,418,326.10 |
+
+---
+
+### 18.2 Top 20 productos más vendidos 2026 (USD)
+
+> Función: `build_sales_by_product` con `c_currency_id IN (100,1000000,...)`
+
+| # | Código | Producto | Categoría | Cantidad | Total neto |
+|---|--------|----------|-----------|----------|------------|
+| 1 | -010180I | ARROZ SANTONI PREMIUN 900GR X 24UND | Grupo 05 - ARROZ BLANCO DE MESA PT | 300,607 | 8,607,750.25 |
+| 2 | HBL-920 | HARINA DE MAIZ BLANCO () MASANTONI 900GR X 20UND (ALMOHADA) | Grupo 03 - MAIZ PRODUCTO TERMINADO | 172,625 | 3,415,954.01 |
+| 3 | HBL-900 | HARINA DE MAIZ BLANCO [] MASANTONI 900GR X 20UND (LADRILLO) | Grupo 03 - MAIZ PRODUCTO TERMINADO | 123,847 | 2,547,164.18 |
+| 4 | SASP-40 | SEMILLA DE ARROZ ASP-18 40,00KG | Grupo 25 - SEMILLA EN SACO | 9,789 | 636,285.00 |
+| 5 | -1020 | AFRECHO DE MAIZ BLANCO (GERMEN DE 1RA) - TORTA | Grupo 02 -MAIZ GRANEL EN PROCESO | 1,583,620 | 592,857.80 |
+| 6 | -9040 | HARINA AMARILLA DE ARROZ | Grupo 02 - ARROZ GRANEL EN PROCESO | 999,500 | 476,585.00 |
+| 7 | -010480Z | ARROZ SANTONI ZAFIRO 800GRX24UND | Grupo 05 - ARROZ BLANCO DE MESA PT | 10,791 | 382,157.80 |
+| 8 | 1001487 | SEMILLA ASP-18 40 KG (SANTONI) | SEMILLA | 5,067 | 381,648.00 |
+| 9 | 1001558 | NPK-12-5-27- SACOS 50Kg | FERTILIZANTES | 5,084 | 328,602.00 |
+| 10 | CHI-003 | CHICHA TONI 12UNID DE 250Gr | Grupo 15 - Bebidas (EXTRUSORA) PT | 21,410 | 271,686.49 |
+| 11 | 1000113 | UREA - 50Kg SACO | FERTILIZANTES | 9,028 | 267,980.00 |
+| 12 | 1001473 | NPK KCL-00-00-60 50 KG | FERTILIZANTES | 5,048 | 250,013.10 |
+| 13 | 1001334 | NPK 8-20-30 50 KG | FERTILIZANTES | 3,444 | 194,338.60 |
+| 14 | PLAFRU240 | PLANET FRUIT 240GR X 12UND | Grupo 17 - Cereales (EXTRUSORA) PT | 10,885 | 187,527.20 |
+| 15 | 1001599 | OXAGREEN 380 X 10 LTS (OXADIAZON) | AGROQUIMICOS HERBICIDAS | 285 | 182,836.60 |
+| 16 | -010102I | ARROZ SANTONI PREMIUN 900GR. (UNIDAD) | Grupo 05 - ARROZ BLANCO DE MESA PT | 122,944 | 153,183.46 |
+| 17 | NUT-003 | NUTRI TONI 12UNID DE 400GR | Grupo 15 - Bebidas (EXTRUSORA) PT | 12,349 | 125,705.77 |
+| 18 | 1001055 | SEMILLA ASP 18FL CERTIFICADA 40 KG (IANCA) | SEMILLA | 1,500 | 120,000.00 |
+| 19 | ROCCHO120 | ROCKET PLANET CHOCOLATE 120GR X 20UND | Grupo 17 - Cereales (EXTRUSORA) PT | 5,402 | 107,234.42 |
+| 20 | CRE-004 | CREMA DE ARROZ SANTONI 12 UNID DE 400GR | Grupo 15 - Bebidas (EXTRUSORA) PT | 11,469 | 103,104.87 |
+
+> **Nota:** En USD aparecen FERTILIZANTES y SEMILLAS (ventas agrícolas de AGA/AGROPECUARIA) que no aparecen en Bs.
+
+---
+
+### 18.3 Resumen total productos vendidos 2026
+
+| Moneda | Productos distintos | Cantidad total | Total neto |
+|--------|--------------------:|---------------:|-----------:|
+| Bs. | 68 | 5,540,128.05 | 7,869,895,053.19 |
+| USD | 203 | 3,783,406.25 | 21,583,003.53 |
+
+> **Nota:** Más productos distintos en USD (203) que en Bs. (68) — las ventas agrícolas (semillas, fertilizantes, agroquímicos) se facturan en USD.
+
+---
+
+### 18.4 Órdenes de venta 2026 (por estado)
+
+> Función: `build_sales_orders` con `issotrx = 'Y'`
+
+| Estado | Órdenes | Total |
+|--------|--------:|------:|
+| Completada | 6,754 | 58,682,843.02 |
+| Borrador | 10 | 2,477.63 |
+| En Proceso | 1 | 58.30 |
+
+### 18.4b Órdenes pendientes (DR + IP)
+
+| Estado | Órdenes | Total |
+|--------|--------:|------:|
+| Borrador | 10 | 2,477.63 |
+| En Proceso | 1 | 58.30 |
+
+> **Nota:** Solo 11 órdenes pendientes en total por un monto muy bajo (2,535.93). La mayoría de órdenes se completan rápidamente.
+
+### 18.4c Órdenes por organización 2026
+
+| Organización | Estado | Órdenes | Total |
+|-------------|--------|--------:|------:|
+| INPROA SANTONI C.A. | Completada | 4,150 | 49,179,130.78 |
+| INPROA SANTONI C.A. | Borrador | 7 | 2,477.63 |
+| INPROA SANTONI C.A. | En Proceso | 1 | 58.30 |
+| InproMaiz C.A | Completada | 1,927 | 8,277,740.07 |
+| InproMaiz C.A | Borrador | 3 | 0.00 |
+| AGROINPROA C.A | Completada | 677 | 1,225,972.17 |
+
+> **Nota:** Las órdenes de venta en iDempiere de Santoni manejan montos en USD (totales bajos). Las ventas grandes van directo por factura.
+
+---
+
+### 18.5 Ventas por sucursal 2026 (Bs.)
+
+> Función: `build_sales_by_branch` usando `c_project` como sucursal
+
+| Sucursal | Facturas | Venta neta |
+|----------|--------:|-----------:|
+| Sin Sucursal | 2,971 | 5,016,327,350.34 |
+| VALENCIA | 1,484 | 1,045,705,380.79 |
+| CARACAS | 898 | 748,772,507.21 |
+| SERVICE | 2 | 9,166,803.72 |
+
+### 18.5b Ventas por sucursal 2026 (USD)
+
+| Sucursal | Facturas | Venta neta |
+|----------|--------:|-----------:|
+| Sin Sucursal | 3,056 | 15,871,773.56 |
+| VALENCIA | 1,463 | 2,763,222.63 |
+| CARACAS | 873 | 2,052,971.51 |
+
+> **Nota:** Solo 3 sucursales activas (VALENCIA, CARACAS, SERVICE). La mayoría de facturas van "Sin Sucursal" (planta principal). SERVICE solo tiene 2 facturas en Bs.
+
+---
+
+### 18.6 Impuestos (IVA) facturados 2026
+
+> Función: `build_sales_tax_summary` usando `c_tax` + `c_invoiceline`
+
+#### Bs.
+
+| Impuesto | Tasa % | Facturas | Base imponible | Monto impuesto |
+|----------|-------:|---------:|---------------:|---------------:|
+| IVA 16% | 16.0 | 2,263 | 525,940,385.10 | 84,150,461.62 |
+| EXENTO | 0.0 | 4,768 | 8,236,387,724.36 | 0.00 |
+
+#### USD
+
+| Impuesto | Tasa % | Facturas | Base imponible | Monto impuesto |
+|----------|-------:|---------:|---------------:|---------------:|
+| IVA 16% | 16.0 | 2,133 | 1,071,632.73 | 171,461.24 |
+| EXENTO | 0.0 | 4,843 | 30,731,538.15 | 0.00 |
+| Standard | 0.0 | 1 | 41.96 | 0.00 |
+
+> **Datos clave para validar respuestas del bot:**
+> - IVA total Bs. 2026: **84,150,461.62 Bs.**
+> - IVA total USD 2026: **171,461.24 USD**
+> - Tasa IVA: **16%** (única tasa activa)
+> - Mayoría de facturas son EXENTAS (sin IVA)
+
+#### Retenciones (withholdingamt)
+
+| Resultado |
+|-----------|
+| 0 facturas con retención en 2026 |
+
+> **Nota:** `withholdingamt` está vacío/cero en todas las facturas 2026. Las retenciones se manejan por otro mecanismo en iDempiere de Santoni.
+
+---
+
+### 18.7 Tasas de cambio (c_conversion_rate)
+
+> Función: `build_exchange_rates`
+
+#### Conteo por año
+
+| Año | Registros |
+|-----|----------:|
+| 2026 | 680 |
+| 2025 | 2,911 |
+| 2024 | 2,810 |
+| 2023 | 1,792 |
+| 2022 | 1,111 |
+| 2021 | 824 |
+| 2020 | 727 |
+| 2019 | 252 |
+
+> **Nota:** Se registran ~8 tasas por día (4 pares de moneda × 2 direcciones). Hay datos desde 2019.
+
+#### Tasas de cambio marzo 2026 (1 por día, solo USD→VES)
+
+> Se muestran solo las tasas representativas (DOL→VES), ya que las 4 variantes de USD (DOL, DoL, USA, DLA) tienen la misma tasa cada día.
+
+| Fecha | Tasa USD→VES |
+|-------|-------------:|
+| 2026-03-26 | 466.6014 |
+| 2026-03-25 | 462.6687 |
+| 2026-03-24 | 459.4525 |
+| 2026-03-23 | 457.0757 |
+| 2026-03-22 | 457.0757 |
+| 2026-03-21 | 457.0757 |
+| 2026-03-20 | 455.2547 |
+| 2026-03-19 | 455.2547 |
+| 2026-03-18 | 451.5072 |
+| 2026-03-17 | 448.3686 |
+| 2026-03-16 | 446.8048 |
+| 2026-03-15 | 446.8048 |
+| 2026-03-14 | 446.8048 |
+| 2026-03-13 | 443.2587 |
+| 2026-03-12 | 440.9657 |
+| 2026-03-11 | 438.2050 |
+| 2026-03-10 | 436.2419 |
+| 2026-03-09 | 433.1664 |
+| 2026-03-08 | 433.1664 |
+| 2026-03-07 | 433.1664 |
+| 2026-03-06 | 431.0113 |
+| 2026-03-05 | 427.9302 |
+| 2026-03-04 | 425.6741 |
+| 2026-03-03 | 421.8772 |
+| 2026-03-02 | 419.9873 |
+| 2026-03-01 | 419.9873 |
+
+#### Tasas febrero 2026
+
+| Fecha | Tasa USD→VES |
+|-------|-------------:|
+| 2026-02-28 | 419.9873 |
+| 2026-02-27 | 417.3579 |
+| 2026-02-26 | 414.0455 |
+| 2026-02-25 | 411.0857 |
+| 2026-02-24 | 407.3786 |
+| 2026-02-23 | 405.3518 |
+| 2026-02-22 | 405.3518 |
+| 2026-02-21 | 405.3518 |
+| 2026-02-20 | 402.3343 |
+| 2026-02-19 | 398.7456 |
+| 2026-02-18 | 396.3674 |
+| 2026-02-17 | 396.3674 |
+| 2026-02-16 | 396.3674 |
+| 2026-02-15 | 396.3674 |
+| 2026-02-14 | 396.3674 |
+| 2026-02-13 | 393.2216 |
+| 2026-02-12 | 390.2944 |
+| 2026-02-11 | 388.7394 |
+| 2026-02-10 | 385.2720 |
+| 2026-02-09 | 382.6318 |
+| 2026-02-08 | 382.6318 |
+| 2026-02-07 | 382.6318 |
+| 2026-02-06 | 381.1074 |
+| 2026-02-05 | 378.4582 |
+| 2026-02-04 | 375.0825 |
+| 2026-02-03 | 372.1057 |
+| 2026-02-02 | 370.2544 |
+| 2026-02-01 | 370.2544 |
+
+#### Tasas enero 2026
+
+| Fecha | Tasa USD→VES |
+|-------|-------------:|
+| 2026-01-31 | 370.2544 |
+| 2026-01-30 | 367.3069 |
+| 2026-01-29 | 363.6623 |
+| 2026-01-28 | 361.4906 |
+| 2026-01-27 | 358.9247 |
+| 2026-01-26 | 355.5528 |
+| 2026-01-25 | 355.5528 |
+| 2026-01-24 | 355.5528 |
+| 2026-01-23 | 352.7063 |
+| 2026-01-22 | 349.9272 |
+| 2026-01-21 | 347.2631 |
+| 2026-01-20 | 344.5071 |
+| 2026-01-19 | 344.5071 |
+| 2026-01-18 | 344.5071 |
+| 2026-01-17 | 344.5071 |
+| 2026-01-16 | 341.7425 |
+| 2026-01-15 | 339.1495 |
+| 2026-01-14 | 336.4596 |
+| 2026-01-13 | 330.3751 |
+| 2026-01-12 | 330.3751 |
+| 2026-01-11 | 330.3751 |
+| 2026-01-10 | 330.3751 |
+| 2026-01-09 | 325.3894 |
+| 2026-01-08 | 321.0323 |
+| 2026-01-07 | 311.8814 |
+| 2026-01-06 | 308.1546 |
+| 2026-01-05 | 304.6796 |
+| 2026-01-04 | 304.6796 |
+| 2026-01-03 | 304.6796 |
+| 2026-01-02 | 301.3709 |
+| 2026-01-01 | 301.3709 |
+
+> **Datos clave:**
+> - Tasa hoy (26/Mar/2026): **466.6014 Bs/USD**
+> - Tasa inicio año (01/Ene/2026): **301.3709 Bs/USD**
+> - Variación Q1 2026: +54.8% (de 301 a 467)
+> - Las 4 variantes de dólar (DOL, DoL, USA, DLA) siempre tienen la misma tasa
+> - Moneda VES id=205, las demás son todas USD con diferentes IDs
+> - Los fines de semana repiten la tasa del viernes
