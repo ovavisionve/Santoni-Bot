@@ -1065,10 +1065,67 @@ def build_sales_by_product(
             for r in db.execute(by_category_q, params).fetchall()
         ]
 
+        # --- Notas de crédito (ARC) por producto ---
+        nc_conditions = [
+            "i.issotrx = 'Y'",
+            "i.docstatus IN ('CO', 'CL')",
+            "i.isactive = 'Y'",
+            "dt.docbasetype = 'ARC'",
+        ]
+        nc_params: dict = {"nc_limit": limit}
+        _add_org_filter(nc_conditions, nc_params, org_ids, "i")
+        _add_org_name_filter(nc_conditions, nc_params, org_name, "i")
+        _add_currency_filter(nc_conditions, nc_params, currency_ids, "i")
+        _add_date_filter(nc_conditions, nc_params, date_from, date_to, mes, anio, "i.dateinvoiced")
+
+        if product_search:
+            _add_product_search_filter(nc_conditions, nc_params, product_search)
+        if category_search:
+            nc_conditions.append("pc.name ILIKE :cat_search")
+            nc_params["cat_search"] = f"%{category_search}%"
+        if only_skus:
+            nc_conditions.append("pc.iskpi = 'Y'")
+
+        nc_where = " AND ".join(nc_conditions)
+
+        nc_q = text(
+            f"SELECT p.value AS codigo, p.name AS producto, "
+            f"COALESCE(pc.name, 'Sin Categoría') AS categoria, "
+            f"COALESCE(uom.name, '') AS unidad_medida, "
+            f"{cur_label} AS moneda, "
+            f"SUM(il.qtyinvoiced) AS cantidad_nc, "
+            f"COALESCE(SUM(il.linenetamt), 0) AS monto_nc, "
+            f"COUNT(DISTINCT i.c_invoice_id) AS notas_credito "
+            f"FROM adempiere.c_invoice i "
+            f"JOIN adempiere.c_invoiceline il ON i.c_invoice_id = il.c_invoice_id "
+            f"JOIN adempiere.m_product p ON il.m_product_id = p.m_product_id "
+            f"LEFT JOIN adempiere.m_product_category pc ON p.m_product_category_id = pc.m_product_category_id "
+            f"LEFT JOIN adempiere.c_uom uom ON p.c_uom_id = uom.c_uom_id "
+            f"JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id "
+            f"WHERE {nc_where} "
+            f"GROUP BY p.value, p.name, pc.name, uom.name, {cur_label} "
+            f"ORDER BY monto_nc DESC "
+            f"LIMIT :nc_limit"
+        )
+        nc_products = [
+            {
+                "codigo": r[0],
+                "producto": r[1],
+                "categoria": r[2],
+                "unidad_medida": r[3],
+                "moneda": r[4],
+                "cantidad_nc": float(r[5]) if r[5] else 0,
+                "monto_nc": float(r[6]),
+                "notas_credito": r[7],
+            }
+            for r in db.execute(nc_q, nc_params).fetchall()
+        ]
+
         return {
             "anio": anio,
             "top_productos": top_products,
             "por_categoria": by_category,
+            "notas_credito_por_producto": nc_products,
         }
     finally:
         db.close()
