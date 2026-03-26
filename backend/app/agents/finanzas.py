@@ -114,7 +114,7 @@ IMPORTANTE SOBRE PERÍODOS:
 Datos financieros de iDempiere:
 - c_bankaccount: Cuentas bancarias (accountno, currentbalance, bankaccounttype, c_currency_id)
 - c_bank: Bancos (name)
-- c_payment: Pagos (isreceipt, datetrx, payamt, tendertype=X/C/K/D/T, docstatus)
+- c_payment: Pagos (isreceipt, datetrx, payamt, tendertype: W=Transferencia, S=Transf.Empresas, Z=Dólar Transferencia, X=Efectivo, Y=Dólar Efectivo, D=Débito Directo, A=Depósito Directo, T=Cuenta, K/C=Cheque, docstatus)
 - c_invoice: Facturas por cobrar (issotrx='Y', ispaid='N') y por pagar (issotrx='N', ispaid='N')
 - c_paymentterm: Términos de pago (netdays)
 - c_allocationline: Asignación de pagos a facturas
