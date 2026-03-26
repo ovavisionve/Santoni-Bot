@@ -607,6 +607,10 @@ def build_sales_summary(
             for r in db.execute(by_currency_q, params).fetchall()
         ]
 
+        # Embed per-currency totals directly in totales so the LLM
+        # always sees the Bs./USD breakdown prominently
+        totals["por_moneda"] = by_currency
+
         return {
             "anio": anio,
             "filtros": {"zona": zona, "vendedor": vendedor, "mes": mes},
@@ -769,9 +773,9 @@ def build_top_clients(
         q = text(
             f"{zone_cte}"
             f"SELECT bp.value AS codigo, bp.name AS nombre, "
-            f"COALESCE(cz.zona_name, 'Sin Zona') AS zona, "
+            f"COALESCE(MAX(cz.zona_name), 'Sin Zona') AS zona, "
             f"COALESCE(MODE() WITHIN GROUP (ORDER BY sr.name), 'Sin Vendedor') AS vendedor, "
-            f"COALESCE(bpg.name, 'Sin Tipología') AS tipologia, "
+            f"COALESCE(MAX(bpg.name), 'Sin Tipología') AS tipologia, "
             f"{cur_label} AS moneda, "
             f"SUM(CASE WHEN dt.docbasetype = 'ARI' THEN 1 ELSE 0 END) AS facturas, "
             f"SUM(CASE WHEN dt.docbasetype = 'ARC' THEN 1 ELSE 0 END) AS notas_credito, "
@@ -784,7 +788,7 @@ def build_top_clients(
             f"LEFT JOIN adempiere.c_bp_group bpg ON bp.c_bp_group_id = bpg.c_bp_group_id "
             f"JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id "
             f"WHERE {where} "
-            f"GROUP BY bp.value, bp.name, cz.zona_name, bpg.name, {cur_label} "
+            f"GROUP BY bp.value, bp.name, {cur_label} "
             f"ORDER BY total_facturado DESC "
             f"LIMIT :limit"
         )

@@ -211,7 +211,7 @@ Datos de ventas de iDempiere:
     ]
     _QUERY_TYPES = {
         "top": ["top", "mejor", "ranking", "pareto", "principales"],
-        "cobranza": ["cobran", "cobro", "recauda", "pago"],
+        "cobranza": ["cobra", "cobro", "recauda", "pago", "cobranza"],
         "vencidas": ["atrasa", "vencid", "pendiente", "deuda", "mora"],
         "ventas": ["venta", "factur", "ingreso", "volumen"],
         "region": ["region", "región", "regiones"],
