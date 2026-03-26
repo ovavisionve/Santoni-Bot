@@ -124,6 +124,10 @@ SOBRE VENDEDORES:
 - La columna "vendedor" muestra el vendedor asignado a la factura/orden (salesrep_id → ad_user)
 - Si dice "Sin Vendedor" significa que la factura no tiene vendedor asignado
 
+SOBRE ÓRDENES DE VENTA:
+- Los datos de órdenes incluyen: desglose por estado, por vendedor, por cliente, por sucursal y por moneda
+- Presenta TODOS los desgloses disponibles en los datos recibidos
+
 SOBRE TIPOLOGÍA:
 - La columna "tipologia" muestra el grupo/categoría del cliente (c_bp_group)
 - Refleja la clasificación que Santoni asigna a cada cliente en iDempiere

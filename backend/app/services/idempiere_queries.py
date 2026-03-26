@@ -763,11 +763,14 @@ def build_top_clients(
         )
 
         cur_label = _currency_label("i")
+        # GROUP BY solo por cliente + moneda para evitar duplicados
+        # cuando un cliente tiene facturas con diferentes vendedores o zonas.
+        # Zona y tipología se toman del cliente (1:1), vendedor se agrega con MODE().
         q = text(
             f"{zone_cte}"
             f"SELECT bp.value AS codigo, bp.name AS nombre, "
             f"COALESCE(cz.zona_name, 'Sin Zona') AS zona, "
-            f"COALESCE(sr.name, 'Sin Vendedor') AS vendedor, "
+            f"COALESCE(MODE() WITHIN GROUP (ORDER BY sr.name), 'Sin Vendedor') AS vendedor, "
             f"COALESCE(bpg.name, 'Sin Tipología') AS tipologia, "
             f"{cur_label} AS moneda, "
             f"SUM(CASE WHEN dt.docbasetype = 'ARI' THEN 1 ELSE 0 END) AS facturas, "
@@ -781,7 +784,7 @@ def build_top_clients(
             f"LEFT JOIN adempiere.c_bp_group bpg ON bp.c_bp_group_id = bpg.c_bp_group_id "
             f"JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id "
             f"WHERE {where} "
-            f"GROUP BY bp.value, bp.name, cz.zona_name, sr.name, bpg.name, {cur_label} "
+            f"GROUP BY bp.value, bp.name, cz.zona_name, bpg.name, {cur_label} "
             f"ORDER BY total_facturado DESC "
             f"LIMIT :limit"
         )
