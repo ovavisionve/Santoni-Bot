@@ -405,6 +405,9 @@ Datos de ventas de iDempiere:
         if not query_type and hist_ctx:
             query_type = hist_ctx.get("query_type")
 
+        # If a specific product is mentioned, also activate "producto" section
+        has_product_mention = self._extract_product_search(message) is not None
+
         try:
             if query_type == "vendedor" or any(w in msg for w in self._QUERY_TYPES["vendedor"]):
                 org_label = f" - {org_name}" if org_name else ""
@@ -473,7 +476,7 @@ Datos de ventas de iDempiere:
                 data = build_overdue_receivables(org_ids=org_ids, salesrep_id=salesrep_id)
                 sections.append(self._format_summary(data, "Cuentas por Cobrar Vencidas"))
 
-            if query_type == "producto" or any(w in msg for w in self._QUERY_TYPES["producto"]):
+            if query_type == "producto" or has_product_mention or any(w in msg for w in self._QUERY_TYPES["producto"]):
                 product_search = self._extract_product_search(message)
                 category_search = self._extract_category_search(message)
                 only_skus = "sku" in msg
@@ -534,7 +537,7 @@ Datos de ventas de iDempiere:
                 sections.append("## Tasas de Cambio Recientes")
                 sections.append(self._format_table(data))
 
-            if query_type == "ventas" or any(w in msg for w in self._QUERY_TYPES["ventas"]) or not sections:
+            if not has_product_mention and (query_type == "ventas" or any(w in msg for w in self._QUERY_TYPES["ventas"]) or not sections):
                 data = build_sales_summary(
                     zona=zona, vendedor=vendedor, mes=mes, anio=anio,
                     org_ids=org_ids, salesrep_id=salesrep_id,
