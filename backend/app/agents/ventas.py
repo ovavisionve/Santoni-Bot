@@ -210,6 +210,7 @@ Datos de ventas de iDempiere:
         ("inversiones aga", "INVERSIONES AGA"),
     ]
     _QUERY_TYPES = {
+        "vendedor": ["vendedor", "vendedores", "vendedora", "vendedoras"],
         "top": ["top", "mejor", "ranking", "pareto", "principales", "cliente", "clientes"],
         "cobranza": ["cobra", "cobro", "recauda", "pago", "cobranza"],
         "vencidas": ["atrasa", "vencid", "pendiente", "deuda", "mora"],
@@ -404,6 +405,18 @@ Datos de ventas de iDempiere:
             query_type = hist_ctx.get("query_type")
 
         try:
+            if query_type == "vendedor" or any(w in msg for w in self._QUERY_TYPES["vendedor"]):
+                org_label = f" - {org_name}" if org_name else ""
+                data = build_sales_summary(
+                    zona=zona, vendedor=vendedor, mes=mes, anio=anio,
+                    org_ids=org_ids, salesrep_id=salesrep_id,
+                    date_from=date_from, date_to=date_to,
+                    currency_ids=currency_ids, org_name=org_name,
+                )
+                vendedor_data = data.get("por_vendedor", [])
+                sections.append(f"## Top Vendedores ({label}{org_label})")
+                sections.append(self._format_table(vendedor_data))
+
             if query_type == "top" or any(w in msg for w in self._QUERY_TYPES["top"]):
                 limit = 20
                 limit_match = re.search(r'top\s*(\d+)', msg)
