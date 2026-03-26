@@ -210,7 +210,7 @@ Datos de ventas de iDempiere:
         ("inversiones aga", "INVERSIONES AGA"),
     ]
     _QUERY_TYPES = {
-        "top": ["top", "mejor", "ranking", "pareto", "principales"],
+        "top": ["top", "mejor", "ranking", "pareto", "principales", "cliente", "clientes"],
         "cobranza": ["cobra", "cobro", "recauda", "pago", "cobranza"],
         "vencidas": ["atrasa", "vencid", "pendiente", "deuda", "mora"],
         "ventas": ["venta", "factur", "ingreso", "volumen"],
