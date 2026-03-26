@@ -95,7 +95,7 @@ _KEYWORD_RULES: list[tuple[str, list[str]]] = [
         "contab", "contabilidad",
         "balance general", "balance de comprobacion", "balance de comprobación",
         "estado de resultado", "libro diario", "libro mayor",
-        "impuesto", "iva", "islr", "retencion", "retención",
+        "islr",
         "activo fijo", "activos fijos", "depreciacion", "depreciación",
         "asiento contable", "plan de cuenta", "plan de cuentas", "partida",
         # Account-specific (saldos de cuentas, no bancarios)
@@ -146,6 +146,8 @@ _KEYWORD_RULES: list[tuple[str, list[str]]] = [
         "pedido de venta", "pedidos de venta", "pipeline de venta",
         "ventas por sucursal", "sucursal",
         "tasa de cambio", "tipo de cambio",
+        "impuesto", "iva", "retencion", "retención",
+        "base imponible", "exento", "gravado",
     ]),
     # RRHH
     ("rrhh", [
