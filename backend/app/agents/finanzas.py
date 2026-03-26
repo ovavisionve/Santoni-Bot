@@ -267,8 +267,7 @@ Datos financieros de iDempiere:
 
             if include_receivables:
                 data = build_overdue_receivables(org_ids=org_ids)
-                sections.append("## Cuentas por Cobrar Vencidas")
-                sections.append(self._format_table(data))
+                sections.append(self._format_summary(data, "Cuentas por Cobrar Vencidas"))
 
         except Exception as exc:
             logger.error("Error consultando datos financieros: %s: %s", type(exc).__name__, exc, exc_info=True)

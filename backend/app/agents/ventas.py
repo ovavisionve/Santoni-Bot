@@ -457,8 +457,7 @@ Datos de ventas de iDempiere:
 
             if query_type == "vencidas" or any(w in msg for w in self._QUERY_TYPES["vencidas"]):
                 data = build_overdue_receivables(org_ids=org_ids, salesrep_id=salesrep_id)
-                sections.append("## Cuentas por Cobrar Vencidas")
-                sections.append(self._format_table(data))
+                sections.append(self._format_summary(data, "Cuentas por Cobrar Vencidas"))
 
             if query_type == "producto" or any(w in msg for w in self._QUERY_TYPES["producto"]):
                 product_search = self._extract_product_search(message)
