@@ -3,8 +3,8 @@ Agente de Ventas - Alimentos Santoni
 AGENTE PRIORITARIO - Especializado en: ranking de ventas, clientes,
 cobranza, zonas, vendedores, metas, productos.
 
-Fuente de datos: c_invoice (issotrx='Y'), c_payment (isreceipt='Y'),
-c_bpartner en iDempiere (PostgreSQL 13).
+Fuente de datos: c_invoice (issotrx='Y'), c_invoiceline, c_payment (isreceipt='Y'),
+c_bpartner (iscustomer='Y'), ad_user (vendedores), m_product en iDempiere.
 """
 
 import logging
@@ -22,6 +22,7 @@ from app.services.query_service import (
     build_collection_summary,
     build_top_clients,
     build_overdue_receivables,
+    build_sales_by_product,
 )
 
 
@@ -59,18 +60,26 @@ CAPACIDADES PRINCIPALES:
 7. Detección de cuentas por cobrar más atrasadas
 8. Cobranza diaria/semanal y comparativo vs metas
 
-CONTEXTO iDEMPIERE:
-- Facturas de venta: c_invoice (issotrx='Y', docstatus IN ('CO','CL')) - 447,386 facturas. CO=completada, CL=cerrada.
-- Líneas de factura: c_invoiceline (m_product_id, qtyinvoiced, linenetamt)
-- Cobros: c_payment (isreceipt='Y', docstatus IN ('CO','CL')) - 798,150 pagos
-- Clientes: c_bpartner (26,070 registros) - campos: ismayorista, isclap, ispublico, codigoventas
-- Zonas: c_salesregion (vinculado via c_bpartner_location, una zona por cliente)
-- Distribuidores: salesrep_id en c_invoice apunta a c_bpartner (son distribuidores/intermediarios, NO vendedores internos)
-- NOTA: Los vendedores internos (Carlos Matias, Lenny Silva, etc.) NO están vinculados a las facturas en iDempiere
-- Monedas: VES (Bolívares, ID 205), USD (Dólares, IDs múltiples)
+CONTEXTO iDEMPIERE (tablas de ventas):
+- C_ORDER: Órdenes de venta (issotrx='Y')
+- C_ORDERLINE: Líneas de orden de venta
+- C_INVOICE: Facturas de venta (issotrx='Y', docstatus IN ('CO','CL')). CO=completada, CL=cerrada
+- C_INVOICELINE: Líneas de factura (m_product_id, qtyinvoiced, linenetamt) — ventas por producto
+- C_PAYMENT: Cobros (isreceipt='Y', docstatus IN ('CO','CL'))
+- C_AllocationLine: Pagos asignados a facturas específicas
+- C_BPARTNER: Terceros. ISCUSTOMER='Y'=cliente, ISVENDOR='Y'=proveedor, ISEMPLOYEE='Y'=empleado
+- C_BPartner_Location: Dirección del cliente (vincula con zona de venta)
+- C_SalesRegion: Zona/Región de ventas
+- DCS_SalesRegionGroup: Grupo de región de ventas
+- VENDEDORES: salesrep_id en facturas/órdenes → AD_USER (tabla de usuarios del sistema)
+- M_PRODUCT: Productos. M_PRODUCT_CATEGORY: Categorías. ISKPI='Y' indica que es SKU
+- C_UOM: Unidad de medida del producto
+- M_PriceList / M_ProductPrice: Listas de precios y precios por producto
+- C_Conversion_Rate: Tasa de cambio
+- C_Tax: Impuestos
+- Monedas: C_CURRENCY_ID=205 → Bolívares (Bs.), C_CURRENCY_ID<>205 → Dólar (USD)
 - Organizaciones: INPROA SANTONI, AGROINPROA, AGROPECUARIA R.R., Agro Import, INVERSIONES AGA, InproMaiz, AGA AGRICOLA, Santoni Service
-- Campos fiscales: lve_controlnumber, withholdingamt (retenciones IVA)
-- Productos: m_product (40,766 productos), m_product_category
+- C_Project: Sucursales
 
 REGLAS:
 - Responde siempre en español, de forma clara y orientada a la acción
@@ -102,10 +111,9 @@ SOBRE MONEDA:
 - NUNCA intentes convertir montos entre monedas. Los datos son montos reales facturados en la moneda original
 - La sección "por_moneda" muestra el desglose de totales por moneda
 
-SOBRE DISTRIBUIDORES:
-- La columna "distribuidor" muestra el distribuidor/intermediario asignado a la factura (salesrep_id)
-- Los distribuidores NO son vendedores internos de Santoni. Son empresas o personas que intermedian la venta
-- Si dice "Sin Distribuidor" significa que la factura no tiene distribuidor asignado
+SOBRE VENDEDORES:
+- La columna "vendedor" muestra el vendedor asignado a la factura/orden (salesrep_id → ad_user)
+- Si dice "Sin Vendedor" significa que la factura no tiene vendedor asignado
 
 SOBRE TIPOLOGÍA:
 - La columna "tipologia" muestra el grupo/categoría del cliente (c_bp_group)
@@ -136,11 +144,12 @@ SOBRE NOTAS DE CRÉDITO:
     def get_capabilities(self) -> str:
         return (
             "CAPACIDADES REALES (lo que SÍ puedo consultar en la base de datos):\n"
-            "✅ Top N clientes por ventas netas (por período, zona, moneda, organización, distribuidor)\n"
-            "✅ Resumen de ventas: totales por zona, región, mes, moneda, distribuidor\n"
+            "✅ Top N clientes por ventas netas (por período, zona, moneda, organización, vendedor)\n"
+            "✅ Resumen de ventas: totales por zona, región, mes, moneda, vendedor\n"
             "✅ Resumen de cobranza: totales por método de pago y por cliente\n"
             "✅ Cuentas por cobrar vencidas: facturas impagadas con días de atraso\n"
-            "\n❌ NO puedo consultar: metas de venta, presupuestos o cotizaciones. "
+            "✅ Ventas por producto: top productos vendidos, ventas por categoría, filtro por SKU\n"
+            "\n❌ NO puedo consultar: metas de venta, presupuestos, cotizaciones ni listas de precios. "
             "Redirige al usuario al departamento correspondiente."
         )
 
@@ -148,12 +157,18 @@ SOBRE NOTAS DE CRÉDITO:
         return """
 Datos de ventas de iDempiere:
 - c_invoice: Facturas (issotrx='Y', dateinvoiced, grandtotal, totallines, c_bpartner_id, salesrep_id, docstatus)
-- c_invoiceline: Líneas de factura (m_product_id, qtyinvoiced, linenetamt)
-- c_payment: Pagos/cobros (isreceipt='Y', datetrx, payamt, tendertype, c_bpartner_id)
-- c_bpartner: Clientes y vendedores (name, value, ismayorista, isclap, ispublico)
+- c_invoiceline: Líneas de factura (m_product_id, qtyinvoiced, linenetamt) — ventas por producto
+- c_order: Órdenes de venta (issotrx='Y', dateordered, grandtotal, salesrep_id)
+- c_payment: Cobros (isreceipt='Y', datetrx, payamt, tendertype, c_bpartner_id)
+- c_allocationline: Pagos asignados a facturas (c_payment_id, c_invoice_id)
+- c_bpartner: Terceros (iscustomer='Y'=cliente, isvendor='Y'=proveedor)
+- ad_user: Vendedores (salesrep_id → ad_user.ad_user_id)
 - c_salesregion: Zonas de venta
 - c_bpartner_location: Ubicación del cliente (c_salesregion_id)
 - m_product: Productos (name, m_product_category_id)
+- m_product_category: Categorías (iskpi='Y' = SKU)
+- c_uom: Unidad de medida
+- c_currency: Moneda (id=205 → Bs., otros → USD)
 """
 
     # ---- Extraction helpers (reused for history) ----
@@ -183,7 +198,18 @@ Datos de ventas de iDempiere:
         "vencidas": ["atrasa", "vencid", "pendiente", "deuda", "mora"],
         "ventas": ["venta", "factur", "ingreso", "volumen"],
         "region": ["region", "región", "regiones"],
+        "producto": [
+            "producto", "productos", "articulo", "artículo",
+            "sku", "categoria de producto", "categoría de producto",
+            "que se vende", "qué se vende", "más vendido", "mas vendido",
+            "top producto", "ranking de producto",
+        ],
     }
+
+    _PRODUCT_KEYWORDS = [
+        "harina", "arroz", "maiz", "maíz", "aceite", "sal",
+        "avena", "azúcar", "azucar", "pasta",
+    ]
 
     @classmethod
     def _extract_zona(cls, msg: str) -> str | None:
@@ -215,6 +241,24 @@ Datos de ventas de iDempiere:
         for qtype, kws in cls._QUERY_TYPES.items():
             if any(w in msg_lower for w in kws):
                 return qtype
+        return None
+
+    @classmethod
+    def _extract_product_search(cls, msg: str) -> str | None:
+        """Extract product name/keyword from the message."""
+        msg_lower = msg.lower()
+        for kw in cls._PRODUCT_KEYWORDS:
+            if kw in msg_lower:
+                return kw
+        return None
+
+    @classmethod
+    def _extract_category_search(cls, msg: str) -> str | None:
+        """Extract product category from the message."""
+        import re
+        m = re.search(r'categor[ií]a\s+(?:de\s+)?["\']?([^"\',.]+)', msg, re.IGNORECASE)
+        if m:
+            return m.group(1).strip()
         return None
 
     def _extract_context_from_history(
@@ -382,6 +426,31 @@ Datos de ventas de iDempiere:
                 data = build_overdue_receivables(org_ids=org_ids, salesrep_id=salesrep_id)
                 sections.append("## Cuentas por Cobrar Vencidas")
                 sections.append(self._format_table(data))
+
+            if query_type == "producto" or any(w in msg for w in self._QUERY_TYPES["producto"]):
+                product_search = self._extract_product_search(message)
+                category_search = self._extract_category_search(message)
+                only_skus = "sku" in msg
+                org_label = f" - {org_name}" if org_name else ""
+                data = build_sales_by_product(
+                    mes=mes, anio=anio, org_ids=org_ids,
+                    date_from=date_from, date_to=date_to,
+                    currency_ids=currency_ids, org_name=org_name,
+                    product_search=product_search,
+                    category_search=category_search,
+                    only_skus=only_skus,
+                )
+                if data.get("top_productos"):
+                    filter_label = ""
+                    if product_search:
+                        filter_label = f" - '{product_search}'"
+                    elif category_search:
+                        filter_label = f" - Categoría '{category_search}'"
+                    sections.append(f"## Top Productos Vendidos ({label}{org_label}{filter_label})")
+                    sections.append(self._format_table(data["top_productos"]))
+                if data.get("por_categoria"):
+                    sections.append(f"## Ventas por Categoría de Producto ({label})")
+                    sections.append(self._format_table(data["por_categoria"]))
 
             if query_type == "ventas" or any(w in msg for w in self._QUERY_TYPES["ventas"]) or not sections:
                 data = build_sales_summary(

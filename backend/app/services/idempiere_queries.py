@@ -462,8 +462,8 @@ def build_sales_summary(
             "ORDER BY bpl.c_bpartner_id, bpl.c_bpartner_location_id DESC) "
         )
         joins = (
-            "LEFT JOIN adempiere.c_bpartner sr "
-            "ON i.salesrep_id = sr.c_bpartner_id "
+            "LEFT JOIN adempiere.ad_user sr "
+            "ON i.salesrep_id = sr.ad_user_id "
             "LEFT JOIN client_zone cz "
             "ON i.c_bpartner_id = cz.c_bpartner_id "
             "JOIN adempiere.c_doctype dt "
@@ -549,10 +549,10 @@ def build_sales_summary(
             for r in db.execute(by_region_q, params).fetchall()
         ]
 
-        # By distributor (salesrep_id tracks distributors, not internal salespeople)
-        by_distributor_q = text(
+        # By salesperson (salesrep_id → ad_user)
+        by_salesperson_q = text(
             f"{zone_cte}"
-            f"SELECT COALESCE(sr.name, 'Sin Distribuidor') AS distribuidor, "
+            f"SELECT COALESCE(sr.name, 'Sin Vendedor') AS vendedor, "
             f"SUM(CASE WHEN dt.docbasetype = 'ARI' THEN 1 ELSE 0 END) AS facturas, "
             f"COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal "
             f"WHEN dt.docbasetype = 'ARC' THEN -i.grandtotal ELSE 0 END), 0) AS total "
@@ -561,9 +561,9 @@ def build_sales_summary(
             f"WHERE {where} "
             f"GROUP BY sr.name ORDER BY total DESC"
         )
-        by_distributor = [
-            {"distribuidor": r[0], "facturas": r[1], "total": float(r[2])}
-            for r in db.execute(by_distributor_q, params).fetchall()
+        by_salesperson = [
+            {"vendedor": r[0], "facturas": r[1], "total": float(r[2])}
+            for r in db.execute(by_salesperson_q, params).fetchall()
         ]
 
         # By month - net of credit notes
@@ -613,7 +613,7 @@ def build_sales_summary(
             "totales": totals,
             "por_region": by_region,
             "por_zona": by_zone,
-            "por_distribuidor": by_distributor,
+            "por_vendedor": by_salesperson,
             "por_mes": by_month,
             "por_moneda": by_currency,
         }
@@ -740,6 +740,7 @@ def build_top_clients(
             "i.issotrx = 'Y'",
             "i.docstatus IN ('CO', 'CL')",
             "i.isactive = 'Y'",
+            "bp.iscustomer = 'Y'",
         ]
         params: dict = {"limit": limit}
         _add_org_filter(conditions, params, org_ids, "i")
@@ -766,7 +767,7 @@ def build_top_clients(
             f"{zone_cte}"
             f"SELECT bp.value AS codigo, bp.name AS nombre, "
             f"COALESCE(cz.zona_name, 'Sin Zona') AS zona, "
-            f"COALESCE(sr.name, 'Sin Distribuidor') AS distribuidor, "
+            f"COALESCE(sr.name, 'Sin Vendedor') AS vendedor, "
             f"COALESCE(bpg.name, 'Sin Tipología') AS tipologia, "
             f"{cur_label} AS moneda, "
             f"SUM(CASE WHEN dt.docbasetype = 'ARI' THEN 1 ELSE 0 END) AS facturas, "
@@ -775,7 +776,7 @@ def build_top_clients(
             f"WHEN dt.docbasetype = 'ARC' THEN -i.grandtotal ELSE 0 END), 0) AS total_facturado "
             f"FROM adempiere.c_invoice i "
             f"JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id "
-            f"LEFT JOIN adempiere.c_bpartner sr ON i.salesrep_id = sr.c_bpartner_id "
+            f"LEFT JOIN adempiere.ad_user sr ON i.salesrep_id = sr.ad_user_id "
             f"LEFT JOIN client_zone cz ON bp.c_bpartner_id = cz.c_bpartner_id "
             f"LEFT JOIN adempiere.c_bp_group bpg ON bp.c_bp_group_id = bpg.c_bp_group_id "
             f"JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id "
@@ -792,7 +793,7 @@ def build_top_clients(
                 "codigo": r[0],
                 "nombre": r[1],
                 "zona": r[2],
-                "distribuidor": r[3],
+                "vendedor": r[3],
                 "tipologia": r[4],
                 "moneda": r[5],
                 "facturas": r[6],
@@ -839,19 +840,20 @@ def build_overdue_receivables(
             "WHERE bpl.isactive = 'Y' "
             "ORDER BY bpl.c_bpartner_id, bpl.c_bpartner_location_id DESC) "
             "SELECT i.documentno AS numero_factura, bp.name AS cliente, "
-            "COALESCE(sr.name, '') AS distribuidor, "
+            "COALESCE(sr.name, '') AS vendedor, "
             "COALESCE(cz.zona_name, '') AS zona, "
             "i.grandtotal AS monto_total, i.dateinvoiced AS fecha, "
             "(i.dateinvoiced + CASE WHEN COALESCE(pterm.netdays, 0) = 0 THEN 30 ELSE pterm.netdays END)::date AS fecha_vencimiento, "
             "CURRENT_DATE - (i.dateinvoiced + CASE WHEN COALESCE(pterm.netdays, 0) = 0 THEN 30 ELSE pterm.netdays END) AS dias_vencido "
             "FROM adempiere.c_invoice i "
             "JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id "
-            "LEFT JOIN adempiere.c_bpartner sr ON i.salesrep_id = sr.c_bpartner_id "
+            "LEFT JOIN adempiere.ad_user sr ON i.salesrep_id = sr.ad_user_id "
             "LEFT JOIN client_zone cz ON bp.c_bpartner_id = cz.c_bpartner_id "
             "LEFT JOIN adempiere.c_paymentterm pterm ON i.c_paymentterm_id = pterm.c_paymentterm_id "
             "JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id "
             "WHERE i.issotrx = 'Y' AND i.docstatus IN ('CO', 'CL') AND i.ispaid = 'N' "
             "AND i.isactive = 'Y' "
+            "AND bp.iscustomer = 'Y' "
             "AND dt.docbasetype = 'ARI' "
             "AND i.dateinvoiced >= (CURRENT_DATE - INTERVAL '3 years') "
             "AND i.grandtotal > 100 "
@@ -866,7 +868,7 @@ def build_overdue_receivables(
             {
                 "numero_factura": r[0],
                 "cliente": r[1],
-                "distribuidor": r[2],
+                "vendedor": r[2],
                 "zona": r[3],
                 "monto_total": float(r[4]),
                 "fecha": r[5].isoformat() if r[5] else None,
@@ -875,6 +877,125 @@ def build_overdue_receivables(
             }
             for r in rows
         ]
+    finally:
+        db.close()
+
+
+def build_sales_by_product(
+    mes: int | None = None,
+    anio: int | None = None,
+    org_ids: list[int] | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    currency_ids: list[int] | None = None,
+    org_name: str | None = None,
+    product_search: str | None = None,
+    category_search: str | None = None,
+    only_skus: bool = False,
+    limit: int = 30,
+) -> dict:
+    """Sales breakdown by product from iDempiere c_invoiceline.
+
+    JOIN chain:
+        c_invoice → c_invoiceline → m_product → m_product_category
+        c_invoice → c_doctype (to separate ARI/ARC)
+        m_product → c_uom (unit of measure)
+
+    Parameters:
+        only_skus: if True, filters m_product_category.iskpi='Y'
+        product_search: ILIKE filter on product name or code
+        category_search: ILIKE filter on product category name
+    """
+    db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
+    try:
+        conditions = [
+            "i.issotrx = 'Y'",
+            "i.docstatus IN ('CO', 'CL')",
+            "i.isactive = 'Y'",
+            "dt.docbasetype = 'ARI'",
+        ]
+        params: dict = {"limit": limit}
+        _add_org_filter(conditions, params, org_ids, "i")
+        _add_org_name_filter(conditions, params, org_name, "i")
+        _add_currency_filter(conditions, params, currency_ids, "i")
+        _add_date_filter(conditions, params, date_from, date_to, mes, anio, "i.dateinvoiced")
+
+        if product_search:
+            _add_product_search_filter(conditions, params, product_search)
+        if category_search:
+            conditions.append("pc.name ILIKE :cat_search")
+            params["cat_search"] = f"%{category_search}%"
+        if only_skus:
+            conditions.append("pc.iskpi = 'Y'")
+
+        where = " AND ".join(conditions)
+
+        cur_label = _currency_label("i")
+
+        # Top products by revenue
+        top_products_q = text(
+            f"SELECT p.value AS codigo, p.name AS producto, "
+            f"COALESCE(pc.name, 'Sin Categoría') AS categoria, "
+            f"COALESCE(uom.name, '') AS unidad_medida, "
+            f"{cur_label} AS moneda, "
+            f"SUM(il.qtyinvoiced) AS cantidad, "
+            f"COALESCE(SUM(il.linenetamt), 0) AS total_neto "
+            f"FROM adempiere.c_invoice i "
+            f"JOIN adempiere.c_invoiceline il ON i.c_invoice_id = il.c_invoice_id "
+            f"JOIN adempiere.m_product p ON il.m_product_id = p.m_product_id "
+            f"LEFT JOIN adempiere.m_product_category pc ON p.m_product_category_id = pc.m_product_category_id "
+            f"LEFT JOIN adempiere.c_uom uom ON p.c_uom_id = uom.c_uom_id "
+            f"JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id "
+            f"WHERE {where} "
+            f"GROUP BY p.value, p.name, pc.name, uom.name, {cur_label} "
+            f"ORDER BY total_neto DESC "
+            f"LIMIT :limit"
+        )
+        top_products = [
+            {
+                "codigo": r[0],
+                "producto": r[1],
+                "categoria": r[2],
+                "unidad_medida": r[3],
+                "moneda": r[4],
+                "cantidad": float(r[5]) if r[5] else 0,
+                "total_neto": float(r[6]),
+            }
+            for r in db.execute(top_products_q, params).fetchall()
+        ]
+
+        # By category summary
+        by_category_q = text(
+            f"SELECT COALESCE(pc.name, 'Sin Categoría') AS categoria, "
+            f"COUNT(DISTINCT p.m_product_id) AS productos, "
+            f"SUM(il.qtyinvoiced) AS cantidad, "
+            f"COALESCE(SUM(il.linenetamt), 0) AS total_neto "
+            f"FROM adempiere.c_invoice i "
+            f"JOIN adempiere.c_invoiceline il ON i.c_invoice_id = il.c_invoice_id "
+            f"JOIN adempiere.m_product p ON il.m_product_id = p.m_product_id "
+            f"LEFT JOIN adempiere.m_product_category pc ON p.m_product_category_id = pc.m_product_category_id "
+            f"LEFT JOIN adempiere.c_uom uom ON p.c_uom_id = uom.c_uom_id "
+            f"JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id "
+            f"WHERE {where} "
+            f"GROUP BY pc.name "
+            f"ORDER BY total_neto DESC"
+        )
+        del params["limit"]  # not needed for category query
+        by_category = [
+            {
+                "categoria": r[0],
+                "productos": r[1],
+                "cantidad": float(r[2]) if r[2] else 0,
+                "total_neto": float(r[3]),
+            }
+            for r in db.execute(by_category_q, params).fetchall()
+        ]
+
+        return {
+            "anio": anio,
+            "top_productos": top_products,
+            "por_categoria": by_category,
+        }
     finally:
         db.close()
 

@@ -139,6 +139,9 @@ _KEYWORD_RULES: list[tuple[str, list[str]]] = [
         "metas de venta", "meta de venta", "cotizacion", "cotización",
         "moroso", "morosos", "deuda", "deudas", "vencido", "vencida",
         "pendiente de cobro",
+        "producto más vendido", "productos más vendidos",
+        "top producto", "ventas por producto", "ventas por categoria",
+        "ventas por categoría", "sku",
     ]),
     # RRHH
     ("rrhh", [

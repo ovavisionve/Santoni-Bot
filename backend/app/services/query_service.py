@@ -427,6 +427,33 @@ def build_overdue_receivables(org_ids: list[int] | None = None, salesrep_id: int
         db.close()
 
 
+def build_sales_by_product(
+    mes: int | None = None,
+    anio: int | None = None,
+    org_ids: list[int] | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    currency_ids: list[int] | None = None,
+    org_name: str | None = None,
+    product_search: str | None = None,
+    category_search: str | None = None,
+    only_skus: bool = False,
+    limit: int = 30,
+) -> dict:
+    """Sales by product - routes to iDempiere."""
+    if _is_production():
+        from app.services.idempiere_queries import build_sales_by_product as _prod
+        return _prod(
+            mes=mes, anio=anio, org_ids=org_ids,
+            date_from=date_from, date_to=date_to,
+            currency_ids=currency_ids, org_name=org_name,
+            product_search=product_search, category_search=category_search,
+            only_skus=only_skus, limit=limit,
+        )
+    # No demo implementation — return empty structure
+    return {"anio": anio, "top_productos": [], "por_categoria": []}
+
+
 # ---------------------------------------------------------------------------
 # Pre-built queries: PRODUCCION (Production)
 # ---------------------------------------------------------------------------
