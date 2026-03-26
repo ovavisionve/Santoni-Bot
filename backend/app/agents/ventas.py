@@ -221,6 +221,7 @@ Datos de ventas de iDempiere:
             "sku", "categoria de producto", "categoría de producto",
             "que se vende", "qué se vende", "más vendido", "mas vendido",
             "top producto", "ranking de producto",
+            "nota de credito", "notas de credito", "nota de crédito", "notas de crédito",
         ],
         "ordenes": [
             "orden de venta", "ordenes de venta", "órdenes de venta",
@@ -493,6 +494,9 @@ Datos de ventas de iDempiere:
                         filter_label = f" - Categoría '{category_search}'"
                     sections.append(f"## Top Productos Vendidos ({label}{org_label}{filter_label})")
                     sections.append(self._format_table(data["top_productos"]))
+                if data.get("notas_credito_por_producto"):
+                    sections.append(f"## Notas de Crédito por Producto ({label}{org_label})")
+                    sections.append(self._format_table(data["notas_credito_por_producto"]))
                 if data.get("por_categoria"):
                     sections.append(f"## Ventas por Categoría de Producto ({label})")
                     sections.append(self._format_table(data["por_categoria"]))
