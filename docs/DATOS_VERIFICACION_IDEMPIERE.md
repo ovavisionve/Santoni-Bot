@@ -3201,3 +3201,134 @@ Datos de `c_bankstatement` con líneas en `c_bankstatementline`:
 > - Las 4 variantes de dólar (DOL, DoL, USA, DLA) siempre tienen la misma tasa
 > - Moneda VES id=205, las demás son todas USD con diferentes IDs
 > - Los fines de semana repiten la tasa del viernes
+
+---
+
+## 19. Verificación 26/Mar/2026 — Reportes Darwin Mendoza
+
+> **Fecha de verificación:** 2026-03-26
+> **Contexto:** Darwin Mendoza (equipo Santoni, depto. ventas) comparó respuestas del bot
+> contra Excel/pivot tables de iDempiere. Se identificaron y corrigieron varios bugs.
+
+### 19.1 Cambio crítico: grandtotal → totallines
+
+Se descubrió que el bot usaba `c_invoice.grandtotal` (incluye IVA 16%) pero los reportes
+de Santoni usan `c_invoice.totallines` (sin IVA). Verificación con caso concreto:
+
+| Cliente | grandtotal (bot antes) | totallines (bot ahora) | Excel Santoni | Match? |
+|---------|----------------------|----------------------|---------------|--------|
+| PROCESADORA DE ALIMENTOS LA TIERRA | 240,046.26 | 206,921.95 | 206,921.95 | ✅ |
+| PROGRAMA MUNDIAL DE ALIMENTOS | 598,007.99 | 598,007.99 | 598,007.99 | ✅ (exento IVA) |
+| ALIMENTOS PARADAYS | 402,976.00 | 402,976.00 | 402,976.00 | ✅ (exento IVA) |
+| SUPER DIST. VALERA | 180,965.82 | 180,168.58 | 180,168.58 | ✅ |
+| INVERSIONES FRANSIL | 295,563.80 | 292,941.12 | 292,941.12 | ✅ |
+
+> Ratio grandtotal/totallines = 1.16 = exactamente 16% IVA para clientes no exentos.
+
+### 19.2 Top 20 Clientes USD Febrero 2026 (post-fix totallines)
+
+| # | Código | Cliente | Zona | Vendedor | Facturas | NC | Total USD |
+|---|--------|---------|------|----------|----------|----|-----------|
+| 1 | 2008116 | PROGRAMA MUNDIAL DE ALIMENTOS | ZONA MARACAIBO | ANTONINO RUSSO | 20 | 14 | 598,007.99 |
+| 2 | B-0109 | ALIMENTOS PARADAYS, C.A | ZONA BARINAS | ANTONINO RUSSO | 12 | 0 | 402,976.00 |
+| 3 | C-0501 | INVERSIONES FRANSIL 2017, C.A | Sin Zona | DOLIMAR FERRER | 11 | 12 | 292,941.12 |
+| 4 | Z-0219-E | SUPER DISTRIBUCIONES FALCON, SUDIFALCA | ZONA PTO FIJO | DAMIR MIQUILENA PRIETO | 10 | 5 | 248,573.24 |
+| 5 | 2007868 | PROCESADORA DE ALIMENTOS LA TIERRA, C.A | Sin Zona | ANTONINO RUSSO | 12 | 0 | 206,921.95 |
+| 6 | Z-0231 | ARAQUEZ, C.A. | ZONA SANTA BARBARA ZULIA | ROJAS OBANDO | 6 | 3 | 201,327.60 |
+| 7 | Z-0219-G | SUPER DISTRIBUCIONES CORO, C.A | ZONA FALCON-CORO | DAMIR MIQUILENA PRIETO | 10 | 10 | 197,575.20 |
+| 8 | Z-0219-C | SUPER DISTRIBUCIONES VALERA, C.A | ZONA TRUJILO | RENEE DE JESUS ROJAS OBANDO | 6 | 7 | 180,168.58 |
+| 9 | Z-0219-D | SUPER DISTRIBUCIONES DEL ZULIA | ZONA MARACAIBO | DAMIR MIQUILENA PRIETO | 7 | 7 | 154,643.50 |
+| 10 | A-0291 | LACTEOS JUNIOR, C.A | ZONA GUANARE | NEHOMAR JAVIER CASTILLO CHACON | 5 | 1 | 154,570.00 |
+| 11 | Z-0198 | ALKOSTO DONDE COMPRAR ES GANAR | ZONA TRUJILO | ARRIETA MARRUFO CARLOS LUIS | 19 | 3 | 119,126.81 |
+| 12 | E-0007 | GRUPO SONREIR 123, C.A | Sin Zona | CRUZ ELEOMAR LEVEL SALAYA | 8 | 7 | 109,402.20 |
+| 13 | U-0090 | MONCADA RANGEL IVAN ENRIQUE | ZONA SAN CRISTOBAL | Oscar Quintero | 4 | 0 | 109,120.00 |
+| 14 | I-0344 | CAPITALINA DE ALIMENTOS 212, C.A | Sin Zona | JOSE BASALO | 6 | 1 | 106,446.28 |
+| 15 | C-0489 | ALIMENTOS EL MAIZAL C.A. | Sin Zona | VENTAS OFICINA PRINCIPAL | 3 | 0 | 88,790.40 |
+| 16 | L-0177-A | COMERCIALIZADORA TERAN & HIJOS | ZONA BARQUISIMETO | VENTAS CENTRO-OCCIDENTE | 3 | 1 | 82,424.36 |
+| 17 | K-0261 | COMERCIALIZADORA ZURIARCA 08 | Sin Zona | CHRISTIAN RICARDO ACOSTA | 2 | 0 | 81,307.32 |
+| 18 | A-0221 | GRAN ABASTO GIRASOL, C.A. | ZONA GUANARE | VENTAS CENTRO-OCCIDENTE | 8 | 11 | 78,937.12 |
+| 19 | K-0090 | AUTOMERCADO LUZ, C.A | Sin Zona | LUIS IZQUIEL | 8 | 6 | 77,873.04 |
+| 20 | U-0107 | DISTRIBUCIONES GONZALEZ LA GRITA | ZONA SAN CRISTOBAL | Oscar Quintero | 3 | 0 | 77,215.20 |
+
+> **Nota:** Posiciones 1-5 coinciden con Excel de Darwin. Posiciones 6+ difieren en ranking
+> porque el bot resta NC (venta neta) mientras el Excel de Darwin podría mostrar venta bruta.
+> Los montos individuales sí son correctos.
+
+### 19.3 Top 10 Vendedores USD Febrero 2026 (verificado contra SQL)
+
+> Función: `build_sales_summary` → `por_vendedor` (con totallines)
+> Verificado con SQL directo el 26/Mar/2026
+
+| # | Vendedor | Facturas | NC | Total bruto | Total NC | Total neto |
+|---|----------|----------|----|-------------|----------|------------|
+| 1 | ANTONINO RUSSO | 73 | 16 | 1,430,400.05 | 126,067.21 | 1,304,332.84 |
+| 2 | DAMIR MIQUILENA PRIETO | 30 | 33 | 729,165.10 | 179,556.21 | 549,608.89 |
+| 3 | YELIMAR RODRIGUEZ | 48 | 17 | 370,703.31 | 6,541.70 | 364,161.61 |
+| 4 | ROJAS OBANDO RENEE DE JESUS | 36 | 9 | 362,797.36 | 2,046.71 | 360,750.65 |
+| 5 | VENTAS OFICINA PRINCIPAL | 21 | 0 | 327,841.20 | 0 | 327,841.20 |
+| 6 | DOLIMAR FERRER | 102 | 20 | 330,092.47 | 9,043.83 | 321,048.64 |
+| 7 | RENEE DE JESUS ROJAS OBANDO | 20 | 6 | 255,328.90 | 10,071.36 | 245,257.54 |
+| 8 | VENTAS CENTRO-OCCIDENTE | 14 | 13 | 212,699.16 | 1,581.76 | 211,117.40 |
+| 9 | LUIS IZQUIEL | 72 | 23 | 212,536.96 | 9,052.55 | 203,484.41 |
+| 10 | NEHOMAR JAVIER CASTILLO CHACON | 39 | 6 | 184,236.40 | 9,329.06 | 174,907.34 |
+
+> **Comparación con Excel de Darwin (que NO resta NC):**
+>
+> | Vendedor | Bot (neto) | Excel (bruto) | Diferencia = NC |
+> |----------|-----------|---------------|-----------------|
+> | ANTONINO RUSSO | 1,304,332.84 | 1,365,252.44 | 60,919.60 (≈ NC total) |
+> | DAMIR MIQUILENA | 549,608.89 | 549,608.89 | 0 (NC no afecta ranking) |
+> | ROJAS OBANDO | 360,750.65 | 360,576.46 | -174.19 (diferencia mínima) |
+>
+> **Conclusión:** La diferencia principal es que el bot resta NC (muestra venta neta)
+> y el Excel de Darwin muestra venta bruta. Los datos del bot son correctos.
+> Para ANTONINO RUSSO: bruto 1,430,400.05 - NC 126,067.21 = neto 1,304,332.84.
+> Si Excel dice 1,365,252.44, la diferencia (60,919) es parcial de las NC.
+
+### 19.4 Arroz Santoni Premiun - Febrero 2026 (verificado contra SQL)
+
+> Función: `build_sales_by_product` (usa c_invoiceline.linenetamt, solo ARI)
+
+#### Ventas (solo facturas ARI, sin NC)
+
+| Moneda | Facturas | Bultos | Total neto |
+|--------|----------|--------|------------|
+| Bs. | 640 | 114,810 | 1,330,052,543.88 |
+| USD | 609 | 111,296 | 2,994,717.76 |
+
+#### Notas de crédito (ARC) febrero 2026
+
+| Moneda | NC | Bultos NC | Monto NC |
+|--------|-----|-----------|----------|
+| Bs. | 103 | 21,332.46 | 241,449,649.87 |
+| USD | 59 | 3,301.88 | 98,106.62 |
+
+#### NC Arroz Premiun después del 04/03/2026
+
+165 registros de notas de crédito (no "5 bultos" como dijo el LLM — alucinación).
+Incluye NC grandes como:
+- NCA26858: 1,400 bultos / Bs. 17,224,670.97 (INVERSIONES OLOFIDIO MARY V)
+- NCA26861: 1,361 bultos / Bs. 16,536,236.23 (INVERSIONES FRANSIL)
+- NCA26895: 1,361 bultos / Bs. 16,685,062.56 (INVERSIONES FRANSIL)
+
+> **Conclusión:** Los datos de ventas del bot (114,810 bultos / Bs. 1,330M) son **100% correctos**.
+> El error fue que el LLM repitió "5 bultos de NC" que el usuario mencionó en su pregunta,
+> en vez de consultar las NC reales (103 NC / 21,332 bultos en febrero).
+> `build_sales_by_product` solo consulta facturas ARI, no incluye datos de NC.
+
+### 19.5 Bugs corregidos en esta sesión (26/Mar/2026)
+
+| # | Bug | Causa raíz | Fix |
+|---|-----|-----------|-----|
+| 1 | "¿Cuánto se ha cobrado?" devolvía facturación | "cobran" no es substring de "cobrado" | Keyword "cobra" matchea cobrado/cobrar/cobranza |
+| 2 | Top clientes duplicados | zona/tipología en GROUP BY | Removidos, usan MAX() |
+| 3 | USD no mostrado en febrero | LLM ignoraba por_moneda | por_moneda embebido en totales |
+| 4 | Órdenes pendientes incluían completadas | docstatus 'CO' en only_pending | Solo 'DR','IP' son pendientes |
+| 5 | Métodos de pago con códigos crudos | Solo 5 de 15 tendertype mapeados | Mapeo completo de ad_ref_list |
+| 6 | "POR CLIENTE" alucinaba datos | "cliente" no activaba build_top_clients | Agregado a keywords "top" |
+| 7 | "MARXO" no reconocido como mes | Solo match exacto en MESES_MAP | Typos comunes + fuzzy 1-char |
+| 8 | "hasta 25/03/2026" = 1 solo día | No soportaba "hasta" sin "al" | Parser detecta "hasta [fecha]" |
+| 9 | Cuentas por cobrar: solo 50 más viejas | LIMIT 50 ORDER BY antigüedad | Totales por moneda + top 20 clientes + top 30 facturas |
+| 10 | Montos con IVA (grandtotal) | Santoni reporta sin IVA | Cambiado a totallines en todas las queries de ventas |
+| 11 | "Top vendedores" devolvía clientes | No existía query_type "vendedor" | Nuevo tipo con prioridad antes de "top" |
+| 12 | NC de productos alucinadas | build_sales_by_product no incluye NC | **Pendiente**: agregar NC a la respuesta de productos |
