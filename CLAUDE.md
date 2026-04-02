@@ -78,15 +78,21 @@ Santoni-Bot/
 │   └── package.json
 ├── nginx/                       # Reverse proxy config
 ├── scripts/                     # setup-vm.sh, deploy.sh, backup.sh
+│   └── qa/                      # ← Scripts de QA automatizado
+│       ├── test_infrastructure.sh
+│       ├── test_connectivity.sh
+│       ├── test_agents.sh
+│       ├── test_resilience.sh
+│       └── run_full_qa.sh       # Master script
 ├── coolify/                     # Coolify deployment config
-├── docs/                        # Documentación del proyecto
-│   ├── ESTATUS_PROYECTO.md      # Tracking detallado de tareas
-│   ├── DOCUMENTO_TECNICO.md     # Documento técnico completo
-│   ├── cuestionario_validacion_agentes.md # Formularios de validación
+├── docs/
+│   ├── ESTATUS_PROYECTO.md
+│   ├── DOCUMENTO_TECNICO.md
+│   ├── cuestionario_validacion_agentes.md
 │   └── manuales varios
-├── docker-compose.yml           # Desarrollo (5 servicios)
-├── docker-compose.prod.yml      # Override producción
-├── .env.example                 # Template de variables de entorno
+├── docker-compose.yml
+├── docker-compose.prod.yml
+├── .env.example
 └── CLAUDE.md                    # Este archivo
 ```
 
@@ -105,7 +111,7 @@ docker compose logs backend --tail 50            # Ver logs backend
 docker compose logs frontend --tail 50           # Ver logs frontend
 docker compose down && docker compose up -d      # Reiniciar todo
 
-# Tests
+# Tests unitarios
 cd backend && pytest                             # Tests backend (150+)
 cd frontend && npm test                          # Tests frontend
 
@@ -116,6 +122,15 @@ cd backend && alembic upgrade head               # Aplicar migraciones
 cd /opt/santonibot
 git pull origin main
 docker compose build --no-cache backend frontend && docker compose up -d
+
+# ═══ QA AUTOMATIZADO ═══
+cd /opt/santonibot/scripts/qa
+chmod +x *.sh
+./run_full_qa.sh                                 # QA completo (todas las capas)
+./test_infrastructure.sh                         # Solo infraestructura Docker
+./test_connectivity.sh                           # Solo conectividad DBs
+./test_agents.sh                                 # Solo agentes IA
+./test_resilience.sh                             # Solo resiliencia y edge cases
 ```
 
 ---
@@ -233,7 +248,7 @@ Se crearon cuestionarios para que cada departamento valide las respuestas del bo
 - Seguridad hardened
 
 ### Trabajo reciente (Feb-Mar 2026):
-- **Datos históricos locales (10/Mar 2026)**: Sistema para cachear datos de iDempiere pre-marzo 2026 en DB local (ver sección abajo)
+- **Datos históricos locales (10/Mar 2026)**: Sistema para cachear datos de iDempiere pre-marzo 2026 en DB local
 - Conexión exitosa a iDempiere real (queries de nómina, ventas, compras)
 - Follow-ups inteligentes con herencia de contexto temporal
 - Confidence score + dataset de 355 escenarios (v2.5)
@@ -241,29 +256,13 @@ Se crearon cuestionarios para que cada departamento valide las respuestas del bo
 - Inventario desde m_storageonhand
 - Corrección de múltiples bugs reportados por usuarios reales
 - Script de pruebas en vivo (65 preguntas, 7 agentes)
-- Diagnóstico de nómina iDempiere
-- **Fix crítico (Mar 2026)**: Herencia temporal + manejo de errores en los 7 agentes (ver sección abajo)
-- **Expansión compras_insumos (10/Mar 2026)**:
-  - Órdenes de compra pendientes (c_order) - antes solo consultaba facturas confirmadas
-  - Comparación de precios entre proveedores para un mismo producto
-  - Estado de pago de facturas (pagadas vs pendientes vs vencidas)
-  - Fallback automático sin fecha cuando período específico no tiene datos
-  - Búsqueda de productos más flexible (normalización de acentos, OR para 3+ palabras)
-  - Fix de texto "no tengo acceso" en capabilities de todos los agentes (causaba falsos positivos en tests)
-- **Fix docstatus + org_name en compras (11/Mar 2026)**:
-  - `docstatus = 'CO'` → `docstatus IN ('CO', 'CL')` en TODAS las queries de idempiere_queries.py
-    (facturas pagadas cambian a 'CL' en iDempiere, se estaban excluyendo)
-  - Extracción de org_name del mensaje en compras_insumos (`_extract_org_name`)
-    para filtrar por organización (ej: "en INPROA SANTONI", "en InproMaiz")
-  - `org_name` propagado a `build_supplier_price_comparison()` y `build_product_purchase_history()`
-  - System prompts de todos los agentes actualizados para reflejar `docstatus IN ('CO','CL')`
-  - Regla PROHIBIDO "no tengo acceso" agregada al system prompt de los 7 agentes
-    (antes solo la tenía compras_insumos; finanzas decía "no tengo acceso" para préstamos)
-  - Dataset v2.5: 5 nuevos escenarios (352-356), 3 nuevos tipos de error
+- **Fix crítico (Mar 2026)**: Herencia temporal + manejo de errores en los 7 agentes
+- **Expansión compras_insumos (10/Mar 2026)**
+- **Fix docstatus + org_name en compras (11/Mar 2026)**
 
-### Pendiente:
+### Pendiente para cierre Fase 1:
 - Mapeo completo de todas las tablas iDempiere (algunas queries aún en ajuste)
-- Tests E2E
+- Tests E2E ← **CUBIERTO POR PROTOCOLO QA**
 - Script de migración datos demo → datos reales
 - Sentry (monitoreo de errores)
 - WhatsApp (Fase 2, post-lanzamiento)
@@ -275,9 +274,7 @@ Se crearon cuestionarios para que cada departamento valide las respuestas del bo
 Todos los 7 agentes implementan estos 3 patrones de forma consistente:
 
 ### 1. Herencia de contexto temporal en follow-ups
-Cuando un follow-up no incluye período (mes/fecha), el agente busca en el historial:
 ```python
-# En fetch_data(), después de extract_date_range/extract_month_year:
 if not date_from and not date_to and not mes and history:
     for role, content in reversed(history):
         if role != "user": continue
@@ -292,7 +289,6 @@ if not date_from and not date_to and not mes and history:
 ```
 
 ### 2. Fallback de período vacío (ventas)
-Cuando un período específico no tiene datos, se intenta con el año completo:
 ```python
 if self._is_empty_result(data) and (mes or (date_from and date_to)):
     data_year = build_top_clients(mes=None, anio=anio, ...)
@@ -309,12 +305,8 @@ if self._is_empty_result(data) and (mes or (date_from and date_to)):
 
 ## Datos Históricos Locales (implementado Mar 2026)
 
-Para evitar depender de iDempiere para consultas de datos anteriores a marzo 2026,
-se implementó un sistema de caché local:
-
 ### Arquitectura
 - **Schema `adempiere`** en la DB local de SantoniBot (PostgreSQL 16) con las mismas tablas
-- Las queries SQL existentes funcionan **sin cambios** porque usan `adempiere.tabla`
 - Routing automático: `_get_session()` en `idempiere_queries.py` decide qué DB usar
 
 ### Flujo de datos
@@ -324,39 +316,11 @@ Consulta del usuario → Agente extrae fechas → _get_session(date_from, date_t
   → Si fecha >= 2026-03-01 o sin fecha → iDempiere en vivo (IdempiereSession)
 ```
 
-### Tablas copiadas
-- **Referencia** (copia completa): ad_org, c_bpartner, m_product, c_currency, hr_employee, etc.
-- **Transaccionales** (filtradas por fecha < corte): c_invoice, c_payment, c_order, fact_acct, etc.
-- **Snapshots** (estado actual): m_storageonhand, c_bankaccount
-
-### Comandos
-```bash
-# 1. Aplicar migración (crea schema + tablas)
-docker compose exec backend alembic upgrade head
-
-# 2. Extraer datos de iDempiere
-docker compose exec backend python scripts/extract_historical_data.py
-
-# 3. Activar en .env
-HISTORICAL_DATA_ENABLED=true
-HISTORICAL_DATA_CUTOFF=2026-03-01
-
-# 4. Reiniciar
-docker compose restart backend
-```
-
 ### Configuración (.env)
 ```
 HISTORICAL_DATA_ENABLED=false   # Activar después de extraer datos
 HISTORICAL_DATA_CUTOFF=2026-03-01  # Fecha de corte
 ```
-
-### Funciones sin fecha (siempre van a iDempiere)
-- `build_overdue_receivables` - cuentas por cobrar actuales
-- `build_employee_summary` - plantilla actual
-- `build_inventory_stock` - stock actual
-- `build_registered_producers` - productores registrados
-- `build_producer_pending_payments` - pagos pendientes actuales
 
 ---
 
@@ -367,3 +331,133 @@ HISTORICAL_DATA_CUTOFF=2026-03-01  # Fecha de corte
 - **SQL**: Queries parametrizadas, nunca concatenación de strings
 - **Agentes**: Heredan de `base_agent.py`, implementan `fetch_data()` y `format_response()`
 - **Frontend**: Componentes funcionales React, hooks personalizados, Tailwind para estilos
+
+---
+
+# ══════════════════════════════════════════════════════════════════
+# PROTOCOLO DE QA Y CIERRE DE PROYECTO
+# ══════════════════════════════════════════════════════════════════
+
+## Objetivo del QA
+Validar TODAS las capas del sistema de forma sistemática para identificar fallas pendientes,
+corregirlas, y cerrar la Fase 1. Cada capa tiene un script bash en `scripts/qa/`.
+
+## Criterios de Evaluación
+- ✅ **PASS**: Resultado esperado sin errores
+- ⚠️ **WARN**: Funciona con degradación (latencia alta, datos incompletos)
+- ❌ **FAIL**: Error, timeout, resultado incorrecto, crash
+
+## Ejecución Rápida
+```bash
+cd /opt/santonibot/scripts/qa && chmod +x *.sh
+./run_full_qa.sh              # Todo
+./test_infrastructure.sh      # Solo Capa 1
+./test_connectivity.sh        # Solo Capa 2
+./test_agents.sh              # Solo Capa 3
+./test_resilience.sh          # Solo Capa 5
+```
+
+---
+
+### CAPA 1: Infraestructura Docker
+**Script:** `scripts/qa/test_infrastructure.sh`
+
+| Test | Criterio PASS | Criterio FAIL |
+|------|--------------|---------------|
+| 5 servicios running | Todos "Up" | Cualquiera "Exit" o ausente |
+| RAM backend | < 2GB | > 2GB sostenido |
+| CPU servidor | < 80% | > 80% sostenido |
+| Disco libre | > 5GB | < 5GB |
+| Errores en logs (30min) | 0 ERROR/CRITICAL | Cualquier Traceback |
+| Puertos (8000,3000,5432,80) | Todos abiertos | Cualquiera cerrado |
+| Reinicios recientes | 0 en últimas 2h | Reinicios inesperados |
+
+---
+
+### CAPA 2: Conectividad de Datos
+**Script:** `scripts/qa/test_connectivity.sh`
+
+| Test | Criterio PASS | Criterio FAIL |
+|------|--------------|---------------|
+| DB local PostgreSQL 16 | Conexión OK | Connection refused |
+| iDempiere 192.168.1.73:5432 | Conexión read-only OK | Timeout / auth error |
+| Schema adempiere local | Existe con tablas | No existe |
+| Registros en tablas clave | > 0 en c_invoice, c_bpartner | 0 registros = datos no cargados |
+| Routing histórico (2025) | Usa DB local | Usa iDempiere (error config) |
+| Routing actual (2026) | Usa iDempiere | Usa DB local (error config) |
+| Latencia query simple | < 2s | > 2s |
+| API keys configuradas | No vacías | Vacías o placeholder |
+| Alembic migraciones | head = current | Migraciones pendientes |
+| ChromaDB | Responde en :8000 | No responde |
+
+---
+
+### CAPA 3: Agentes IA (CORE — el test más importante)
+**Script:** `scripts/qa/test_agents.sh`
+
+**Preguntas de prueba:**
+
+| Agente | Pregunta | Respuesta esperada contiene |
+|--------|----------|-----------------------------|
+| Ventas | "Top 10 clientes por facturación en 2025" | Tabla con nombres y montos |
+| Ventas follow-up | "¿Y en dólares?" | Hereda 2025, muestra USD |
+| Finanzas | "Saldos bancarios actuales" | Tabla con bancos y saldos |
+| Contabilidad | "Balance general diciembre 2025" | Activos, pasivos, patrimonio |
+| RRHH | "Cuántos empleados activos hay" | Número > 0 |
+| Producción | "Órdenes de producción enero 2026" | Lista de órdenes o "no hay datos" |
+| Compras Insumos | "Compras de empaque en 2025" | Montos por proveedor |
+| Compras Insumos org | "Compras de empaque en INPROA SANTONI" | Filtrado por org |
+| Compras Productores | "Productores registrados" | Lista de productores |
+
+**Criterios por respuesta:**
+
+| Métrica | PASS | WARN | FAIL |
+|---------|------|------|------|
+| Latencia | < 10s | 10-30s | > 30s |
+| "no tengo acceso" | Ausente | - | Presente |
+| Datos numéricos | Presentes | - | Ausentes cuando se esperan |
+| Confidence score | Presente | - | Ausente |
+| Error/Traceback | Ausente | - | Presente |
+
+---
+
+### CAPA 4: Frontend + Auth (manual + curl)
+Checklist manual en navegador + validación automatizada de endpoints auth.
+
+---
+
+### CAPA 5: Resiliencia y Edge Cases
+**Script:** `scripts/qa/test_resilience.sh`
+
+| Test | Input | Resultado esperado |
+|------|-------|--------------------|
+| Mensaje sin sentido | "asdfghjkl" | Respuesta amigable, no crash |
+| Inyección SQL | "'; DROP TABLE users;--" | Bloqueado, sin ejecución |
+| Mensaje vacío | "" | Respuesta controlada |
+| Mensaje largo | 5000+ chars | No crash, manejo controlado |
+| Rate limit | 31 requests/min | Request #31 → HTTP 429 |
+| Concurrencia | 5 requests simultáneos | Respuestas correctas sin mezcla |
+| Período sin datos | "ventas marzo 2020" | Fallback o mensaje informativo |
+
+---
+
+### Bugs Conocidos (verificar en cada QA para evitar regresiones)
+
+| Bug | Fix date | Verificación |
+|-----|----------|-------------|
+| docstatus='CO' excluía facturas pagadas | 11/Mar/2026 | Query con facturas pagadas → resultados |
+| "no tengo acceso" en capabilities | 10/Mar/2026 | Ningún agente dice "no tengo acceso" |
+| org_name no se extraía en compras | 11/Mar/2026 | "compras en INPROA SANTONI" filtra OK |
+| Herencia temporal rota | Mar/2026 | Follow-up sin fecha hereda período |
+| Latencia severa | Mar/2026 | Ningún agente > 30s consistente |
+
+---
+
+### Procedimiento de Cierre
+
+1. `./run_full_qa.sh` → genera `qa_report_FECHA.txt`
+2. Corregir cada ❌ FAIL con commit documentado
+3. Re-testear capa afectada
+4. Actualizar `docs/ESTATUS_PROYECTO.md`
+5. `git tag v1.0-qa-passed`
+6. Backup DB + presentar reporte al cliente
