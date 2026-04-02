@@ -554,15 +554,22 @@ def build_sales_summary(
             f"{zone_cte}"
             f"SELECT COALESCE(sr.name, 'Sin Vendedor') AS vendedor, "
             f"SUM(CASE WHEN dt.docbasetype = 'ARI' THEN 1 ELSE 0 END) AS facturas, "
+            f"SUM(CASE WHEN dt.docbasetype = 'ARC' THEN 1 ELSE 0 END) AS notas_credito, "
+            f"COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.totallines ELSE 0 END), 0) AS total_bruto, "
+            f"COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARC' THEN i.totallines ELSE 0 END), 0) AS monto_nc, "
             f"COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.totallines "
             f"WHEN dt.docbasetype = 'ARC' THEN -i.totallines ELSE 0 END), 0) AS total "
             f"FROM adempiere.c_invoice i "
             f"{joins}"
             f"WHERE {where} "
-            f"GROUP BY sr.name ORDER BY total DESC"
+            f"GROUP BY sr.name ORDER BY total_bruto DESC"
         )
         by_salesperson = [
-            {"vendedor": r[0], "facturas": r[1], "total": float(r[2])}
+            {
+                "vendedor": r[0], "facturas": r[1], "notas_credito": r[2],
+                "total_bruto": float(r[3]), "monto_nc": float(r[4]),
+                "total": float(r[5]),
+            }
             for r in db.execute(by_salesperson_q, params).fetchall()
         ]
 
@@ -789,6 +796,8 @@ def build_top_clients(
             f"{cur_label} AS moneda, "
             f"SUM(CASE WHEN dt.docbasetype = 'ARI' THEN 1 ELSE 0 END) AS facturas, "
             f"SUM(CASE WHEN dt.docbasetype = 'ARC' THEN 1 ELSE 0 END) AS notas_credito, "
+            f"COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.totallines ELSE 0 END), 0) AS total_bruto, "
+            f"COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARC' THEN i.totallines ELSE 0 END), 0) AS monto_nc, "
             f"COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.totallines "
             f"WHEN dt.docbasetype = 'ARC' THEN -i.totallines ELSE 0 END), 0) AS total_facturado "
             f"FROM adempiere.c_invoice i "
@@ -799,7 +808,7 @@ def build_top_clients(
             f"JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id "
             f"WHERE {where} "
             f"GROUP BY bp.value, bp.name, {cur_label} "
-            f"ORDER BY total_facturado DESC "
+            f"ORDER BY total_bruto DESC "
             f"LIMIT :limit"
         )
         logger.info("build_top_clients SQL WHERE: %s | params: %s", where, {k: v for k, v in params.items() if k != "limit"})
@@ -815,7 +824,9 @@ def build_top_clients(
                 "moneda": r[5],
                 "facturas": r[6],
                 "notas_credito": r[7],
-                "total_facturado": float(r[8]),
+                "total_bruto": float(r[8]),
+                "monto_nc": float(r[9]),
+                "total_facturado": float(r[10]),
             }
             for r in rows
         ]
