@@ -478,7 +478,7 @@ def build_sales_summary(
         totals_q = text(
             f"{zone_cte}"
             f"SELECT COUNT(*) AS total_facturas, "
-            f"COALESCE(SUM(i.grandtotal), 0) AS total_facturado, "
+            f"COALESCE(SUM(i.totallines), 0) AS total_facturado, "
             f"COALESCE(SUM(i.totallines), 0) AS total_neto, "
             f"COALESCE(SUM(i.grandtotal - i.totallines), 0) AS total_iva "
             f"FROM adempiere.c_invoice i "
@@ -1530,12 +1530,13 @@ def build_financial_summary(
         total_saldo_bancario = sum(b["saldo"] for b in banks)
 
         # Accounts receivable (unpaid sales invoices) - separated by currency
+        # Uses invoiceopen() to get real open amount (excluding allocated payments)
         cur_label = _currency_label("i")
         ar_conditions = [
             "i.issotrx = 'Y'",
             "i.docstatus IN ('CO', 'CL')",
-            "i.ispaid = 'N'",
             "i.isactive = 'Y'",
+            "invoiceopen(i.c_invoice_id, 0) > 0",
         ]
         ar_params: dict = {}
         _add_org_filter(ar_conditions, ar_params, org_ids, "i")
@@ -1545,7 +1546,7 @@ def build_financial_summary(
         ar_q = text(
             f"SELECT {cur_label} AS moneda, "
             f"COUNT(*) AS facturas_pendientes, "
-            f"COALESCE(SUM(i.grandtotal), 0) AS total_por_cobrar "
+            f"COALESCE(SUM(invoiceopen(i.c_invoice_id, 0)), 0) AS total_por_cobrar "
             f"FROM adempiere.c_invoice i WHERE {ar_where} "
             f"GROUP BY {cur_label} ORDER BY total_por_cobrar DESC"
         )
@@ -1559,12 +1560,12 @@ def build_financial_summary(
             ],
         }
 
-        # Overdue receivables - also by currency
+        # Overdue receivables - also by currency (uses invoiceopen for real amounts)
         overdue_conds = [
             "i.issotrx = 'Y'",
             "i.docstatus IN ('CO', 'CL')",
-            "i.ispaid = 'N'",
             "i.isactive = 'Y'",
+            "invoiceopen(i.c_invoice_id, 0) > 0",
             "(i.dateinvoiced + CASE WHEN COALESCE(pt.netdays, 0) = 0 THEN 30 ELSE pt.netdays END) < CURRENT_DATE",
         ]
         overdue_params: dict = {}
@@ -1573,7 +1574,7 @@ def build_financial_summary(
         overdue_q = text(
             f"SELECT {cur_label} AS moneda, "
             f"COUNT(*) AS facturas_vencidas, "
-            f"COALESCE(SUM(i.grandtotal), 0) AS total_vencido "
+            f"COALESCE(SUM(invoiceopen(i.c_invoice_id, 0)), 0) AS total_vencido "
             f"FROM adempiere.c_invoice i "
             f"LEFT JOIN adempiere.c_paymentterm pt ON i.c_paymentterm_id = pt.c_paymentterm_id "
             f"WHERE {overdue_where} "
@@ -1587,12 +1588,12 @@ def build_financial_summary(
             for r in overdue_rows
         ]
 
-        # Accounts payable (unpaid purchase invoices) - separated by currency
+        # Accounts payable (unpaid purchase invoices) - uses invoiceopen for real amounts
         ap_conditions = [
             "i.issotrx = 'N'",
             "i.docstatus IN ('CO', 'CL')",
-            "i.ispaid = 'N'",
             "i.isactive = 'Y'",
+            "invoiceopen(i.c_invoice_id, 0) > 0",
         ]
         ap_params: dict = {}
         _add_org_filter(ap_conditions, ap_params, org_ids, "i")
@@ -1602,7 +1603,7 @@ def build_financial_summary(
         ap_q = text(
             f"SELECT {cur_label} AS moneda, "
             f"COUNT(*) AS facturas_pendientes, "
-            f"COALESCE(SUM(i.grandtotal), 0) AS total_por_pagar "
+            f"COALESCE(SUM(invoiceopen(i.c_invoice_id, 0)), 0) AS total_por_pagar "
             f"FROM adempiere.c_invoice i WHERE {ap_where} "
             f"GROUP BY {cur_label} ORDER BY total_por_pagar DESC"
         )
@@ -1616,12 +1617,12 @@ def build_financial_summary(
             ],
         }
 
-        # Overdue payables - also by currency
+        # Overdue payables - uses invoiceopen for real amounts
         overdue_ap_conds = [
             "i.issotrx = 'N'",
             "i.docstatus IN ('CO', 'CL')",
-            "i.ispaid = 'N'",
             "i.isactive = 'Y'",
+            "invoiceopen(i.c_invoice_id, 0) > 0",
             "(i.dateinvoiced + CASE WHEN COALESCE(pt.netdays, 0) = 0 THEN 30 ELSE pt.netdays END) < CURRENT_DATE",
         ]
         overdue_ap_params: dict = {}
@@ -1630,7 +1631,7 @@ def build_financial_summary(
         overdue_ap_q = text(
             f"SELECT {cur_label} AS moneda, "
             f"COUNT(*) AS facturas_vencidas, "
-            f"COALESCE(SUM(i.grandtotal), 0) AS total_vencido "
+            f"COALESCE(SUM(invoiceopen(i.c_invoice_id, 0)), 0) AS total_vencido "
             f"FROM adempiere.c_invoice i "
             f"LEFT JOIN adempiere.c_paymentterm pt ON i.c_paymentterm_id = pt.c_paymentterm_id "
             f"WHERE {overdue_ap_where} "
@@ -2576,6 +2577,7 @@ def build_registered_producers(org_ids: list[int] | None = None) -> list[dict]:
             "bp.isvendor = 'Y'",
         ]
         params: dict = {}
+        _add_org_filter(conditions, params, org_ids, "bp")
 
         q = text(
             f"SELECT bp.name AS productor, bp.value AS codigo, "
@@ -2602,8 +2604,8 @@ def build_producer_pending_payments(
 ) -> list[dict]:
     """Pending purchase invoices (not fully paid) from iDempiere.
 
-    Uses c_invoice (ispaid='N') instead of c_order, since c_order
-    does not have a totalpaid column in Santoni's iDempiere.
+    Uses invoiceopen(c_invoice_id, 0) > 0 to find truly unpaid invoices,
+    since the ispaid flag may not update reliably when payments are allocated.
     Supports filtering by producer name (ILIKE) for specific producer debt queries.
     """
     db = IdempiereSession()
@@ -2611,9 +2613,9 @@ def build_producer_pending_payments(
         conditions = [
             "i.issotrx = 'N'",
             "i.docstatus IN ('CO', 'CL')",
-            "i.ispaid = 'N'",
             "i.isactive = 'Y'",
             "i.dateinvoiced >= (CURRENT_DATE - INTERVAL '2 years')",
+            "invoiceopen(i.c_invoice_id, 0) > 0",
         ]
         params: dict = {}
         _add_org_filter(conditions, params, org_ids, "i")
@@ -2633,22 +2635,24 @@ def build_producer_pending_payments(
         q = text(
             f"SELECT bp.name AS productor, i.documentno AS documento, "
             f"i.dateinvoiced::date AS fecha, "
-            f"i.grandtotal AS monto_total, "
+            f"invoiceopen(i.c_invoice_id, 0) AS monto_pendiente, "
+            f"i.grandtotal AS monto_original, "
             f"{currency_col} AS moneda "
             f"FROM adempiere.c_invoice i "
             f"JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id "
             f"{'JOIN adempiere.c_invoiceline il ON i.c_invoice_id = il.c_invoice_id ' if producto else ''}"
             f"{'JOIN adempiere.m_product p ON il.m_product_id = p.m_product_id ' if producto else ''}"
             f"WHERE {where} "
-            f"ORDER BY i.grandtotal DESC LIMIT 30"
+            f"ORDER BY invoiceopen(i.c_invoice_id, 0) DESC LIMIT 30"
         )
         return [
             {
                 "productor": r[0],
                 "documento": r[1],
                 "fecha": str(r[2]) if r[2] else "",
-                "monto_total": float(r[3]) if r[3] else 0.0,
-                "moneda": r[4] if r[4] else "",
+                "monto_pendiente": float(r[3]) if r[3] else 0.0,
+                "monto_original": float(r[4]) if r[4] else 0.0,
+                "moneda": r[5] if r[5] else "",
             }
             for r in db.execute(q, params).fetchall()
         ]
@@ -2734,7 +2738,7 @@ def build_supply_purchases(
         # Totals
         totals_q = text(
             f"SELECT COUNT(DISTINCT i.c_invoice_id) AS total_ordenes, "
-            f"COALESCE(SUM(i.grandtotal), 0) AS total_monto "
+            f"COALESCE(SUM(i.totallines), 0) AS total_monto "
             f"FROM adempiere.c_invoice i WHERE {where}"
         )
         row = db.execute(totals_q, params).fetchone()
@@ -2747,7 +2751,7 @@ def build_supply_purchases(
         by_supplier_q = text(
             f"SELECT bp.name AS proveedor, "
             f"COUNT(DISTINCT i.c_invoice_id) AS facturas, "
-            f"COALESCE(SUM(i.grandtotal), 0) AS total "
+            f"COALESCE(SUM(i.totallines), 0) AS total "
             f"FROM adempiere.c_invoice i "
             f"JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id "
             f"WHERE {where} "
@@ -2762,7 +2766,7 @@ def build_supply_purchases(
         by_month_q = text(
             f"SELECT EXTRACT(MONTH FROM i.dateinvoiced)::int AS mes, "
             f"COUNT(DISTINCT i.c_invoice_id) AS facturas, "
-            f"COALESCE(SUM(i.grandtotal), 0) AS total "
+            f"COALESCE(SUM(i.totallines), 0) AS total "
             f"FROM adempiere.c_invoice i WHERE {where} "
             f"GROUP BY EXTRACT(MONTH FROM i.dateinvoiced) ORDER BY mes"
         )
@@ -3086,11 +3090,11 @@ def build_purchase_payment_status(
 
         q = text(
             f"SELECT "
-            f"CASE WHEN i.ispaid = 'Y' THEN 'Pagada' ELSE 'Pendiente' END AS estado_pago, "
+            f"CASE WHEN invoiceopen(i.c_invoice_id, 0) <= 0 THEN 'Pagada' ELSE 'Pendiente' END AS estado_pago, "
             f"COUNT(*) AS facturas, "
-            f"COALESCE(SUM(i.grandtotal), 0) AS total "
+            f"COALESCE(SUM(i.totallines), 0) AS total "
             f"FROM adempiere.c_invoice i WHERE {where} "
-            f"GROUP BY i.ispaid ORDER BY total DESC"
+            f"GROUP BY (CASE WHEN invoiceopen(i.c_invoice_id, 0) <= 0 THEN 'Pagada' ELSE 'Pendiente' END) ORDER BY total DESC"
         )
         rows = db.execute(q, params).fetchall()
         summary = [
@@ -3100,7 +3104,7 @@ def build_purchase_payment_status(
 
         # Overdue unpaid invoices
         overdue_conditions = conditions + [
-            "i.ispaid = 'N'",
+            "invoiceopen(i.c_invoice_id, 0) > 0",
             "i.dateinvoiced + COALESCE("
             "  (SELECT pt.netdays FROM adempiere.c_paymentterm pt "
             "   WHERE pt.c_paymentterm_id = i.c_paymentterm_id), 30"
@@ -3110,12 +3114,13 @@ def build_purchase_payment_status(
 
         overdue_q = text(
             f"SELECT bp.name AS proveedor, "
-            f"i.documentno, i.dateinvoiced, i.grandtotal, "
+            f"i.documentno, i.dateinvoiced, "
+            f"invoiceopen(i.c_invoice_id, 0) AS monto_pendiente, "
             f"CURRENT_DATE - i.dateinvoiced AS dias "
             f"FROM adempiere.c_invoice i "
             f"JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id "
             f"WHERE {overdue_where} "
-            f"ORDER BY i.grandtotal DESC LIMIT 20"
+            f"ORDER BY invoiceopen(i.c_invoice_id, 0) DESC LIMIT 20"
         )
         overdue = [
             {
