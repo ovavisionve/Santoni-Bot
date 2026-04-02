@@ -5,7 +5,7 @@
 # Ejecutar desde: /opt/santonibot/scripts/qa/
 # ══════════════════════════════════════════════════════════════
 
-set -euo pipefail
+set -uo pipefail
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -32,9 +32,9 @@ REPORT_FILE="/tmp/qa_agents_$(date +%Y%m%d_%H%M%S).log"
 log_result() {
     local status="$1" test_name="$2" detail="$3"
     case "$status" in
-        PASS) echo -e "  ${GREEN}✅ PASS${NC} | $test_name | $detail"; ((PASS++)) ;;
-        WARN) echo -e "  ${YELLOW}⚠️  WARN${NC} | $test_name | $detail"; ((WARN++)) ;;
-        FAIL) echo -e "  ${RED}❌ FAIL${NC} | $test_name | $detail"; ((FAIL++)) ;;
+        PASS) echo -e "  ${GREEN}✅ PASS${NC} | $test_name | $detail"; PASS=$((PASS + 1)) ;;
+        WARN) echo -e "  ${YELLOW}⚠️  WARN${NC} | $test_name | $detail"; WARN=$((WARN + 1)) ;;
+        FAIL) echo -e "  ${RED}❌ FAIL${NC} | $test_name | $detail"; FAIL=$((FAIL + 1)) ;;
     esac
     echo "$status | $test_name | $detail" >> "$REPORT_FILE"
 }
@@ -87,7 +87,7 @@ send_chat_message() {
     # Enviar request — ajustar endpoint según tu API
     # Intentar primero /api/chat, luego /api/messages
     response=$(curl -sf --max-time 60 -w "\n%{http_code}" \
-        -X POST "$API_BASE/api/chat" \
+        -X POST "$API_BASE/api/chat/" \
         -H "Content-Type: application/json" \
         -H "Authorization: Bearer $TOKEN" \
         -d "$payload" 2>/dev/null || \

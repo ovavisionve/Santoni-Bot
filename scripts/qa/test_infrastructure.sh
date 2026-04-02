@@ -4,7 +4,7 @@
 # Ejecutar desde: /opt/santonibot/scripts/qa/
 # ══════════════════════════════════════════════════════════════
 
-set -euo pipefail
+set -uo pipefail
 
 # Colores
 RED='\033[0;31m'
@@ -24,9 +24,9 @@ PROJECT_DIR="${PROJECT_DIR:-/opt/santonibot}"
 log_result() {
     local status="$1" test_name="$2" detail="$3"
     case "$status" in
-        PASS) echo -e "  ${GREEN}✅ PASS${NC} | $test_name | $detail"; ((PASS++)) ;;
-        WARN) echo -e "  ${YELLOW}⚠️  WARN${NC} | $test_name | $detail"; ((WARN++)) ;;
-        FAIL) echo -e "  ${RED}❌ FAIL${NC} | $test_name | $detail"; ((FAIL++)) ;;
+        PASS) echo -e "  ${GREEN}✅ PASS${NC} | $test_name | $detail"; PASS=$((PASS + 1)) ;;
+        WARN) echo -e "  ${YELLOW}⚠️  WARN${NC} | $test_name | $detail"; WARN=$((WARN + 1)) ;;
+        FAIL) echo -e "  ${RED}❌ FAIL${NC} | $test_name | $detail"; FAIL=$((FAIL + 1)) ;;
     esac
     RESULTS+="$status | $test_name | $detail\n"
 }

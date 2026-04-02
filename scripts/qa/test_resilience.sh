@@ -4,7 +4,7 @@
 # Ejecutar desde: /opt/santonibot/scripts/qa/
 # ══════════════════════════════════════════════════════════════
 
-set -euo pipefail
+set -uo pipefail
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -25,9 +25,9 @@ TEST_PASS="${TEST_PASS:-admin123}"
 log_result() {
     local status="$1" test_name="$2" detail="$3"
     case "$status" in
-        PASS) echo -e "  ${GREEN}✅ PASS${NC} | $test_name | $detail"; ((PASS++)) ;;
-        WARN) echo -e "  ${YELLOW}⚠️  WARN${NC} | $test_name | $detail"; ((WARN++)) ;;
-        FAIL) echo -e "  ${RED}❌ FAIL${NC} | $test_name | $detail"; ((FAIL++)) ;;
+        PASS) echo -e "  ${GREEN}✅ PASS${NC} | $test_name | $detail"; PASS=$((PASS + 1)) ;;
+        WARN) echo -e "  ${YELLOW}⚠️  WARN${NC} | $test_name | $detail"; WARN=$((WARN + 1)) ;;
+        FAIL) echo -e "  ${RED}❌ FAIL${NC} | $test_name | $detail"; FAIL=$((FAIL + 1)) ;;
     esac
 }
 
@@ -56,7 +56,7 @@ echo ""
 send_msg() {
     local msg="$1"
     curl -sf --max-time 30 -w "\n%{http_code}" \
-        -X POST "$API_BASE/api/chat" \
+        -X POST "$API_BASE/api/chat/" \
         -H "Content-Type: application/json" \
         -H "Authorization: Bearer $TOKEN" \
         -d "{\"message\":\"$msg\"}" 2>/dev/null || echo -e "\n000"
@@ -108,7 +108,7 @@ echo ""
 # ═══════════════════════════════════════════════════════
 echo -e "${BOLD}[5.3] Mensaje vacío${NC}"
 resp=$(curl -sf --max-time 15 -w "\n%{http_code}" \
-    -X POST "$API_BASE/api/chat" \
+    -X POST "$API_BASE/api/chat/" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $TOKEN" \
     -d '{"message":""}' 2>/dev/null || echo -e "\n000")
@@ -162,7 +162,7 @@ echo ""
 # ═══════════════════════════════════════════════════════
 echo -e "${BOLD}[5.6] Request sin token (debe rechazar)${NC}"
 resp=$(curl -sf --max-time 10 -w "\n%{http_code}" \
-    -X POST "$API_BASE/api/chat" \
+    -X POST "$API_BASE/api/chat/" \
     -H "Content-Type: application/json" \
     -d '{"message":"hola"}' 2>/dev/null || echo -e "\n000")
 code=$(get_code "$resp")
@@ -181,7 +181,7 @@ echo ""
 # ═══════════════════════════════════════════════════════
 echo -e "${BOLD}[5.7] Token inválido (debe rechazar)${NC}"
 resp=$(curl -sf --max-time 10 -w "\n%{http_code}" \
-    -X POST "$API_BASE/api/chat" \
+    -X POST "$API_BASE/api/chat/" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer invalid.token.here" \
     -d '{"message":"hola"}' 2>/dev/null || echo -e "\n000")
@@ -222,7 +222,7 @@ echo -e "${BOLD}[5.9] Rate limiting (31 requests rápidos)${NC}"
 rate_limited=false
 for i in $(seq 1 35); do
     code=$(curl -sf --max-time 5 -o /dev/null -w "%{http_code}" \
-        -X POST "$API_BASE/api/chat" \
+        -X POST "$API_BASE/api/chat/" \
         -H "Content-Type: application/json" \
         -H "Authorization: Bearer $TOKEN" \
         -d '{"message":"test rate limit"}' 2>/dev/null || echo "000")
@@ -248,7 +248,7 @@ RESULTS_DIR=$(mktemp -d)
 
 for i in $(seq 1 5); do
     (curl -sf --max-time 45 -w "\n%{http_code}" \
-        -X POST "$API_BASE/api/chat" \
+        -X POST "$API_BASE/api/chat/" \
         -H "Content-Type: application/json" \
         -H "Authorization: Bearer $TOKEN" \
         -d "{\"message\":\"¿Cuántos empleados activos hay? (test concurrencia $i)\"}" \

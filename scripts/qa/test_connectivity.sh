@@ -4,7 +4,7 @@
 # Ejecutar desde: /opt/santonibot/scripts/qa/
 # ══════════════════════════════════════════════════════════════
 
-set -euo pipefail
+set -uo pipefail
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -22,9 +22,9 @@ PROJECT_DIR="${PROJECT_DIR:-/opt/santonibot}"
 log_result() {
     local status="$1" test_name="$2" detail="$3"
     case "$status" in
-        PASS) echo -e "  ${GREEN}✅ PASS${NC} | $test_name | $detail"; ((PASS++)) ;;
-        WARN) echo -e "  ${YELLOW}⚠️  WARN${NC} | $test_name | $detail"; ((WARN++)) ;;
-        FAIL) echo -e "  ${RED}❌ FAIL${NC} | $test_name | $detail"; ((FAIL++)) ;;
+        PASS) echo -e "  ${GREEN}✅ PASS${NC} | $test_name | $detail"; PASS=$((PASS + 1)) ;;
+        WARN) echo -e "  ${YELLOW}⚠️  WARN${NC} | $test_name | $detail"; WARN=$((WARN + 1)) ;;
+        FAIL) echo -e "  ${RED}❌ FAIL${NC} | $test_name | $detail"; FAIL=$((FAIL + 1)) ;;
     esac
 }
 
@@ -53,10 +53,11 @@ run_in_backend() {
 # ─── TEST 2.1: Conexión a DB local PostgreSQL 16 ───
 echo -e "${BOLD}[2.1] DB local PostgreSQL 16${NC}"
 result=$(run_in_backend "
+from sqlalchemy import text
 from app.database import SessionLocal
 try:
     db = SessionLocal()
-    db.execute('SELECT 1')
+    db.execute(text('SELECT 1'))
     db.close()
     print('OK')
 except Exception as e:
@@ -89,10 +90,11 @@ fi
 
 # Verificar conexión SQL
 result=$(run_in_backend "
+from sqlalchemy import text
 from app.database import IdempiereSession
 try:
     db = IdempiereSession()
-    rows = db.execute('SELECT current_database(), current_user').fetchone()
+    rows = db.execute(text('SELECT current_database(), current_user')).fetchone()
     db.close()
     print(f'OK:db={rows[0]},user={rows[1]}')
 except Exception as e:
@@ -110,7 +112,7 @@ result=$(run_in_backend "
 from app.database import IdempiereSession
 try:
     db = IdempiereSession()
-    db.execute(\"CREATE TABLE _qa_test_readonly (id int)\")
+    from sqlalchemy import text as t; db.execute(t('CREATE TABLE _qa_test_readonly (id int)'))
     db.rollback()
     db.close()
     print('FAIL:pudo crear tabla — NO es read-only')
@@ -133,10 +135,11 @@ echo ""
 # ─── TEST 2.3: Schema adempiere local (datos históricos) ───
 echo -e "${BOLD}[2.3] Schema adempiere (datos históricos locales)${NC}"
 result=$(run_in_backend "
+from sqlalchemy import text
 from app.database import SessionLocal
 try:
     db = SessionLocal()
-    tables = db.execute(\"SELECT table_name FROM information_schema.tables WHERE table_schema = 'adempiere' LIMIT 20\").fetchall()
+    tables = db.execute(text(\"SELECT table_name FROM information_schema.tables WHERE table_schema = 'adempiere' LIMIT 20\")).fetchall()
     db.close()
     if tables:
         print(f'OK:{len(tables)} tablas encontradas')
@@ -163,7 +166,7 @@ for table in "${TABLES[@]}"; do
 from app.database import IdempiereSession
 try:
     db = IdempiereSession()
-    count = db.execute('SELECT COUNT(*) FROM $table').fetchone()[0]
+    from sqlalchemy import text as t; count = db.execute(t('SELECT COUNT(*) FROM $table')).fetchone()[0]
     db.close()
     print(f'OK:{count}')
 except Exception as e:
@@ -213,6 +216,7 @@ echo -e "${BOLD}[2.6] Latencia de queries simples${NC}"
 for db_label in "local" "idempiere"; do
     result=$(run_in_backend "
 import time
+from sqlalchemy import text
 from app.database import SessionLocal, IdempiereSession
 try:
     if '$db_label' == 'local':
@@ -220,7 +224,7 @@ try:
     else:
         db = IdempiereSession()
     start = time.time()
-    db.execute('SELECT 1')
+    db.execute(text('SELECT 1'))
     elapsed = time.time() - start
     db.close()
     print(f'{elapsed:.3f}')
