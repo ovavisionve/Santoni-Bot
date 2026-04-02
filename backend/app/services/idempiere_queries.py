@@ -832,8 +832,8 @@ def build_overdue_receivables(
     Returns summary totals by currency, top 20 clients by amount owed,
     and top 30 individual invoices by amount.
 
-    Uses client_zone CTE for zone info, and filters to recent invoices
-    (last 3 years) with amounts > 100 to exclude old residual balances.
+    Uses invoiceopen() to get the real open amount (grandtotal minus
+    allocated payments), so fully-paid invoices with ispaid='N' are excluded.
     """
     db = IdempiereSession()
     try:
@@ -851,15 +851,15 @@ def build_overdue_receivables(
             org_params["salesrep_id"] = salesrep_id
 
         base_where = (
-            "i.issotrx = 'Y' AND i.docstatus IN ('CO', 'CL') AND i.ispaid = 'N' "
+            "i.issotrx = 'Y' AND i.docstatus IN ('CO', 'CL') "
             "AND i.isactive = 'Y' "
             "AND dt.docbasetype = 'ARI' "
             "AND i.dateinvoiced >= (CURRENT_DATE - INTERVAL '3 years') "
-            "AND i.grandtotal > 100 "
             f"{org_clause}"
             f"{salesrep_clause}"
             "AND (i.dateinvoiced + CASE WHEN COALESCE(pterm.netdays, 0) = 0 "
             "THEN 30 ELSE pterm.netdays END) < CURRENT_DATE "
+            "AND invoiceopen(i.c_invoice_id, 0) > 0 "
         )
 
         base_joins = (
@@ -877,7 +877,7 @@ def build_overdue_receivables(
         totals_q = text(
             f"SELECT {cur_label} AS moneda, "
             f"COUNT(*) AS facturas, "
-            f"COALESCE(SUM(i.grandtotal), 0) AS total_vencido "
+            f"COALESCE(SUM(invoiceopen(i.c_invoice_id, 0)), 0) AS total_vencido "
             f"{base_joins}"
             f"WHERE {base_where} "
             f"GROUP BY {cur_label} ORDER BY total_vencido DESC"
@@ -892,7 +892,7 @@ def build_overdue_receivables(
             f"SELECT bp.name AS cliente, "
             f"{cur_label} AS moneda, "
             f"COUNT(*) AS facturas, "
-            f"COALESCE(SUM(i.grandtotal), 0) AS total_vencido, "
+            f"COALESCE(SUM(invoiceopen(i.c_invoice_id, 0)), 0) AS total_vencido, "
             f"MAX(CURRENT_DATE - (i.dateinvoiced + CASE WHEN COALESCE(pterm.netdays, 0) = 0 "
             f"THEN 30 ELSE pterm.netdays END)) AS max_dias_vencido "
             f"{base_joins}"
@@ -907,7 +907,7 @@ def build_overdue_receivables(
             for r in db.execute(top_clients_q, org_params).fetchall()
         ]
 
-        # 3. Top 30 individual invoices by amount
+        # 3. Top 30 individual invoices by open amount
         zone_cte = (
             "WITH client_zone AS ("
             "SELECT DISTINCT ON (bpl.c_bpartner_id) "
@@ -924,7 +924,9 @@ def build_overdue_receivables(
             f"COALESCE(sr.name, '') AS vendedor, "
             f"COALESCE(cz.zona_name, '') AS zona, "
             f"{cur_label} AS moneda, "
-            f"i.grandtotal AS monto_total, i.dateinvoiced AS fecha, "
+            f"invoiceopen(i.c_invoice_id, 0) AS monto_pendiente, "
+            f"i.grandtotal AS monto_original, "
+            f"i.dateinvoiced AS fecha, "
             f"(i.dateinvoiced + CASE WHEN COALESCE(pterm.netdays, 0) = 0 "
             f"THEN 30 ELSE pterm.netdays END)::date AS fecha_vencimiento, "
             f"CURRENT_DATE - (i.dateinvoiced + CASE WHEN COALESCE(pterm.netdays, 0) = 0 "
@@ -932,16 +934,18 @@ def build_overdue_receivables(
             f"{base_joins}"
             f"LEFT JOIN client_zone cz ON bp.c_bpartner_id = cz.c_bpartner_id "
             f"WHERE {base_where} "
-            f"ORDER BY i.grandtotal DESC "
+            f"ORDER BY invoiceopen(i.c_invoice_id, 0) DESC "
             f"LIMIT 30"
         )
         top_invoices = [
             {
                 "numero_factura": r[0], "cliente": r[1], "vendedor": r[2],
-                "zona": r[3], "moneda": r[4], "monto_total": float(r[5]),
-                "fecha": r[6].isoformat() if r[6] else None,
-                "fecha_vencimiento": r[7].isoformat() if r[7] else None,
-                "dias_vencido": r[8],
+                "zona": r[3], "moneda": r[4],
+                "monto_pendiente": float(r[5]),
+                "monto_original": float(r[6]),
+                "fecha": r[7].isoformat() if r[7] else None,
+                "fecha_vencimiento": r[8].isoformat() if r[8] else None,
+                "dias_vencido": r[9],
             }
             for r in db.execute(detail_q, org_params).fetchall()
         ]
