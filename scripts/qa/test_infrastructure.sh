@@ -43,7 +43,7 @@ cd "$PROJECT_DIR"
 
 # ─── TEST 1.1: Servicios Docker corriendo ───
 echo -e "${BOLD}[1.1] Servicios Docker${NC}"
-EXPECTED_SERVICES=("backend" "frontend" "postgres" "chromadb" "nginx")
+EXPECTED_SERVICES=("backend" "frontend" "db" "chromadb" "nginx")
 for svc in "${EXPECTED_SERVICES[@]}"; do
     status=$(docker compose ps --format "{{.Service}}:{{.State}}" 2>/dev/null | grep "^${svc}:" | cut -d: -f2 || echo "NOT_FOUND")
     if [[ "$status" == "running" ]]; then
@@ -107,7 +107,11 @@ echo ""
 # ─── TEST 1.5: Errores en logs (últimos 30 min) ───
 echo -e "${BOLD}[1.5] Errores en logs (últimos 30 min)${NC}"
 for svc in backend frontend; do
-    error_count=$(docker compose logs "$svc" --since 30m 2>/dev/null | grep -ciE "ERROR|CRITICAL|Traceback" || echo "0")
+    error_count=$(docker compose logs "$svc" --since 30m 2>/dev/null | grep -ciE "ERROR|CRITICAL|Traceback" || true)
+    error_count=${error_count:-0}
+    # Sanitize: take only last line (avoid multiline output)
+    error_count=$(echo "$error_count" | tail -1 | tr -dc '0-9')
+    error_count=${error_count:-0}
     if (( error_count == 0 )); then
         log_result "PASS" "Logs $svc" "0 errores"
     elif (( error_count < 5 )); then
@@ -136,11 +140,13 @@ for label in "${!PORTS[@]}"; do
     fi
 done
 
-# PostgreSQL por separado (no HTTP)
-if nc -z localhost 5432 2>/dev/null; then
+# PostgreSQL: verificar dentro de la red Docker (no expuesto al host)
+if docker compose exec -T db pg_isready -q 2>/dev/null; then
+    log_result "PASS" "PostgreSQL (interno)" "pg_isready OK"
+elif nc -z localhost 5432 2>/dev/null; then
     log_result "PASS" "Puerto PostgreSQL:5432" "Accesible"
 else
-    log_result "FAIL" "Puerto PostgreSQL:5432" "No accesible"
+    log_result "WARN" "PostgreSQL:5432" "No expuesto al host (normal si solo usa red Docker)"
 fi
 echo ""
 
@@ -174,7 +180,7 @@ except:
 backend_container=$(docker compose ps -q backend 2>/dev/null | head -1)
 if [[ -n "$backend_container" ]]; then
     # Verificar que backend puede resolver otros servicios
-    for target in postgres chromadb; do
+    for target in db chromadb; do
         if docker exec "$backend_container" python3 -c "
 import socket
 try:

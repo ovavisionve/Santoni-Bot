@@ -19,6 +19,11 @@ FAIL=0
 
 PROJECT_DIR="${PROJECT_DIR:-/opt/santonibot}"
 API_BASE="${API_BASE:-http://localhost:8000}"
+# Credenciales: configurar via env vars o archivo .env.qa
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [[ -f "$SCRIPT_DIR/.env.qa" ]]; then
+    set -a; source "$SCRIPT_DIR/.env.qa"; set +a
+fi
 TEST_USER="${TEST_USER:-admin}"
 TEST_PASS="${TEST_PASS:-admin123}"
 

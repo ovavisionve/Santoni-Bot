@@ -22,7 +22,12 @@ PROJECT_DIR="${PROJECT_DIR:-/opt/santonibot}"
 # URL base del backend (ajustar si cambia el puerto o host)
 API_BASE="${API_BASE:-http://localhost:8000}"
 
-# ─── Credenciales de test (ajustar según usuario de prueba) ───
+# ─── Credenciales de test ───
+# Configurar via env vars o archivo .env.qa en scripts/qa/
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [[ -f "$SCRIPT_DIR/.env.qa" ]]; then
+    set -a; source "$SCRIPT_DIR/.env.qa"; set +a
+fi
 TEST_USER="${TEST_USER:-admin}"
 TEST_PASS="${TEST_PASS:-admin123}"
 
