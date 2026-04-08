@@ -175,13 +175,29 @@ def parse_number(s: str) -> float | None:
         return None
 
 
-def extract_all_numbers(text: str) -> list[float]:
+def extract_all_numbers(text: str, exclude_years: bool = True) -> list[float]:
+    """
+    Extrae todos los números parseables del texto.
+    Si exclude_years=True, filtra enteros 1900-2100 (probablemente años,
+    no datos: el bot menciona "2026" en preguntas/respuestas constantemente).
+    """
     nums = []
     for m in _NUM_RE.finditer(text):
         n = parse_number(m.group(0))
-        if n is not None:
-            nums.append(n)
+        if n is None:
+            continue
+        if exclude_years and 1900 <= n <= 2100 and n == int(n):
+            continue
+        nums.append(n)
     return nums
+
+
+def _snippet(text: str, max_len: int = 280) -> str:
+    """Snippet de una sola línea para mostrar en el reporte."""
+    flat = re.sub(r"\s+", " ", text).strip()
+    if len(flat) <= max_len:
+        return flat
+    return flat[:max_len] + "…"
 
 
 def parse_markdown_tables(md: str) -> list[list[dict[str, str]]]:
@@ -231,33 +247,48 @@ def normalize_label(s: str) -> str:
 def compare_scalar_exact(
     ground_truth: float, bot_response: str, tolerancia_pct: float = 0.005,
 ) -> tuple[bool, str]:
-    nums = extract_all_numbers(bot_response)
+    # Si el ground truth ES un año, no filtrar años de la respuesta
+    gt_is_year = 1900 <= ground_truth <= 2100 and ground_truth == int(ground_truth)
+    nums = extract_all_numbers(bot_response, exclude_years=not gt_is_year)
     if not nums:
-        return False, f"Ground truth = {ground_truth:,.2f} pero la respuesta del bot no contiene números parseables"
+        return False, (
+            f"Ground truth = {ground_truth:,.2f} pero la respuesta del bot no contiene "
+            f"números parseables (excluyendo años). Snippet: {_snippet(bot_response)}"
+        )
     # Buscar un número en la respuesta que haga match con tolerancia
     threshold = abs(ground_truth) * tolerancia_pct if ground_truth != 0 else 1e-9
     for n in nums:
         if abs(n - ground_truth) <= threshold:
             return True, f"Match: esperado {ground_truth:,.2f}, encontrado {n:,.2f} (tolerancia {tolerancia_pct*100:.2f}%)"
-    # Mostrar el más cercano
-    closest = min(nums, key=lambda x: abs(x - ground_truth))
-    diff_pct = abs(closest - ground_truth) / abs(ground_truth) * 100 if ground_truth else float("inf")
+    # Mostrar top-3 más cercanos
+    sorted_nums = sorted(set(nums), key=lambda x: abs(x - ground_truth))
+    top3 = sorted_nums[:3]
+    top3_str = ", ".join(f"{n:,.2f}" for n in top3)
     return False, (
-        f"Esperado {ground_truth:,.2f}, más cercano en respuesta {closest:,.2f} "
-        f"(diff {diff_pct:.2f}%, tolerancia {tolerancia_pct*100:.2f}%)"
+        f"Esperado {ground_truth:,.2f} (tol {tolerancia_pct*100:.2f}%). "
+        f"Top-3 candidatos en respuesta: [{top3_str}]. "
+        f"Snippet: {_snippet(bot_response)}"
     )
 
 
 def compare_count_exact(ground_truth: int, bot_response: str) -> tuple[bool, str]:
-    nums = extract_all_numbers(bot_response)
-    if ground_truth in [int(n) for n in nums if n == int(n)]:
+    gt_is_year = 1900 <= ground_truth <= 2100
+    nums = extract_all_numbers(bot_response, exclude_years=not gt_is_year)
+    int_nums = sorted({int(n) for n in nums if n == int(n) and abs(n) < 1e12})
+    if ground_truth in int_nums:
         return True, f"Match exacto: {ground_truth}"
-    # Encontrar el entero más cercano
-    int_nums = [int(n) for n in nums if n == int(n) and abs(n) < 1e12]
     if not int_nums:
-        return False, f"Esperado conteo = {ground_truth}, sin enteros en respuesta"
-    closest = min(int_nums, key=lambda x: abs(x - ground_truth))
-    return False, f"Esperado {ground_truth}, más cercano en respuesta {closest} (diff {closest - ground_truth:+d})"
+        return False, (
+            f"Esperado conteo = {ground_truth}, sin enteros en respuesta. "
+            f"Snippet: {_snippet(bot_response)}"
+        )
+    sorted_nums = sorted(int_nums, key=lambda x: abs(x - ground_truth))
+    top3 = sorted_nums[:3]
+    top3_str = ", ".join(str(n) for n in top3)
+    return False, (
+        f"Esperado {ground_truth}. Top-3 enteros candidatos: [{top3_str}]. "
+        f"Snippet: {_snippet(bot_response)}"
+    )
 
 
 def compare_ordered_table(
@@ -308,8 +339,12 @@ def compare_ordered_table(
             if col == label_col:
                 continue
             n = parse_number(val)
-            if n is not None:
-                nums_in_row.append(n)
+            if n is None:
+                continue
+            # Filtrar años (1900-2100) de las celdas, salvo que la columna parezca ser de año
+            if 1900 <= n <= 2100 and n == int(n) and "año" not in col.lower() and "year" not in col.lower():
+                continue
+            nums_in_row.append(n)
         bot_ordered.append((label, nums_in_row))
 
     # Validar
