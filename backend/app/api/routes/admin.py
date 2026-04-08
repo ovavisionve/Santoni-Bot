@@ -914,6 +914,155 @@ def _diagnose_low_confidence(
     return "Confianza baja - revisar manualmente"
 
 
+@router.get("/confidence-report/trends")
+def get_confidence_trends(
+    days: int = Query(30, ge=1, le=180),
+    admin: User = Depends(require_supervisor_or_admin),
+    db: Session = Depends(get_db),
+):
+    """Confidence score trends over time.
+
+    Shows daily averages, low-confidence counts, and top failure causes
+    to track if the system is improving or degrading.
+    """
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+
+    # --- Daily confidence averages ---
+    daily_stats = (
+        db.query(
+            func.date(Message.created_at).label("day"),
+            func.avg(Message.confidence_score).label("avg_score"),
+            func.min(Message.confidence_score).label("min_score"),
+            func.count(Message.id).label("total"),
+            func.count(
+                func.nullif(Message.confidence_score < 0.5, False)
+            ).label("low_count"),
+        )
+        .filter(
+            Message.role == "assistant",
+            Message.confidence_score.isnot(None),
+            Message.created_at >= since,
+        )
+        .group_by(func.date(Message.created_at))
+        .order_by(func.date(Message.created_at))
+        .all()
+    )
+
+    # --- Per-agent trends (avg score per agent in the period) ---
+    agent_trends = (
+        db.query(
+            Message.agent_used,
+            func.avg(Message.confidence_score).label("avg_score"),
+            func.count(Message.id).label("total"),
+            func.count(
+                func.nullif(Message.confidence_score < 0.5, False)
+            ).label("low_count"),
+        )
+        .filter(
+            Message.role == "assistant",
+            Message.confidence_score.isnot(None),
+            Message.created_at >= since,
+        )
+        .group_by(Message.agent_used)
+        .order_by(func.avg(Message.confidence_score))
+        .all()
+    )
+
+    # --- Diagnosis distribution for low-confidence ---
+    low_msgs = (
+        db.query(Message.agent_used, Message.confidence_score, Message.metadata_json)
+        .filter(
+            Message.role == "assistant",
+            Message.confidence_score.isnot(None),
+            Message.confidence_score < 0.5,
+            Message.created_at >= since,
+        )
+        .all()
+    )
+
+    causa_counts: dict[str, int] = {}
+    for m in low_msgs:
+        meta = {}
+        if m.metadata_json:
+            try:
+                meta = json.loads(m.metadata_json)
+            except (json.JSONDecodeError, TypeError):
+                pass
+        breakdown = meta.get("score_breakdown", {})
+        causa = _diagnose_low_confidence(m.confidence_score, m.agent_used, breakdown, meta)
+        causa_counts[causa] = causa_counts.get(causa, 0) + 1
+
+    # Sort causes by frequency
+    causas_ordenadas = sorted(causa_counts.items(), key=lambda x: x[1], reverse=True)
+
+    # --- Verdict: dataset vs threshold ---
+    total_low = len(low_msgs)
+    dataset_causes = sum(
+        c for label, c in causa_counts.items()
+        if "keywords" in label.lower() or "fallback" in label.lower() or "ventas" in label.lower()
+    )
+    data_causes = sum(
+        c for label, c in causa_counts.items()
+        if "datos" in label.lower() or "data" in label.lower()
+    )
+
+    if total_low == 0:
+        veredicto = "Sin interacciones de baja confianza en el período - sistema funcionando bien"
+    elif dataset_causes > data_causes and dataset_causes > total_low * 0.5:
+        veredicto = (
+            f"PROBLEMA DE DATASET: {dataset_causes}/{total_low} fallos "
+            f"({round(dataset_causes/total_low*100)}%) son por keywords no reconocidos. "
+            f"Se recomienda ampliar el dataset de entrenamiento con las preguntas que fallan."
+        )
+    elif data_causes > dataset_causes and data_causes > total_low * 0.5:
+        veredicto = (
+            f"PROBLEMA DE DATOS: {data_causes}/{total_low} fallos "
+            f"({round(data_causes/total_low*100)}%) son porque iDempiere no tiene datos "
+            f"para el período consultado. El clasificador funciona bien."
+        )
+    else:
+        veredicto = (
+            f"MIXTO: {dataset_causes} fallos por dataset, {data_causes} por datos, "
+            f"{total_low - dataset_causes - data_causes} por otras causas. "
+            f"Revisar causas detalladas abajo."
+        )
+
+    return {
+        "periodo_dias": days,
+        "veredicto": veredicto,
+        "tendencia_diaria": [
+            {
+                "fecha": str(row.day),
+                "score_promedio": round(float(row.avg_score or 0), 2),
+                "score_minimo": round(float(row.min_score or 0), 2),
+                "total_interacciones": row.total,
+                "baja_confianza": row.low_count,
+            }
+            for row in daily_stats
+        ],
+        "por_agente": [
+            {
+                "agente": row.agent_used or "unknown",
+                "score_promedio": round(float(row.avg_score or 0), 2),
+                "total": row.total,
+                "baja_confianza": row.low_count,
+            }
+            for row in agent_trends
+        ],
+        "causas_de_fallo": [
+            {"causa": label, "cantidad": count, "porcentaje": round(count / total_low * 100, 1)}
+            for label, count in causas_ordenadas
+        ] if total_low > 0 else [],
+        "totales": {
+            "interacciones_periodo": sum(r.total for r in daily_stats),
+            "baja_confianza_periodo": total_low,
+            "tasa_fallo_pct": round(
+                total_low / sum(r.total for r in daily_stats) * 100, 1
+            ) if daily_stats and sum(r.total for r in daily_stats) > 0 else 0,
+        },
+    }
+
+
 # ──────────────────────────────────────────────────────────────
 # iDempiere Role Sync (maps iDempiere roles → bot permissions)
 # ──────────────────────────────────────────────────────────────

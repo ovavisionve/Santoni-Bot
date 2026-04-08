@@ -5,6 +5,12 @@
 --
 -- Cada query corresponde a una pregunta del test_admin_conversation_live.py
 -- Si devuelve filas → el bot SÍ tiene acceso a esa data
+--
+-- Alineación con idempiere_queries.py (Abr 2026):
+--   * docstatus IN ('CO', 'CL')  — incluye Completed y Closed (facturas pagadas
+--     pasan a CL en iDempiere)
+--   * Ventas: usa i.totallines (sin IVA) en vez de i.grandtotal
+--   * CxC/CxP: usa (i.grandtotal - abonos_parciales) — patrón _OPEN_EXPR
 -- ============================================================================
 
 -- ═══════════════════════════════════════════════════════════════════════
@@ -29,14 +35,14 @@ SELECT bp.name AS cliente,
        CASE WHEN i.c_currency_id = 205 THEN 'Bs.'
             WHEN i.c_currency_id IN (100,1000000,1000003,1000006,1000008,1000009,1000011,1000013,1000017) THEN 'USD'
             ELSE 'Otro' END AS moneda,
-       SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal
-                WHEN dt.docbasetype = 'ARC' THEN -i.grandtotal ELSE 0 END) AS total_neto,
+       SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.totallines
+                WHEN dt.docbasetype = 'ARC' THEN -i.totallines ELSE 0 END) AS total_neto,
        COUNT(*) AS facturas
 FROM adempiere.c_invoice i
 JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id
 LEFT JOIN client_zone cz ON bp.c_bpartner_id = cz.c_bpartner_id
 JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id
-WHERE i.issotrx = 'Y' AND i.docstatus = 'CO' AND i.isactive = 'Y'
+WHERE i.issotrx = 'Y' AND i.docstatus IN ('CO', 'CL') AND i.isactive = 'Y'
   AND EXTRACT(MONTH FROM i.dateinvoiced) = 3
   AND EXTRACT(YEAR FROM i.dateinvoiced) = 2026
 GROUP BY bp.name, cz.zona_name, moneda
@@ -69,14 +75,14 @@ SELECT bp.name AS cliente,
        CASE WHEN i.c_currency_id = 205 THEN 'Bs.'
             WHEN i.c_currency_id IN (100,1000000,1000003,1000006,1000008,1000009,1000011,1000013,1000017) THEN 'USD'
             ELSE 'Otro' END AS moneda,
-       SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal
-                WHEN dt.docbasetype = 'ARC' THEN -i.grandtotal ELSE 0 END) AS total_neto,
+       SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.totallines
+                WHEN dt.docbasetype = 'ARC' THEN -i.totallines ELSE 0 END) AS total_neto,
        COUNT(*) AS facturas
 FROM adempiere.c_invoice i
 JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id
 LEFT JOIN client_zone cz ON bp.c_bpartner_id = cz.c_bpartner_id
 JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id
-WHERE i.issotrx = 'Y' AND i.docstatus = 'CO' AND i.isactive = 'Y'
+WHERE i.issotrx = 'Y' AND i.docstatus IN ('CO', 'CL') AND i.isactive = 'Y'
   AND EXTRACT(MONTH FROM i.dateinvoiced) = 2
   AND EXTRACT(YEAR FROM i.dateinvoiced) = 2026
 GROUP BY bp.name, cz.zona_name, moneda
@@ -99,13 +105,13 @@ WITH client_zone AS (
 )
 SELECT COALESCE(cz.zona_name, 'Sin Zona') AS zona,
        SUM(CASE WHEN dt.docbasetype = 'ARI' THEN 1 ELSE 0 END) AS facturas,
-       COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal
-                         WHEN dt.docbasetype = 'ARC' THEN -i.grandtotal ELSE 0 END), 0) AS total_neto
+       COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.totallines
+                         WHEN dt.docbasetype = 'ARC' THEN -i.totallines ELSE 0 END), 0) AS total_neto
 FROM adempiere.c_invoice i
 LEFT JOIN adempiere.c_bpartner sr ON i.salesrep_id = sr.c_bpartner_id
 LEFT JOIN client_zone cz ON i.c_bpartner_id = cz.c_bpartner_id
 JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id
-WHERE i.issotrx = 'Y' AND i.docstatus = 'CO' AND i.isactive = 'Y'
+WHERE i.issotrx = 'Y' AND i.docstatus IN ('CO', 'CL') AND i.isactive = 'Y'
   AND EXTRACT(MONTH FROM i.dateinvoiced) = 1
   AND EXTRACT(YEAR FROM i.dateinvoiced) = 2026
 GROUP BY cz.zona_name
@@ -125,10 +131,10 @@ SELECT '=== PREGUNTA 5: Follow-up ranking por zona (hereda enero 2026) ===' AS p
 SELECT '=== PREGUNTA 6: Facturación en USD febrero 2026 ===' AS pregunta;
 
 SELECT COUNT(*) AS total_facturas,
-       COALESCE(SUM(i.grandtotal), 0) AS total_facturado_usd
+       COALESCE(SUM(i.totallines), 0) AS total_facturado_usd
 FROM adempiere.c_invoice i
 JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id
-WHERE i.issotrx = 'Y' AND i.docstatus = 'CO' AND i.isactive = 'Y'
+WHERE i.issotrx = 'Y' AND i.docstatus IN ('CO', 'CL') AND i.isactive = 'Y'
   AND dt.docbasetype = 'ARI'
   AND i.c_currency_id IN (100,1000000,1000003,1000006,1000008,1000009,1000011,1000013,1000017)
   AND EXTRACT(MONTH FROM i.dateinvoiced) = 2
@@ -153,14 +159,14 @@ SELECT bp.name AS cliente,
        CASE WHEN i.c_currency_id = 205 THEN 'Bs.'
             WHEN i.c_currency_id IN (100,1000000,1000003,1000006,1000008,1000009,1000011,1000013,1000017) THEN 'USD'
             ELSE 'Otro' END AS moneda,
-       SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal
-                WHEN dt.docbasetype = 'ARC' THEN -i.grandtotal ELSE 0 END) AS total_neto,
+       SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.totallines
+                WHEN dt.docbasetype = 'ARC' THEN -i.totallines ELSE 0 END) AS total_neto,
        COUNT(*) AS facturas
 FROM adempiere.c_invoice i
 JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id
 LEFT JOIN client_zone cz ON bp.c_bpartner_id = cz.c_bpartner_id
 JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id
-WHERE i.issotrx = 'Y' AND i.docstatus = 'CO' AND i.isactive = 'Y'
+WHERE i.issotrx = 'Y' AND i.docstatus IN ('CO', 'CL') AND i.isactive = 'Y'
   AND EXTRACT(YEAR FROM i.dateinvoiced) = 2025
 GROUP BY bp.name, cz.zona_name, moneda
 ORDER BY total_neto DESC
@@ -182,14 +188,14 @@ WITH client_zone AS (
 )
 SELECT bp.name AS cliente,
        COALESCE(cz.zona_name, 'Sin Zona') AS zona,
-       SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal
-                WHEN dt.docbasetype = 'ARC' THEN -i.grandtotal ELSE 0 END) AS total_neto,
+       SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.totallines
+                WHEN dt.docbasetype = 'ARC' THEN -i.totallines ELSE 0 END) AS total_neto,
        COUNT(*) AS facturas
 FROM adempiere.c_invoice i
 JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id
 LEFT JOIN client_zone cz ON bp.c_bpartner_id = cz.c_bpartner_id
 JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id
-WHERE i.issotrx = 'Y' AND i.docstatus = 'CO' AND i.isactive = 'Y'
+WHERE i.issotrx = 'Y' AND i.docstatus IN ('CO', 'CL') AND i.isactive = 'Y'
   AND EXTRACT(MONTH FROM i.dateinvoiced) = 2
   AND EXTRACT(YEAR FROM i.dateinvoiced) = 2026
   AND i.ad_org_id IN (SELECT o.ad_org_id FROM adempiere.ad_org o WHERE o.name ILIKE '%inpromaiz%')
@@ -213,12 +219,12 @@ WITH client_zone AS (
 )
 SELECT COALESCE(cz.zona_name, 'Sin Zona') AS zona,
        SUM(CASE WHEN dt.docbasetype = 'ARI' THEN 1 ELSE 0 END) AS facturas,
-       COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal
-                         WHEN dt.docbasetype = 'ARC' THEN -i.grandtotal ELSE 0 END), 0) AS total_neto
+       COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.totallines
+                         WHEN dt.docbasetype = 'ARC' THEN -i.totallines ELSE 0 END), 0) AS total_neto
 FROM adempiere.c_invoice i
 LEFT JOIN client_zone cz ON i.c_bpartner_id = cz.c_bpartner_id
 JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id
-WHERE i.issotrx = 'Y' AND i.docstatus = 'CO' AND i.isactive = 'Y'
+WHERE i.issotrx = 'Y' AND i.docstatus IN ('CO', 'CL') AND i.isactive = 'Y'
   AND EXTRACT(MONTH FROM i.dateinvoiced) = 2
   AND EXTRACT(YEAR FROM i.dateinvoiced) = 2026
   AND i.ad_org_id IN (SELECT o.ad_org_id FROM adempiere.ad_org o WHERE o.name ILIKE '%inpromaiz%')
@@ -233,12 +239,12 @@ SELECT '=== PREGUNTA 10: Top 10 vendedores/distribuidores InproMaiz ===' AS preg
 
 SELECT COALESCE(sr.name, 'Sin Distribuidor') AS distribuidor,
        SUM(CASE WHEN dt.docbasetype = 'ARI' THEN 1 ELSE 0 END) AS facturas,
-       COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal
-                         WHEN dt.docbasetype = 'ARC' THEN -i.grandtotal ELSE 0 END), 0) AS total_neto
+       COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.totallines
+                         WHEN dt.docbasetype = 'ARC' THEN -i.totallines ELSE 0 END), 0) AS total_neto
 FROM adempiere.c_invoice i
 LEFT JOIN adempiere.c_bpartner sr ON i.salesrep_id = sr.c_bpartner_id
 JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id
-WHERE i.issotrx = 'Y' AND i.docstatus = 'CO' AND i.isactive = 'Y'
+WHERE i.issotrx = 'Y' AND i.docstatus IN ('CO', 'CL') AND i.isactive = 'Y'
   AND EXTRACT(YEAR FROM i.dateinvoiced) = 2026
   AND i.ad_org_id IN (SELECT o.ad_org_id FROM adempiere.ad_org o WHERE o.name ILIKE '%inpromaiz%')
 GROUP BY sr.name
@@ -261,14 +267,14 @@ WITH client_zone AS (
 )
 SELECT bp.name AS cliente,
        COALESCE(cz.zona_name, 'Sin Zona') AS zona,
-       SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal
-                WHEN dt.docbasetype = 'ARC' THEN -i.grandtotal ELSE 0 END) AS total_neto,
+       SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.totallines
+                WHEN dt.docbasetype = 'ARC' THEN -i.totallines ELSE 0 END) AS total_neto,
        COUNT(*) AS facturas
 FROM adempiere.c_invoice i
 JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id
 LEFT JOIN client_zone cz ON bp.c_bpartner_id = cz.c_bpartner_id
 JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id
-WHERE i.issotrx = 'Y' AND i.docstatus = 'CO' AND i.isactive = 'Y'
+WHERE i.issotrx = 'Y' AND i.docstatus IN ('CO', 'CL') AND i.isactive = 'Y'
   AND EXTRACT(MONTH FROM i.dateinvoiced) = 1
   AND EXTRACT(YEAR FROM i.dateinvoiced) = 2026
   AND i.ad_org_id IN (SELECT o.ad_org_id FROM adempiere.ad_org o WHERE o.name ILIKE '%inpromaiz%')
@@ -365,7 +371,7 @@ SELECT hc.name AS concepto,
 FROM adempiere.hr_process hp
 JOIN adempiere.hr_movement hm ON hp.hr_process_id = hm.hr_process_id
 JOIN adempiere.hr_concept hc ON hm.hr_concept_id = hc.hr_concept_id
-WHERE hp.docstatus = 'CO' AND hp.isactive = 'Y'
+WHERE hp.docstatus IN ('CO', 'CL') AND hp.isactive = 'Y'
   AND EXTRACT(MONTH FROM hp.dateacct) = 9
   AND EXTRACT(YEAR FROM hp.dateacct) = 2025
   AND (LOWER(hc.name) LIKE '%ausent%' OR LOWER(hc.name) LIKE '%inasist%'
@@ -476,14 +482,24 @@ LIMIT 5;
 -- ──────────────────────────────────────────────────────────────────────
 SELECT '=== PREGUNTA 21: Cuentas por cobrar vencidas ===' AS pregunta;
 
+-- NOTA: saldo pendiente real = grandtotal - SUM(abonos parciales).
+-- El bot usa el mismo patrón (ver _OPEN_EXPR en idempiere_queries.py).
 SELECT CASE WHEN i.c_currency_id = 205 THEN 'Bs.'
             WHEN i.c_currency_id IN (100,1000000,1000003,1000006,1000008,1000009,1000011,1000013,1000017) THEN 'USD'
             ELSE 'Otro' END AS moneda,
        COUNT(*) AS facturas_vencidas,
-       COALESCE(SUM(i.grandtotal), 0) AS total_vencido
+       COALESCE(SUM(i.grandtotal - COALESCE(alloc.paid, 0)), 0) AS total_vencido
 FROM adempiere.c_invoice i
+LEFT JOIN (
+    SELECT al.c_invoice_id,
+           SUM(COALESCE(al.amount, 0) + COALESCE(al.discountamt, 0) + COALESCE(al.writeoffamt, 0)) AS paid
+    FROM adempiere.c_allocationline al
+    JOIN adempiere.c_allocationhdr ah ON al.c_allocationhdr_id = ah.c_allocationhdr_id
+    WHERE ah.isactive = 'Y' AND ah.docstatus IN ('CO', 'CL')
+    GROUP BY al.c_invoice_id
+) alloc ON alloc.c_invoice_id = i.c_invoice_id
 LEFT JOIN adempiere.c_paymentterm pt ON i.c_paymentterm_id = pt.c_paymentterm_id
-WHERE i.issotrx = 'Y' AND i.docstatus = 'CO' AND i.ispaid = 'N' AND i.isactive = 'Y'
+WHERE i.issotrx = 'Y' AND i.docstatus IN ('CO', 'CL') AND i.ispaid = 'N' AND i.isactive = 'Y'
   AND (i.dateinvoiced + CASE WHEN COALESCE(pt.netdays, 0) = 0 THEN 30 ELSE pt.netdays END) < CURRENT_DATE
 GROUP BY moneda;
 
@@ -497,9 +513,17 @@ SELECT CASE WHEN i.c_currency_id = 205 THEN 'Bs.'
             WHEN i.c_currency_id IN (100,1000000,1000003,1000006,1000008,1000009,1000011,1000013,1000017) THEN 'USD'
             ELSE 'Otro' END AS moneda,
        COUNT(*) AS facturas_pendientes,
-       COALESCE(SUM(i.grandtotal), 0) AS total_por_pagar
+       COALESCE(SUM(i.grandtotal - COALESCE(alloc.paid, 0)), 0) AS total_por_pagar
 FROM adempiere.c_invoice i
-WHERE i.issotrx = 'N' AND i.docstatus = 'CO' AND i.ispaid = 'N' AND i.isactive = 'Y'
+LEFT JOIN (
+    SELECT al.c_invoice_id,
+           SUM(COALESCE(al.amount, 0) + COALESCE(al.discountamt, 0) + COALESCE(al.writeoffamt, 0)) AS paid
+    FROM adempiere.c_allocationline al
+    JOIN adempiere.c_allocationhdr ah ON al.c_allocationhdr_id = ah.c_allocationhdr_id
+    WHERE ah.isactive = 'Y' AND ah.docstatus IN ('CO', 'CL')
+    GROUP BY al.c_invoice_id
+) alloc ON alloc.c_invoice_id = i.c_invoice_id
+WHERE i.issotrx = 'N' AND i.docstatus IN ('CO', 'CL') AND i.ispaid = 'N' AND i.isactive = 'Y'
 GROUP BY moneda
 ORDER BY total_por_pagar DESC;
 
@@ -515,10 +539,18 @@ SELECT CASE WHEN i.c_currency_id = 205 THEN 'Bs.'
             WHEN i.c_currency_id IN (100,1000000,1000003,1000006,1000008,1000009,1000011,1000013,1000017) THEN 'USD'
             ELSE 'Otro' END AS moneda,
        COUNT(*) AS facturas_vencidas,
-       COALESCE(SUM(i.grandtotal), 0) AS total_vencido
+       COALESCE(SUM(i.grandtotal - COALESCE(alloc.paid, 0)), 0) AS total_vencido
 FROM adempiere.c_invoice i
+LEFT JOIN (
+    SELECT al.c_invoice_id,
+           SUM(COALESCE(al.amount, 0) + COALESCE(al.discountamt, 0) + COALESCE(al.writeoffamt, 0)) AS paid
+    FROM adempiere.c_allocationline al
+    JOIN adempiere.c_allocationhdr ah ON al.c_allocationhdr_id = ah.c_allocationhdr_id
+    WHERE ah.isactive = 'Y' AND ah.docstatus IN ('CO', 'CL')
+    GROUP BY al.c_invoice_id
+) alloc ON alloc.c_invoice_id = i.c_invoice_id
 LEFT JOIN adempiere.c_paymentterm pt ON i.c_paymentterm_id = pt.c_paymentterm_id
-WHERE i.issotrx = 'N' AND i.docstatus = 'CO' AND i.ispaid = 'N' AND i.isactive = 'Y'
+WHERE i.issotrx = 'N' AND i.docstatus IN ('CO', 'CL') AND i.ispaid = 'N' AND i.isactive = 'Y'
   AND (i.dateinvoiced + CASE WHEN COALESCE(pt.netdays, 0) = 0 THEN 30 ELSE pt.netdays END) < CURRENT_DATE
 GROUP BY moneda;
 
@@ -538,7 +570,7 @@ SELECT SUM(CASE WHEN io.movementtype = 'V+' THEN 1 ELSE 0 END) AS recepciones_mp
        SUM(CASE WHEN io.movementtype IN ('P+','P-') THEN 1 ELSE 0 END) AS mov_produccion,
        COUNT(*) AS total_movimientos
 FROM adempiere.m_inout io
-WHERE io.isactive = 'Y' AND io.docstatus = 'CO'
+WHERE io.isactive = 'Y' AND io.docstatus IN ('CO', 'CL')
   AND EXTRACT(MONTH FROM io.movementdate) = 1
   AND EXTRACT(YEAR FROM io.movementdate) = 2026;
 
@@ -561,7 +593,7 @@ SELECT io.documentno AS documento,
        org.name AS organizacion
 FROM adempiere.m_inout io
 JOIN adempiere.ad_org org ON io.ad_org_id = org.ad_org_id
-WHERE io.isactive = 'Y' AND io.docstatus = 'CO'
+WHERE io.isactive = 'Y' AND io.docstatus IN ('CO', 'CL')
   AND EXTRACT(MONTH FROM io.movementdate) = 3
   AND EXTRACT(YEAR FROM io.movementdate) = 2026
 ORDER BY io.movementdate DESC
@@ -586,7 +618,7 @@ SELECT io.documentno AS documento,
        org.name AS organizacion
 FROM adempiere.m_inout io
 JOIN adempiere.ad_org org ON io.ad_org_id = org.ad_org_id
-WHERE io.isactive = 'Y' AND io.docstatus = 'CO'
+WHERE io.isactive = 'Y' AND io.docstatus IN ('CO', 'CL')
   AND EXTRACT(MONTH FROM io.movementdate) = 1
   AND EXTRACT(YEAR FROM io.movementdate) = 2026
 ORDER BY io.movementdate DESC
@@ -629,7 +661,7 @@ SELECT p.name AS producto,
 FROM adempiere.m_inout io
 JOIN adempiere.m_inoutline iol ON io.m_inout_id = iol.m_inout_id
 JOIN adempiere.m_product p ON iol.m_product_id = p.m_product_id
-WHERE io.isactive = 'Y' AND io.docstatus = 'CO'
+WHERE io.isactive = 'Y' AND io.docstatus IN ('CO', 'CL')
   AND EXTRACT(MONTH FROM io.movementdate) = 1
   AND EXTRACT(YEAR FROM io.movementdate) = 2026
 GROUP BY p.name
@@ -649,7 +681,7 @@ SELECT p.name AS producto,
 FROM adempiere.m_inout io
 JOIN adempiere.m_inoutline iol ON io.m_inout_id = iol.m_inout_id
 JOIN adempiere.m_product p ON iol.m_product_id = p.m_product_id
-WHERE io.isactive = 'Y' AND io.docstatus = 'CO'
+WHERE io.isactive = 'Y' AND io.docstatus IN ('CO', 'CL')
   AND EXTRACT(MONTH FROM io.movementdate) = 1
   AND EXTRACT(YEAR FROM io.movementdate) = 2026
   AND (LOWER(p.name) LIKE '%arroz%' AND LOWER(p.name) LIKE '%blanc%')
@@ -669,7 +701,7 @@ SELECT p.name AS producto,
 FROM adempiere.m_inout io
 JOIN adempiere.m_inoutline iol ON io.m_inout_id = iol.m_inout_id
 JOIN adempiere.m_product p ON iol.m_product_id = p.m_product_id
-WHERE io.isactive = 'Y' AND io.docstatus = 'CO'
+WHERE io.isactive = 'Y' AND io.docstatus IN ('CO', 'CL')
   AND EXTRACT(MONTH FROM io.movementdate) = 3
   AND EXTRACT(YEAR FROM io.movementdate) = 2026
   AND io.movementtype IN ('M-', 'P-')
@@ -685,7 +717,7 @@ SELECT p.name AS producto,
 FROM adempiere.m_inout io
 JOIN adempiere.m_inoutline iol ON io.m_inout_id = iol.m_inout_id
 JOIN adempiere.m_product p ON iol.m_product_id = p.m_product_id
-WHERE io.isactive = 'Y' AND io.docstatus = 'CO'
+WHERE io.isactive = 'Y' AND io.docstatus IN ('CO', 'CL')
   AND EXTRACT(MONTH FROM io.movementdate) = 3
   AND EXTRACT(YEAR FROM io.movementdate) = 2026
   AND io.movementtype IN ('M-', 'P-')
@@ -706,7 +738,7 @@ SELECT p.name AS producto,
 FROM adempiere.m_inout io
 JOIN adempiere.m_inoutline iol ON io.m_inout_id = iol.m_inout_id
 JOIN adempiere.m_product p ON iol.m_product_id = p.m_product_id
-WHERE io.isactive = 'Y' AND io.docstatus = 'CO'
+WHERE io.isactive = 'Y' AND io.docstatus IN ('CO', 'CL')
   AND io.movementtype = 'V+'
   AND EXTRACT(MONTH FROM io.movementdate) = 1
   AND EXTRACT(YEAR FROM io.movementdate) = 2026
@@ -723,7 +755,7 @@ FROM adempiere.c_invoice i
 JOIN adempiere.c_invoiceline il ON i.c_invoice_id = il.c_invoice_id
 JOIN adempiere.m_product p ON il.m_product_id = p.m_product_id
 JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id
-WHERE i.issotrx = 'N' AND i.docstatus = 'CO' AND i.isactive = 'Y'
+WHERE i.issotrx = 'N' AND i.docstatus IN ('CO', 'CL') AND i.isactive = 'Y'
   AND EXTRACT(MONTH FROM i.dateinvoiced) = 1
   AND EXTRACT(YEAR FROM i.dateinvoiced) = 2026
   AND (LOWER(p.name) LIKE '%caja%' AND LOWER(p.name) LIKE '%cart%')
@@ -774,7 +806,7 @@ FROM adempiere.c_invoice i
 JOIN adempiere.c_invoiceline il ON i.c_invoice_id = il.c_invoice_id
 JOIN adempiere.m_product p ON il.m_product_id = p.m_product_id
 JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id
-WHERE i.issotrx = 'N' AND i.docstatus = 'CO' AND i.isactive = 'Y'
+WHERE i.issotrx = 'N' AND i.docstatus IN ('CO', 'CL') AND i.isactive = 'Y'
   AND i.dateinvoiced >= (CURRENT_DATE - INTERVAL '3 months')
   AND (LOWER(p.name) LIKE '%azucar%' OR LOWER(p.name) LIKE '%azúcar%'
        OR LOWER(p.value) LIKE '%azucar%')
@@ -798,7 +830,7 @@ FROM adempiere.c_invoice i
 JOIN adempiere.c_invoiceline il ON i.c_invoice_id = il.c_invoice_id
 JOIN adempiere.m_product p ON il.m_product_id = p.m_product_id
 JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id
-WHERE i.issotrx = 'N' AND i.docstatus = 'CO' AND i.isactive = 'Y'
+WHERE i.issotrx = 'N' AND i.docstatus IN ('CO', 'CL') AND i.isactive = 'Y'
   AND i.dateinvoiced >= '2026-01-01'
   AND i.dateinvoiced <= '2026-03-31'
   AND (LOWER(p.name) LIKE '%azucar%' OR LOWER(p.name) LIKE '%azúcar%'
@@ -816,8 +848,8 @@ SELECT '=== VERIFICACIÓN: Tablas principales y conteo de registros ===' AS preg
 -- Ventas
 SELECT 'c_invoice (facturas)' AS tabla,
        COUNT(*) AS registros,
-       COUNT(*) FILTER (WHERE issotrx = 'Y' AND docstatus = 'CO') AS facturas_venta,
-       COUNT(*) FILTER (WHERE issotrx = 'N' AND docstatus = 'CO') AS facturas_compra
+       COUNT(*) FILTER (WHERE issotrx = 'Y' AND docstatus IN ('CO', 'CL')) AS facturas_venta,
+       COUNT(*) FILTER (WHERE issotrx = 'N' AND docstatus IN ('CO', 'CL')) AS facturas_compra
 FROM adempiere.c_invoice;
 
 -- Empleados
@@ -836,7 +868,7 @@ FROM adempiere.c_bankaccount;
 -- Movimientos (producción/inventario)
 SELECT 'm_inout (movimientos)' AS tabla,
        COUNT(*) AS registros,
-       COUNT(*) FILTER (WHERE docstatus = 'CO') AS completados
+       COUNT(*) FILTER (WHERE docstatus IN ('CO', 'CL')) AS completados
 FROM adempiere.m_inout;
 
 -- Stock actual
@@ -848,7 +880,7 @@ FROM adempiere.m_storageonhand;
 -- Nómina
 SELECT 'hr_process (nómina)' AS tabla,
        COUNT(*) AS registros,
-       COUNT(*) FILTER (WHERE docstatus = 'CO') AS completados
+       COUNT(*) FILTER (WHERE docstatus IN ('CO', 'CL')) AS completados
 FROM adempiere.hr_process;
 
 -- Organizaciones

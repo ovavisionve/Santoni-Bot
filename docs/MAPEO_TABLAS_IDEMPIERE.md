@@ -287,15 +287,25 @@ Las zonas de `c_salesregion` se agrupan en regiones via un CASE SQL generado por
 | Oriente | Margarita, Anzoategui, Sucre, Monagas |
 | Guayana | Bolivar, Delta Amacuro, Amazonas |
 
-#### Tipos de pago (tendertype en c_payment)
+#### Tipos de pago (tendertype en c_payment — verificado con ad_ref_list)
 
 | Codigo | Significado |
 |--------|-------------|
-| `X` | Transferencia |
+| `A` | Depósito Directo |
 | `C` | Cheque |
-| `K` | Efectivo |
-| `D` | Deposito |
-| `T` | Tarjeta |
+| `D` | Débito Directo |
+| `J` | Comisión Bancaria |
+| `K` | Cheque (Check) |
+| `P` | Impuesto |
+| `Q` | Giro |
+| `R` | Dólar IGTF |
+| `S` | Transferencia Empresas |
+| `T` | Cuenta |
+| `U` | Euro Transferencia |
+| `W` | Transferencia |
+| `X` | Efectivo |
+| `Y` | Dólar Efectivo |
+| `Z` | Dólar Transferencia |
 
 ---
 

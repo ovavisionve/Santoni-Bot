@@ -3,8 +3,8 @@ Agente de Ventas - Alimentos Santoni
 AGENTE PRIORITARIO - Especializado en: ranking de ventas, clientes,
 cobranza, zonas, vendedores, metas, productos.
 
-Fuente de datos: c_invoice (issotrx='Y'), c_payment (isreceipt='Y'),
-c_bpartner en iDempiere (PostgreSQL 13).
+Fuente de datos: c_invoice (issotrx='Y'), c_invoiceline, c_payment (isreceipt='Y'),
+c_bpartner (iscustomer='Y'), ad_user (vendedores), m_product en iDempiere.
 """
 
 import logging
@@ -22,6 +22,11 @@ from app.services.query_service import (
     build_collection_summary,
     build_top_clients,
     build_overdue_receivables,
+    build_sales_by_product,
+    build_sales_orders,
+    build_exchange_rates,
+    build_sales_tax_summary,
+    build_sales_by_branch,
 )
 
 
@@ -58,19 +63,32 @@ CAPACIDADES PRINCIPALES:
 6. Ranking de cobranza por zona, vendedores y tipología
 7. Detección de cuentas por cobrar más atrasadas
 8. Cobranza diaria/semanal y comparativo vs metas
+9. Ventas por producto: top productos vendidos, ventas por categoría, SKUs
+10. Órdenes de venta: pipeline por estado (borrador, en proceso, completada), vendedor, cliente, sucursal
+11. Impuestos: IVA, retenciones y base imponible por factura de venta
+12. Ventas por sucursal (C_Project)
+13. Tasas de cambio recientes VES/USD
 
-CONTEXTO iDEMPIERE:
-- Facturas de venta: c_invoice (issotrx='Y', docstatus IN ('CO','CL')) - 447,386 facturas. CO=completada, CL=cerrada.
-- Líneas de factura: c_invoiceline (m_product_id, qtyinvoiced, linenetamt)
-- Cobros: c_payment (isreceipt='Y', docstatus IN ('CO','CL')) - 798,150 pagos
-- Clientes: c_bpartner (26,070 registros) - campos: ismayorista, isclap, ispublico, codigoventas
-- Zonas: c_salesregion (vinculado via c_bpartner_location, una zona por cliente)
-- Distribuidores: salesrep_id en c_invoice apunta a c_bpartner (son distribuidores/intermediarios, NO vendedores internos)
-- NOTA: Los vendedores internos (Carlos Matias, Lenny Silva, etc.) NO están vinculados a las facturas en iDempiere
-- Monedas: VES (Bolívares, ID 205), USD (Dólares, IDs múltiples)
+CONTEXTO iDEMPIERE (tablas de ventas):
+- C_ORDER: Órdenes de venta (issotrx='Y')
+- C_ORDERLINE: Líneas de orden de venta
+- C_INVOICE: Facturas de venta (issotrx='Y', docstatus IN ('CO','CL')). CO=completada, CL=cerrada
+- C_INVOICELINE: Líneas de factura (m_product_id, qtyinvoiced, linenetamt) — ventas por producto
+- C_PAYMENT: Cobros (isreceipt='Y', docstatus IN ('CO','CL'))
+- C_AllocationLine: Pagos asignados a facturas específicas
+- C_BPARTNER: Terceros. ISCUSTOMER='Y'=cliente, ISVENDOR='Y'=proveedor, ISEMPLOYEE='Y'=empleado
+- C_BPartner_Location: Dirección del cliente (vincula con zona de venta)
+- C_SalesRegion: Zona/Región de ventas
+- DCS_SalesRegionGroup: Grupo de región de ventas
+- VENDEDORES: salesrep_id en facturas/órdenes → AD_USER (tabla de usuarios del sistema)
+- M_PRODUCT: Productos. M_PRODUCT_CATEGORY: Categorías. ISKPI='Y' indica que es SKU
+- C_UOM: Unidad de medida del producto
+- M_PriceList / M_ProductPrice: Listas de precios y precios por producto
+- C_Conversion_Rate: Tasa de cambio
+- C_Tax: Impuestos
+- Monedas: C_CURRENCY_ID=205 → Bolívares (Bs.), C_CURRENCY_ID<>205 → Dólar (USD)
 - Organizaciones: INPROA SANTONI, AGROINPROA, AGROPECUARIA R.R., Agro Import, INVERSIONES AGA, InproMaiz, AGA AGRICOLA, Santoni Service
-- Campos fiscales: lve_controlnumber, withholdingamt (retenciones IVA)
-- Productos: m_product (40,766 productos), m_product_category
+- C_Project: Sucursales
 
 REGLAS:
 - Responde siempre en español, de forma clara y orientada a la acción
@@ -102,10 +120,13 @@ SOBRE MONEDA:
 - NUNCA intentes convertir montos entre monedas. Los datos son montos reales facturados en la moneda original
 - La sección "por_moneda" muestra el desglose de totales por moneda
 
-SOBRE DISTRIBUIDORES:
-- La columna "distribuidor" muestra el distribuidor/intermediario asignado a la factura (salesrep_id)
-- Los distribuidores NO son vendedores internos de Santoni. Son empresas o personas que intermedian la venta
-- Si dice "Sin Distribuidor" significa que la factura no tiene distribuidor asignado
+SOBRE VENDEDORES:
+- La columna "vendedor" muestra el vendedor asignado a la factura/orden (salesrep_id → ad_user)
+- Si dice "Sin Vendedor" significa que la factura no tiene vendedor asignado
+
+SOBRE ÓRDENES DE VENTA:
+- Los datos de órdenes incluyen: desglose por estado, por vendedor, por cliente, por sucursal y por moneda
+- Presenta TODOS los desgloses disponibles en los datos recibidos
 
 SOBRE TIPOLOGÍA:
 - La columna "tipologia" muestra el grupo/categoría del cliente (c_bp_group)
@@ -136,11 +157,16 @@ SOBRE NOTAS DE CRÉDITO:
     def get_capabilities(self) -> str:
         return (
             "CAPACIDADES REALES (lo que SÍ puedo consultar en la base de datos):\n"
-            "✅ Top N clientes por ventas netas (por período, zona, moneda, organización, distribuidor)\n"
-            "✅ Resumen de ventas: totales por zona, región, mes, moneda, distribuidor\n"
+            "✅ Top N clientes por ventas netas (por período, zona, moneda, organización, vendedor)\n"
+            "✅ Resumen de ventas: totales por zona, región, mes, moneda, vendedor\n"
             "✅ Resumen de cobranza: totales por método de pago y por cliente\n"
             "✅ Cuentas por cobrar vencidas: facturas impagadas con días de atraso\n"
-            "\n❌ NO puedo consultar: metas de venta, presupuestos o cotizaciones. "
+            "✅ Ventas por producto: top productos vendidos, ventas por categoría, filtro por SKU\n"
+            "✅ Órdenes de venta: pipeline por estado, vendedor, cliente, sucursal\n"
+            "✅ Impuestos: desglose IVA/retenciones por factura de venta\n"
+            "✅ Ventas por sucursal (C_Project)\n"
+            "✅ Tasas de cambio recientes (VES/USD)\n"
+            "\n❌ NO puedo consultar: metas de venta, presupuestos ni cotizaciones. "
             "Redirige al usuario al departamento correspondiente."
         )
 
@@ -148,12 +174,18 @@ SOBRE NOTAS DE CRÉDITO:
         return """
 Datos de ventas de iDempiere:
 - c_invoice: Facturas (issotrx='Y', dateinvoiced, grandtotal, totallines, c_bpartner_id, salesrep_id, docstatus)
-- c_invoiceline: Líneas de factura (m_product_id, qtyinvoiced, linenetamt)
-- c_payment: Pagos/cobros (isreceipt='Y', datetrx, payamt, tendertype, c_bpartner_id)
-- c_bpartner: Clientes y vendedores (name, value, ismayorista, isclap, ispublico)
+- c_invoiceline: Líneas de factura (m_product_id, qtyinvoiced, linenetamt) — ventas por producto
+- c_order: Órdenes de venta (issotrx='Y', dateordered, grandtotal, salesrep_id)
+- c_payment: Cobros (isreceipt='Y', datetrx, payamt, tendertype, c_bpartner_id)
+- c_allocationline: Pagos asignados a facturas (c_payment_id, c_invoice_id)
+- c_bpartner: Terceros (iscustomer='Y'=cliente, isvendor='Y'=proveedor)
+- ad_user: Vendedores (salesrep_id → ad_user.ad_user_id)
 - c_salesregion: Zonas de venta
 - c_bpartner_location: Ubicación del cliente (c_salesregion_id)
 - m_product: Productos (name, m_product_category_id)
+- m_product_category: Categorías (iskpi='Y' = SKU)
+- c_uom: Unidad de medida
+- c_currency: Moneda (id=205 → Bs., otros → USD)
 """
 
     # ---- Extraction helpers (reused for history) ----
@@ -165,25 +197,71 @@ Datos de ventas de iDempiere:
         "oriente", "santa barbara",
     ]
     _VENDEDORES = ["carlos matias", "lenny silva", "yuleidys gutierrez"]
+    # Cada entrada es (keyword, display_name, filter_patterns).
+    # - keyword: lo que buscamos en el mensaje del usuario (match por substring)
+    # - display_name: etiqueta legible para los títulos en la respuesta
+    # - filter_patterns: lista de patrones ILIKE que se pasan a
+    #   `_add_org_name_filter` (combinados con OR).
+    #
+    # IMPORTANTE: solo mapeamos nombres EXPLÍCITOS. "inproa" solo (sin
+    # "santoni", sin "maiz") NO aparece aquí porque es ambiguo — puede
+    # referirse a INPROA SANTONI, InproMaiz o AGROINPROA. En ese caso el
+    # agente pide clarificación al usuario en vez de adivinar
+    # (ver `_is_ambiguous_org` y el bloque de clarificación en `fetch_data`).
+    #
+    # El orden importa: keywords más específicos (más largos) antes que
+    # los cortos, porque `_extract_org_patterns` itera longest-first.
     _ORG_MAP = [
-        ("inpromaiz", "InproMaiz"),
-        ("inpro maiz", "InproMaiz"),
-        ("inproa santoni", "INPROA SANTONI"),
-        ("inproa", "INPROA SANTONI"),
-        ("santoni service", "Santoni Service"),
-        ("agropecuaria", "AGROPECUARIA"),
-        ("aga agricola", "AGA AGRICOLA"),
-        ("aga agrícola", "AGA AGRICOLA"),
-        ("agroinproa", "AGROINPROA"),
-        ("inversiones aga", "INVERSIONES AGA"),
+        ("inproa santoni", "INPROA SANTONI", ["inproa santoni"]),
+        ("inversiones aga", "INVERSIONES AGA", ["inversiones aga"]),
+        ("santoni service", "Santoni Service", ["santoni service"]),
+        ("aga agrícola", "AGA AGRICOLA", ["aga agricola"]),
+        ("aga agricola", "AGA AGRICOLA", ["aga agricola"]),
+        ("agropecuaria", "AGROPECUARIA", ["agropecuaria"]),
+        ("agroinproa", "AGROINPROA", ["agroinproa"]),
+        ("inpromaiz", "InproMaiz", ["inpromaiz"]),
+        ("inpro maiz", "InproMaiz", ["inpromaiz"]),
     ]
+
+    # Keywords que, cuando aparecen SIN un calificador más específico,
+    # se consideran ambiguos y disparan la clarificación al usuario.
+    _AMBIGUOUS_ORG_KEYWORDS = ("inproa",)
     _QUERY_TYPES = {
-        "top": ["top", "mejor", "ranking", "pareto", "principales"],
-        "cobranza": ["cobran", "cobro", "recauda", "pago"],
+        "vendedor": ["vendedor", "vendedores", "vendedora", "vendedoras"],
+        "top": ["top", "mejor", "ranking", "pareto", "principales", "cliente", "clientes"],
+        "cobranza": ["cobra", "cobro", "recauda", "pago", "cobranza"],
         "vencidas": ["atrasa", "vencid", "pendiente", "deuda", "mora"],
         "ventas": ["venta", "factur", "ingreso", "volumen"],
         "region": ["region", "región", "regiones"],
+        "producto": [
+            "producto", "productos", "articulo", "artículo",
+            "sku", "categoria de producto", "categoría de producto",
+            "que se vende", "qué se vende", "más vendido", "mas vendido",
+            "top producto", "ranking de producto",
+            "nota de credito", "notas de credito", "nota de crédito", "notas de crédito",
+        ],
+        "ordenes": [
+            "orden de venta", "ordenes de venta", "órdenes de venta",
+            "pedido", "pedidos", "orden pendiente", "ordenes pendientes",
+            "pipeline",
+        ],
+        "impuestos": [
+            "impuesto", "iva", "retencion", "retención", "retenciones",
+            "islr", "base imponible", "fiscal", "tributario",
+        ],
+        "sucursal": [
+            "sucursal", "sucursales", "proyecto", "sede", "sedes",
+        ],
+        "tasa": [
+            "tasa de cambio", "tasa", "tipo de cambio", "cambio del dolar",
+            "cambio del dólar", "dolar oficial", "dólar oficial",
+        ],
     }
+
+    _PRODUCT_KEYWORDS = [
+        "harina", "arroz", "maiz", "maíz", "aceite", "sal",
+        "avena", "azúcar", "azucar", "pasta",
+    ]
 
     @classmethod
     def _extract_zona(cls, msg: str) -> str | None:
@@ -202,12 +280,58 @@ Datos de ventas de iDempiere:
         return None
 
     @classmethod
+    def _match_orgs(cls, msg: str) -> tuple[list[str], list[str]]:
+        """Encuentra TODAS las orgs mencionadas en el mensaje.
+
+        Itera los keywords más largos primero y consume (masking) cada
+        match para evitar doble-conteo (ej: "inproa santoni" no debe
+        volver a disparar un match por "inproa"/"santoni" sueltos).
+
+        Returns:
+            Tupla (displays, patterns):
+              - displays: lista de nombres legibles (ej: ['INPROA SANTONI', 'InproMaiz'])
+              - patterns: lista única de patrones ILIKE para el filtro SQL
+        """
+        masked = msg.lower()
+        displays: list[str] = []
+        patterns: list[str] = []
+        sorted_map = sorted(cls._ORG_MAP, key=lambda x: -len(x[0]))
+        for kw, display, pats in sorted_map:
+            if kw in masked:
+                masked = masked.replace(kw, " " * len(kw))
+                if display not in displays:
+                    displays.append(display)
+                for p in pats or []:
+                    if p not in patterns:
+                        patterns.append(p)
+        return displays, patterns
+
+    @classmethod
     def _extract_org_name(cls, msg: str) -> str | None:
+        """Devuelve una etiqueta legible con todas las orgs mencionadas.
+        Si hay varias, las une con ' + '."""
+        displays, _ = cls._match_orgs(msg)
+        return " + ".join(displays) if displays else None
+
+    @classmethod
+    def _extract_org_patterns(cls, msg: str) -> list[str] | None:
+        """Devuelve la lista de patrones ILIKE para pasar a
+        `_add_org_name_filter`. Soporta múltiples orgs en un solo mensaje."""
+        _, patterns = cls._match_orgs(msg)
+        return patterns or None
+
+    @classmethod
+    def _is_ambiguous_org(cls, msg: str) -> bool:
+        """True si el mensaje menciona un keyword ambiguo (ej: "inproa")
+        sin un calificador más específico (ej: "inproa santoni",
+        "inpromaiz", "agroinproa"). En ese caso el agente debe pedir
+        clarificación al usuario en vez de adivinar."""
+        displays, _ = cls._match_orgs(msg)
+        if displays:
+            # Ya hay al menos una org específica mencionada; no hay ambigüedad.
+            return False
         msg_lower = msg.lower()
-        for kw, val in cls._ORG_MAP:
-            if kw in msg_lower:
-                return val
-        return None
+        return any(kw in msg_lower for kw in cls._AMBIGUOUS_ORG_KEYWORDS)
 
     @classmethod
     def _detect_query_type(cls, msg: str) -> str | None:
@@ -215,6 +339,24 @@ Datos de ventas de iDempiere:
         for qtype, kws in cls._QUERY_TYPES.items():
             if any(w in msg_lower for w in kws):
                 return qtype
+        return None
+
+    @classmethod
+    def _extract_product_search(cls, msg: str) -> str | None:
+        """Extract product name/keyword from the message."""
+        msg_lower = msg.lower()
+        for kw in cls._PRODUCT_KEYWORDS:
+            if kw in msg_lower:
+                return kw
+        return None
+
+    @classmethod
+    def _extract_category_search(cls, msg: str) -> str | None:
+        """Extract product category from the message."""
+        import re
+        m = re.search(r'categor[ií]a\s+(?:de\s+)?["\']?([^"\',.]+)', msg, re.IGNORECASE)
+        if m:
+            return m.group(1).strip()
         return None
 
     def _extract_context_from_history(
@@ -240,6 +382,7 @@ Datos de ventas de iDempiere:
                 o = self._extract_org_name(content)
                 if o:
                     ctx["org_name"] = o
+                    ctx["org_patterns"] = self._extract_org_patterns(content)
             if "currency" not in ctx:
                 c = detect_currency(content)
                 if c:
@@ -277,6 +420,69 @@ Datos de ventas de iDempiere:
                 )
         return False
 
+    @staticmethod
+    def _fmt_ves(value: float | int | None) -> str:
+        """Format a number in Venezuelan style: 1.234.567,89"""
+        if value is None:
+            return "-"
+        try:
+            n = float(value)
+        except (TypeError, ValueError):
+            return str(value)
+        # Format with US locale then swap separators
+        s = f"{n:,.2f}"
+        return s.replace(",", "X").replace(".", ",").replace("X", ".")
+
+    @classmethod
+    def _format_vendedores_table(
+        cls,
+        rows: list[dict],
+        title: str,
+        limit: int = 10,
+    ) -> str:
+        """Pre-formatea la tabla de vendedores con columnas fijas, formato
+        venezolano y ranking ya calculado, ordenada por VENTA NETA DESC.
+
+        El LLM tiende a re-renderizar tablas con muchas columnas similares
+        (total_bruto vs total) y mezcla valores entre filas. Esta tabla sale
+        ya final para que el LLM solo la copie verbatim.
+        """
+        if not rows:
+            return f"## {title}\n\nLa consulta no arrojó resultados para los filtros aplicados."
+
+        # Ordenar por venta NETA descendente (consistente con el header)
+        sorted_rows = sorted(
+            rows,
+            key=lambda r: r.get("total", 0) or 0,
+            reverse=True,
+        )[:limit]
+
+        lines = [
+            f"## {title}",
+            "",
+            "⚠️ TABLA FINAL PRE-FORMATEADA — COPIA EXACTA EN LA RESPUESTA:",
+            "- NO reordenes las filas (ya están ordenadas por venta neta descendente)",
+            "- NO renombres las columnas",
+            "- NO cambies los valores ni los formates de otra manera",
+            "- NO omitas ni agregues filas",
+            "",
+            "| # | Vendedor | Facturas | Notas Crédito | Venta Bruta (Bs.) | Monto NC (Bs.) | Venta Neta (Bs.) |",
+            "|---|---|---:|---:|---:|---:|---:|",
+        ]
+        for i, r in enumerate(sorted_rows, start=1):
+            lines.append(
+                "| {pos} | {vend} | {fact} | {nc} | {bruto} | {mnc} | {neto} |".format(
+                    pos=i,
+                    vend=r.get("vendedor", "-"),
+                    fact=r.get("facturas", 0) or 0,
+                    nc=r.get("notas_credito", 0) or 0,
+                    bruto=cls._fmt_ves(r.get("total_bruto", 0)),
+                    mnc=cls._fmt_ves(r.get("monto_nc", 0)),
+                    neto=cls._fmt_ves(r.get("total", 0)),
+                )
+            )
+        return "\n".join(lines)
+
     def fetch_data(self, message: str, org_ids: list[int] | None = None, salesrep_id: int | None = None, history: list[tuple[str, str]] | None = None) -> str | None:
         logger = logging.getLogger("santonibot.agents.ventas")
         msg = message.lower()
@@ -297,6 +503,9 @@ Datos de ventas de iDempiere:
         vendedor = self._extract_vendedor(message)
         zona = self._extract_zona(message)
         org_name = self._extract_org_name(message)
+        # org_patterns es lo que se pasa al filtro SQL (lista de patrones
+        # ILIKE). org_name es solo para mostrar en etiquetas/logs.
+        org_patterns = self._extract_org_patterns(message)
 
         # Follow-up: carry over context from history
         hist_ctx: dict = {}
@@ -308,8 +517,39 @@ Datos de ventas de iDempiere:
             zona = hist_ctx.get("zona")
         if not org_name:
             org_name = hist_ctx.get("org_name")
+            org_patterns = hist_ctx.get("org_patterns")
         if not currency_ids:
             currency_ids = hist_ctx.get("currency")
+
+        # Clarificación de org ambigua: si el usuario dice "inproa" sin
+        # calificar (INPROA SANTONI, InproMaiz o AGROINPROA) y el historial
+        # tampoco tiene una org específica, pedimos clarificación en vez
+        # de adivinar. Esto es crítico para QA: Darwin no puede validar
+        # contra su Excel si el bot mezcla orgs silenciosamente.
+        if self._is_ambiguous_org(message) and not org_patterns:
+            return (
+                "## ¿A qué organización te refieres?\n\n"
+                "El grupo Santoni tiene varias organizaciones con **INPROA** en el "
+                "nombre y cada una tiene datos distintos. Para darte el dato "
+                "exacto, especifica cuál quieres:\n\n"
+                "| Organización | Giro | Cómo pedirla |\n"
+                "|---|---|---|\n"
+                "| **INPROA SANTONI C.A.** | Procesadora de arroz | `INPROA SANTONI` |\n"
+                "| **InproMaiz C.A.** | Procesadora de maíz | `InproMaiz` |\n"
+                "| **AGROINPROA C.A.** | Empresa agrícola | `AGROINPROA` |\n\n"
+                "**Tip:** puedes pedir varias a la vez, por ejemplo:\n"
+                "- `Top 10 vendedores de febrero 2026 en INPROA SANTONI`\n"
+                "- `Top 10 vendedores de febrero 2026 en INPROA SANTONI e InproMaiz`\n\n"
+                "Si no especificas organización, consultaré todas las que tienes "
+                "permitidas en tu usuario."
+            )
+
+        # CRÍTICO: si no hay moneda especificada, default a VES.
+        # Si no, las queries suman Bs + USD como si fueran la misma moneda
+        # y el total es incorrecto (ej: "Bs 739M" = Bs 738M + USD 1.4M).
+        # Usuarios que quieran USD deben decir explícitamente "en dólares".
+        if not currency_ids:
+            currency_ids = [205]  # VES
         # Inherit temporal context from history for follow-ups
         if not date_from and not date_to and not mes:
             if hist_ctx.get("date_from"):
@@ -326,7 +566,32 @@ Datos de ventas de iDempiere:
         if not query_type and hist_ctx:
             query_type = hist_ctx.get("query_type")
 
+        # If a specific product is mentioned, also activate "producto" section
+        has_product_mention = self._extract_product_search(message) is not None
+
         try:
+            if query_type == "vendedor" or any(w in msg for w in self._QUERY_TYPES["vendedor"]):
+                org_label = f" - {org_name}" if org_name else ""
+                data = build_sales_summary(
+                    zona=zona, vendedor=vendedor, mes=mes, anio=anio,
+                    org_ids=org_ids, salesrep_id=salesrep_id,
+                    date_from=date_from, date_to=date_to,
+                    currency_ids=currency_ids, org_name=org_patterns,
+                )
+                vendedor_data = data.get("por_vendedor", [])
+                # Tabla pre-formateada con ranking por venta neta DESC.
+                # Usamos una tabla fija para que el LLM no re-renderice y
+                # mezcle columnas/valores (problema observado con DeepSeek v3).
+                limit_match = re.search(r'top\s*(\d+)', msg)
+                vend_limit = int(limit_match.group(1)) if limit_match else 10
+                sections.append(
+                    self._format_vendedores_table(
+                        vendedor_data,
+                        title=f"Top {vend_limit} Vendedores por Venta Neta ({label}{org_label})",
+                        limit=vend_limit,
+                    )
+                )
+
             if query_type == "top" or any(w in msg for w in self._QUERY_TYPES["top"]):
                 limit = 20
                 limit_match = re.search(r'top\s*(\d+)', msg)
@@ -342,7 +607,7 @@ Datos de ventas de iDempiere:
                     limit=limit, zona=zona, vendedor=vendedor, mes=mes, anio=anio,
                     org_ids=org_ids, salesrep_id=salesrep_id,
                     date_from=date_from, date_to=date_to,
-                    currency_ids=currency_ids, org_name=org_name,
+                    currency_ids=currency_ids, org_name=org_patterns,
                 )
                 logger.info("Top clients result: %d rows", len(data) if isinstance(data, list) else -1)
                 # If specific period returned empty, retry with full year
@@ -352,7 +617,7 @@ Datos de ventas de iDempiere:
                         limit=limit, zona=zona, vendedor=vendedor, mes=None, anio=anio,
                         org_ids=org_ids, salesrep_id=salesrep_id,
                         date_from=None, date_to=None,
-                        currency_ids=currency_ids, org_name=org_name,
+                        currency_ids=currency_ids, org_name=org_patterns,
                     )
                     logger.info("Fallback result: %d rows", len(data_year) if isinstance(data_year, list) else -1)
                     if not self._is_empty_result(data_year):
@@ -374,21 +639,81 @@ Datos de ventas de iDempiere:
                     zona=zona, vendedor=vendedor, mes=mes, anio=anio,
                     org_ids=org_ids, salesrep_id=salesrep_id,
                     date_from=date_from, date_to=date_to,
-                    currency_ids=currency_ids, org_name=org_name,
+                    currency_ids=currency_ids, org_name=org_patterns,
                 )
                 sections.append(self._format_summary(data, f"Resumen de Cobranza - {label}"))
 
             if query_type == "vencidas" or any(w in msg for w in self._QUERY_TYPES["vencidas"]):
                 data = build_overdue_receivables(org_ids=org_ids, salesrep_id=salesrep_id)
-                sections.append("## Cuentas por Cobrar Vencidas")
+                sections.append(self._format_summary(data, "Cuentas por Cobrar Vencidas"))
+
+            if query_type == "producto" or has_product_mention or any(w in msg for w in self._QUERY_TYPES["producto"]):
+                product_search = self._extract_product_search(message)
+                category_search = self._extract_category_search(message)
+                only_skus = "sku" in msg
+                org_label = f" - {org_name}" if org_name else ""
+                data = build_sales_by_product(
+                    mes=mes, anio=anio, org_ids=org_ids,
+                    date_from=date_from, date_to=date_to,
+                    currency_ids=currency_ids, org_name=org_patterns,
+                    product_search=product_search,
+                    category_search=category_search,
+                    only_skus=only_skus,
+                )
+                if data.get("top_productos"):
+                    filter_label = ""
+                    if product_search:
+                        filter_label = f" - '{product_search}'"
+                    elif category_search:
+                        filter_label = f" - Categoría '{category_search}'"
+                    sections.append(f"## Top Productos Vendidos ({label}{org_label}{filter_label})")
+                    sections.append(self._format_table(data["top_productos"]))
+                if data.get("notas_credito_por_producto"):
+                    sections.append(f"## Notas de Crédito por Producto ({label}{org_label})")
+                    sections.append(self._format_table(data["notas_credito_por_producto"]))
+                if data.get("por_categoria"):
+                    sections.append(f"## Ventas por Categoría de Producto ({label})")
+                    sections.append(self._format_table(data["por_categoria"]))
+
+            if query_type == "ordenes" or any(w in msg for w in self._QUERY_TYPES["ordenes"]):
+                only_pending = any(w in msg for w in ["pendiente", "borrador", "proceso", "pipeline"])
+                data = build_sales_orders(
+                    mes=mes, anio=anio, org_ids=org_ids,
+                    date_from=date_from, date_to=date_to,
+                    currency_ids=currency_ids, org_name=org_patterns,
+                    only_pending=only_pending,
+                )
+                pending_label = " Pendientes" if only_pending else ""
+                sections.append(self._format_summary(data, f"Órdenes de Venta{pending_label} - {label}"))
+
+            if query_type == "impuestos" or any(w in msg for w in self._QUERY_TYPES["impuestos"]):
+                data = build_sales_tax_summary(
+                    mes=mes, anio=anio, org_ids=org_ids,
+                    date_from=date_from, date_to=date_to,
+                    currency_ids=currency_ids, org_name=org_patterns,
+                )
+                sections.append(self._format_summary(data, f"Desglose de Impuestos en Ventas - {label}"))
+
+            if query_type == "sucursal" or any(w in msg for w in self._QUERY_TYPES["sucursal"]):
+                data = build_sales_by_branch(
+                    mes=mes, anio=anio, org_ids=org_ids,
+                    date_from=date_from, date_to=date_to,
+                    currency_ids=currency_ids, org_name=org_patterns,
+                )
+                sections.append(f"## Ventas por Sucursal - {label}")
                 sections.append(self._format_table(data))
 
-            if query_type == "ventas" or any(w in msg for w in self._QUERY_TYPES["ventas"]) or not sections:
+            if query_type == "tasa" or any(w in msg for w in self._QUERY_TYPES["tasa"]):
+                data = build_exchange_rates(limit=20)
+                sections.append("## Tasas de Cambio Recientes")
+                sections.append(self._format_table(data))
+
+            if not has_product_mention and (query_type == "ventas" or any(w in msg for w in self._QUERY_TYPES["ventas"]) or not sections):
                 data = build_sales_summary(
                     zona=zona, vendedor=vendedor, mes=mes, anio=anio,
                     org_ids=org_ids, salesrep_id=salesrep_id,
                     date_from=date_from, date_to=date_to,
-                    currency_ids=currency_ids, org_name=org_name,
+                    currency_ids=currency_ids, org_name=org_patterns,
                 )
                 # If specific period returned empty, retry with full year
                 if self._is_empty_result(data) and (mes or (date_from and date_to)):
@@ -396,7 +721,7 @@ Datos de ventas de iDempiere:
                         zona=zona, vendedor=vendedor, mes=None, anio=anio,
                         org_ids=org_ids, salesrep_id=salesrep_id,
                         date_from=None, date_to=None,
-                        currency_ids=currency_ids, org_name=org_name,
+                        currency_ids=currency_ids, org_name=org_patterns,
                     )
                     if not self._is_empty_result(data_year):
                         sections.append(

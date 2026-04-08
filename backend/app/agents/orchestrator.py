@@ -95,7 +95,7 @@ _KEYWORD_RULES: list[tuple[str, list[str]]] = [
         "contab", "contabilidad",
         "balance general", "balance de comprobacion", "balance de comprobación",
         "estado de resultado", "libro diario", "libro mayor",
-        "impuesto", "iva", "islr", "retencion", "retención",
+        "islr",
         "activo fijo", "activos fijos", "depreciacion", "depreciación",
         "asiento contable", "plan de cuenta", "plan de cuentas", "partida",
         # Account-specific (saldos de cuentas, no bancarios)
@@ -107,7 +107,7 @@ _KEYWORD_RULES: list[tuple[str, list[str]]] = [
         "saldo de la cuenta", "saldo de cuenta", "saldo contable",
         "balance de la cuenta", "mayor de la cuenta",
         "periodo contable", "período contable",
-        "débito", "crédito", "debe y haber",
+        "débito", "debe y haber",
         "cierre contable", "cierre de mes", "cierre de año",
         "conciliacion", "conciliación", "conciliacion bancaria",
         "balanza de comprobacion", "balanza de comprobación", "balanza",
@@ -139,6 +139,16 @@ _KEYWORD_RULES: list[tuple[str, list[str]]] = [
         "metas de venta", "meta de venta", "cotizacion", "cotización",
         "moroso", "morosos", "deuda", "deudas", "vencido", "vencida",
         "pendiente de cobro",
+        "nota de credito", "notas de credito", "nota de crédito", "notas de crédito",
+        "producto más vendido", "productos más vendidos",
+        "top producto", "ventas por producto", "ventas por categoria",
+        "ventas por categoría", "sku",
+        "orden de venta", "ordenes de venta", "órdenes de venta",
+        "pedido de venta", "pedidos de venta", "pipeline de venta",
+        "ventas por sucursal", "sucursal",
+        "tasa de cambio", "tipo de cambio",
+        "impuesto", "iva", "retencion", "retención",
+        "base imponible", "exento", "gravado",
     ]),
     # RRHH
     ("rrhh", [
@@ -220,11 +230,10 @@ def classify_by_keywords(
             # Mark that we found a match but user lacks access; keep scanning
             hit_no_access = True
 
-    # If keywords matched a blocked department, try last_agent fallback
-    # before returning no_access (e.g. Jorge in compras_insumos says "cliente")
+    # If keywords matched a blocked department, return no_access.
+    # Don't fallback to last_agent here — it would route a ventas query
+    # to compras_insumos just because the user was last in compras.
     if hit_no_access:
-        if last_agent and last_agent in allowed_departments and last_agent != "general":
-            return last_agent
         return "no_access"
 
     # Fallback 1: continue with last agent for follow-up messages
@@ -393,7 +402,9 @@ def compute_confidence_score(
 
     if agent_used == "general":
         # General handler: lower confidence overall
-        overall = min(routing_score * 0.5, 0.5)
+        # Use routing_score * 0.5 directly — a greeting (1.0) → 0.5,
+        # a sin_match (0.3) → 0.15. No need for min() cap.
+        overall = round(routing_score * 0.5, 2)
         breakdown = {
             "routing": routing_score,
             "data": 0.0,
