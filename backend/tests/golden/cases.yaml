@@ -1,9 +1,11 @@
+# ═══════════════════════════════════════════════════════════════════════════
 # Golden tests — SantoniBot vs iDempiere
+# ═══════════════════════════════════════════════════════════════════════════
 #
-# Cada caso envía una pregunta al bot por HTTP y compara su respuesta
-# contra el resultado de una query SQL directa a iDempiere.
+# Cada caso envía una pregunta al bot por HTTP y compara su respuesta contra
+# el resultado de una query SQL directa a iDempiere.
 #
-# Tipos de validación:
+# ── Tipos de validación ──────────────────────────────────────────────────
 #   - valor_exacto: ground_truth es un escalar; buscar ese número en la
 #     respuesta del bot con tolerancia configurable (default 0.5%).
 #   - tabla_ordenada: ground_truth es una lista ordenada (top-N); parsear
@@ -11,13 +13,34 @@
 #   - conteo_exacto: ground_truth es un entero (facturas, recibos, etc.);
 #     match numérico exacto (sin tolerancia).
 #
+# ── REGLA DE ORO: correspondencia caso ↔ función del bot ─────────────────
+# Cada SQL ground truth DEBE espejar la función real del bot que dispara
+# esa pregunta. Si el bot usa `c_order`, el ground truth usa `c_order`.
+# Si el bot deduplica nombres por tokens ordenados, el ground truth también.
+# Escribir SQL por "intuición" destapa bugs que NO existen y oculta bugs
+# que SÍ existen. Cada caso documenta abajo contra qué función se alinea.
+#
 # Solo incluir casos con datos cerrados (meses pasados, años anteriores).
 # Evitar "este mes" / "hoy" / stock actual — esos van a smoke tests, no acá.
 
 casos:
-  # ──────────────────────────────────────────────────────────────────────
+  # ─────────────────────────────────────────────────────────────────────
   # VENTAS
-  # ──────────────────────────────────────────────────────────────────────
+  # ─────────────────────────────────────────────────────────────────────
+
+  # ┌─ CASO: ventas_total_neto_ves_feb_2026 ──────────────────────────────┐
+  # │ Agente: ventas                                                      │
+  # │ Función del bot: build_sales_summary (idempiere_queries.py:506)     │
+  # │ Campo consultado: totales.venta_neta                                │
+  # │   = total_neto (SUM ARI totallines) - monto_notas_credito (SUM ARC) │
+  # │ Filtros que aplica el bot al recibir esta pregunta:                 │
+  # │   - issotrx='Y', docstatus IN ('CO','CL'), isactive='Y'             │
+  # │   - dt.docbasetype IN ('ARI','ARC') (mediante CASE en el CTE)       │
+  # │   - c_currency_id=205 (VES por default cuando user dice "bolívares")│
+  # │   - EXTRACT(YEAR)=2026, EXTRACT(MONTH)=2                            │
+  # │   - NO filtra por org_name (user admin, org_ids=None)               │
+  # │ Monedas en Santoni: VES=205, Euros=1000004, USD=9 IDs distintos     │
+  # └─────────────────────────────────────────────────────────────────────┘
   - id: ventas_total_neto_ves_feb_2026
     agente: ventas
     pregunta: "¿Cuánto vendimos en bolívares en febrero 2026?"
@@ -40,30 +63,90 @@ casos:
       tipo: valor_exacto
       tolerancia_pct: 0.01   # 1% por redondeos/timing
 
+  # ┌─ CASO: top_10_vendedores_inproa_usd_feb_2026 ───────────────────────┐
+  # │ Agente: ventas                                                      │
+  # │ Función del bot: build_sales_summary (idempiere_queries.py:506)     │
+  # │ Campo consultado: por_vendedor                                      │
+  # │   -> pasa por _dedupe_salesrep_rows(sort_key="total_bruto")         │
+  # │   -> _format_vendedores_table lo re-ordena por "total" (neta) DESC  │
+  # │   -> toma top 10                                                    │
+  # │                                                                     │
+  # │ IMPORTANTE — dedup de vendedores:                                   │
+  # │ En iDempiere hay 2 ad_user con el mismo nombre en orden permutado:  │
+  # │   "ROJAS OBANDO RENEE DE JESUS" y "RENEE DE JESUS ROJAS OBANDO"     │
+  # │ El bot los consolida por tokens ordenados (ver _dedupe_salesrep_rows│
+  # │ idempiere_queries.py:455). El SQL ground truth DEBE hacer lo mismo  │
+  # │ o los rankings divergen cuando los duplicados caen en el top-10.    │
+  # │                                                                     │
+  # │ Filtros que aplica el bot al recibir esta pregunta:                 │
+  # │   - org_name=['inproa santoni'] (de _ORG_MAP, filtro específico)    │
+  # │   - currency_ids=[100,1000000,1000003,1000006,1000008,1000009,      │
+  # │                   1000011,1000013,1000017] (USD, 9 IDs de Santoni)  │
+  # │   - dateinvoiced en feb 2026                                        │
+  # │                                                                     │
+  # │ Documentación adicional: ver DATOS_VERIFICACION_IDEMPIERE.md § 19.3 │
+  # │ (pre-dedup: ROJAS OBANDO aparecía como 2 filas separadas)           │
+  # └─────────────────────────────────────────────────────────────────────┘
   - id: top_10_vendedores_inproa_usd_feb_2026
     agente: ventas
     pregunta: "Top 10 mejores vendedores de INPROA SANTONI en dólares en febrero 2026"
     ground_truth:
       extraer: tabla
       sql: |
-        SELECT au.name AS vendedor,
-               COALESCE(SUM(
+        WITH ventas_raw AS (
+          SELECT au.name AS vendedor,
+                 -- Dedup key: tokens del nombre ordenados alfabéticamente
+                 -- (espeja _dedupe_salesrep_rows._norm en el bot)
+                 array_to_string(
+                   ARRAY(
+                     SELECT t FROM unnest(
+                       string_to_array(UPPER(au.name), ' ')
+                     ) AS t WHERE t <> '' ORDER BY t
+                   ), ' '
+                 ) AS name_key,
                  CASE WHEN dt.docbasetype = 'ARI' THEN i.totallines
                       WHEN dt.docbasetype = 'ARC' THEN -i.totallines
-                      ELSE 0 END), 0) AS venta_neta
-        FROM adempiere.c_invoice i
-        JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id
-        JOIN adempiere.ad_user au ON i.salesrep_id = au.ad_user_id
-        JOIN adempiere.ad_org o ON i.ad_org_id = o.ad_org_id
-        WHERE i.issotrx = 'Y'
-          AND i.docstatus IN ('CO', 'CL')
-          AND i.isactive = 'Y'
-          AND o.name ILIKE '%INPROA SANTONI%'
-          AND i.c_currency_id IN (100,1000000,1000003,1000006,1000008,1000009,1000011,1000013,1000017)
-          AND EXTRACT(YEAR FROM i.dateinvoiced) = 2026
-          AND EXTRACT(MONTH FROM i.dateinvoiced) = 2
-        GROUP BY au.name
-        ORDER BY venta_neta DESC
+                      ELSE 0 END AS venta_neta_linea,
+                 CASE WHEN dt.docbasetype = 'ARI' THEN i.totallines
+                      ELSE 0 END AS bruto_linea
+          FROM adempiere.c_invoice i
+          JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id
+          JOIN adempiere.ad_user au ON i.salesrep_id = au.ad_user_id
+          WHERE i.issotrx = 'Y'
+            AND i.docstatus IN ('CO', 'CL')
+            AND i.isactive = 'Y'
+            AND i.ad_org_id IN (
+              SELECT o.ad_org_id FROM adempiere.ad_org o
+              WHERE o.name ILIKE '%inproa santoni%'
+            )
+            AND i.c_currency_id IN (100,1000000,1000003,1000006,1000008,
+                                    1000009,1000011,1000013,1000017)
+            AND EXTRACT(YEAR FROM i.dateinvoiced) = 2026
+            AND EXTRACT(MONTH FROM i.dateinvoiced) = 2
+        ),
+        agregado AS (
+          SELECT name_key,
+                 SUM(venta_neta_linea) AS venta_neta,
+                 SUM(bruto_linea)      AS venta_bruta
+          FROM ventas_raw
+          GROUP BY name_key
+        ),
+        -- El bot preserva el nombre de la primera fila que llegó desde el
+        -- SQL ordered by total_bruto DESC (dedup mantiene el primer match).
+        -- Replicamos: por cada name_key, toma el vendedor con mayor bruto.
+        nombre_preferido AS (
+          SELECT DISTINCT ON (name_key) name_key, vendedor
+          FROM (
+            SELECT name_key, vendedor, SUM(bruto_linea) AS bruto_v
+            FROM ventas_raw
+            GROUP BY name_key, vendedor
+          ) x
+          ORDER BY name_key, bruto_v DESC, vendedor
+        )
+        SELECT np.vendedor, a.venta_neta
+        FROM agregado a
+        JOIN nombre_preferido np USING (name_key)
+        ORDER BY a.venta_neta DESC
         LIMIT 10
     validar:
       tipo: tabla_ordenada
@@ -72,12 +155,20 @@ casos:
       tolerancia_pct: 0.01
       posicion_estricta: true
 
+  # ┌─ CASO: facturas_venta_bolivares_feb_2026 ───────────────────────────┐
+  # │ Agente: ventas                                                      │
+  # │ Función del bot: build_sales_summary (idempiere_queries.py:506)     │
+  # │ Campo consultado: totales.total_facturas                            │
+  # │   = COUNT(*) de filas WHERE docbasetype='ARI' (ya excluye ARC)      │
+  # │                                                                     │
+  # │ Pregunta explícita: el bot por defecto interpreta "facturas de      │
+  # │ venta" como "en bolívares" (contexto venezolano, fix C del 08/Abr). │
+  # │ Para validar el conteo incluyendo USD hay que separar el caso.      │
+  # │ Esta query refleja lo que el bot reporta: solo Bs (c_currency_id=205│
+  # │ y solo ARI, sin notas de crédito).                                  │
+  # └─────────────────────────────────────────────────────────────────────┘
   - id: facturas_venta_bolivares_feb_2026
     agente: ventas
-    # Pregunta explícita: el bot por defecto interpreta "facturas de venta"
-    # como "en bolívares" (contexto venezolano). Para validar el conteo total
-    # incluyendo USD usar otro caso. Esta query refleja exactamente lo que
-    # el bot está reportando: solo Bs (c_currency_id = 205).
     pregunta: "¿Cuántas facturas de venta en bolívares emitimos en febrero 2026?"
     ground_truth:
       extraer: scalar
@@ -95,9 +186,29 @@ casos:
     validar:
       tipo: conteo_exacto
 
-  # ──────────────────────────────────────────────────────────────────────
+  # ─────────────────────────────────────────────────────────────────────
   # RRHH
-  # ──────────────────────────────────────────────────────────────────────
+  # ─────────────────────────────────────────────────────────────────────
+
+  # ┌─ CASO: empleados_activos_inproa_santoni ────────────────────────────┐
+  # │ Agente: rrhh                                                        │
+  # │ Función del bot: build_employee_summary (idempiere_queries.py:1784) │
+  # │ Campo consultado: por_organizacion[INPROA SANTONI].activos          │
+  # │   = COUNT(DISTINCT CASE WHEN e.isactive='Y' THEN c_bpartner_id END) │
+  # │                                                                     │
+  # │ El bot NO resuelve "INPROA SANTONI" a un filtro ILIKE — usa         │
+  # │ org_ids del usuario (RBAC). Para admin user, org_ids=None → trae    │
+  # │ TODAS las orgs, y el LLM extrae la fila de INPROA SANTONI del       │
+  # │ breakdown por_organizacion.                                         │
+  # │                                                                     │
+  # │ Mi ground truth usa ILIKE directamente. El resultado es el mismo    │
+  # │ porque ambas queries cuentan los mismos distinct c_bpartner_id      │
+  # │ activos en las filas de hr_employee con ad_org_id de INPROA SANTONI.│
+  # │                                                                     │
+  # │ NOTA: el bot usa LEFT JOIN a ad_org pero filtra en Python al leer   │
+  # │ por_organizacion. Mi INNER JOIN es semánticamente equivalente       │
+  # │ porque no hay filas con ad_org_id huérfano que nos interesen.       │
+  # └─────────────────────────────────────────────────────────────────────┘
   - id: empleados_activos_inproa_santoni
     agente: rrhh
     pregunta: "¿Cuántos empleados activos hay en INPROA SANTONI?"
@@ -112,16 +223,38 @@ casos:
     validar:
       tipo: conteo_exacto
 
-  # ──────────────────────────────────────────────────────────────────────
+  # ─────────────────────────────────────────────────────────────────────
   # COMPRAS PRODUCTORES
-  # ──────────────────────────────────────────────────────────────────────
+  # ─────────────────────────────────────────────────────────────────────
+
+  # ┌─ CASO: compras_arroz_paddy_2026_total_kg ───────────────────────────┐
+  # │ Agente: compras_productores                                         │
+  # │ Función del bot: build_producer_purchases                           │
+  # │                  (idempiere_queries.py:2582)                        │
+  # │ Campo consultado: totales.total_peso_neto_kg = SUM(ol.qtyordered)   │
+  # │                                                                     │
+  # │ IMPORTANTE — c_order vs c_invoice:                                  │
+  # │ En Santoni las compras a productores se registran como GUÍAS DE     │
+  # │ RECEPCIÓN (c_order), no como facturas (c_invoice). La factura puede │
+  # │ tardar días/semanas en emitirse o nunca registrarse, pero la guía   │
+  # │ siempre existe. Por eso el volumen real de compras se mide sobre    │
+  # │ c_order + qtyordered + dateordered, no sobre c_invoice.             │
+  # │                                                                     │
+  # │ Filtros que aplica el bot al recibir esta pregunta:                 │
+  # │   - issotrx='N' (compras, no ventas)                                │
+  # │   - docstatus IN ('CO','CL')                                        │
+  # │   - isactive='Y'                                                    │
+  # │   - LOWER(p.name) LIKE '%arroz paddy%' (_extract_producto devuelve  │
+  # │     "arroz paddy" cuando el mensaje contiene "arroz")               │
+  # │   - EXTRACT(YEAR FROM o.dateordered) = 2026                         │
+  # │                                                                     │
+  # │ Este caso se descubrió durante la primera iteración: el ground      │
+  # │ truth original usaba c_invoice (por intuición) y daba 15M kg vs los │
+  # │ 12.5M que reportaba el bot. Leer build_producer_purchases reveló    │
+  # │ que el bot usa c_order, y al alinear ambos el match es exacto.      │
+  # └─────────────────────────────────────────────────────────────────────┘
   - id: compras_arroz_paddy_2026_total_kg
     agente: compras_productores
-    # IMPORTANTE: en Santoni las compras a productores se registran como
-    # ÓRDENES (c_order = guías de recepción), no como facturas (c_invoice).
-    # El bot usa build_producer_purchases que consulta c_order + qtyordered
-    # filtrando por dateordered. Los productos no necesariamente se facturan,
-    # pero la guía siempre existe. Match exacto de la lógica del bot.
     pregunta: "¿Cuántos kilos de arroz paddy se compraron en 2026?"
     ground_truth:
       extraer: scalar
