@@ -249,3 +249,204 @@ casos:
     validar:
       tipo: valor_exacto
       tolerancia_pct: 0.005
+
+  # ═════════════════════════════════════════════════════════════════════
+  # TRANCHE 1 (09/Abr/2026) — expansión basada en logs reales
+  #
+  # Casos agregados después de analizar 1,273 preguntas reales de usuarios
+  # (admin + 5 supervisores de Santoni: jalvarez, esalas, mfigueredo,
+  # lsilva, cbracho). Distribución real de volumen:
+  #   compras_insumos=311, rrhh=264, ventas=205, finanzas=105,
+  #   produccion=78, contabilidad=74, compras_productores=68
+  #
+  # Objetivo de Tranche 1: ampliar cobertura de los 5 casos iniciales a
+  # 10, metiendo el agente de mayor volumen (compras_insumos, todavía
+  # sin cobertura) y probando periodos históricos (2025) + otra org
+  # (InproMaiz). Todos usan los 3 tipos de validación soportados por el
+  # runner (valor_exacto, conteo_exacto, tabla_ordenada).
+  #
+  # Pendientes para Tranche 2 (próxima sesión):
+  #   - Casos de routing_bug (requiere extender runner con tipo
+  #     `agente_esperado`): preguntas de mfigueredo sobre compras_productores
+  #     que van a ventas; preguntas de esalas sobre cumpleaños que van a
+  #     general; "saldo de cuentas por pagar" que va a compras_insumos.
+  #   - Contabilidad: build_accounting_summary usa fact_acct, la
+  #     validación de balance general es no trivial (múltiples valores en
+  #     la respuesta). Se diferirá a Tranche 3.
+  #   - Finanzas: cuentas por cobrar vencidas, saldos bancarios.
+  #   - Produccion: órdenes de producción, existencia por producto.
+  # ═════════════════════════════════════════════════════════════════════
+
+  # ─────────────────────────────────────────────────────────────────────
+  # COMPRAS INSUMOS (agente con mayor volumen real, primer caso)
+  # ─────────────────────────────────────────────────────────────────────
+
+  # ┌─ CASO: compras_insumos_total_2025_ves ──────────────────────────────┐
+  # │ Agente: compras_insumos                                             │
+  # │ Función del bot: build_supply_purchases                             │
+  # │                  (idempiere_queries.py:2830)                        │
+  # │ Campo consultado: totales.total_monto = SUM(i.totallines)           │
+  # │                                                                     │
+  # │ El agente compras_insumos._detect_currency devuelve:                │
+  # │   - USD_IDS si mensaje menciona "dolar/usd/dol"                     │
+  # │   - VES_IDS si mensaje menciona "bolivar/bs/ves"                    │
+  # │   - None si no menciona nada (default: mezcla todas las monedas)    │
+  # │                                                                     │
+  # │ Esta pregunta explícitamente dice "en bolívares" → filtro VES=205   │
+  # │                                                                     │
+  # │ Filtros que aplica el bot:                                          │
+  # │   - issotrx='N' (compras)                                           │
+  # │   - docstatus IN ('CO','CL'), isactive='Y'                          │
+  # │   - c_currency_id=205 (VES explícito)                               │
+  # │   - EXTRACT(YEAR FROM i.dateinvoiced)=2025                          │
+  # │                                                                     │
+  # │ Usa totallines (sin IVA), igual que ventas.                         │
+  # └─────────────────────────────────────────────────────────────────────┘
+  - id: compras_insumos_total_2025_ves
+    agente: compras_insumos
+    pregunta: "¿Cuánto se compró en insumos en 2025 en bolívares?"
+    ground_truth:
+      extraer: scalar
+      sql: |
+        SELECT COALESCE(SUM(i.totallines), 0) AS total_monto
+        FROM adempiere.c_invoice i
+        WHERE i.issotrx = 'N'
+          AND i.docstatus IN ('CO', 'CL')
+          AND i.isactive = 'Y'
+          AND i.c_currency_id = 205
+          AND EXTRACT(YEAR FROM i.dateinvoiced) = 2025
+    validar:
+      tipo: valor_exacto
+      tolerancia_pct: 0.01
+
+  # ┌─ CASO: compras_insumos_facturas_count_2025_ves ─────────────────────┐
+  # │ Agente: compras_insumos                                             │
+  # │ Función del bot: build_supply_purchases                             │
+  # │ Campo consultado: totales.total_ordenes                             │
+  # │   = COUNT(DISTINCT i.c_invoice_id)                                  │
+  # │                                                                     │
+  # │ Nota: el bot llama al campo "total_ordenes" aunque consulta         │
+  # │ c_invoice (facturas). Es un nombre engañoso en el código —          │
+  # │ realmente son facturas de compra (no órdenes de compra, eso es      │
+  # │ build_pending_purchase_orders usando c_order).                      │
+  # │                                                                     │
+  # │ Mismos filtros que el caso anterior.                                │
+  # └─────────────────────────────────────────────────────────────────────┘
+  - id: compras_insumos_facturas_count_2025_ves
+    agente: compras_insumos
+    pregunta: "¿Cuántas facturas de compra en bolívares tenemos en 2025?"
+    ground_truth:
+      extraer: scalar
+      sql: |
+        SELECT COUNT(DISTINCT i.c_invoice_id) AS total_facturas
+        FROM adempiere.c_invoice i
+        WHERE i.issotrx = 'N'
+          AND i.docstatus IN ('CO', 'CL')
+          AND i.isactive = 'Y'
+          AND i.c_currency_id = 205
+          AND EXTRACT(YEAR FROM i.dateinvoiced) = 2025
+    validar:
+      tipo: conteo_exacto
+
+  # ─────────────────────────────────────────────────────────────────────
+  # RRHH — segunda organización para validar consistencia del filtro
+  # ─────────────────────────────────────────────────────────────────────
+
+  # ┌─ CASO: empleados_activos_inpromaiz ─────────────────────────────────┐
+  # │ Agente: rrhh                                                        │
+  # │ Función del bot: build_employee_summary                             │
+  # │ Campo consultado: por_organizacion[InproMaiz].activos               │
+  # │                                                                     │
+  # │ Espeja `empleados_activos_inproa_santoni` pero para InproMaiz       │
+  # │ (la otra planta principal, dedicada a maíz). Verifica que el       │
+  # │ filtro por nombre de org funciona consistentemente para ≥2 orgs.   │
+  # │                                                                     │
+  # │ Según la doc de DATOS_VERIFICACION_IDEMPIERE.md, InproMaiz tiene    │
+  # │ ~206 empleados totales. El valor exacto puede variar por el        │
+  # │ estado actual de isactive.                                          │
+  # └─────────────────────────────────────────────────────────────────────┘
+  - id: empleados_activos_inpromaiz
+    agente: rrhh
+    pregunta: "¿Cuántos empleados activos hay en InproMaiz?"
+    ground_truth:
+      extraer: scalar
+      sql: |
+        SELECT COUNT(DISTINCT e.c_bpartner_id) AS empleados
+        FROM adempiere.hr_employee e
+        JOIN adempiere.ad_org o ON e.ad_org_id = o.ad_org_id
+        WHERE e.isactive = 'Y'
+          AND o.name ILIKE '%InproMaiz%'
+    validar:
+      tipo: conteo_exacto
+
+  # ─────────────────────────────────────────────────────────────────────
+  # VENTAS — período histórico diferente (enero 2026)
+  # ─────────────────────────────────────────────────────────────────────
+
+  # ┌─ CASO: ventas_total_neto_ves_enero_2026 ────────────────────────────┐
+  # │ Agente: ventas                                                      │
+  # │ Función del bot: build_sales_summary.totales.venta_neta             │
+  # │                                                                     │
+  # │ Hallazgo del análisis de logs: la pregunta                          │
+  # │   "cuanto se vendio en enero 2026"                                  │
+  # │ apareció 3 veces con confidence 0.64 (= posible problema). Después  │
+  # │ de los fixes del 08/Abr (default a VES + dedup + pre-format), la    │
+  # │ pregunta debería rutear bien y dar el neto correcto.                │
+  # │                                                                     │
+  # │ Este caso valida que no hay regresiones en períodos distintos a     │
+  # │ feb 2026 (el único que teníamos en el suite).                       │
+  # └─────────────────────────────────────────────────────────────────────┘
+  - id: ventas_total_neto_ves_enero_2026
+    agente: ventas
+    pregunta: "¿Cuánto vendimos en bolívares en enero 2026?"
+    ground_truth:
+      extraer: scalar
+      sql: |
+        SELECT COALESCE(SUM(
+                 CASE WHEN dt.docbasetype = 'ARI' THEN i.totallines
+                      WHEN dt.docbasetype = 'ARC' THEN -i.totallines
+                      ELSE 0 END), 0) AS venta_neta
+        FROM adempiere.c_invoice i
+        JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id
+        WHERE i.issotrx = 'Y'
+          AND i.docstatus IN ('CO', 'CL')
+          AND i.isactive = 'Y'
+          AND i.c_currency_id = 205
+          AND EXTRACT(YEAR FROM i.dateinvoiced) = 2026
+          AND EXTRACT(MONTH FROM i.dateinvoiced) = 1
+    validar:
+      tipo: valor_exacto
+      tolerancia_pct: 0.01
+
+  # ─────────────────────────────────────────────────────────────────────
+  # COMPRAS PRODUCTORES — período histórico (2025) para validar consistencia
+  # ─────────────────────────────────────────────────────────────────────
+
+  # ┌─ CASO: compras_arroz_paddy_2025_total_kg ───────────────────────────┐
+  # │ Agente: compras_productores                                         │
+  # │ Función del bot: build_producer_purchases                           │
+  # │                                                                     │
+  # │ Variante histórica del caso 2026. Valida que el filtro por año      │
+  # │ funciona consistentemente para períodos pasados y que no hay        │
+  # │ corte por HISTORICAL_DATA_CUTOFF que afecte el resultado.           │
+  # │                                                                     │
+  # │ Mismo SQL que compras_arroz_paddy_2026_total_kg pero con año=2025.  │
+  # └─────────────────────────────────────────────────────────────────────┘
+  - id: compras_arroz_paddy_2025_total_kg
+    agente: compras_productores
+    pregunta: "¿Cuántos kilos de arroz paddy se compraron en 2025?"
+    ground_truth:
+      extraer: scalar
+      sql: |
+        SELECT COALESCE(SUM(ol.qtyordered), 0) AS total_kg
+        FROM adempiere.c_order o
+        JOIN adempiere.c_orderline ol ON o.c_order_id = ol.c_order_id
+        JOIN adempiere.m_product p ON ol.m_product_id = p.m_product_id
+        WHERE o.issotrx = 'N'
+          AND o.docstatus IN ('CO', 'CL')
+          AND o.isactive = 'Y'
+          AND LOWER(p.name) LIKE '%arroz paddy%'
+          AND EXTRACT(YEAR FROM o.dateordered) = 2025
+    validar:
+      tipo: valor_exacto
+      tolerancia_pct: 0.005
