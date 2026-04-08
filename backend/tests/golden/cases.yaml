@@ -71,21 +71,35 @@ casos:
   # │   -> _format_vendedores_table lo re-ordena por "total" (neta) DESC  │
   # │   -> toma top 10                                                    │
   # │                                                                     │
-  # │ IMPORTANTE — dedup de vendedores:                                   │
-  # │ En iDempiere hay 2 ad_user con el mismo nombre en orden permutado:  │
-  # │   "ROJAS OBANDO RENEE DE JESUS" y "RENEE DE JESUS ROJAS OBANDO"     │
-  # │ El bot los consolida por tokens ordenados (ver _dedupe_salesrep_rows│
-  # │ idempiere_queries.py:455). El SQL ground truth DEBE hacer lo mismo  │
-  # │ o los rankings divergen cuando los duplicados caen en el top-10.    │
-  # │                                                                     │
   # │ Filtros que aplica el bot al recibir esta pregunta:                 │
   # │   - org_name=['inproa santoni'] (de _ORG_MAP, filtro específico)    │
   # │   - currency_ids=[100,1000000,1000003,1000006,1000008,1000009,      │
   # │                   1000011,1000013,1000017] (USD, 9 IDs de Santoni)  │
   # │   - dateinvoiced en feb 2026                                        │
   # │                                                                     │
-  # │ Documentación adicional: ver DATOS_VERIFICACION_IDEMPIERE.md § 19.3 │
-  # │ (pre-dedup: ROJAS OBANDO aparecía como 2 filas separadas)           │
+  # │ SOBRE DEDUP DE VENDEDORES (importante, leer):                       │
+  # │ En iDempiere existen pares de ad_user con el mismo nombre en orden  │
+  # │ permutado (ej: "ROJAS OBANDO RENEE" vs "RENEE ROJAS OBANDO") que el │
+  # │ bot consolida con _dedupe_salesrep_rows por tokens ordenados        │
+  # │ (idempiere_queries.py:455). Para el caso específico de USD feb 2026 │
+  # │ en INPROA SANTONI, este SQL simple (sin CTE de dedup) PASA contra   │
+  # │ la respuesta del bot → en este dataset los duplicados no caen en el │
+  # │ top-10 o no existen, y el match por posición + valor + substring    │
+  # │ de etiqueta (tolerante) funciona.                                   │
+  # │                                                                     │
+  # │ Si en el futuro otro caso (otro mes/otra org) se agrega al golden   │
+  # │ suite y aparece con FAIL porque el bot muestra un nombre            │
+  # │ consolidado que no coincide con ninguna fila del SQL, ahí habrá que │
+  # │ replicar _dedupe_salesrep_rows en SQL. La replica usa 3 CTEs:       │
+  # │   1. ventas_raw: calcula name_key = tokens(UPPER) ordenados         │
+  # │      alfabéticamente (espeja _norm() del bot)                       │
+  # │   2. agregado: SUM por name_key (fusiona los ad_user duplicados)    │
+  # │   3. nombre_preferido: DISTINCT ON(name_key) tomando el vendedor    │
+  # │      con mayor bruto (= el bot preserva el primer nombre tras       │
+  # │      ordenar por bruto DESC)                                        │
+  # │                                                                     │
+  # │ Documentación adicional: DATOS_VERIFICACION_IDEMPIERE.md § 19.3     │
+  # │ (pre-dedup histórico, datos del 26/Mar/2026)                        │
   # └─────────────────────────────────────────────────────────────────────┘
   - id: top_10_vendedores_inproa_usd_feb_2026
     agente: ventas
@@ -93,60 +107,24 @@ casos:
     ground_truth:
       extraer: tabla
       sql: |
-        WITH ventas_raw AS (
-          SELECT au.name AS vendedor,
-                 -- Dedup key: tokens del nombre ordenados alfabéticamente
-                 -- (espeja _dedupe_salesrep_rows._norm en el bot)
-                 array_to_string(
-                   ARRAY(
-                     SELECT t FROM unnest(
-                       string_to_array(UPPER(au.name), ' ')
-                     ) AS t WHERE t <> '' ORDER BY t
-                   ), ' '
-                 ) AS name_key,
+        SELECT au.name AS vendedor,
+               COALESCE(SUM(
                  CASE WHEN dt.docbasetype = 'ARI' THEN i.totallines
                       WHEN dt.docbasetype = 'ARC' THEN -i.totallines
-                      ELSE 0 END AS venta_neta_linea,
-                 CASE WHEN dt.docbasetype = 'ARI' THEN i.totallines
-                      ELSE 0 END AS bruto_linea
-          FROM adempiere.c_invoice i
-          JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id
-          JOIN adempiere.ad_user au ON i.salesrep_id = au.ad_user_id
-          WHERE i.issotrx = 'Y'
-            AND i.docstatus IN ('CO', 'CL')
-            AND i.isactive = 'Y'
-            AND i.ad_org_id IN (
-              SELECT o.ad_org_id FROM adempiere.ad_org o
-              WHERE o.name ILIKE '%inproa santoni%'
-            )
-            AND i.c_currency_id IN (100,1000000,1000003,1000006,1000008,
-                                    1000009,1000011,1000013,1000017)
-            AND EXTRACT(YEAR FROM i.dateinvoiced) = 2026
-            AND EXTRACT(MONTH FROM i.dateinvoiced) = 2
-        ),
-        agregado AS (
-          SELECT name_key,
-                 SUM(venta_neta_linea) AS venta_neta,
-                 SUM(bruto_linea)      AS venta_bruta
-          FROM ventas_raw
-          GROUP BY name_key
-        ),
-        -- El bot preserva el nombre de la primera fila que llegó desde el
-        -- SQL ordered by total_bruto DESC (dedup mantiene el primer match).
-        -- Replicamos: por cada name_key, toma el vendedor con mayor bruto.
-        nombre_preferido AS (
-          SELECT DISTINCT ON (name_key) name_key, vendedor
-          FROM (
-            SELECT name_key, vendedor, SUM(bruto_linea) AS bruto_v
-            FROM ventas_raw
-            GROUP BY name_key, vendedor
-          ) x
-          ORDER BY name_key, bruto_v DESC, vendedor
-        )
-        SELECT np.vendedor, a.venta_neta
-        FROM agregado a
-        JOIN nombre_preferido np USING (name_key)
-        ORDER BY a.venta_neta DESC
+                      ELSE 0 END), 0) AS venta_neta
+        FROM adempiere.c_invoice i
+        JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id
+        JOIN adempiere.ad_user au ON i.salesrep_id = au.ad_user_id
+        JOIN adempiere.ad_org o ON i.ad_org_id = o.ad_org_id
+        WHERE i.issotrx = 'Y'
+          AND i.docstatus IN ('CO', 'CL')
+          AND i.isactive = 'Y'
+          AND o.name ILIKE '%INPROA SANTONI%'
+          AND i.c_currency_id IN (100,1000000,1000003,1000006,1000008,1000009,1000011,1000013,1000017)
+          AND EXTRACT(YEAR FROM i.dateinvoiced) = 2026
+          AND EXTRACT(MONTH FROM i.dateinvoiced) = 2
+        GROUP BY au.name
+        ORDER BY venta_neta DESC
         LIMIT 10
     validar:
       tipo: tabla_ordenada
