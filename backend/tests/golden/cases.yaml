@@ -1,0 +1,130 @@
+# Golden tests — SantoniBot vs iDempiere
+#
+# Cada caso envía una pregunta al bot por HTTP y compara su respuesta
+# contra el resultado de una query SQL directa a iDempiere.
+#
+# Tipos de validación:
+#   - valor_exacto: ground_truth es un escalar; buscar ese número en la
+#     respuesta del bot con tolerancia configurable (default 0.5%).
+#   - tabla_ordenada: ground_truth es una lista ordenada (top-N); parsear
+#     la tabla markdown del bot y validar etiqueta + valor + posición.
+#   - conteo_exacto: ground_truth es un entero (facturas, recibos, etc.);
+#     match numérico exacto (sin tolerancia).
+#
+# Solo incluir casos con datos cerrados (meses pasados, años anteriores).
+# Evitar "este mes" / "hoy" / stock actual — esos van a smoke tests, no acá.
+
+casos:
+  # ──────────────────────────────────────────────────────────────────────
+  # VENTAS
+  # ──────────────────────────────────────────────────────────────────────
+  - id: ventas_total_neto_ves_feb_2026
+    agente: ventas
+    pregunta: "¿Cuánto vendimos en bolívares en febrero 2026?"
+    ground_truth:
+      extraer: scalar
+      sql: |
+        SELECT COALESCE(SUM(
+                 CASE WHEN dt.docbasetype = 'ARI' THEN i.totallines
+                      WHEN dt.docbasetype = 'ARC' THEN -i.totallines
+                      ELSE 0 END), 0) AS venta_neta
+        FROM adempiere.c_invoice i
+        JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id
+        WHERE i.issotrx = 'Y'
+          AND i.docstatus IN ('CO', 'CL')
+          AND i.isactive = 'Y'
+          AND i.c_currency_id = 205
+          AND EXTRACT(YEAR FROM i.dateinvoiced) = 2026
+          AND EXTRACT(MONTH FROM i.dateinvoiced) = 2
+    validar:
+      tipo: valor_exacto
+      tolerancia_pct: 0.01   # 1% por redondeos/timing
+
+  - id: top_10_vendedores_inproa_usd_feb_2026
+    agente: ventas
+    pregunta: "Top 10 mejores vendedores de INPROA SANTONI en dólares en febrero 2026"
+    ground_truth:
+      extraer: tabla
+      sql: |
+        SELECT au.name AS vendedor,
+               COALESCE(SUM(
+                 CASE WHEN dt.docbasetype = 'ARI' THEN i.totallines
+                      WHEN dt.docbasetype = 'ARC' THEN -i.totallines
+                      ELSE 0 END), 0) AS venta_neta
+        FROM adempiere.c_invoice i
+        JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id
+        JOIN adempiere.ad_user au ON i.salesrep_id = au.ad_user_id
+        JOIN adempiere.ad_org o ON i.ad_org_id = o.ad_org_id
+        WHERE i.issotrx = 'Y'
+          AND i.docstatus IN ('CO', 'CL')
+          AND i.isactive = 'Y'
+          AND o.name ILIKE '%INPROA SANTONI%'
+          AND i.c_currency_id IN (100,1000000,1000003,1000006,1000008,1000009,1000011,1000013,1000017)
+          AND EXTRACT(YEAR FROM i.dateinvoiced) = 2026
+          AND EXTRACT(MONTH FROM i.dateinvoiced) = 2
+        GROUP BY au.name
+        ORDER BY venta_neta DESC
+        LIMIT 10
+    validar:
+      tipo: tabla_ordenada
+      columna_etiqueta: vendedor
+      columna_valor: venta_neta
+      tolerancia_pct: 0.01
+      posicion_estricta: true
+
+  - id: facturas_venta_feb_2026
+    agente: ventas
+    pregunta: "¿Cuántas facturas de venta emitimos en febrero 2026?"
+    ground_truth:
+      extraer: scalar
+      sql: |
+        SELECT COUNT(*) AS facturas
+        FROM adempiere.c_invoice i
+        JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id
+        WHERE i.issotrx = 'Y'
+          AND i.docstatus IN ('CO', 'CL')
+          AND i.isactive = 'Y'
+          AND dt.docbasetype = 'ARI'
+          AND EXTRACT(YEAR FROM i.dateinvoiced) = 2026
+          AND EXTRACT(MONTH FROM i.dateinvoiced) = 2
+    validar:
+      tipo: conteo_exacto
+
+  # ──────────────────────────────────────────────────────────────────────
+  # RRHH
+  # ──────────────────────────────────────────────────────────────────────
+  - id: empleados_activos_inproa_santoni
+    agente: rrhh
+    pregunta: "¿Cuántos empleados activos hay en INPROA SANTONI?"
+    ground_truth:
+      extraer: scalar
+      sql: |
+        SELECT COUNT(DISTINCT e.c_bpartner_id) AS empleados
+        FROM adempiere.hr_employee e
+        JOIN adempiere.ad_org o ON e.ad_org_id = o.ad_org_id
+        WHERE e.isactive = 'Y'
+          AND o.name ILIKE '%INPROA SANTONI%'
+    validar:
+      tipo: conteo_exacto
+
+  # ──────────────────────────────────────────────────────────────────────
+  # COMPRAS PRODUCTORES
+  # ──────────────────────────────────────────────────────────────────────
+  - id: compras_arroz_paddy_2026_total_kg
+    agente: compras_productores
+    pregunta: "¿Cuántos kilos de arroz paddy se compraron en 2026?"
+    ground_truth:
+      extraer: scalar
+      sql: |
+        SELECT COALESCE(SUM(il.qtyinvoiced), 0) AS total_kg
+        FROM adempiere.c_invoice i
+        JOIN adempiere.c_invoiceline il ON i.c_invoice_id = il.c_invoice_id
+        JOIN adempiere.m_product p ON il.m_product_id = p.m_product_id
+        WHERE i.issotrx = 'N'
+          AND i.docstatus IN ('CO', 'CL')
+          AND i.isactive = 'Y'
+          AND p.name ILIKE '%ARROZ PADDY%'
+          AND EXTRACT(YEAR FROM i.dateinvoiced) = 2026
+    validar:
+      tipo: valor_exacto
+      tolerancia_pct: 0.005
