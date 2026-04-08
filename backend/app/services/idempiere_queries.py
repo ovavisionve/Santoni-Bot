@@ -437,6 +437,57 @@ def _add_salesrep_filter(conditions: list, params: dict, salesrep_id: int | None
         params["salesrep_id"] = salesrep_id
 
 
+def _dedupe_salesrep_rows(
+    rows: list[dict],
+    numeric_keys: list[str],
+    name_key: str = "vendedor",
+    sort_key: str | None = None,
+) -> list[dict]:
+    """Merge salesrep rows whose names are the same person written differently.
+
+    iDempiere tiene ad_user duplicados con el mismo nombre en diferente orden
+    (ej: "ROJAS OBANDO RENEE DE JESUS" vs "RENEE DE JESUS ROJAS OBANDO"). Al
+    agrupar por sr.name aparecen como dos filas distintas. Esta función las
+    consolida usando como clave el conjunto ordenado de tokens del nombre.
+
+    Args:
+        rows: filas ya formateadas como dict (salida del SELECT).
+        numeric_keys: nombres de columnas numéricas a sumar al fusionar.
+        name_key: columna con el nombre del vendedor (default "vendedor").
+        sort_key: columna para reordenar el resultado (default: primera
+            numeric_key, descendente).
+
+    Returns:
+        Nueva lista con las filas fusionadas.
+    """
+    if not rows:
+        return rows
+
+    def _norm(name: str) -> str:
+        if not name or name.strip().lower() in ("sin vendedor", ""):
+            return (name or "").strip().upper()
+        tokens = [t for t in name.upper().split() if t]
+        return " ".join(sorted(tokens))
+
+    merged: dict[str, dict] = {}
+    for row in rows:
+        key = _norm(row.get(name_key) or "")
+        if key not in merged:
+            # Copia superficial; preserva el nombre tal como vino de la DB
+            merged[key] = {k: v for k, v in row.items()}
+        else:
+            existing = merged[key]
+            for nk in numeric_keys:
+                if nk in row and isinstance(row[nk], (int, float)):
+                    existing[nk] = existing.get(nk, 0) + row[nk]
+
+    result = list(merged.values())
+    sk = sort_key or (numeric_keys[0] if numeric_keys else None)
+    if sk:
+        result.sort(key=lambda r: r.get(sk, 0) or 0, reverse=True)
+    return result
+
+
 def build_sales_summary(
     zona: str | None = None,
     vendedor: str | None = None,
@@ -600,6 +651,13 @@ def build_sales_summary(
             }
             for r in db.execute(by_salesperson_q, params).fetchall()
         ]
+        # Consolida nombres duplicados del mismo vendedor
+        # (ej: "ROJAS OBANDO RENEE" == "RENEE ROJAS OBANDO")
+        by_salesperson = _dedupe_salesrep_rows(
+            by_salesperson,
+            numeric_keys=["facturas", "notas_credito", "total_bruto", "monto_nc", "total"],
+            sort_key="total_bruto",
+        )
 
         # By month - net of credit notes
         by_month_q = text(
@@ -1252,6 +1310,11 @@ def build_sales_orders(
             {"vendedor": r[0], "ordenes": r[1], "total": float(r[2])}
             for r in db.execute(by_salesperson_q, params).fetchall()
         ]
+        by_salesperson = _dedupe_salesrep_rows(
+            by_salesperson,
+            numeric_keys=["ordenes", "total"],
+            sort_key="total",
+        )
 
         # By client (top 20)
         by_client_q = text(

@@ -197,16 +197,22 @@ Datos de ventas de iDempiere:
         "oriente", "santa barbara",
     ]
     _VENDEDORES = ["carlos matias", "lenny silva", "yuleidys gutierrez"]
+    # NOTA importante: el valor del map se usa como patrón ILIKE en ad_org.name
+    # vía `_add_org_name_filter`. Por eso:
+    #   - "inproa santoni" → "INPROA SANTONI" (específico, solo esa org)
+    #   - "inproa" sin "santoni" → "inpro" (grupo: INPROA SANTONI + InproMaiz +
+    #     AGROINPROA). Esto refleja cómo los usuarios (Darwin, etc.) usan la
+    #     palabra "inproa" en la práctica para referirse al grupo Santoni.
     _ORG_MAP = [
         ("inpromaiz", "InproMaiz"),
         ("inpro maiz", "InproMaiz"),
         ("inproa santoni", "INPROA SANTONI"),
-        ("inproa", "INPROA SANTONI"),
+        ("agroinproa", "AGROINPROA"),
+        ("inproa", "inpro"),
         ("santoni service", "Santoni Service"),
         ("agropecuaria", "AGROPECUARIA"),
         ("aga agricola", "AGA AGRICOLA"),
         ("aga agrícola", "AGA AGRICOLA"),
-        ("agroinproa", "AGROINPROA"),
         ("inversiones aga", "INVERSIONES AGA"),
     ]
     _QUERY_TYPES = {
@@ -389,6 +395,13 @@ Datos de ventas de iDempiere:
             org_name = hist_ctx.get("org_name")
         if not currency_ids:
             currency_ids = hist_ctx.get("currency")
+
+        # CRÍTICO: si no hay moneda especificada, default a VES.
+        # Si no, las queries suman Bs + USD como si fueran la misma moneda
+        # y el total es incorrecto (ej: "Bs 739M" = Bs 738M + USD 1.4M).
+        # Usuarios que quieran USD deben decir explícitamente "en dólares".
+        if not currency_ids:
+            currency_ids = [205]  # VES
         # Inherit temporal context from history for follow-ups
         if not date_from and not date_to and not mes:
             if hist_ctx.get("date_from"):
