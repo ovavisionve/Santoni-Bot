@@ -160,15 +160,32 @@ def parse_number(s: str) -> float | None:
     # Quitar símbolos comunes
     s = s.replace("Bs.", "").replace("Bs", "").replace("$", "").replace("USD", "")
     s = s.replace("VES", "").replace("kg", "").replace("Kg", "").strip()
-    # Si tiene punto Y coma, asumir formato venezolano (punto=miles, coma=decimal)
+    # Distinguir formatos:
+    #   ISO:        1,234,567.89   → coma=miles,  punto=decimal
+    #   Venezolano: 1.234.567,89   → punto=miles, coma=decimal
+    #   Bot mixed:  1,234,567,89   → todo comas (último=decimal, resto=miles)
+    # Heurística: el SEPARADOR DECIMAL es el último carácter no-dígito que tenga
+    # exactamente 1 o 2 dígitos después.
     if "." in s and "," in s:
-        s = s.replace(".", "").replace(",", ".")
-    elif "," in s and s.count(",") == 1 and len(s.split(",")[1]) <= 2:
-        # Única coma con <=2 dígitos después → decimal venezolano
-        s = s.replace(",", ".")
-    else:
-        # Asumir formato con comas como miles
-        s = s.replace(",", "")
+        # El último separador (más a la derecha) es el decimal
+        last_dot = s.rfind(".")
+        last_com = s.rfind(",")
+        if last_dot > last_com:
+            # ISO: punto decimal, coma miles
+            s = s.replace(",", "")
+        else:
+            # Venezolano: coma decimal, punto miles
+            s = s.replace(".", "").replace(",", ".")
+    elif "," in s:
+        # Solo comas: puede ser venezolano "todo-comas" o miles ISO sin decimales.
+        parts = s.split(",")
+        last = parts[-1]
+        if len(parts) >= 2 and len(last) in (1, 2) and last.isdigit():
+            # Última coma con 1-2 dígitos = decimal; las anteriores = miles
+            s = "".join(parts[:-1]) + "." + last
+        else:
+            # Comas como separador de miles ("1,234,567")
+            s = s.replace(",", "")
     try:
         return float(s)
     except ValueError:

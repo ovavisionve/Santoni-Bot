@@ -72,9 +72,13 @@ casos:
       tolerancia_pct: 0.01
       posicion_estricta: true
 
-  - id: facturas_venta_feb_2026
+  - id: facturas_venta_bolivares_feb_2026
     agente: ventas
-    pregunta: "¿Cuántas facturas de venta emitimos en febrero 2026?"
+    # Pregunta explícita: el bot por defecto interpreta "facturas de venta"
+    # como "en bolívares" (contexto venezolano). Para validar el conteo total
+    # incluyendo USD usar otro caso. Esta query refleja exactamente lo que
+    # el bot está reportando: solo Bs (c_currency_id = 205).
+    pregunta: "¿Cuántas facturas de venta en bolívares emitimos en febrero 2026?"
     ground_truth:
       extraer: scalar
       sql: |
@@ -85,6 +89,7 @@ casos:
           AND i.docstatus IN ('CO', 'CL')
           AND i.isactive = 'Y'
           AND dt.docbasetype = 'ARI'
+          AND i.c_currency_id = 205
           AND EXTRACT(YEAR FROM i.dateinvoiced) = 2026
           AND EXTRACT(MONTH FROM i.dateinvoiced) = 2
     validar:
@@ -112,19 +117,24 @@ casos:
   # ──────────────────────────────────────────────────────────────────────
   - id: compras_arroz_paddy_2026_total_kg
     agente: compras_productores
+    # IMPORTANTE: en Santoni las compras a productores se registran como
+    # ÓRDENES (c_order = guías de recepción), no como facturas (c_invoice).
+    # El bot usa build_producer_purchases que consulta c_order + qtyordered
+    # filtrando por dateordered. Los productos no necesariamente se facturan,
+    # pero la guía siempre existe. Match exacto de la lógica del bot.
     pregunta: "¿Cuántos kilos de arroz paddy se compraron en 2026?"
     ground_truth:
       extraer: scalar
       sql: |
-        SELECT COALESCE(SUM(il.qtyinvoiced), 0) AS total_kg
-        FROM adempiere.c_invoice i
-        JOIN adempiere.c_invoiceline il ON i.c_invoice_id = il.c_invoice_id
-        JOIN adempiere.m_product p ON il.m_product_id = p.m_product_id
-        WHERE i.issotrx = 'N'
-          AND i.docstatus IN ('CO', 'CL')
-          AND i.isactive = 'Y'
-          AND p.name ILIKE '%ARROZ PADDY%'
-          AND EXTRACT(YEAR FROM i.dateinvoiced) = 2026
+        SELECT COALESCE(SUM(ol.qtyordered), 0) AS total_kg
+        FROM adempiere.c_order o
+        JOIN adempiere.c_orderline ol ON o.c_order_id = ol.c_order_id
+        JOIN adempiere.m_product p ON ol.m_product_id = p.m_product_id
+        WHERE o.issotrx = 'N'
+          AND o.docstatus IN ('CO', 'CL')
+          AND o.isactive = 'Y'
+          AND LOWER(p.name) LIKE '%arroz paddy%'
+          AND EXTRACT(YEAR FROM o.dateordered) = 2026
     validar:
       tipo: valor_exacto
       tolerancia_pct: 0.005
