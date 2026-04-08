@@ -201,26 +201,31 @@ Datos de ventas de iDempiere:
     # - keyword: lo que buscamos en el mensaje del usuario (match por substring)
     # - display_name: etiqueta legible para los títulos en la respuesta
     # - filter_patterns: lista de patrones ILIKE que se pasan a
-    #   `_add_org_name_filter` (combinados con OR). Permite mapear "inproa"
-    #   al grupo Santoni (INPROA SANTONI + InproMaiz) SIN incluir AGROINPROA.
-    # Importante: "inproa santoni" debe ir ANTES que "inproa" para que el
-    # match más específico gane; igual para "inpromaiz"/"inpro maiz".
+    #   `_add_org_name_filter` (combinados con OR).
+    #
+    # IMPORTANTE: solo mapeamos nombres EXPLÍCITOS. "inproa" solo (sin
+    # "santoni", sin "maiz") NO aparece aquí porque es ambiguo — puede
+    # referirse a INPROA SANTONI, InproMaiz o AGROINPROA. En ese caso el
+    # agente pide clarificación al usuario en vez de adivinar
+    # (ver `_is_ambiguous_org` y el bloque de clarificación en `fetch_data`).
+    #
+    # El orden importa: keywords más específicos (más largos) antes que
+    # los cortos, porque `_extract_org_patterns` itera longest-first.
     _ORG_MAP = [
+        ("inproa santoni", "INPROA SANTONI", ["inproa santoni"]),
+        ("inversiones aga", "INVERSIONES AGA", ["inversiones aga"]),
+        ("santoni service", "Santoni Service", ["santoni service"]),
+        ("aga agrícola", "AGA AGRICOLA", ["aga agricola"]),
+        ("aga agricola", "AGA AGRICOLA", ["aga agricola"]),
+        ("agropecuaria", "AGROPECUARIA", ["agropecuaria"]),
+        ("agroinproa", "AGROINPROA", ["agroinproa"]),
         ("inpromaiz", "InproMaiz", ["inpromaiz"]),
         ("inpro maiz", "InproMaiz", ["inpromaiz"]),
-        ("inproa santoni", "INPROA SANTONI", ["inproa santoni"]),
-        ("agroinproa", "AGROINPROA", ["agroinproa"]),
-        # "inproa" (sin "santoni", sin "maiz") → grupo Santoni.
-        # Según Darwin, "solo inproa" en su Excel = INPROA SANTONI + InproMaiz.
-        # AGROINPROA queda explícitamente excluido (se pide por su nombre).
-        ("inproa", "Grupo INPROA (Santoni + InproMaiz)",
-         ["inproa santoni", "inpromaiz"]),
-        ("santoni service", "Santoni Service", ["santoni service"]),
-        ("agropecuaria", "AGROPECUARIA", ["agropecuaria"]),
-        ("aga agricola", "AGA AGRICOLA", ["aga agricola"]),
-        ("aga agrícola", "AGA AGRICOLA", ["aga agricola"]),
-        ("inversiones aga", "INVERSIONES AGA", ["inversiones aga"]),
     ]
+
+    # Keywords que, cuando aparecen SIN un calificador más específico,
+    # se consideran ambiguos y disparan la clarificación al usuario.
+    _AMBIGUOUS_ORG_KEYWORDS = ("inproa",)
     _QUERY_TYPES = {
         "vendedor": ["vendedor", "vendedores", "vendedora", "vendedoras"],
         "top": ["top", "mejor", "ranking", "pareto", "principales", "cliente", "clientes"],
@@ -275,24 +280,58 @@ Datos de ventas de iDempiere:
         return None
 
     @classmethod
+    def _match_orgs(cls, msg: str) -> tuple[list[str], list[str]]:
+        """Encuentra TODAS las orgs mencionadas en el mensaje.
+
+        Itera los keywords más largos primero y consume (masking) cada
+        match para evitar doble-conteo (ej: "inproa santoni" no debe
+        volver a disparar un match por "inproa"/"santoni" sueltos).
+
+        Returns:
+            Tupla (displays, patterns):
+              - displays: lista de nombres legibles (ej: ['INPROA SANTONI', 'InproMaiz'])
+              - patterns: lista única de patrones ILIKE para el filtro SQL
+        """
+        masked = msg.lower()
+        displays: list[str] = []
+        patterns: list[str] = []
+        sorted_map = sorted(cls._ORG_MAP, key=lambda x: -len(x[0]))
+        for kw, display, pats in sorted_map:
+            if kw in masked:
+                masked = masked.replace(kw, " " * len(kw))
+                if display not in displays:
+                    displays.append(display)
+                for p in pats or []:
+                    if p not in patterns:
+                        patterns.append(p)
+        return displays, patterns
+
+    @classmethod
     def _extract_org_name(cls, msg: str) -> str | None:
-        """Devuelve el display_name del primer keyword que matchee."""
-        msg_lower = msg.lower()
-        for kw, display, _patterns in cls._ORG_MAP:
-            if kw in msg_lower:
-                return display
-        return None
+        """Devuelve una etiqueta legible con todas las orgs mencionadas.
+        Si hay varias, las une con ' + '."""
+        displays, _ = cls._match_orgs(msg)
+        return " + ".join(displays) if displays else None
 
     @classmethod
     def _extract_org_patterns(cls, msg: str) -> list[str] | None:
-        """Devuelve la lista de patrones ILIKE que corresponden a la org
-        mencionada en el mensaje. Se pasa directamente a
-        `_add_org_name_filter` en las queries."""
+        """Devuelve la lista de patrones ILIKE para pasar a
+        `_add_org_name_filter`. Soporta múltiples orgs en un solo mensaje."""
+        _, patterns = cls._match_orgs(msg)
+        return patterns or None
+
+    @classmethod
+    def _is_ambiguous_org(cls, msg: str) -> bool:
+        """True si el mensaje menciona un keyword ambiguo (ej: "inproa")
+        sin un calificador más específico (ej: "inproa santoni",
+        "inpromaiz", "agroinproa"). En ese caso el agente debe pedir
+        clarificación al usuario en vez de adivinar."""
+        displays, _ = cls._match_orgs(msg)
+        if displays:
+            # Ya hay al menos una org específica mencionada; no hay ambigüedad.
+            return False
         msg_lower = msg.lower()
-        for kw, _display, patterns in cls._ORG_MAP:
-            if kw in msg_lower:
-                return list(patterns)
-        return None
+        return any(kw in msg_lower for kw in cls._AMBIGUOUS_ORG_KEYWORDS)
 
     @classmethod
     def _detect_query_type(cls, msg: str) -> str | None:
@@ -418,6 +457,29 @@ Datos de ventas de iDempiere:
             org_patterns = hist_ctx.get("org_patterns")
         if not currency_ids:
             currency_ids = hist_ctx.get("currency")
+
+        # Clarificación de org ambigua: si el usuario dice "inproa" sin
+        # calificar (INPROA SANTONI, InproMaiz o AGROINPROA) y el historial
+        # tampoco tiene una org específica, pedimos clarificación en vez
+        # de adivinar. Esto es crítico para QA: Darwin no puede validar
+        # contra su Excel si el bot mezcla orgs silenciosamente.
+        if self._is_ambiguous_org(message) and not org_patterns:
+            return (
+                "## ¿A qué organización te refieres?\n\n"
+                "El grupo Santoni tiene varias organizaciones con **INPROA** en el "
+                "nombre y cada una tiene datos distintos. Para darte el dato "
+                "exacto, especifica cuál quieres:\n\n"
+                "| Organización | Giro | Cómo pedirla |\n"
+                "|---|---|---|\n"
+                "| **INPROA SANTONI C.A.** | Procesadora de arroz | `INPROA SANTONI` |\n"
+                "| **InproMaiz C.A.** | Procesadora de maíz | `InproMaiz` |\n"
+                "| **AGROINPROA C.A.** | Empresa agrícola | `AGROINPROA` |\n\n"
+                "**Tip:** puedes pedir varias a la vez, por ejemplo:\n"
+                "- `Top 10 vendedores de febrero 2026 en INPROA SANTONI`\n"
+                "- `Top 10 vendedores de febrero 2026 en INPROA SANTONI e InproMaiz`\n\n"
+                "Si no especificas organización, consultaré todas las que tienes "
+                "permitidas en tu usuario."
+            )
 
         # CRÍTICO: si no hay moneda especificada, default a VES.
         # Si no, las queries suman Bs + USD como si fueran la misma moneda
