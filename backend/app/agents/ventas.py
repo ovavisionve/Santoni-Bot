@@ -420,6 +420,69 @@ Datos de ventas de iDempiere:
                 )
         return False
 
+    @staticmethod
+    def _fmt_ves(value: float | int | None) -> str:
+        """Format a number in Venezuelan style: 1.234.567,89"""
+        if value is None:
+            return "-"
+        try:
+            n = float(value)
+        except (TypeError, ValueError):
+            return str(value)
+        # Format with US locale then swap separators
+        s = f"{n:,.2f}"
+        return s.replace(",", "X").replace(".", ",").replace("X", ".")
+
+    @classmethod
+    def _format_vendedores_table(
+        cls,
+        rows: list[dict],
+        title: str,
+        limit: int = 10,
+    ) -> str:
+        """Pre-formatea la tabla de vendedores con columnas fijas, formato
+        venezolano y ranking ya calculado, ordenada por VENTA NETA DESC.
+
+        El LLM tiende a re-renderizar tablas con muchas columnas similares
+        (total_bruto vs total) y mezcla valores entre filas. Esta tabla sale
+        ya final para que el LLM solo la copie verbatim.
+        """
+        if not rows:
+            return f"## {title}\n\nLa consulta no arrojó resultados para los filtros aplicados."
+
+        # Ordenar por venta NETA descendente (consistente con el header)
+        sorted_rows = sorted(
+            rows,
+            key=lambda r: r.get("total", 0) or 0,
+            reverse=True,
+        )[:limit]
+
+        lines = [
+            f"## {title}",
+            "",
+            "⚠️ TABLA FINAL PRE-FORMATEADA — COPIA EXACTA EN LA RESPUESTA:",
+            "- NO reordenes las filas (ya están ordenadas por venta neta descendente)",
+            "- NO renombres las columnas",
+            "- NO cambies los valores ni los formates de otra manera",
+            "- NO omitas ni agregues filas",
+            "",
+            "| # | Vendedor | Facturas | Notas Crédito | Venta Bruta (Bs.) | Monto NC (Bs.) | Venta Neta (Bs.) |",
+            "|---|---|---:|---:|---:|---:|---:|",
+        ]
+        for i, r in enumerate(sorted_rows, start=1):
+            lines.append(
+                "| {pos} | {vend} | {fact} | {nc} | {bruto} | {mnc} | {neto} |".format(
+                    pos=i,
+                    vend=r.get("vendedor", "-"),
+                    fact=r.get("facturas", 0) or 0,
+                    nc=r.get("notas_credito", 0) or 0,
+                    bruto=cls._fmt_ves(r.get("total_bruto", 0)),
+                    mnc=cls._fmt_ves(r.get("monto_nc", 0)),
+                    neto=cls._fmt_ves(r.get("total", 0)),
+                )
+            )
+        return "\n".join(lines)
+
     def fetch_data(self, message: str, org_ids: list[int] | None = None, salesrep_id: int | None = None, history: list[tuple[str, str]] | None = None) -> str | None:
         logger = logging.getLogger("santonibot.agents.ventas")
         msg = message.lower()
@@ -516,8 +579,18 @@ Datos de ventas de iDempiere:
                     currency_ids=currency_ids, org_name=org_patterns,
                 )
                 vendedor_data = data.get("por_vendedor", [])
-                sections.append(f"## Top Vendedores ({label}{org_label})")
-                sections.append(self._format_table(vendedor_data))
+                # Tabla pre-formateada con ranking por venta neta DESC.
+                # Usamos una tabla fija para que el LLM no re-renderice y
+                # mezcle columnas/valores (problema observado con DeepSeek v3).
+                limit_match = re.search(r'top\s*(\d+)', msg)
+                vend_limit = int(limit_match.group(1)) if limit_match else 10
+                sections.append(
+                    self._format_vendedores_table(
+                        vendedor_data,
+                        title=f"Top {vend_limit} Vendedores por Venta Neta ({label}{org_label})",
+                        limit=vend_limit,
+                    )
+                )
 
             if query_type == "top" or any(w in msg for w in self._QUERY_TYPES["top"]):
                 limit = 20
