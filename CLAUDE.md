@@ -260,6 +260,7 @@ Se crearon cuestionarios para que cada departamento valide las respuestas del bo
   - Regla PROHIBIDO "no tengo acceso" agregada al system prompt de los 7 agentes
     (antes solo la tenía compras_insumos; finanzas decía "no tengo acceso" para préstamos)
   - Dataset v2.5: 5 nuevos escenarios (352-356), 3 nuevos tipos de error
+- **Golden tests framework (Abr 2026)** — ver sección completa abajo.
 
 ### Pendiente:
 - Mapeo completo de todas las tablas iDempiere (algunas queries aún en ajuste)
@@ -357,6 +358,137 @@ HISTORICAL_DATA_CUTOFF=2026-03-01  # Fecha de corte
 - `build_inventory_stock` - stock actual
 - `build_registered_producers` - productores registrados
 - `build_producer_pending_payments` - pagos pendientes actuales
+
+---
+
+## Golden Tests Framework — Bot vs iDempiere (Abr 2026, EN CURSO)
+
+### Contexto y motivación
+Después del trabajo de verificación contra Darwin/Excel (docs/DATOS_VERIFICACION_IDEMPIERE.md, 3334 líneas),
+quedó claro que validar contra Excel tiene dos problemas: (1) el Excel puede tener errores, (2) los
+scripts SQL del repo habían drifteado del bot (docstatus='CO' solo, grandtotal en lugar de totallines).
+
+**Decisión arquitectónica del usuario (3 pasos):**
+1. Fixear scripts SQL existentes para alinear con el bot.
+2. Construir un framework de golden tests que ataque el bot por HTTP y compare contra
+   queries SQL directas a iDempiere (no Excel).
+3. Solo validar meses **históricos cerrados** (enero, febrero, diciembre). La lógica es:
+   "como estaría consultando al mismo lugar, no debería fallar."
+
+### Commits de este trabajo
+- `85203a3` — fix ground truth bugs: 24 `docstatus='CO'` → `IN ('CO','CL')`, 17
+  `grandtotal` → `totallines` en `scripts/verificar_35_preguntas_idempiere.sql` y
+  `backend/tests/verify_bot_answers.py`; 3 CxC/CxP migradas a `_OPEN_EXPR`
+- `c710f91` — framework inicial (`backend/tests/golden/`): cases.yaml + runner.py + __init__.py;
+  pyyaml==6.0.2 agregado a requirements.txt
+- `adca5a9` — parser improvements: top-3 candidatos + snippet + filtro de años (1900-2100)
+- `128ec06` — parser ISO + venezolano híbrido (detecta último separador con rfind);
+  2 casos alineados (facturas bolívares explícito + compras arroz paddy reescrito a c_order)
+
+### Ubicación
+```
+backend/tests/golden/
+├── __init__.py
+├── cases.yaml      # 5 casos seed, YAML-driven
+└── runner.py       # ~530 líneas, self-contained
+```
+
+### Arquitectura del runner
+- **BotClient**: login HTTP a `/api/auth/login` (admin/SantoniAdmin2026!) → JWT → POST a `/api/chat/`
+- **IdempiereRunner**: psycopg2 con `SET default_transaction_read_only = ON` apuntando a 192.168.1.73
+- **Parsers**:
+  - `parse_number()`: heurística ISO vs venezolano usando `rfind` del último separador.
+    Maneja ISO `15,040,439.64`, venezolano `1.234.567,89`, y formato híbrido que genera el LLM
+    con todas comas `2,646,020,028,92`. Validado con 14 edge cases.
+  - `extract_all_numbers(text, exclude_years=True)`: filtra enteros 1900-2100 para evitar
+    que "2026" del texto contamine la comparación.
+  - `parse_markdown_tables()`: pipe tables básicas.
+  - `normalize_label()`: lower + sin acentos + whitespace colapsado.
+- **Comparadores**: `compare_scalar_exact`, `compare_count_exact`, `compare_ordered_table`.
+  Todos imprimen top-3 candidatos + snippet de 280 chars en fail para diagnóstico.
+- **CLI**: `--only <id>` y `-v` para verbose.
+
+### Tipos de validación (cases.yaml)
+- **valor_exacto**: ground_truth escalar, buscar número en respuesta con tolerancia (default 0.5%)
+- **tabla_ordenada**: ground_truth lista ordenada top-N, parsear tabla markdown, comparar
+  etiqueta + valor + posición (posicion_estricta opcional)
+- **conteo_exacto**: entero, match exacto sin tolerancia
+
+### Casos actuales (5)
+| # | id | Validación | Estado |
+|---|----|-----------|--------|
+| 1 | `ventas_total_neto_ves_feb_2026` | valor_exacto 1% | ✅ ALINEADO |
+| 2 | `top_10_vendedores_inproa_usd_feb_2026` | tabla_ordenada 1% | ⚠️ PASSED por suerte — bot hace `_dedupe_salesrep_rows` (tokens ordenados), mi SQL no |
+| 3 | `facturas_venta_bolivares_feb_2026` | conteo_exacto | ✅ ALINEADO (reformulado explícito "en bolívares" + `c_currency_id=205`) |
+| 4 | `empleados_activos_inproa_santoni` | conteo_exacto | ⚠️ Pendiente: verificar cómo rrhh.py traduce "INPROA SANTONI" → `org_id` via `build_employee_summary(org_ids=...)` |
+| 5 | `compras_arroz_paddy_2026_total_kg` | valor_exacto 0.5% | ✅ ALINEADO (reescrito a `c_order` + `qtyordered` + `dateordered`) |
+
+### Comando para correr
+```bash
+docker compose exec \
+  -e BOT_USERNAME=admin \
+  -e BOT_PASSWORD='SantoniAdmin2026!' \
+  -e IDEMPIERE_PASSWORD='ova2026*' \
+  backend python -m tests.golden.runner
+```
+Flags opcionales: `--only compras_arroz_paddy_2026_total_kg`, `-v`.
+
+Credenciales necesarias:
+- **Bot**: `admin` / `SantoniAdmin2026!` (rol administrador, pasa RBAC de todos los agentes)
+- **iDempiere**: `ova` / `ova2026*` @ `192.168.1.73:5432` / db `idempiere_produccion`
+
+### Estado de los runs
+- **Run 1**: 401 Unauthorized (usuario pasó `<tu_password>` literal).
+- **Run 2**: 2/5 PASS, 3/5 FAIL con "2026" como candidato más cercano (bug de años en parser).
+- **Run 3**: 2/5 PASS, 3/5 FAIL revelados por top-3 + snippet:
+  - Caso 1: parser leía `2,646,020,028,92` como 264,602,002,892 (×100)
+  - Caso 3: bot dice 1730 (Bs.), ground truth pedía 3408 (Bs.+USD) — ambigüedad de la pregunta
+  - Caso 5: bot dice 12.5M kg, ground truth pedía 15M — el bot usa `c_order`, no `c_invoice`
+- **Pendiente**: correr después de los 3 fixes del commit `128ec06` y alinear caso 2 dedup.
+
+### Hallazgo crítico que valida el approach
+El framework cazó un error real de modelado en el ground truth: en Santoni, las compras a
+productores son **guías de recepción (`c_order`)**, no facturas (`c_invoice`). La guía es
+el documento primario; la factura puede tardar o nunca llegar. Este bug existía en los
+scripts viejos del repo y nadie lo había detectado. El runner lo encontró en el primer run.
+
+### Auditoría sistemática (interrumpida por context limit)
+Pregunta del usuario: **"¿verificaste todas las estructuras de consultas? ¿O lo hiciste por mera intuición?"**
+
+Respuesta honesta: solo se verificó el caso #5 (después de que el framework lo cazó).
+Los otros 4 se escribieron por intuición → anti-patrón exacto que estamos tratando de cazar en el bot.
+
+Arrancó auditoría caso por caso leyendo `idempiere_queries.py` y los agentes directamente.
+**Completado hasta ahora:**
+- `build_sales_summary` (queries.py:506-733): confirma casos 1 y 3 alineados
+- `_dedupe_salesrep_rows` (queries.py:455-503): normaliza vendedores por tokens ordenados,
+  consolida "ROJAS OBANDO RENEE DE JESUS" vs "RENEE DE JESUS ROJAS OBANDO" → caso 2 necesita mismo dedup
+- `build_employee_summary` (queries.py:1784-1867): recibe `org_ids` (NO org_name), usa
+  `COUNT(DISTINCT CASE WHEN e.isactive='Y' THEN e.c_bpartner_id END)`
+- `ventas.py:490-725`: currency default `[205]`, dispatch logic OK
+- `rrhh.py:252`: `summary = build_employee_summary(org_ids=org_ids)` — solo org_ids
+- `build_producer_purchases` (queries.py:2582-2684): `c_order` + `qtyordered` + `dateordered`
+  con filtro `LOWER(p.name) LIKE :producto`
+
+### Próximos pasos (al retomar)
+1. Alinear caso 2: agregar dedup de vendedores en el SQL ground truth (usar mismo algoritmo
+   de tokens ordenados que `_dedupe_salesrep_rows` — probablemente con una CTE que normalice
+   nombres y haga GROUP BY por el nombre normalizado).
+2. Auditar caso 4: verificar cómo `rrhh.py` traduce "INPROA SANTONI" del mensaje del usuario
+   al `org_ids` que pasa a `build_employee_summary`. Si usa `ad_org.name ILIKE ...` para
+   resolver el id, mi SQL con `o.name ILIKE '%INPROA SANTONI%'` debería matchear.
+3. Correr el runner completo (5 casos) y verificar 5/5 PASS.
+4. Agregar más casos (siguientes candidatos: CxC por org, cobros por cliente, producción por mes,
+   compras insumos por proveedor, saldos bancarios por fecha específica).
+5. Agregar doc comment en cada caso de `cases.yaml` que enlace al build_X() específico
+   del bot y describa en 1 línea qué rama del código valida (ya está para casos 2, 3, 5).
+
+### Conceptos clave para el próximo chat
+- **Currency IDs**: VES=205; USD set=(100, 1000000, 1000003, 1000006, 1000008, 1000009, 1000011, 1000013, 1000017); EUR=1000004 (no mapeado)
+- **docstatus**: `IN ('CO', 'CL')` — CO=Completed, CL=Closed (facturas pagadas transicionan a CL)
+- **totallines vs grandtotal**: Santoni reporta ventas **sin IVA** (`totallines`); `grandtotal` incluye 16% IVA. Migración hecha en commit de Mar/2026.
+- **_OPEN_EXPR**: `(i.grandtotal - COALESCE(alloc.paid, 0))` con LEFT JOIN a `c_allocationline` agregado por invoice — usado para saldos reales de CxC/CxP.
+- **Formato numérico venezolano**: `1.234.567,89` (punto=miles, coma=decimal). El LLM a veces escribe con todas comas `2,646,020,028,92` y el parser híbrido lo maneja.
 
 ---
 
