@@ -197,23 +197,29 @@ Datos de ventas de iDempiere:
         "oriente", "santa barbara",
     ]
     _VENDEDORES = ["carlos matias", "lenny silva", "yuleidys gutierrez"]
-    # NOTA importante: el valor del map se usa como patrón ILIKE en ad_org.name
-    # vía `_add_org_name_filter`. Por eso:
-    #   - "inproa santoni" → "INPROA SANTONI" (específico, solo esa org)
-    #   - "inproa" sin "santoni" → "inpro" (grupo: INPROA SANTONI + InproMaiz +
-    #     AGROINPROA). Esto refleja cómo los usuarios (Darwin, etc.) usan la
-    #     palabra "inproa" en la práctica para referirse al grupo Santoni.
+    # Cada entrada es (keyword, display_name, filter_patterns).
+    # - keyword: lo que buscamos en el mensaje del usuario (match por substring)
+    # - display_name: etiqueta legible para los títulos en la respuesta
+    # - filter_patterns: lista de patrones ILIKE que se pasan a
+    #   `_add_org_name_filter` (combinados con OR). Permite mapear "inproa"
+    #   al grupo Santoni (INPROA SANTONI + InproMaiz) SIN incluir AGROINPROA.
+    # Importante: "inproa santoni" debe ir ANTES que "inproa" para que el
+    # match más específico gane; igual para "inpromaiz"/"inpro maiz".
     _ORG_MAP = [
-        ("inpromaiz", "InproMaiz"),
-        ("inpro maiz", "InproMaiz"),
-        ("inproa santoni", "INPROA SANTONI"),
-        ("agroinproa", "AGROINPROA"),
-        ("inproa", "inpro"),
-        ("santoni service", "Santoni Service"),
-        ("agropecuaria", "AGROPECUARIA"),
-        ("aga agricola", "AGA AGRICOLA"),
-        ("aga agrícola", "AGA AGRICOLA"),
-        ("inversiones aga", "INVERSIONES AGA"),
+        ("inpromaiz", "InproMaiz", ["inpromaiz"]),
+        ("inpro maiz", "InproMaiz", ["inpromaiz"]),
+        ("inproa santoni", "INPROA SANTONI", ["inproa santoni"]),
+        ("agroinproa", "AGROINPROA", ["agroinproa"]),
+        # "inproa" (sin "santoni", sin "maiz") → grupo Santoni.
+        # Según Darwin, "solo inproa" en su Excel = INPROA SANTONI + InproMaiz.
+        # AGROINPROA queda explícitamente excluido (se pide por su nombre).
+        ("inproa", "Grupo INPROA (Santoni + InproMaiz)",
+         ["inproa santoni", "inpromaiz"]),
+        ("santoni service", "Santoni Service", ["santoni service"]),
+        ("agropecuaria", "AGROPECUARIA", ["agropecuaria"]),
+        ("aga agricola", "AGA AGRICOLA", ["aga agricola"]),
+        ("aga agrícola", "AGA AGRICOLA", ["aga agricola"]),
+        ("inversiones aga", "INVERSIONES AGA", ["inversiones aga"]),
     ]
     _QUERY_TYPES = {
         "vendedor": ["vendedor", "vendedores", "vendedora", "vendedoras"],
@@ -270,10 +276,22 @@ Datos de ventas de iDempiere:
 
     @classmethod
     def _extract_org_name(cls, msg: str) -> str | None:
+        """Devuelve el display_name del primer keyword que matchee."""
         msg_lower = msg.lower()
-        for kw, val in cls._ORG_MAP:
+        for kw, display, _patterns in cls._ORG_MAP:
             if kw in msg_lower:
-                return val
+                return display
+        return None
+
+    @classmethod
+    def _extract_org_patterns(cls, msg: str) -> list[str] | None:
+        """Devuelve la lista de patrones ILIKE que corresponden a la org
+        mencionada en el mensaje. Se pasa directamente a
+        `_add_org_name_filter` en las queries."""
+        msg_lower = msg.lower()
+        for kw, _display, patterns in cls._ORG_MAP:
+            if kw in msg_lower:
+                return list(patterns)
         return None
 
     @classmethod
@@ -325,6 +343,7 @@ Datos de ventas de iDempiere:
                 o = self._extract_org_name(content)
                 if o:
                     ctx["org_name"] = o
+                    ctx["org_patterns"] = self._extract_org_patterns(content)
             if "currency" not in ctx:
                 c = detect_currency(content)
                 if c:
@@ -382,6 +401,9 @@ Datos de ventas de iDempiere:
         vendedor = self._extract_vendedor(message)
         zona = self._extract_zona(message)
         org_name = self._extract_org_name(message)
+        # org_patterns es lo que se pasa al filtro SQL (lista de patrones
+        # ILIKE). org_name es solo para mostrar en etiquetas/logs.
+        org_patterns = self._extract_org_patterns(message)
 
         # Follow-up: carry over context from history
         hist_ctx: dict = {}
@@ -393,6 +415,7 @@ Datos de ventas de iDempiere:
             zona = hist_ctx.get("zona")
         if not org_name:
             org_name = hist_ctx.get("org_name")
+            org_patterns = hist_ctx.get("org_patterns")
         if not currency_ids:
             currency_ids = hist_ctx.get("currency")
 
@@ -428,7 +451,7 @@ Datos de ventas de iDempiere:
                     zona=zona, vendedor=vendedor, mes=mes, anio=anio,
                     org_ids=org_ids, salesrep_id=salesrep_id,
                     date_from=date_from, date_to=date_to,
-                    currency_ids=currency_ids, org_name=org_name,
+                    currency_ids=currency_ids, org_name=org_patterns,
                 )
                 vendedor_data = data.get("por_vendedor", [])
                 sections.append(f"## Top Vendedores ({label}{org_label})")
@@ -449,7 +472,7 @@ Datos de ventas de iDempiere:
                     limit=limit, zona=zona, vendedor=vendedor, mes=mes, anio=anio,
                     org_ids=org_ids, salesrep_id=salesrep_id,
                     date_from=date_from, date_to=date_to,
-                    currency_ids=currency_ids, org_name=org_name,
+                    currency_ids=currency_ids, org_name=org_patterns,
                 )
                 logger.info("Top clients result: %d rows", len(data) if isinstance(data, list) else -1)
                 # If specific period returned empty, retry with full year
@@ -459,7 +482,7 @@ Datos de ventas de iDempiere:
                         limit=limit, zona=zona, vendedor=vendedor, mes=None, anio=anio,
                         org_ids=org_ids, salesrep_id=salesrep_id,
                         date_from=None, date_to=None,
-                        currency_ids=currency_ids, org_name=org_name,
+                        currency_ids=currency_ids, org_name=org_patterns,
                     )
                     logger.info("Fallback result: %d rows", len(data_year) if isinstance(data_year, list) else -1)
                     if not self._is_empty_result(data_year):
@@ -481,7 +504,7 @@ Datos de ventas de iDempiere:
                     zona=zona, vendedor=vendedor, mes=mes, anio=anio,
                     org_ids=org_ids, salesrep_id=salesrep_id,
                     date_from=date_from, date_to=date_to,
-                    currency_ids=currency_ids, org_name=org_name,
+                    currency_ids=currency_ids, org_name=org_patterns,
                 )
                 sections.append(self._format_summary(data, f"Resumen de Cobranza - {label}"))
 
@@ -497,7 +520,7 @@ Datos de ventas de iDempiere:
                 data = build_sales_by_product(
                     mes=mes, anio=anio, org_ids=org_ids,
                     date_from=date_from, date_to=date_to,
-                    currency_ids=currency_ids, org_name=org_name,
+                    currency_ids=currency_ids, org_name=org_patterns,
                     product_search=product_search,
                     category_search=category_search,
                     only_skus=only_skus,
@@ -522,7 +545,7 @@ Datos de ventas de iDempiere:
                 data = build_sales_orders(
                     mes=mes, anio=anio, org_ids=org_ids,
                     date_from=date_from, date_to=date_to,
-                    currency_ids=currency_ids, org_name=org_name,
+                    currency_ids=currency_ids, org_name=org_patterns,
                     only_pending=only_pending,
                 )
                 pending_label = " Pendientes" if only_pending else ""
@@ -532,7 +555,7 @@ Datos de ventas de iDempiere:
                 data = build_sales_tax_summary(
                     mes=mes, anio=anio, org_ids=org_ids,
                     date_from=date_from, date_to=date_to,
-                    currency_ids=currency_ids, org_name=org_name,
+                    currency_ids=currency_ids, org_name=org_patterns,
                 )
                 sections.append(self._format_summary(data, f"Desglose de Impuestos en Ventas - {label}"))
 
@@ -540,7 +563,7 @@ Datos de ventas de iDempiere:
                 data = build_sales_by_branch(
                     mes=mes, anio=anio, org_ids=org_ids,
                     date_from=date_from, date_to=date_to,
-                    currency_ids=currency_ids, org_name=org_name,
+                    currency_ids=currency_ids, org_name=org_patterns,
                 )
                 sections.append(f"## Ventas por Sucursal - {label}")
                 sections.append(self._format_table(data))
@@ -555,7 +578,7 @@ Datos de ventas de iDempiere:
                     zona=zona, vendedor=vendedor, mes=mes, anio=anio,
                     org_ids=org_ids, salesrep_id=salesrep_id,
                     date_from=date_from, date_to=date_to,
-                    currency_ids=currency_ids, org_name=org_name,
+                    currency_ids=currency_ids, org_name=org_patterns,
                 )
                 # If specific period returned empty, retry with full year
                 if self._is_empty_result(data) and (mes or (date_from and date_to)):
@@ -563,7 +586,7 @@ Datos de ventas de iDempiere:
                         zona=zona, vendedor=vendedor, mes=None, anio=anio,
                         org_ids=org_ids, salesrep_id=salesrep_id,
                         date_from=None, date_to=None,
-                        currency_ids=currency_ids, org_name=org_name,
+                        currency_ids=currency_ids, org_name=org_patterns,
                     )
                     if not self._is_empty_result(data_year):
                         sections.append(

@@ -166,18 +166,33 @@ def _add_org_filter(
 def _add_org_name_filter(
     conditions: list[str],
     params: dict,
-    org_name: str | None,
+    org_name: str | list[str] | None,
     table_alias: str,
 ) -> None:
     """Add org name ILIKE filter via a subquery on ad_org.
-    E.g. org_name='inpromaiz' → i.ad_org_id IN (SELECT ad_org_id FROM ad_org WHERE name ILIKE '%inpromaiz%')"""
-    if org_name:
-        conditions.append(
-            f"{table_alias}.ad_org_id IN ("
-            f"SELECT o.ad_org_id FROM adempiere.ad_org o "
-            f"WHERE o.name ILIKE :org_name_filter)"
-        )
-        params["org_name_filter"] = f"%{org_name}%"
+
+    ``org_name`` acepta dos formas:
+      - ``str``: un único patrón. Ej: ``'inpromaiz'`` →
+        ``ad_org_id IN (SELECT ad_org_id FROM ad_org WHERE name ILIKE '%inpromaiz%')``
+      - ``list[str]``: varios patrones combinados con OR. Útil para
+        "grupos" de organizaciones (ej: ``['inproa santoni', 'inpromaiz']``
+        para "grupo INPROA" sin incluir AGROINPROA)."""
+    if not org_name:
+        return
+    patterns = [org_name] if isinstance(org_name, str) else list(org_name)
+    patterns = [p for p in patterns if p]
+    if not patterns:
+        return
+    like_clauses = []
+    for i, pat in enumerate(patterns):
+        key = f"org_name_filter_{i}"
+        like_clauses.append(f"o.name ILIKE :{key}")
+        params[key] = f"%{pat}%"
+    conditions.append(
+        f"{table_alias}.ad_org_id IN ("
+        f"SELECT o.ad_org_id FROM adempiere.ad_org o "
+        f"WHERE {' OR '.join(like_clauses)})"
+    )
 
 
 def _add_currency_filter(
