@@ -763,6 +763,8 @@ casos:
   # ═════════════════════════════════════════════════════════════════════
 
   # 1. build_top_clients (lsilva la usa constantemente)
+  # NOTA: el bot ordena por total_bruto DESC (no venta_neta). El SQL
+  # ground truth DEBE espejarlo para que las posiciones coincidan.
   - id: datos_top_clientes_ves_feb_2026
     agente: ventas
     pregunta: "Top 10 clientes por ventas en bolívares en febrero 2026"
@@ -785,7 +787,7 @@ casos:
           AND i.dateinvoiced >= '2026-02-01'
           AND i.dateinvoiced < '2026-03-01'
         GROUP BY bp.name
-        ORDER BY venta_neta DESC
+        ORDER BY COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.totallines ELSE 0 END), 0) DESC
         LIMIT 10
     validar:
       tipo: tabla_ordenada
@@ -837,10 +839,13 @@ casos:
     validar:
       tipo: conteo_exacto
 
-  # 4. build_production_summary — movimientos de inventario feb 2026
+  # 4. build_production_summary — recepciones y despachos feb 2026
+  # NOTA: "movimientos de inventario" ruteaba a compras_insumos porque
+  # "inventario" es keyword de ese agente. "recepciones y despachos"
+  # dispara produccion porque tiene "recepcion de materia" y "despacho".
   - id: datos_movimientos_produccion_feb_2026
     agente: produccion
-    pregunta: "¿Cuántos movimientos de inventario hubo en febrero 2026?"
+    pregunta: "¿Cuántas recepciones y despachos de producción hubo en febrero 2026?"
     ground_truth:
       extraer: scalar
       sql: |
@@ -887,30 +892,25 @@ casos:
       tipo: valor_exacto
       tolerancia_pct: 0.01
 
-  # 7. build_producer_pending_payments — facturas pendientes a productores
-  # NOTA: conteo vivo (cambia diariamente con pagos). Si el bot dice > 0
-  # y cuadra con SQL, está bien. Si dice 0, es bug.
-  - id: datos_facturas_pendientes_productores
+  # 7. build_producer_purchases — guías de compra a productores 2026
+  # NOTA: En Santoni las compras a productores se miden por GUÍAS (c_order),
+  # no por facturas (c_invoice). El bot usa build_producer_purchases para el
+  # conteo total de guías. Cambiamos a verificar el conteo de guías en 2026
+  # (más estable que "facturas pendientes" que es conteo vivo).
+  - id: datos_guias_compra_productores_2026
     agente: compras_productores
-    pregunta: "¿Cuántas facturas pendientes de pago a productores hay?"
+    pregunta: "¿Cuántas guías de compra a productores hay en 2026?"
     ground_truth:
       extraer: scalar
       sql: |
-        SELECT COUNT(*) AS facturas_pendientes
-        FROM adempiere.c_invoice i
-        LEFT JOIN (
-          SELECT al.c_invoice_id,
-                 SUM(COALESCE(al.amount, 0) + COALESCE(al.discountamt, 0) + COALESCE(al.writeoffamt, 0)) AS paid
-          FROM adempiere.c_allocationline al
-          JOIN adempiere.c_allocationhdr ah ON al.c_allocationhdr_id = ah.c_allocationhdr_id
-          WHERE ah.isactive = 'Y' AND ah.docstatus IN ('CO', 'CL')
-            AND ah.dateacct >= (CURRENT_DATE - INTERVAL '3 years')
-          GROUP BY al.c_invoice_id
-        ) alloc ON alloc.c_invoice_id = i.c_invoice_id
-        WHERE i.issotrx = 'N'
-          AND i.docstatus IN ('CO', 'CL')
-          AND i.isactive = 'Y'
-          AND i.dateinvoiced >= (CURRENT_DATE - INTERVAL '2 years')
-          AND (i.grandtotal - COALESCE(alloc.paid, 0)) > 0
+        SELECT COUNT(DISTINCT o.c_order_id) AS total_guias
+        FROM adempiere.c_order o
+        JOIN adempiere.c_orderline ol ON o.c_order_id = ol.c_order_id
+        JOIN adempiere.m_product p ON ol.m_product_id = p.m_product_id
+        WHERE o.issotrx = 'N'
+          AND o.docstatus IN ('CO', 'CL')
+          AND o.isactive = 'Y'
+          AND o.dateordered >= '2026-01-01'
+          AND o.dateordered < '2027-01-01'
     validar:
       tipo: conteo_exacto

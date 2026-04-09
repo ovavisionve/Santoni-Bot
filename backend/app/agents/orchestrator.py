@@ -166,7 +166,7 @@ _KEYWORD_RULES: list[tuple[str, list[str]]] = [
         "analista", "supervisor", "supervisora", "coordinador", "coordinadora",
         "operario", "operarios", "operador", "chofer", "choferes",
         "cargo", "cargos", "puesto", "puestos",
-        "vacacion", "vacaciones", "asistencia", "inasistencia",
+        "vacacion", "vacación", "vacaciones", "asistencia", "inasistencia",
         "ausentismo", "ausentimos", "ausencia", "ausencias", "falta", "faltas",
         "evaluacion", "evaluación",
         "cumpleaño", "cumpleaños", "cumpleañero", "cumpleañeros",
