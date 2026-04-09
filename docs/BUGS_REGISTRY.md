@@ -127,30 +127,37 @@ desde que se abre hasta que se resuelve (solo cambia de lista).
 
 ## 5. Tabla Resumen Global
 
-**Última actualización:** 2026-04-09
+**Última actualización:** 2026-04-09 (post-run Tranche 2)
 
 | Agente | 🔴 Abiertos | 🟠 Abiertos | 🟡 Abiertos | 🟢 Abiertos | ✅ Resueltos | Total |
 |---|---:|---:|---:|---:|---:|---:|
-| ventas              | 0 | 1 | 0 | 0 | 9 | 10 |
-| rrhh                | 4 | 0 | 0 | 0 | 4 |  8 |
-| finanzas            | 1 | 0 | 0 | 0 | 0 |  1 |
-| contabilidad        | 0 | 0 | 0 | 0 | 0 |  0 |
-| produccion          | 1 | 0 | 0 | 0 | 0 |  1 |
-| compras_insumos     | 2 | 0 | 0 | 0 | 7 |  9 |
-| compras_productores | 4 | 0 | 0 | 0 | 0 |  4 |
-| orchestrator        | 1 | 1 | 0 | 0 | 0 |  2 |
-| base_agent          | 0 | 0 | 0 | 0 | 1 |  1 |
-| **TOTAL**           | **13** | **2** | **0** | **0** | **21** | **36** |
+| ventas              | 0 | 1 | 0 | 0 |  9 | 10 |
+| rrhh                | 1 | 0 | 0 | 0 |  7 |  8 |
+| finanzas            | 1 | 0 | 0 | 0 |  0 |  1 |
+| contabilidad        | 0 | 0 | 0 | 0 |  0 |  0 |
+| produccion          | 1 | 0 | 0 | 0 |  0 |  1 |
+| compras_insumos     | 2 | 0 | 0 | 0 |  7 |  9 |
+| compras_productores | 4 | 0 | 0 | 0 |  0 |  4 |
+| orchestrator        | 1 | 1 | 0 | 0 |  0 |  2 |
+| base_agent          | 0 | 0 | 0 | 0 |  1 |  1 |
+| infraestructura     | 2 | 0 | 0 | 0 |  0 |  2 |
+| **TOTAL**           | **12** | **2** | **0** | **0** | **24** | **38** |
 
 ### Indicadores clave
 
-- **Precisión medida (golden tests):** **10/10 PASS = 100%** (Tranche 1 cerrado, 09/Abr/2026 tras fix de COMP-100/103/104/105)
-- **Cobertura del golden suite:** 4 de 7 agentes (ventas, rrhh, compras_insumos, compras_productores)
-- **Agentes sin cobertura:** finanzas, contabilidad, produccion (objetivo de Tranche 2/3)
-- **Bugs críticos detectados por logs:** 10 (ver sección por agente, pendientes de fix)
-- **Bugs críticos detectados por golden tests:** 4 (COMP-100 + cross-agent review destapó COMP-103, COMP-104, COMP-105 — todos ya resueltos)
-- **Deuda técnica crítica:** 13 bugs 🔴 abiertos (todos de routing en orchestrator, detectados en análisis de logs de supervisores).
-- **Efectividad del cross-agent review:** en la primera aplicación del proceso (09/Abr/2026), la revisión cruzada de COMP-100 destapó 3 bugs idénticos (COMP-103, COMP-104, COMP-105) que habrían quedado silenciosos. Sin el proceso, habríamos arreglado solo 1 de 4 — 75% de los bugs hubieran seguido vivos.
+- **Precisión medida (golden tests):**
+  - Tranche 1 (datos): 10/10 PASS hasta el baseline de Tranche 2. El re-run con 24 casos dio 8/10 PASS por bug de parser (INFR-100); post-fix del parser esperado 10/10.
+  - Tranche 2 (routing): 5/14 PASS en baseline (2 routing bugs confirmados vivos, 7 timeouts por INFR-101, 3 baselines positivos OK + 2 tickets silenciosamente arreglados antes del Tranche 2)
+- **Cobertura del golden suite:** **7 de 7 agentes** (ventas, rrhh, compras_insumos, compras_productores, finanzas, contabilidad, produccion). ✅
+- **Bugs críticos detectados por logs + golden tests:**
+  - 4 en compras_insumos wrappers (COMP-100/103/104/105) — resueltos
+  - 2 routing bugs confirmados vivos (RRHH-101, COMP-101)
+  - 3 routing bugs resueltos silenciosamente antes del Tranche 2 (RRHH-100, RRHH-102, RRHH-103)
+  - 2 bugs de infraestructura descubiertos por el golden test mismo (INFR-100 parser, INFR-101 timeouts)
+  - 6 routing bugs no evaluados por culpa de INFR-101 (FIN-100, AGRI-100..103, PRDC-100) — re-evaluar tras fix de timeouts
+- **Deuda técnica crítica:** 12 bugs 🔴 abiertos.
+- **Efectividad del cross-agent review:** COMP-100 destapó 3 bugs idénticos en el mismo commit. 75% de los bugs hubieran seguido vivos sin el proceso.
+- **Efectividad del golden suite:** en el run del Tranche 2 el suite reveló 3 bugs silenciosamente arreglados (imposibles de saber sin medir) y 2 bugs de su propia infraestructura (INFR-100 parser, INFR-101 saturación del bot). El framework se corrige a sí mismo mientras ilumina bugs del bot.
 
 ---
 
@@ -408,77 +415,108 @@ específicos por tipo de query.
 
 ### Agente: RRHH
 
-#### 🔴 Abiertos (4)
+#### 🔴 Abiertos (1)
 
-##### RRHH-100: "fecha de nacidos en abril" se rutea a ventas
+##### RRHH-101: "quienes cumplen años" se rutea a general (confirmado vivo en Tranche 2)
 - **Severidad:** 🔴 CRÍTICO
-- **Reportado:** 2026-04-09 (análisis de logs reales — supervisor esalas)
+- **Reportado:** 2026-04-09 (esalas, y reconfirmado en Tranche 2 del golden test)
 - **Resuelto:** —
 - **Commit del fix:** —
-- **Test de regresión:** pendiente (Tranche 2)
+- **Test de regresión:** `routing_rrhh_cumples_abril_inproa` en `backend/tests/golden/cases.yaml`
 
-##### Síntoma observable
-Pregunta real de esalas: `"Dame la fecha de los nacidos en el mes de abril"` → ruteada a **ventas** por el orchestrator. Respuesta sin sentido (o error).
+##### Síntoma observable (del golden test run)
+Pregunta: `"Me puedes indicar quienes cumplen años en abril de inproa santoni"`
+Resultado: **FAIL** — routing incorrecto: esperado `'rrhh'`, ruteado a `'general'`.
+Respuesta real del bot (citada verbatim):
+> "Lo siento, pero no tengo acceso a información personal como cumpleaños de empleados en Alimentos Santoni. Si necesitas ayuda con consultas relacionadas con Finanzas, Contabilidad, Ventas, RRHH, Producción o Compras, estaré encantado de asistirte."
 
-##### Causa raíz (a nivel de código)
-Pendiente diagnóstico. Hipótesis: el orchestrator clasifica por keywords y "fecha" sin
-calificador rutea a ventas (que tiene keywords de "fecha de factura"). "nacidos" debería
-ser suficiente para rutear a rrhh pero no está en la lista de keywords del rrhh agent.
-Revisar `backend/app/agents/orchestrator.py` y `backend/app/agents/rrhh.py`.
+**Observación secundaria grave:** El mensaje `"no tengo acceso"` **viola la regla del system
+prompt global** que prohíbe esa frase (bug histórico RRHH-001). El agente `general` no tenía
+esa regla aplicada — solo los 7 agentes especializados.
 
-##### Cross-Agent Review
-Pendiente. Buscar si "nacidos" / "nacimiento" / "cumpleañ" están en las listas de keywords
-de otros agentes por error.
+##### Causa raíz (hipótesis, pendiente de confirmación)
+1. El orchestrator clasifica `"cumplen años"` como no-categorizable y lo manda al agente `general`.
+2. El agente `general` no sabe qué hacer con una pregunta de RRHH y responde con el disclaimer.
+3. Aunque el agente `rrhh` tiene capability para cumpleaños (`build_birthday_list`), el
+   orchestrator nunca lo ve porque el routing falla antes.
 
----
-
-##### RRHH-101: "quienes cumplen años en abril" se rutea a general
-- **Severidad:** 🔴 CRÍTICO
-- **Reportado:** 2026-04-09 (esalas)
-- **Resuelto:** —
-
-##### Síntoma
-`"Me puedes indicar quienes cumplen años en abril de inproa santoni"` → ruteado a **general** (que no hace nada útil, confidence 0.50).
-
-##### Causa raíz
-Pendiente. Hipótesis: keyword "cumplen años" no disparó matching en rrhh agent. El agente rrhh tiene "cumpleañ" en sus keywords, pero "cumplen años" (2 palabras) puede no matchear el substring `"cumpleañ"` porque no se normaliza.
+Revisar:
+- `backend/app/agents/orchestrator.py`: keywords/matchers para rrhh. `"cumpleañ"` podría estar
+  pero `"cumplen años"` (2 palabras) no matchea el substring.
+- `backend/app/agents/rrhh.py`: `_ORG_MAP` y `_KEYWORDS` del agente.
+- Agente `general`: agregar frase "no tengo acceso" a la lista de frases prohibidas
+  (consistencia con RRHH-001).
 
 ##### Cross-Agent Review
-Pendiente.
+Pendiente. Al arreglar, buscar el mismo patrón:
+- ¿Los otros agentes normalizan "cumplen años" → "cumpleaños" antes de matchear?
+- ¿Hay keywords de 2+ palabras que se pierden por matching de substring simple?
+- ¿El agente `general` tiene la misma omisión de "no tengo acceso" en otros contextos?
 
 ---
 
-##### RRHH-102: "control vacacional" se rutea a general
+#### ✅ Resueltos (7)
+
+##### RRHH-100: "fecha de nacidos en abril" → rutea bien a rrhh (resuelto silenciosamente)
+- **Severidad:** 🔴 CRÍTICO
+- **Reportado:** 2026-04-09 (análisis de logs del supervisor esalas)
+- **Resuelto:** **antes del 09/Abr/2026 17:00 UTC — sin commit identificado**
+- **Commit del fix:** ? (se arregló en algún commit entre Marzo y Abril que no documenté)
+- **Test de regresión:** `routing_rrhh_nacidos_abril` en `backend/tests/golden/cases.yaml` (PASS)
+
+##### Síntoma histórico
+Pregunta real de esalas (de los logs históricos): `"Dame la fecha de los nacidos en el mes de
+abril"` → ruteada a **ventas** en los logs. Ya no reproduce.
+
+##### Confirmación de resolución
+En el baseline de Tranche 2 (09/Abr/2026), el golden test `routing_rrhh_nacidos_abril` pasó:
+```
+[PASS] routing_rrhh_nacidos_abril  (rrhh)
+       detalle:  Routing OK: rrhh
+```
+
+El bug fue arreglado antes de que lo cazáramos formalmente. Probable mitigación indirecta:
+los refactors de `orchestrator.py` del 02/Abr/2026 (commit `89b612f` de auditoría global).
+
+##### Cross-Agent Review
+No aplica retrospectivamente (el fix original no se tracea).
+
+---
+
+##### RRHH-102: "control vacacional" → rutea bien a rrhh (resuelto silenciosamente)
 - **Severidad:** 🔴 CRÍTICO
 - **Reportado:** 2026-04-09 (esalas)
+- **Resuelto:** antes del 09/Abr/2026 17:00 UTC — sin commit identificado
+- **Test de regresión:** `routing_rrhh_control_vacacional` (PASS)
 
-##### Síntoma
-`"me puedes dar el control vacacional al 31/03/2026?"` → ruteado a **general**.
+##### Síntoma histórico
+`"me puedes dar el control vacacional al 31/03/2026?"` → iba a **general**. Ya no.
 
-##### Causa raíz
-Pendiente. El rrhh agent SÍ tiene funcionalidad de vacaciones (`build_vacation_summary`), pero "control vacacional" no está en los keywords de routing.
+##### Confirmación
+```
+[PASS] routing_rrhh_control_vacacional  (rrhh)
+       detalle:  Routing OK: rrhh
+```
 
 ---
 
-##### RRHH-103: "fecha de ingreso de Geovanna Quintero" se rutea a compras_insumos
+##### RRHH-103: "fecha de ingreso de Geovanna Quintero" → rutea bien a rrhh (resuelto silenciosamente)
 - **Severidad:** 🔴 CRÍTICO
 - **Reportado:** 2026-04-09 (esalas — múltiples ocurrencias en logs)
+- **Resuelto:** antes del 09/Abr/2026 17:00 UTC
+- **Test de regresión:** `routing_rrhh_fecha_ingreso_empleado` (PASS)
 
-##### Síntoma
-`"dime la fecha de ingreso de Geovanna Quintero"` → ruteado a **compras_insumos**. Respuesta
-sin sentido (Geovanna Quintero es una empleada, no un proveedor).
+##### Síntoma histórico
+`"dime la fecha de ingreso de Geovanna Quintero"` → iba a **compras_insumos** (confundido por
+la palabra "ingreso" ≈ "ingreso de mercadería"). Ya no.
 
-##### Causa raíz
-Hipótesis: la palabra "ingreso" está en la lista de keywords de compras_insumos (como en "precio
-de ingreso de mercadería"). El routing de compras_insumos captura la palabra antes que rrhh
-capture "fecha de ingreso" (como "hire date").
-
-##### Cross-Agent Review
-Pendiente. Buscar "ingreso" en keywords de todos los agentes.
+##### Confirmación
+```
+[PASS] routing_rrhh_fecha_ingreso_empleado  (rrhh)
+       detalle:  Routing OK: rrhh
+```
 
 ---
-
-#### ✅ Resueltos (4)
 
 ##### RRHH-001 (histórico): "no tengo acceso" en respuestas
 - **Severidad:** 🔴 CRÍTICO
@@ -492,7 +530,9 @@ Fix: instrucción explícita en el system prompt de cada agente prohibiendo esa 
 alternativo cuando realmente no hay datos.
 
 ##### Cross-Agent Review
-✅ Aplicado a los 7 agentes en el mismo commit.
+✅ Aplicado a los 7 agentes en el mismo commit. **⚠️ Regresión encontrada en RRHH-101 (09/Abr/2026):**
+el fix original NO cubrió al agente `general`, que sigue emitiendo "no tengo acceso" cuando el
+orchestrator le manda una pregunta de RRHH que no supo clasificar.
 
 ---
 
@@ -1063,6 +1103,124 @@ con mensaje de error amigable al usuario. Loggeo estructurado con `logger.error(
 
 ---
 
+### Infraestructura / Runner de tests
+
+#### 🔴 Abiertos (2)
+
+##### INFR-100: Parser de runner lee "1.730" como 1.73 en vez de 1730
+- **Severidad:** 🔴 CRÍTICO (al framework de tests, no al bot)
+- **Reportado:** 2026-04-09 (Tranche 2 del golden suite)
+- **Resuelto:** 2026-04-09 (fix en este mismo commit)
+- **Commit del fix:** (ver commit siguiente)
+
+##### Síntoma observable
+En el run del Tranche 2, el caso `facturas_venta_bolivares_feb_2026` (Tranche 1) pasó de PASS
+a FAIL. El bot respondió correctamente:
+> "Total facturas emitidas: **1.730**"
+
+Pero `compare_count_exact` reportó:
+> "Esperado 1730. Top-3 enteros candidatos: [380]"
+
+El parser leía `"1.730"` como `1.73` (punto como decimal ISO). En `compare_count_exact` solo
+se consideran números que son enteros exactos (`n == int(n)`), así que 1.73 quedaba excluido
+del conjunto de candidatos. Solo quedaba 380 (el conteo de notas de crédito).
+
+Mismo síntoma con `compras_insumos_facturas_count_2025_ves`: el bot decía "7.426 facturas de
+compra", parser leía 7.426, test FAIL.
+
+##### Causa raíz (a nivel de código)
+`backend/tests/golden/runner.py:parse_number()` manejaba 3 ramas:
+1. `"." in s and "," in s` — mixto, con heurística por última posición
+2. `"," in s` — solo comas, con heurística por cantidad de dígitos
+3. Fallthrough a `float(s)` para cualquier otra cosa
+
+La rama (3) no distinguía entre `"1.730"` (venezolano miles) y `"1.73"` (decimal ISO). Ambos
+iban a `float(s)` que siempre interpreta el punto como decimal.
+
+##### Fix aplicado
+Nueva rama explícita `elif "." in s:` con heurística:
+- Múltiples puntos → miles venezolano ("1.234.567" = 1234567)
+- Un solo punto con "N.NNN" (izquierda 1-3 dígitos no-cero, derecha exactamente 3 dígitos
+  y no es "0.XXX") → miles venezolano
+- Cualquier otra cosa (`"3.14"`, `"0.500"`, `"3.14159"`) → decimal ISO
+
+Validado con 15 tests unitarios incluyendo casos patológicos:
+```
+1.730   → 1730    ✓   3.14    → 3.14      ✓
+7.426   → 7426    ✓   0.5     → 0.5       ✓
+1.234.567 → 1234567 ✓  0.500   → 0.5       ✓  (protegido contra falso positivo)
+123.456 → 123456  ✓   3.14159 → 3.14159   ✓
+```
+
+##### Cross-Agent Review
+N/A — es un bug del runner de tests, no de un agente. Sin embargo, vale la pena nota que este
+bug fue **silencioso y regresivo**: los 2 casos pasaban en Tranche 1 porque el bot los formateaba
+en otro formato (con coma como separador decimal). Entre Tranche 1 y Tranche 2 el bot cambió el
+formato de salida (o la pregunta disparó una rama distinta del LLM), y el parser expuso su
+debilidad. Esto sugiere que el parser debería tener un suite de tests unitarios dedicado en
+`backend/tests/golden/test_parser.py` para cazar regresiones parser-vs-bot-format más temprano.
+
+---
+
+##### INFR-101: Timeouts masivos del bot después de ~14 preguntas consecutivas
+- **Severidad:** 🔴 CRÍTICO (bloquea medición del Tranche 2)
+- **Reportado:** 2026-04-09 (Tranche 2 del golden suite)
+- **Resuelto:** —
+- **Commit del fix (mitigación temporal):** (este commit agrega `--delay` al runner)
+- **Fix definitivo:** pendiente de investigación
+
+##### Síntoma observable
+En el baseline de Tranche 2 (24 casos), los casos [15..22] dieron `Bot error: ReadTimeout:
+timed out` consecutivamente:
+
+```
+[PASS] routing_compras_empaque_inproa_2025         (caso 14, 12s)
+[FAIL] routing_finanzas_saldo_cxp_proveedores      (caso 15, TIMEOUT)
+[FAIL] routing_agri_deuda_productor_especifico     (caso 16, TIMEOUT)
+[FAIL] routing_agri_deuda_maiz_buque               (caso 17, TIMEOUT)
+[FAIL] routing_agri_maiz_acondicionado_inpromaiz   (caso 18, TIMEOUT)
+[FAIL] routing_agri_compras_maiz_mes_actual        (caso 19, TIMEOUT)
+[FAIL] routing_ventas_clientes_aperturados         (caso 20, TIMEOUT)
+[FAIL] routing_finanzas_saldos_bancarios_baseline  (caso 21, TIMEOUT)
+[PASS] routing_contabilidad_balance_dic_2025_baseline  (caso 22, 17s)
+[PASS] routing_produccion_ordenes_ene_2026_baseline    (caso 23, 10s)
+```
+
+Nótese que los últimos 2 casos volvieron a responder. Eso descarta "bot colgado permanentemente".
+
+##### Causa raíz (hipótesis, pendiente)
+1. **Rate limit del proveedor LLM (OpenRouter/DeepSeek).** 14 requests consecutivos en < 3
+   minutos puede disparar throttling. Los últimos 2 casos pasaron porque hubo ~30s de espera
+   por los timeouts anteriores, dándole tiempo al rate limit a resetearse.
+2. **Saturación de memoria en el backend.** Las conversaciones se acumulan en memoria + DB.
+3. **Contención en iDempiere.** Cada caso dispara queries contra la DB de producción.
+4. **ChromaDB rate limit interno.** Los logs de inicio muestran errores `'_type'` en ChromaDB.
+
+##### Mitigación temporal (este commit)
+`runner.py` ahora soporta:
+- `--delay N`: esperar N segundos entre casos (reduce ritmo de queries al LLM).
+- `--retry-timeout`: si un caso da timeout, esperar 30s y reintentar una vez.
+
+Ejemplo de uso:
+```bash
+docker compose exec ... backend python -m tests.golden.runner --delay 3 --retry-timeout
+```
+
+Con esto podemos reconfirmar si los 7 casos que fallaron por timeout son bugs reales o
+simplemente fueron víctimas de la saturación temporal.
+
+##### Fix definitivo (pendiente)
+Para arreglar el bug de raíz (que el bot no se sature con 14+ queries):
+1. Diagnosticar qué se satura exactamente (LLM, DB, memoria).
+2. Si es rate limit del LLM, agregar retry exponencial en el llm_factory del backend.
+3. Si es memoria, investigar la cache de conversaciones y agregar límites.
+4. Agregar monitoreo estructurado (latencia por proveedor, rate de errores).
+
+##### Cross-Agent Review
+N/A — es bug de infraestructura. Aplica a todos los agentes de la misma manera.
+
+---
+
 ## 7. Changelog del registro
 
 | Fecha | Cambio | Autor |
@@ -1070,4 +1228,5 @@ con mensaje de error amigable al usuario. Loggeo estructurado con `logger.error(
 | 2026-04-09 | Creación del registro, backfill completo de ventas (9 resueltos), y apertura de 14 bugs nuevos detectados en análisis de logs reales | Claude + Sergio |
 | 2026-04-09 | Diagnóstico y fix de COMP-100 (TypeError silencioso en `query_service.build_supply_purchases`). **Primer uso del proceso obligatorio de cross-agent review** → destapó COMP-103, COMP-104, COMP-105 (bugs idénticos en otros 3 wrappers del mismo archivo). Los 4 bugs se resolvieron en el mismo commit `beef39a`. Sin el proceso, solo se habría arreglado COMP-100 y los otros 3 habrían quedado silenciosos indefinidamente. | Claude + Sergio |
 | 2026-04-09 | **Tranche 1 cerrado con 10/10 PASS (100% precisión medida).** Re-run del golden suite post-fix confirmó que los 2 FAILs de `compras_insumos_*_2025_ves` pasaron a PASS con match exacto. Timings promedio 10.9s, máximo 21.9s (top 10 vendedores). Primer cierre formal de un tranche con métrica verificable. | Claude + Sergio |
+| 2026-04-09 | **Tranche 2 baseline** (14 casos nuevos de routing). Resultado: 13/24 PASS, 11/24 FAIL. Análisis: (a) 3 tickets silenciosamente resueltos antes del Tranche 2 (RRHH-100/102/103 movidos a Resueltos); (b) 2 bugs de routing confirmados vivos (RRHH-101, COMP-101); (c) 2 bugs propios del framework descubiertos por el mismo golden test (INFR-100 parser, INFR-101 saturación/timeouts); (d) 6 tickets no evaluables por los timeouts (FIN-100, AGRI-100..103, PRDC-100) — requieren re-run con `--delay`. El framework detectó 3 arreglos invisibles y 2 bugs de sí mismo, demostrando su valor auto-correctivo. | Claude + Sergio |
 

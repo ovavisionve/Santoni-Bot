@@ -187,6 +187,28 @@ def parse_number(s: str) -> float | None:
         else:
             # Comas como separador de miles ("1,234,567")
             s = s.replace(",", "")
+    elif "." in s:
+        # Solo puntos: ambiguo entre decimal ISO ("3.14") y miles vnzl ("1.730").
+        # Heurística:
+        #  - Múltiples puntos → siempre miles venezolano ("1.234.567" = 1234567)
+        #  - Un solo punto con "N.NNN" (izquierda 1-3 dígitos no-cero, derecha
+        #    exactamente 3 dígitos) → miles venezolano.
+        #    Casos: "1.730"=1730, "123.456"=123456, "3.141"=3141
+        #    (El último es patológico pero en datos de negocio de Santoni es
+        #    mucho más probable 3141 facturas que 3.141 de algo.)
+        #  - Cualquier otra cosa → decimal ISO:
+        #    "3.14"=3.14, "0.5"=0.5, "0.500"=0.5, "3.14159"=3.14159
+        parts = s.split(".")
+        if len(parts) > 2:
+            s = s.replace(".", "")
+        else:
+            left, right = parts[0], parts[1]
+            left_clean = left.lstrip("-")
+            if (len(right) == 3 and right.isdigit()
+                    and 1 <= len(left_clean) <= 3
+                    and left_clean.isdigit()
+                    and left_clean != "0"):
+                s = s.replace(".", "")
     try:
         return float(s)
     except ValueError:
@@ -545,6 +567,14 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Golden tests SantoniBot vs iDempiere")
     parser.add_argument("--only", help="Correr solo casos cuyo id coincida con este substring")
     parser.add_argument("-v", "--verbose", action="store_true", help="Mostrar respuestas completas del bot")
+    parser.add_argument(
+        "--delay", type=float, default=0.0,
+        help="Segundos a esperar entre casos (mitiga rate limit de LLM y saturación del backend)",
+    )
+    parser.add_argument(
+        "--retry-timeout", action="store_true",
+        help="Si un caso da timeout, esperar 30s y reintentarlo una vez",
+    )
     args = parser.parse_args()
 
     if not BOT_PASSWORD:
@@ -576,8 +606,15 @@ def main() -> int:
 
         results = []
         for i, caso in enumerate(casos, 1):
+            if args.delay > 0 and i > 1:
+                time.sleep(args.delay)
             print(f"[{i}/{len(casos)}] {caso['id']}...", end=" ", flush=True)
             r = run_case(caso, bot, idem, verbose=args.verbose)
+            # Reintento automático si dio timeout (bug INFR-101, saturación temporal)
+            if not r.passed and args.retry_timeout and "timed out" in r.detalle.lower():
+                print("TIMEOUT (reintentando en 30s)", end="... ", flush=True)
+                time.sleep(30)
+                r = run_case(caso, bot, idem, verbose=args.verbose)
             results.append(r)
             print("PASS" if r.passed else "FAIL")
     finally:
