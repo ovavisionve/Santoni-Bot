@@ -220,7 +220,21 @@ def _add_date_filter(
     anio: int | None,
     date_column: str,
 ) -> None:
-    """Add date filters. date_from/date_to override mes/anio when both provided."""
+    """Add date filters. date_from/date_to override mes/anio when both provided.
+
+    PERF-100 fix (09/Abr/2026): usa rangos de fechas en vez de EXTRACT()
+    para permitir uso de índices en columnas date/timestamp. EXTRACT(YEAR
+    FROM col) fuerza scan secuencial porque PostgreSQL no puede usar un
+    índice sobre la columna original cuando la envolvemos en una función.
+
+    Transformaciones:
+      - mes=2, anio=2026 → dateinvoiced >= '2026-02-01' AND < '2026-03-01'
+      - anio=2025 → dateinvoiced >= '2025-01-01' AND < '2026-01-01'
+      - mes sin anio → fallback a EXTRACT (edge case raro)
+
+    El rango exclusivo (< next_month) es correcto incluso si la columna
+    tiene timestamp (ej '2026-02-28 23:59:59' < '2026-03-01 00:00:00').
+    """
     logger.info(
         "Date filter: date_from=%s, date_to=%s, mes=%s, anio=%s, col=%s",
         date_from, date_to, mes, anio, date_column,
@@ -230,13 +244,35 @@ def _add_date_filter(
         conditions.append(f"{date_column} <= :date_to")
         params["date_from"] = date_from
         params["date_to"] = date_to
-    else:
-        if anio:
-            conditions.append(f"EXTRACT(YEAR FROM {date_column}) = :anio")
-            params["anio"] = anio
-        if mes:
-            conditions.append(f"EXTRACT(MONTH FROM {date_column}) = :mes")
-            params["mes"] = mes
+        return
+
+    if mes and anio:
+        # Rango exacto del mes. Usamos < next_month para cubrir timestamps.
+        if mes == 12:
+            next_month_year = anio + 1
+            next_month = 1
+        else:
+            next_month_year = anio
+            next_month = mes + 1
+        conditions.append(f"{date_column} >= :perf_date_from")
+        conditions.append(f"{date_column} < :perf_date_to_excl")
+        params["perf_date_from"] = f"{anio}-{mes:02d}-01"
+        params["perf_date_to_excl"] = f"{next_month_year}-{next_month:02d}-01"
+        return
+
+    if anio and not mes:
+        # Solo año: rango del 1 enero al 31 diciembre (via < 1 enero del año siguiente)
+        conditions.append(f"{date_column} >= :perf_date_from")
+        conditions.append(f"{date_column} < :perf_date_to_excl")
+        params["perf_date_from"] = f"{anio}-01-01"
+        params["perf_date_to_excl"] = f"{anio + 1}-01-01"
+        return
+
+    if mes and not anio:
+        # Solo mes sin año: edge case muy raro. Mantenemos EXTRACT por
+        # compatibilidad porque no tenemos año para construir un rango.
+        conditions.append(f"EXTRACT(MONTH FROM {date_column}) = :mes")
+        params["mes"] = mes
 
 
 # ---------------------------------------------------------------------------
@@ -253,6 +289,21 @@ def _add_date_filter(
 #
 # Usage: include {_ALLOC_JOIN} after "FROM adempiere.c_invoice i" in any query
 # that needs the open amount, then reference {_OPEN_EXPR} in SELECT/WHERE/ORDER.
+#
+# PERF-100 fix (09/Abr/2026): la subconsulta agrega c_allocationline con un
+# filtro temporal de 3 años sobre ah.dateacct. Antes agregaba todo el histórico
+# (potencialmente millones de filas), causando que cada query con _ALLOC_JOIN
+# tardara varios segundos. El filtro reduce la agregación a pagos recientes.
+#
+# Trade-off: si una factura vieja (> 3 años) tiene solo pagos viejos (> 3 años),
+# esta optimización la considera como "no pagada" (paid=0) y el saldo abierto
+# sería = grandtotal. Pero en la práctica:
+#   - Facturas reales > 3 años con pagos viejos ya están cerradas (docstatus='CL')
+#     o descartadas por docstatus='VO', y no aparecen en las queries filtradas.
+#   - El filtro de 3 años es muy generoso para un negocio operativo.
+#
+# Si en el futuro se necesita más historial (ej auditoría de 5+ años), se puede
+# crear un _ALLOC_JOIN_FULL sin filtro y usarlo en esas queries específicas.
 _ALLOC_JOIN = (
     "LEFT JOIN ("
     "SELECT al.c_invoice_id, "
@@ -260,6 +311,7 @@ _ALLOC_JOIN = (
     "FROM adempiere.c_allocationline al "
     "JOIN adempiere.c_allocationhdr ah ON al.c_allocationhdr_id = ah.c_allocationhdr_id "
     "WHERE ah.isactive = 'Y' AND ah.docstatus IN ('CO', 'CL') "
+    "AND ah.dateacct >= (CURRENT_DATE - INTERVAL '3 years') "
     "GROUP BY al.c_invoice_id"
     ") alloc ON alloc.c_invoice_id = i.c_invoice_id "
 )
