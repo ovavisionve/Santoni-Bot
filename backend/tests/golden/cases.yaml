@@ -450,3 +450,184 @@ casos:
     validar:
       tipo: valor_exacto
       tolerancia_pct: 0.005
+
+  # ═════════════════════════════════════════════════════════════════════
+  # TRANCHE 2 (09/Abr/2026) — routing bugs (tipo agente_esperado)
+  #
+  # Casos que validan el ROUTING del orchestrator, no los datos. El tipo
+  # `agente_esperado` llama al bot y verifica que `response.agent_used ==
+  # agente_esperado`. No requiere SQL ground truth.
+  #
+  # 11 casos son bugs de routing detectados en análisis de logs reales
+  # (supervisores jalvarez, esalas, mfigueredo). Cada uno corresponde a un
+  # ticket en docs/BUGS_REGISTRY.md. Se espera que TODOS FALLEN en la
+  # primera corrida (eso valida que los bugs están vivos). Cuando se
+  # arregle el orchestrator, deben pasar a PASS sin modificar el test.
+  #
+  # 3 casos son baseline positivos para cubrir los agentes que no tenían
+  # ningún test (finanzas, contabilidad, produccion). Se espera PASS en
+  # la primera corrida (si el routing para preguntas obvias funciona).
+  #
+  # Total: 14 casos nuevos (bringing suite a 24 total).
+  # ═════════════════════════════════════════════════════════════════════
+
+  # ─────────────────────────────────────────────────────────────────────
+  # RRHH — routing bugs de la supervisora esalas
+  # ─────────────────────────────────────────────────────────────────────
+
+  # Ticket: RRHH-100. Pregunta real de esalas en los logs (2026-04-09).
+  # Bug: "nacidos en el mes de abril" → ruteado a VENTAS (debería ser rrhh).
+  # Hipótesis: keyword "fecha" gana en ventas. Ver BUGS_REGISTRY.md § RRHH-100.
+  - id: routing_rrhh_nacidos_abril
+    agente: rrhh
+    pregunta: "Dame la fecha de los nacidos en el mes de abril"
+    validar:
+      tipo: agente_esperado
+      agente_esperado: rrhh
+
+  # Ticket: RRHH-101. Pregunta real de esalas.
+  # Bug: "quienes cumplen años" → ruteado a GENERAL.
+  - id: routing_rrhh_cumples_abril_inproa
+    agente: rrhh
+    pregunta: "Me puedes indicar quienes cumplen años en abril de inproa santoni"
+    validar:
+      tipo: agente_esperado
+      agente_esperado: rrhh
+
+  # Ticket: RRHH-102. Pregunta real de esalas.
+  # Bug: "control vacacional" → ruteado a GENERAL.
+  - id: routing_rrhh_control_vacacional
+    agente: rrhh
+    pregunta: "me puedes dar el control vacacional al 31/03/2026?"
+    validar:
+      tipo: agente_esperado
+      agente_esperado: rrhh
+
+  # Ticket: RRHH-103. Pregunta real de esalas (múltiples ocurrencias en logs).
+  # Bug: "fecha de ingreso de Geovanna Quintero" → ruteado a COMPRAS_INSUMOS.
+  # Hipótesis: keyword "ingreso" gana en compras_insumos (como "ingreso de mercadería").
+  - id: routing_rrhh_fecha_ingreso_empleado
+    agente: rrhh
+    pregunta: "dime la fecha de ingreso de Geovanna Quintero"
+    validar:
+      tipo: agente_esperado
+      agente_esperado: rrhh
+
+  # ─────────────────────────────────────────────────────────────────────
+  # COMPRAS INSUMOS — routing bug de admin
+  # ─────────────────────────────────────────────────────────────────────
+
+  # Ticket: COMP-101. Pregunta real en logs (admin la repite varias veces).
+  # Bug: "cuánto se ha comprado de empaque" → ruteado a PRODUCCION.
+  # Hipótesis: "empaque" está en keywords de produccion (empaquetado/empacadora).
+  - id: routing_compras_empaque_inproa_2025
+    agente: compras_insumos
+    pregunta: "¿Cuánto se ha comprado de empaque en INPROA SANTONI en 2025?"
+    validar:
+      tipo: agente_esperado
+      agente_esperado: compras_insumos
+
+  # ─────────────────────────────────────────────────────────────────────
+  # FINANZAS — routing bug de jalvarez (pregunta contable/financiera)
+  # ─────────────────────────────────────────────────────────────────────
+
+  # Ticket: FIN-100 / COMP-102 (mismo bug visto desde dos agentes).
+  # Pregunta real de jalvarez.
+  # Bug: "saldo de cuentas por pagar a proveedores" → ruteado a COMPRAS_INSUMOS.
+  # Debería ir a FINANZAS porque "saldo de cuentas por pagar" es terminología
+  # financiera/contable, no de compras operativas.
+  - id: routing_finanzas_saldo_cxp_proveedores
+    agente: finanzas
+    pregunta: "cual es el saldo de las cuentas por pagar a proveedores de inproa santoni al 28 de febrero de 2026"
+    validar:
+      tipo: agente_esperado
+      agente_esperado: finanzas
+
+  # ─────────────────────────────────────────────────────────────────────
+  # COMPRAS PRODUCTORES — 4 bugs de mfigueredo (pagos a productores de maíz)
+  # ─────────────────────────────────────────────────────────────────────
+
+  # Ticket: AGRI-100. Pregunta real de mfigueredo (2 ocurrencias).
+  # Bug: "deuda por pagar a productor X" → SIN_AGENTE (no rutea).
+  - id: routing_agri_deuda_productor_especifico
+    agente: compras_productores
+    pregunta: "cuanto es la deuda por pagar a productor Jose Luis Perez del Palomar"
+    validar:
+      tipo: agente_esperado
+      agente_esperado: compras_productores
+
+  # Ticket: AGRI-101. Pregunta real de mfigueredo.
+  # Bug: "deuda con maiz de buque de inpromaiz" → VENTAS.
+  # Debería ser compras_productores (es un pago a proveedor de maíz).
+  - id: routing_agri_deuda_maiz_buque
+    agente: compras_productores
+    pregunta: "deuda con maiz de buque de inpromaiz"
+    validar:
+      tipo: agente_esperado
+      agente_esperado: compras_productores
+
+  # Ticket: AGRI-102. Pregunta real de mfigueredo.
+  # Bug: "monto en dolares a pagar de maiz acondicionado" → VENTAS.
+  - id: routing_agri_maiz_acondicionado_inpromaiz
+    agente: compras_productores
+    pregunta: "cuanto es el monto en dolares a pagar de maiz acondicionado de inpromaiz"
+    validar:
+      tipo: agente_esperado
+      agente_esperado: compras_productores
+
+  # Ticket: AGRI-103. Pregunta real de mfigueredo.
+  # Bug: "Compras de maíz del mes actual" → COMPRAS_INSUMOS.
+  # "Maíz" → compras_productores (compras agrícolas), no compras_insumos.
+  - id: routing_agri_compras_maiz_mes_actual
+    agente: compras_productores
+    pregunta: "Compras de maíz del mes actual"
+    validar:
+      tipo: agente_esperado
+      agente_esperado: compras_productores
+
+  # ─────────────────────────────────────────────────────────────────────
+  # PRODUCCION → VENTAS — routing bug del admin
+  # ─────────────────────────────────────────────────────────────────────
+
+  # Ticket: PRDC-100. Pregunta real en logs.
+  # Bug: "CLIENTES SE APERTURARON" → ruteado a PRODUCCION.
+  # Debería ser ventas: "apertura de clientes" = new customer acquisition,
+  # no "apertura de orden de producción".
+  - id: routing_ventas_clientes_aperturados
+    agente: ventas
+    pregunta: "CUANTOS CLIENTES SE APERTURARON EN EL AÑO 2025"
+    validar:
+      tipo: agente_esperado
+      agente_esperado: ventas
+
+  # ═════════════════════════════════════════════════════════════════════
+  # BASELINE POSITIVOS — routing esperado para agentes sin cobertura
+  # ═════════════════════════════════════════════════════════════════════
+  # Estos casos validan que el routing básico ya funciona para finanzas,
+  # contabilidad y produccion en preguntas obvias. Se esperan PASS en la
+  # primera corrida. Si alguno FALLA, hay un bug más profundo del que no
+  # sabíamos.
+
+  # Pregunta típica de finanzas sin keywords ambiguos
+  - id: routing_finanzas_saldos_bancarios_baseline
+    agente: finanzas
+    pregunta: "¿Cuáles son los saldos bancarios actuales?"
+    validar:
+      tipo: agente_esperado
+      agente_esperado: finanzas
+
+  # Pregunta típica de contabilidad sin keywords ambiguos
+  - id: routing_contabilidad_balance_dic_2025_baseline
+    agente: contabilidad
+    pregunta: "Muéstrame el balance general de diciembre 2025"
+    validar:
+      tipo: agente_esperado
+      agente_esperado: contabilidad
+
+  # Pregunta típica de produccion sin keywords ambiguos
+  - id: routing_produccion_ordenes_ene_2026_baseline
+    agente: produccion
+    pregunta: "¿Cuáles son las órdenes de producción de enero 2026?"
+    validar:
+      tipo: agente_esperado
+      agente_esperado: produccion

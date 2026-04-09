@@ -102,8 +102,8 @@ class BotClient:
             raise RuntimeError(f"Login devolvió sin token: {data}")
         self.token = data["access_token"]
 
-    def ask(self, message: str) -> tuple[str, float]:
-        """Envía una pregunta fresca (sin historial). Devuelve (respuesta_markdown, ms)."""
+    def ask(self, message: str) -> tuple[str, str | None, float]:
+        """Envía una pregunta fresca (sin historial). Devuelve (respuesta_markdown, agent_used, ms)."""
         if not self.token:
             self.login()
         start = time.perf_counter()
@@ -114,7 +114,8 @@ class BotClient:
         )
         elapsed_ms = (time.perf_counter() - start) * 1000
         resp.raise_for_status()
-        return resp.json()["message"], elapsed_ms
+        body = resp.json()
+        return body["message"], body.get("agent_used"), elapsed_ms
 
     def close(self) -> None:
         self.client.close()
@@ -308,6 +309,45 @@ def compare_count_exact(ground_truth: int, bot_response: str) -> tuple[bool, str
     )
 
 
+def compare_agent_routed(
+    agente_esperado: str,
+    agente_actual: str | None,
+    bot_response: str,
+    texto_no_esperado: list[str] | None = None,
+) -> tuple[bool, str]:
+    """Valida routing del orchestrator (no los datos).
+
+    Útil para cazar bugs como "mfigueredo pregunta sobre pagos a productores
+    y el bot rutea a ventas". El test falla si:
+      - agente_actual != agente_esperado
+      - la respuesta del bot contiene alguno de los textos prohibidos
+        (ej. "no tengo acceso", "no pude procesar", "Error al consultar")
+    """
+    if not agente_actual:
+        return False, (
+            f"Bot no reportó agent_used (posible SIN_AGENTE). "
+            f"Esperado: {agente_esperado}. Snippet: {_snippet(bot_response)}"
+        )
+
+    if agente_actual != agente_esperado:
+        return False, (
+            f"Routing incorrecto: esperado '{agente_esperado}', ruteado a '{agente_actual}'. "
+            f"Snippet: {_snippet(bot_response)}"
+        )
+
+    # Si ruteó bien pero la respuesta contiene texto prohibido, falla igual
+    if texto_no_esperado:
+        resp_lower = bot_response.lower()
+        for forbidden in texto_no_esperado:
+            if forbidden.lower() in resp_lower:
+                return False, (
+                    f"Ruteó OK a '{agente_esperado}' pero la respuesta contiene "
+                    f"texto no esperado: '{forbidden}'. Snippet: {_snippet(bot_response)}"
+                )
+
+    return True, f"Routing OK: {agente_esperado}"
+
+
 def compare_ordered_table(
     ground_truth_rows: list[tuple],
     ground_truth_cols: list[str],
@@ -403,33 +443,39 @@ def run_case(
     case_id = case["id"]
     pregunta = case["pregunta"]
     agente = case.get("agente", "?")
+    val_spec = case["validar"]
+    tipo = val_spec["tipo"]
 
-    # 1. Ground truth SQL
-    gt_spec = case["ground_truth"]
-    sql = gt_spec["sql"]
-    extraer = gt_spec.get("extraer", "scalar")
+    # Casos de routing (agente_esperado) NO necesitan SQL ground truth — solo
+    # validan que el orchestrator rute la pregunta al agente correcto.
+    needs_sql = tipo != "agente_esperado"
+    ground_truth = None
+    ms_sql = 0.0
 
-    try:
-        cols, rows, ms_sql = idem.run(sql)
-    except Exception as exc:
-        return CaseResult(
-            case_id=case_id, agente=agente, pregunta=pregunta,
-            passed=False, detalle=f"SQL error: {type(exc).__name__}: {exc}",
-        )
-
-    if extraer == "scalar":
-        if not rows or not rows[0]:
+    if needs_sql:
+        gt_spec = case["ground_truth"]
+        sql = gt_spec["sql"]
+        extraer = gt_spec.get("extraer", "scalar")
+        try:
+            cols, rows, ms_sql = idem.run(sql)
+        except Exception as exc:
             return CaseResult(
                 case_id=case_id, agente=agente, pregunta=pregunta,
-                passed=False, detalle="SQL devolvió sin filas", ms_sql=ms_sql,
+                passed=False, detalle=f"SQL error: {type(exc).__name__}: {exc}",
             )
-        ground_truth = float(rows[0][0]) if rows[0][0] is not None else 0.0
-    else:
-        ground_truth = (cols, rows)
+        if extraer == "scalar":
+            if not rows or not rows[0]:
+                return CaseResult(
+                    case_id=case_id, agente=agente, pregunta=pregunta,
+                    passed=False, detalle="SQL devolvió sin filas", ms_sql=ms_sql,
+                )
+            ground_truth = float(rows[0][0]) if rows[0][0] is not None else 0.0
+        else:
+            ground_truth = (cols, rows)
 
-    # 2. Preguntar al bot
+    # Preguntar al bot
     try:
-        bot_response, ms_bot = bot.ask(pregunta)
+        bot_response, agent_used, ms_bot = bot.ask(pregunta)
     except Exception as exc:
         return CaseResult(
             case_id=case_id, agente=agente, pregunta=pregunta,
@@ -437,10 +483,7 @@ def run_case(
             ground_truth=ground_truth, ms_sql=ms_sql,
         )
 
-    # 3. Comparar
-    val_spec = case["validar"]
-    tipo = val_spec["tipo"]
-
+    # Comparar
     if tipo == "valor_exacto":
         tol = val_spec.get("tolerancia_pct", 0.005)
         passed, detalle = compare_scalar_exact(ground_truth, bot_response, tol)
@@ -454,6 +497,12 @@ def run_case(
             columna_valor=val_spec["columna_valor"],
             tolerancia_pct=val_spec.get("tolerancia_pct", 0.01),
             posicion_estricta=val_spec.get("posicion_estricta", True),
+        )
+    elif tipo == "agente_esperado":
+        agente_esperado = val_spec["agente_esperado"]
+        texto_no_esperado = val_spec.get("texto_no_esperado")
+        passed, detalle = compare_agent_routed(
+            agente_esperado, agent_used, bot_response, texto_no_esperado,
         )
     else:
         passed, detalle = False, f"Tipo de validación desconocido: {tipo}"
