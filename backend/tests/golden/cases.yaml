@@ -651,50 +651,14 @@ casos:
   # DATOS (2 casos nuevos)
   # ─────────────────────────────────────────────────────────────────────
 
-  # CASO: ventas_total_neto_usd_feb_2026
-  # Complementa ventas_total_neto_ves_feb_2026 con la otra moneda principal.
-  # Valida que el filtro de moneda USD funciona igual que VES pero con los 9
-  # c_currency_id distintos que usa Santoni para dólares.
-  #
-  # Función del bot: build_sales_summary → totales.venta_neta
-  # Filtros: currency_ids=USD (9 IDs), mes=2, anio=2026
-  - id: ventas_total_neto_usd_feb_2026
-    agente: ventas
-    pregunta: "¿Cuánto vendimos en dólares en febrero 2026?"
-    ground_truth:
-      extraer: scalar
-      sql: |
-        SELECT COALESCE(SUM(
-                 CASE WHEN dt.docbasetype = 'ARI' THEN i.totallines
-                      WHEN dt.docbasetype = 'ARC' THEN -i.totallines
-                      ELSE 0 END), 0) AS venta_neta
-        FROM adempiere.c_invoice i
-        JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id
-        WHERE i.issotrx = 'Y'
-          AND i.docstatus IN ('CO', 'CL')
-          AND i.isactive = 'Y'
-          AND i.c_currency_id IN (100,1000000,1000003,1000006,1000008,1000009,1000011,1000013,1000017)
-          AND i.dateinvoiced >= '2026-02-01'
-          AND i.dateinvoiced < '2026-03-01'
-    validar:
-      tipo: valor_exacto
-      tolerancia_pct: 0.01
-    ground_truth:
-      extraer: scalar
-      sql: |
-        SELECT COALESCE(SUM(i.totallines), 0) AS monto_nc
-        FROM adempiere.c_invoice i
-        JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id
-        WHERE i.issotrx = 'Y'
-          AND i.docstatus IN ('CO', 'CL')
-          AND i.isactive = 'Y'
-          AND dt.docbasetype = 'ARC'
-          AND i.c_currency_id = 205
-          AND i.dateinvoiced >= '2026-02-01'
-          AND i.dateinvoiced < '2026-03-01'
-    validar:
-      tipo: valor_exacto
-      tolerancia_pct: 0.01
+  # ── NOTA: ventas USD total removido temporalmente ──────────────────────
+  # El caso ventas_total_neto_usd_feb_2026 fue removido porque el SQL
+  # ground truth (sin filtro de org) incluye datos de orgs DEMO de
+  # iDempiere (HQ, Store Central, Furniture, etc.) con facturas dummy USD.
+  # Los tests de VES no se ven afectados porque las orgs demo no tienen
+  # facturas en bolívares. Para reactivar: agregar filtro de org real.
+  # Ticket: INFR-102 (investigar whitelist de orgs reales para USD).
+  # ─────────────────────────────────────────────────────────────────────
 
   # CASO: rrhh_empleados_activos_agroinproa
   # Tercera organización cubierta en rrhh (INPROA SANTONI y InproMaiz ya
