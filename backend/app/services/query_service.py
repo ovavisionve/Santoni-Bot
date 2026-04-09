@@ -1138,11 +1138,16 @@ def build_supply_purchases(
     date_from: str | None = None,
     date_to: str | None = None,
     currency_ids: list[int] | None = None,
+    org_name: str | list[str] | None = None,
 ) -> dict:
     """Supply purchases - routes to demo or iDempiere."""
     if _is_production():
         from app.services.idempiere_queries import build_supply_purchases as _prod
-        return _prod(mes=mes, anio=anio, org_ids=org_ids, date_from=date_from, date_to=date_to, currency_ids=currency_ids)
+        return _prod(
+            mes=mes, anio=anio, org_ids=org_ids,
+            date_from=date_from, date_to=date_to,
+            currency_ids=currency_ids, org_name=org_name,
+        )
 
     # Demo fallback
     db = SessionLocal()
@@ -1196,6 +1201,7 @@ def build_pending_purchase_orders(
     date_to: str | None = None,
     currency_ids: list[int] | None = None,
     product_search: str | None = None,
+    org_name: str | list[str] | None = None,
 ) -> dict:
     """Pending purchase orders - routes to demo or iDempiere."""
     if _is_production():
@@ -1204,6 +1210,7 @@ def build_pending_purchase_orders(
             mes=mes, anio=anio, org_ids=org_ids,
             date_from=date_from, date_to=date_to,
             currency_ids=currency_ids, product_search=product_search,
+            org_name=org_name,
         )
     return {
         "anio": anio, "mes": mes,
@@ -1237,6 +1244,7 @@ def build_purchase_payment_status(
     org_ids: list[int] | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    org_name: str | list[str] | None = None,
 ) -> dict:
     """Purchase payment status - routes to demo or iDempiere."""
     if _is_production():
@@ -1244,6 +1252,7 @@ def build_purchase_payment_status(
         return _prod(
             mes=mes, anio=anio, org_ids=org_ids,
             date_from=date_from, date_to=date_to,
+            org_name=org_name,
         )
     return {"resumen_pago": [], "facturas_vencidas": []}
 
@@ -1337,6 +1346,7 @@ def build_inventory_stock(
     product_search: str | None = None,
     category_search: str | None = None,
     warehouse_search: str | None = None,
+    org_name: str | list[str] | None = None,
 ) -> dict:
     """Inventory stock - routes to demo or iDempiere."""
     if _is_production():
@@ -1344,6 +1354,7 @@ def build_inventory_stock(
         return _prod(
             org_ids=org_ids, product_search=product_search,
             category_search=category_search, warehouse_search=warehouse_search,
+            org_name=org_name,
         )
 
     # Demo fallback

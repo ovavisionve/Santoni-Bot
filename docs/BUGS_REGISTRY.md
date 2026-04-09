@@ -136,19 +136,20 @@ desde que se abre hasta que se resuelve (solo cambia de lista).
 | finanzas            | 1 | 0 | 0 | 0 | 0 |  1 |
 | contabilidad        | 0 | 0 | 0 | 0 | 0 |  0 |
 | produccion          | 1 | 0 | 0 | 0 | 0 |  1 |
-| compras_insumos     | 3 | 0 | 0 | 0 | 3 |  6 |
+| compras_insumos     | 2 | 0 | 0 | 0 | 7 |  9 |
 | compras_productores | 4 | 0 | 0 | 0 | 0 |  4 |
 | orchestrator        | 1 | 1 | 0 | 0 | 0 |  2 |
 | base_agent          | 0 | 0 | 0 | 0 | 1 |  1 |
-| **TOTAL**           | **14** | **2** | **0** | **0** | **17** | **33** |
+| **TOTAL**           | **13** | **2** | **0** | **0** | **21** | **36** |
 
 ### Indicadores clave
 
-- **Precisión medida (golden tests):** 8/10 PASS = **80%** (Tranche 1, 09/Abr/2026)
+- **Precisión medida (golden tests):** 8/10 PASS = **80%** (Tranche 1, 09/Abr/2026) — se espera 10/10 después del fix de COMP-100/103/104/105
 - **Cobertura del golden suite:** 4 de 7 agentes (ventas, rrhh, compras_insumos, compras_productores)
 - **Bugs críticos detectados por logs:** 10 (ver sección por agente)
-- **Bugs críticos detectados por golden tests:** 2 (COMP-100, COMP-101)
-- **Deuda técnica crítica:** 14 bugs 🔴 abiertos.
+- **Bugs críticos detectados por golden tests:** 4 (COMP-100 + cross-agent review destapó COMP-103, COMP-104, COMP-105)
+- **Deuda técnica crítica:** 13 bugs 🔴 abiertos.
+- **Efectividad del cross-agent review:** en la primera aplicación del proceso (09/Abr/2026), la revisión cruzada de COMP-100 destapó 3 bugs idénticos (COMP-103, COMP-104, COMP-105) que habrían quedado silenciosos. Sin el proceso, habríamos arreglado solo 1 de 4.
 
 ---
 
@@ -526,50 +527,7 @@ usar directamente `ad_user.birthday` que es la columna real en iDempiere.
 
 ### Agente: Compras Insumos
 
-#### 🔴 Abiertos (3)
-
-##### COMP-100: Compras de insumos 2025 devuelve "no hay datos" (bug activo, diagnóstico en curso)
-- **Severidad:** 🔴 CRÍTICO
-- **Reportado:** 2026-04-09 (golden test `compras_insumos_total_2025_ves` + `compras_insumos_facturas_count_2025_ves` → ambos FAIL)
-- **Resuelto:** —
-- **Commit del fix:** —
-- **Test de regresión:** ya existe en `backend/tests/golden/cases.yaml` (Tranche 1)
-
-##### Síntoma observable
-Pregunta: `"¿Cuánto se compró en insumos en 2025 en bolívares?"`
-Respuesta real del bot:
-> "No se encontraron datos de compras de insumos para el año 2025 en bolívares (VES). Si necesitas datos de otro período o moneda, indícame el año, mes o rango de fechas específico. **Nota:** Los datos disponibles corresponden al año actual (2026) por defecto."
-
-Ground truth SQL directo contra iDempiere: **Bs. 8,212,602,071.70** en 7,426 facturas.
-Los datos EXISTEN, el bot NO los encuentra.
-
-Datos adicionales confirmados (2026-04-09):
-- `HISTORICAL_DATA_ENABLED=false` → el bot va a iDempiere vivo, no a DB local
-- La DB local sí tiene `c_invoice` para `issotrx='N'` en 2025 (23,852 filas) pero no se usa
-- Mi hipótesis inicial de routing histórico era **incorrecta**
-
-##### Causa raíz (a nivel de código) — DIAGNÓSTICO EN CURSO
-Pendiente. El bot devuelve "no hay datos" con confianza alta. El system prompt de compras_insumos
-(línea 110) menciona "Los datos corresponden al año actual por defecto" y el LLM lo cita
-literalmente. Pero ese mensaje es solo la excusa del LLM cuando recibe dict vacío — la pregunta
-real es **por qué la query devuelve vacío si los datos existen en iDempiere**.
-
-Hipótesis a probar:
-1. ¿El agente extrae `anio=2025` correctamente, o lo sobreescribe a 2026?
-2. ¿La query entra en una rama distinta a `build_supply_purchases` (ej: `is_inventory`, `is_payment`)?
-3. ¿`_detect_currency` devuelve lo esperado para "en bolívares"?
-4. ¿Hay un filtro extra que elimina los resultados (ej: filtro por org implícito)?
-
-##### Fix aplicado
-—
-
-##### Cross-Agent Review
-Se aplicará cuando se identifique el patrón. Candidatos a revisar:
-- `finanzas.py` — ¿misma lógica de extracción de año para queries históricas?
-- `contabilidad.py` — idem
-- `ventas.py` — el caso `ventas_total_neto_ves_enero_2026` SÍ PASA en 2026, no sabemos 2025
-
----
+#### 🔴 Abiertos (2)
 
 ##### COMP-101: "cuánto se ha comprado de empaque" se rutea a produccion
 - **Severidad:** 🔴 CRÍTICO
@@ -608,7 +566,231 @@ Pendiente.
 
 ---
 
-#### ✅ Resueltos (3)
+#### ✅ Resueltos (7)
+
+##### COMP-100: Compras de insumos devolvía "no hay datos" por TypeError silencioso en wrapper
+- **Severidad:** 🔴 CRÍTICO
+- **Reportado:** 2026-04-09 (golden test `compras_insumos_total_2025_ves` + `compras_insumos_facturas_count_2025_ves` → ambos FAIL)
+- **Resuelto:** 2026-04-09
+- **Commit del fix:** (ver commit siguiente)
+- **Test de regresión:** `compras_insumos_total_2025_ves`, `compras_insumos_facturas_count_2025_ves` en `backend/tests/golden/cases.yaml`
+
+##### Síntoma observable
+Pregunta: `"¿Cuánto se compró en insumos en 2025 en bolívares?"`
+Respuesta real del bot:
+> "No se encontraron datos de compras de insumos para el año 2025 en bolívares (VES). Si necesitas datos de otro período o moneda, indícame el año, mes o rango de fechas específico. **Nota:** Los datos disponibles corresponden al año actual (2026) por defecto."
+
+Ground truth SQL directo contra iDempiere: **Bs. 8,212,602,071.70** en 7,426 facturas.
+Los datos EXISTEN, el bot NO los encuentra.
+
+##### Causa raíz (a nivel de código)
+El agente `compras_insumos.py:599-605` llama a `build_supply_purchases(org_name=org_name, ...)`
+importándolo de `query_service.py` (NO directamente de `idempiere_queries.py`).
+
+El wrapper en `backend/app/services/query_service.py:1134-1145` (pre-fix) NO declaraba `org_name`
+en su firma, ni lo forwardeaba a la función subyacente. Resultado:
+
+```python
+# query_service.py (pre-fix)
+def build_supply_purchases(
+    mes=None, anio=None, org_ids=None,
+    date_from=None, date_to=None, currency_ids=None,
+    # <<< falta org_name
+) -> dict:
+    if _is_production():
+        from app.services.idempiere_queries import build_supply_purchases as _prod
+        return _prod(mes=mes, anio=anio, org_ids=org_ids,
+                     date_from=date_from, date_to=date_to,
+                     currency_ids=currency_ids)  # <<< no forwardea org_name
+```
+
+Cuando el agente llamaba con `org_name=None` (caso normal, la mayoría de preguntas):
+```python
+>>> build_supply_purchases(mes=None, anio=2025, currency_ids=[205], org_name=None)
+TypeError: build_supply_purchases() got an unexpected keyword argument 'org_name'
+```
+
+El `try/except` del agente (línea 608-614) capturaba el TypeError y añadía a las secciones:
+```
+## Error al consultar datos
+Se produjo un error al consultar la base de datos: TypeError.
+```
+
+El LLM (DeepSeek v3) recibía eso + el system prompt que dice "Los datos corresponden al año
+actual por defecto" y construía una respuesta engañosamente amable: "No se encontraron datos
+de compras de insumos para el año 2025 en bolívares". Nada indicaba que había un error real.
+
+**Este es un bug SILENCIOSO clásico**: el error se enmascara como "no data" y los usuarios asumen
+que iDempiere no tiene el dato. Los supervisores llevaban quién sabe cuánto tiempo sin poder
+hacer consultas históricas de compras de insumos sin saber que era un bug del código.
+
+##### Diagnóstico
+Llamada directa desde dentro del contenedor backend:
+```bash
+docker compose exec -T backend python -c "
+from app.services.query_service import build_supply_purchases
+r = build_supply_purchases(mes=None, anio=2025, currency_ids=[205], org_name=None)
+print(r['totales'])
+"
+# → TypeError: build_supply_purchases() got an unexpected keyword argument 'org_name'
+```
+
+##### Fix aplicado
+Agregado `org_name: str | list[str] | None = None` a la firma de `build_supply_purchases` en
+`query_service.py` y forwardeado a `_prod()`.
+
+```python
+# query_service.py (post-fix)
+def build_supply_purchases(
+    mes=None, anio=None, org_ids=None,
+    date_from=None, date_to=None, currency_ids=None,
+    org_name: str | list[str] | None = None,  # <<< nuevo
+) -> dict:
+    if _is_production():
+        from app.services.idempiere_queries import build_supply_purchases as _prod
+        return _prod(
+            mes=mes, anio=anio, org_ids=org_ids,
+            date_from=date_from, date_to=date_to,
+            currency_ids=currency_ids, org_name=org_name,  # <<< forwardeado
+        )
+```
+
+##### Cross-Agent Review — HALLAZGO CRÍTICO
+**La revisión cruzada destapó 3 bugs idénticos** en el mismo archivo `query_service.py`, todos
+en funciones que el agente `compras_insumos.py` llama. Script usado:
+
+```python
+# Compara firmas prod vs wrapper buscando org_name faltante
+for name in funciones_prod_con_org_name:
+    if wrapper_sigs[name] doesn't contain 'org_name':
+        print(f'BUG: {name}')
+```
+
+Resultado inicial (pre-fix):
+
+| Función | Estado |
+|---|---|
+| build_sales_summary | OK |
+| build_collection_summary | OK |
+| build_top_clients | OK |
+| build_sales_by_product | OK |
+| build_sales_orders | OK |
+| build_sales_tax_summary | OK |
+| build_sales_by_branch | OK |
+| build_producer_purchases | OK |
+| **build_supply_purchases** | 🔴 **BUG (COMP-100)** |
+| build_product_purchase_history | OK |
+| **build_pending_purchase_orders** | 🔴 **BUG (COMP-103)** |
+| build_supplier_price_comparison | OK |
+| **build_purchase_payment_status** | 🔴 **BUG (COMP-104)** |
+| **build_inventory_stock** | 🔴 **BUG (COMP-105)** |
+
+**14/14 funciones con `org_name` prod, 10 wrappers OK, 4 wrappers con bug.** Los 4 bugs son
+del mismo archivo y del mismo patrón: wrappers creados en fase temprana del proyecto antes
+que `org_name` existiera, nunca actualizados cuando `org_name` se agregó a las funciones
+subyacentes.
+
+Se abrieron COMP-103, COMP-104, COMP-105 y se arreglaron en el mismo commit que COMP-100,
+siguiendo el proceso obligatorio de cross-agent review documentado en `docs/BUGS_REGISTRY.md`
+sección 2.
+
+| Agente (consumidor) | Estado | Nota |
+|---|---|---|
+| ventas | ✅ No aplica | ventas usa `build_sales_*` que todos tienen org_name correctamente |
+| rrhh | ✅ No aplica | rrhh no usa funciones de compras |
+| finanzas | ⚠️ Aplica parcial | finanzas usa `build_supplier_balance` — revisar en próxima sesión |
+| contabilidad | ✅ No aplica | contabilidad usa `build_accounting_summary` (OK) |
+| produccion | ⚠️ Aplica parcial | produccion también usa `build_inventory_stock` → COMP-105 beneficia también a produccion |
+| compras_insumos | 🔴 **Agente afectado** | 4 de sus funciones estaban rotas |
+| compras_productores | ✅ No aplica | usa `build_producer_*` que tienen org_name OK |
+| orchestrator | N/A | no llama funciones de query |
+| base_agent | N/A | idem |
+
+##### Verificación post-fix
+Re-correr el golden suite:
+```bash
+docker compose exec -e BOT_USERNAME=admin -e BOT_PASSWORD='...' -e IDEMPIERE_PASSWORD='...' backend python -m tests.golden.runner
+```
+Esperado: los 2 casos `compras_insumos_*_2025_ves` deben pasar de FAIL a PASS.
+
+---
+
+##### COMP-103: `build_pending_purchase_orders` wrapper no forwardea `org_name`
+- **Severidad:** 🔴 CRÍTICO
+- **Reportado:** 2026-04-09 (cross-agent review de COMP-100)
+- **Resuelto:** 2026-04-09 (mismo commit que COMP-100)
+- **Test de regresión:** pendiente (Tranche 2 agregará un caso para "órdenes de compra pendientes")
+
+##### Síntoma (inferido, no observado directamente)
+Cualquier pregunta que hiciera el agente `compras_insumos.py` sobre órdenes pendientes (keywords:
+"orden de compra", "pendiente", "por recibir", "por recepcionar", "solicitado") reventaría con
+`TypeError` cuando llegara a `build_pending_purchase_orders` con `org_name=<cualquier valor>`.
+
+El error se enmascaraba como "no hay datos" por el mismo mecanismo que COMP-100.
+
+##### Causa raíz
+Mismo patrón que COMP-100. `query_service.py:1191-1212` (pre-fix) no declaraba `org_name`:
+```python
+def build_pending_purchase_orders(
+    mes, anio, org_ids, date_from, date_to, currency_ids, product_search,
+    # <<< falta org_name
+) -> dict:
+    if _is_production():
+        from app.services.idempiere_queries import build_pending_purchase_orders as _prod
+        return _prod(
+            mes=mes, anio=anio, org_ids=org_ids,
+            date_from=date_from, date_to=date_to,
+            currency_ids=currency_ids, product_search=product_search,
+            # <<< no forwardea org_name
+        )
+```
+
+##### Fix aplicado
+Agregado `org_name` a la firma del wrapper y forwardeado a `_prod()`.
+
+##### Cross-Agent Review
+Idéntico al de COMP-100 — todos los bugs se descubrieron en la misma iteración cross-agent.
+
+---
+
+##### COMP-104: `build_purchase_payment_status` wrapper no forwardea `org_name`
+- **Severidad:** 🔴 CRÍTICO
+- **Reportado:** 2026-04-09 (cross-agent review de COMP-100)
+- **Resuelto:** 2026-04-09 (mismo commit que COMP-100)
+- **Test de regresión:** pendiente
+
+##### Síntoma (inferido)
+Cualquier pregunta sobre estado de pago de facturas de compra ("estado de pago", "pagada",
+"pagadas", "pendiente de pago", "por pagar", "facturas vencidas", "morosidad", "cuentas por
+pagar", "deuda", "adeudado") reventaría con `TypeError`, enmascarado como "no hay datos".
+
+##### Causa raíz
+Mismo patrón. `query_service.py:1234-1248` no declaraba `org_name`.
+
+##### Fix aplicado
+Agregado `org_name` a la firma del wrapper y forwardeado a `_prod()`.
+
+---
+
+##### COMP-105: `build_inventory_stock` wrapper no forwardea `org_name`
+- **Severidad:** 🔴 CRÍTICO
+- **Reportado:** 2026-04-09 (cross-agent review de COMP-100)
+- **Resuelto:** 2026-04-09 (mismo commit que COMP-100)
+- **Test de regresión:** pendiente
+
+##### Síntoma (inferido)
+Cualquier pregunta de inventario/stock ("inventario", "stock", "existencia", "almacén",
+"disponible", "cuánto hay", "cuánto queda", "cuánto tenemos") reventaría con `TypeError`,
+enmascarado como "no hay datos". Este bug también afecta al agente `produccion.py` si ese
+agente comparte `build_inventory_stock`.
+
+##### Causa raíz
+Mismo patrón. `query_service.py:1335-1347` no declaraba `org_name`.
+
+##### Fix aplicado
+Agregado `org_name` a la firma del wrapper y forwardeado a `_prod()`.
+
+---
 
 ##### COMP-001 (histórico): `org_name` no se extraía en compras
 - **Severidad:** 🔴 CRÍTICO
@@ -885,4 +1067,5 @@ con mensaje de error amigable al usuario. Loggeo estructurado con `logger.error(
 | Fecha | Cambio | Autor |
 |---|---|---|
 | 2026-04-09 | Creación del registro, backfill completo de ventas (9 resueltos), y apertura de 14 bugs nuevos detectados en análisis de logs reales | Claude + Sergio |
+| 2026-04-09 | Diagnóstico y fix de COMP-100 (TypeError silencioso en `query_service.build_supply_purchases`). **Primer uso del proceso obligatorio de cross-agent review** → destapó COMP-103, COMP-104, COMP-105 (bugs idénticos en otros 3 wrappers del mismo archivo). Los 4 bugs se resolvieron en el mismo commit. Sin el proceso, solo se habría arreglado COMP-100 y los otros 3 habrían quedado silenciosos indefinidamente. | Claude + Sergio |
 
