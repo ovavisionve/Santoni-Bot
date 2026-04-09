@@ -200,6 +200,33 @@ _GENERAL_PATTERNS = [
     "quien eres", "quién eres", "como funciona", "cómo funciona",
 ]
 
+# ── Pre-routing rules ───────────────────────────────────────────────────
+# Frases de ALTA ESPECIFICIDAD que se evalúan ANTES del loop genérico de
+# _KEYWORD_RULES. Resuelven conflictos donde un keyword genérico de un
+# agente (ej "proveedores" en compras_insumos) captura preguntas que
+# realmente pertenecen a otro agente (ej "cuentas por pagar a proveedores"
+# → finanzas). La frase larga es más específica y se evalúa primero.
+#
+# FIN-100 (09/Abr/2026): "cuentas por pagar a proveedores" iba a
+#   compras_insumos por "proveedores". Pero "cuentas por pagar" es
+#   terminología financiera inequívoca.
+# FAIL routing_produccion_existencia (09/Abr/2026): "existencia del
+#   producto" iba a compras_insumos por "existencia". Pero "existencia
+#   del producto [código]" es inventario/produccion.
+_PRE_ROUTING_RULES: list[tuple[str, list[str]]] = [
+    ("finanzas", [
+        "cuentas por pagar a proveedor", "cuentas por pagar a proveedores",
+        "saldo de cuentas por pagar", "saldo de las cuentas por pagar",
+        "cuentas por cobrar de", "cuentas por cobrar para",
+    ]),
+    ("produccion", [
+        "existencia del producto", "existencia de producto",
+        "existencias del producto", "stock del producto",
+        "cantidad del producto", "cantidad de producto",
+        "en existencia del producto",
+    ]),
+]
+
 
 def _has_account_code(msg: str) -> bool:
     """Detect accounting codes like 1.01.04.02, 2.01.01.10 in the message."""
@@ -225,6 +252,14 @@ def classify_by_keywords(
     # Check greetings / general first
     if any(p in msg for p in _GENERAL_PATTERNS) and len(msg) < 60:
         return "general"
+
+    # Pre-routing: high-specificity phrases that resolve keyword conflicts.
+    # Evaluated BEFORE the main keyword loop so that "cuentas por pagar a
+    # proveedores" → finanzas wins over "proveedores" → compras_insumos.
+    for agent_name, phrases in _PRE_ROUTING_RULES:
+        if any(ph in msg for ph in phrases):
+            if agent_name in allowed_departments:
+                return agent_name
 
     # Check for accounting codes (e.g. "2.01.01.10") → always contabilidad
     if _has_account_code(msg):
@@ -295,6 +330,12 @@ def classify_with_capabilities(
             return "contabilidad", cap_id, 1.0, "codigo_contable"
         return "no_access", cap_id, 0.9, "codigo_contable_sin_acceso"
 
+    # Pre-routing: high-specificity phrases (same as classify_by_keywords)
+    for agent_name, phrases in _PRE_ROUTING_RULES:
+        if any(ph in msg for ph in phrases):
+            if agent_name in allowed_departments:
+                return agent_name, None, 1.0, "pre_routing_rule"
+
     # Scan ALL capabilities by their keywords (most specific first)
     # Score each capability by how many keywords match
     matches: list[tuple[str, str, int]] = []  # (agent, cap_id, match_count)
@@ -354,6 +395,12 @@ def classify_with_confidence(
         if "contabilidad" in allowed_departments:
             return "contabilidad", 1.0, "codigo_contable"
         return "no_access", 0.9, "codigo_contable_sin_acceso"
+
+    # Pre-routing: high-specificity phrases (same as classify_by_keywords)
+    for agent_name, phrases in _PRE_ROUTING_RULES:
+        if any(ph in msg for ph in phrases):
+            if agent_name in allowed_departments:
+                return agent_name, 1.0, "pre_routing_rule"
 
     # Keyword scan
     hit_no_access = False

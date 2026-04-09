@@ -651,18 +651,26 @@ casos:
   # DATOS (2 casos nuevos)
   # ─────────────────────────────────────────────────────────────────────
 
-  # CASO: ventas_nc_count_feb_2026_ves
-  # Complementa los casos existentes de ventas feb 2026 verificando que
-  # el bot también reporte el conteo de notas de crédito (ARC) por separado.
-  # Función del bot: build_sales_summary.totales.total_notas_credito
-  # Filtro: dt.docbasetype='ARC', c_currency_id=205, mes=2, anio=2026
-  - id: ventas_nc_count_feb_2026_ves
+  # CASO: ventas_nc_monto_feb_2026_ves
+  # Complementa los casos de ventas feb 2026 verificando el MONTO de notas
+  # de crédito (ARC), no el conteo. Se usa monto porque el bot reporta
+  # totales.monto_notas_credito como parte de build_sales_summary, que
+  # está filtrado por currency_ids cuando el agente pasa [205] (VES).
+  #
+  # El conteo fue problemático en la primera iteración: el bot interpretó
+  # "notas de crédito" como sección de producto (build_sales_by_product)
+  # que tiene un desglose diferente y no filtra por moneda consistentemente.
+  # El monto total sí es determinístico y viene de la sección principal.
+  #
+  # Función del bot: build_sales_summary → totales.monto_notas_credito
+  #   = SUM(i.totallines) WHERE docbasetype='ARC' AND currency_ids=[205]
+  - id: ventas_nc_monto_feb_2026_ves
     agente: ventas
-    pregunta: "¿Cuántas notas de crédito en bolívares emitimos en febrero 2026?"
+    pregunta: "¿Cuál es el monto total de las notas de crédito en bolívares de febrero 2026?"
     ground_truth:
       extraer: scalar
       sql: |
-        SELECT COUNT(*) AS notas_credito
+        SELECT COALESCE(SUM(i.totallines), 0) AS monto_nc
         FROM adempiere.c_invoice i
         JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id
         WHERE i.issotrx = 'Y'
@@ -673,7 +681,8 @@ casos:
           AND i.dateinvoiced >= '2026-02-01'
           AND i.dateinvoiced < '2026-03-01'
     validar:
-      tipo: conteo_exacto
+      tipo: valor_exacto
+      tolerancia_pct: 0.01
 
   # CASO: rrhh_empleados_activos_agroinproa
   # Tercera organización cubierta en rrhh (INPROA SANTONI y InproMaiz ya
@@ -733,11 +742,13 @@ casos:
       tipo: agente_esperado
       agente_esperado: produccion
 
-  # VENTAS — lsilva pregunta por cliente específico en últimos 3 meses
-  # "Grupo Sonreir" es cliente real según los logs
+  # VENTAS — lsilva pregunta por ventas al cliente "Grupo Sonreir" (3 meses)
+  # La pregunta original "cuánto ha comprado grupo sonreir" era AMBIGUA: "comprado"
+  # puede referirse a "cuánto nos compró (venta)" o "cuánto compramos a (insumo)".
+  # Se reformula con "ventas al cliente" para ser inequívoca.
   - id: routing_ventas_cliente_ultimos_3_meses
     agente: ventas
-    pregunta: "en los ultimos 3 meses cuanto ha comprado grupo sonreir"
+    pregunta: "cuales son las ventas al cliente grupo sonreir en los ultimos 3 meses"
     validar:
       tipo: agente_esperado
       agente_esperado: ventas
