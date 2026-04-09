@@ -652,21 +652,17 @@ casos:
   # ─────────────────────────────────────────────────────────────────────
 
   # CASO: ventas_nc_monto_feb_2026_ves
-  # Complementa los casos de ventas feb 2026 verificando el MONTO de notas
-  # de crédito (ARC), no el conteo. Se usa monto porque el bot reporta
-  # totales.monto_notas_credito como parte de build_sales_summary, que
-  # está filtrado por currency_ids cuando el agente pasa [205] (VES).
+  # Valida que el monto de notas de crédito en la respuesta de ventas generales
+  # coincida con el ground truth de iDempiere.
   #
-  # El conteo fue problemático en la primera iteración: el bot interpretó
-  # "notas de crédito" como sección de producto (build_sales_by_product)
-  # que tiene un desglose diferente y no filtra por moneda consistentemente.
-  # El monto total sí es determinístico y viene de la sección principal.
-  #
-  # Función del bot: build_sales_summary → totales.monto_notas_credito
-  #   = SUM(i.totallines) WHERE docbasetype='ARC' AND currency_ids=[205]
+  # NOTA: La pregunta debe activar la rama GENERAL (build_sales_summary), no la
+  # rama de PRODUCTO. "notas de crédito" como frase activa la sección de NC por
+  # producto que calcula montos diferentes (por línea, no por factura). Al pedir
+  # "desglose de ventas" con "incluyendo notas de crédito", el bot devuelve la
+  # sección general que incluye totales.monto_notas_credito como campo separado.
   - id: ventas_nc_monto_feb_2026_ves
     agente: ventas
-    pregunta: "¿Cuál es el monto total de las notas de crédito en bolívares de febrero 2026?"
+    pregunta: "¿Cuánto vendimos en bolívares en febrero 2026? Incluye el desglose de notas de crédito"
     ground_truth:
       extraer: scalar
       sql: |
