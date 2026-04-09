@@ -495,6 +495,54 @@ HISTORICAL_DATA_CUTOFF=2026-03-01  # Fecha de corte
 
 ---
 
+## ⚠️ PROCESO OBLIGATORIO — Registro de Bugs y Cross-Agent Review
+
+**Toda sesión donde se detecte o arregle un bug DEBE actualizar `docs/BUGS_REGISTRY.md`.**
+
+### Ciclo obligatorio al arreglar un bug
+
+1. **Abrir ticket** en `docs/BUGS_REGISTRY.md` usando el template de la sección 4 del registro.
+   ID del ticket según convención: `VENT-NNN`, `RRHH-NNN`, `FIN-NNN`, `CONT-NNN`, `PRDC-NNN`,
+   `COMP-NNN`, `AGRI-NNN`, `ORCH-NNN`, `BASE-NNN`.
+
+2. **Identificar el PATRÓN del bug**, no el síntoma. Ej: síntoma = "ventas suma Bs+USD",
+   patrón = "agente no defaultea moneda cuando usuario no especifica".
+
+3. **Cross-agent review OBLIGATORIO**: buscar el mismo patrón en los otros 6 agentes con
+   `Grep` / lectura de código. Por cada agente anotar una de:
+   - ✅ No aplica (con razón técnica)
+   - ⚠️ Aplica parcial (crear ticket separado)
+   - 🔴 Mismo patrón (crear ticket + arreglar en el mismo commit)
+
+4. **Aplicar fix** al agente principal + a los afectados encontrados en paso 3.
+
+5. **Mover ticket a "Resueltos"** con fecha, commit hash y resultado del cross-agent review.
+
+6. **Actualizar la tabla resumen** al inicio del registro.
+
+### Por qué es obligatorio
+
+Muchos bugs históricos se arreglaron en un agente sin verificar que el mismo patrón existiera
+en los otros. Ejemplo: el default a VES (fix de ventas, 08/Abr/2026) no se aplicó a
+`compras_insumos.py` en su momento — y hoy `compras_insumos` sigue mezclando monedas por
+default. Ese bug sigue vivo y no lo habíamos detectado hasta el análisis de logs del 09/Abr.
+
+**Si el proceso hubiera existido cuando se arregló ventas, el bug de compras_insumos se habría
+cazado en la misma sesión.**
+
+### Referencia rápida
+
+- **Archivo:** `docs/BUGS_REGISTRY.md` (~900 líneas, tabla resumen + sección por agente)
+- **Tabla resumen global:** sección 5
+- **Template de ticket:** sección 4
+- **Proceso completo:** sección 2
+
+Al inicio de cada sesión donde se toque código de agentes, consultar la tabla resumen del
+registro para ver qué bugs abiertos hay. **No avanzar con features nuevas si hay bugs 🔴
+críticos sin resolver en el agente que se va a tocar.**
+
+---
+
 # ══════════════════════════════════════════════════════════════════
 # PROTOCOLO DE QA Y CIERRE DE PROYECTO
 # ══════════════════════════════════════════════════════════════════
