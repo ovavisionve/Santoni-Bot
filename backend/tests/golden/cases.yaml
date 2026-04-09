@@ -631,3 +631,139 @@ casos:
     validar:
       tipo: agente_esperado
       agente_esperado: produccion
+
+  # ═════════════════════════════════════════════════════════════════════
+  # TRANCHE 3 (09/Abr/2026) — expansión con casos reales de supervisores
+  #
+  # 10 casos adicionales basados en preguntas reales del análisis de logs
+  # (jalvarez, esalas, mfigueredo, lsilva, cbracho). Complementa Tranche 1
+  # (datos) y Tranche 2 (routing) con:
+  #
+  #   - 2 casos de datos que validan campos específicos de la respuesta
+  #     (notas de crédito count, empleados activos en una 3ra org)
+  #   - 8 casos de routing que cubren preguntas comunes de supervisores
+  #     que no estaban en el suite.
+  #
+  # Todos los casos provienen de preguntas literales de los logs.
+  # ═════════════════════════════════════════════════════════════════════
+
+  # ─────────────────────────────────────────────────────────────────────
+  # DATOS (2 casos nuevos)
+  # ─────────────────────────────────────────────────────────────────────
+
+  # CASO: ventas_nc_count_feb_2026_ves
+  # Complementa los casos existentes de ventas feb 2026 verificando que
+  # el bot también reporte el conteo de notas de crédito (ARC) por separado.
+  # Función del bot: build_sales_summary.totales.total_notas_credito
+  # Filtro: dt.docbasetype='ARC', c_currency_id=205, mes=2, anio=2026
+  - id: ventas_nc_count_feb_2026_ves
+    agente: ventas
+    pregunta: "¿Cuántas notas de crédito en bolívares emitimos en febrero 2026?"
+    ground_truth:
+      extraer: scalar
+      sql: |
+        SELECT COUNT(*) AS notas_credito
+        FROM adempiere.c_invoice i
+        JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id
+        WHERE i.issotrx = 'Y'
+          AND i.docstatus IN ('CO', 'CL')
+          AND i.isactive = 'Y'
+          AND dt.docbasetype = 'ARC'
+          AND i.c_currency_id = 205
+          AND i.dateinvoiced >= '2026-02-01'
+          AND i.dateinvoiced < '2026-03-01'
+    validar:
+      tipo: conteo_exacto
+
+  # CASO: rrhh_empleados_activos_agroinproa
+  # Tercera organización cubierta en rrhh (INPROA SANTONI y InproMaiz ya
+  # están). Valida que el filtro por nombre funciona para todas las orgs
+  # del grupo. AGROINPROA es la más pequeña (~38 empleados según docs).
+  # Función del bot: build_employee_summary.por_organizacion[AGROINPROA].activos
+  - id: rrhh_empleados_activos_agroinproa
+    agente: rrhh
+    pregunta: "¿Cuántos empleados activos hay en AGROINPROA?"
+    ground_truth:
+      extraer: scalar
+      sql: |
+        SELECT COUNT(DISTINCT e.c_bpartner_id) AS empleados
+        FROM adempiere.hr_employee e
+        JOIN adempiere.ad_org o ON e.ad_org_id = o.ad_org_id
+        WHERE e.isactive = 'Y'
+          AND o.name ILIKE '%AGROINPROA%'
+    validar:
+      tipo: conteo_exacto
+
+  # ─────────────────────────────────────────────────────────────────────
+  # ROUTING (8 casos nuevos basados en preguntas reales de supervisores)
+  # ─────────────────────────────────────────────────────────────────────
+
+  # CONTABILIDAD — jalvarez pregunta mucho sobre saldos de cuentas contables
+  # específicas por código. El orchestrator ya tiene `_has_account_code()`
+  # que detecta patrones como "1.01.04.02" y rutea a contabilidad.
+  - id: routing_contabilidad_saldo_cuenta_codigo
+    agente: contabilidad
+    pregunta: "cual es el saldo de la cuenta de 1.01.04.02 en inproa santoni del mes de febrero de 2026"
+    validar:
+      tipo: agente_esperado
+      agente_esperado: contabilidad
+
+  # CONTABILIDAD — balance general actualizado a una fecha específica
+  - id: routing_contabilidad_balance_actualizado
+    agente: contabilidad
+    pregunta: "Muéstrame el balance general actualizado en inproa santoni al 28/02/2026"
+    validar:
+      tipo: agente_esperado
+      agente_esperado: contabilidad
+
+  # FINANZAS — jalvarez pregunta sobre préstamos con bancos específicos
+  - id: routing_finanzas_prestamos_banco_especifico
+    agente: finanzas
+    pregunta: "cual es el saldo de los prestamos bancarios de inproa santoni con el banco ebna bank"
+    validar:
+      tipo: agente_esperado
+      agente_esperado: finanzas
+
+  # PRODUCCION — jalvarez pregunta existencia de productos por código
+  # El producto -9010 es un código real de Santoni (según los logs)
+  - id: routing_produccion_existencia_producto_codigo
+    agente: produccion
+    pregunta: "cual es la cantidad en existencia del producto -9010 al dia de hoy"
+    validar:
+      tipo: agente_esperado
+      agente_esperado: produccion
+
+  # VENTAS — lsilva pregunta por cliente específico en últimos 3 meses
+  # "Grupo Sonreir" es cliente real según los logs
+  - id: routing_ventas_cliente_ultimos_3_meses
+    agente: ventas
+    pregunta: "en los ultimos 3 meses cuanto ha comprado grupo sonreir"
+    validar:
+      tipo: agente_esperado
+      agente_esperado: ventas
+
+  # VENTAS — jalvarez pregunta ventas por tipo de documento (factura A, B, C)
+  # Santoni usa series de facturas diferenciadas para distintos tipos de operación
+  - id: routing_ventas_facturas_tipo_b
+    agente: ventas
+    pregunta: "puedes decirme las ventas de los documentos facturas B en inproa santoni de febrero 2026"
+    validar:
+      tipo: agente_esperado
+      agente_esperado: ventas
+
+  # RRHH — esalas pregunta sobre ausentismo
+  - id: routing_rrhh_ausentismo_feb_2026
+    agente: rrhh
+    pregunta: "Dame el indice de ausentismo del mes de febrero 2026"
+    validar:
+      tipo: agente_esperado
+      agente_esperado: rrhh
+
+  # COMPRAS INSUMOS — cbracho pregunta órdenes de compra pendientes
+  # Pregunta corta y común en operación; debería rutear limpio a compras_insumos
+  - id: routing_compras_ordenes_compra_pendientes
+    agente: compras_insumos
+    pregunta: "cuáles son las órdenes de compra pendientes?"
+    validar:
+      tipo: agente_esperado
+      agente_esperado: compras_insumos
