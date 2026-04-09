@@ -651,18 +651,34 @@ casos:
   # DATOS (2 casos nuevos)
   # ─────────────────────────────────────────────────────────────────────
 
-  # CASO: ventas_nc_monto_feb_2026_ves
-  # Valida que el monto de notas de crédito en la respuesta de ventas generales
-  # coincida con el ground truth de iDempiere.
+  # CASO: ventas_total_neto_usd_feb_2026
+  # Complementa ventas_total_neto_ves_feb_2026 con la otra moneda principal.
+  # Valida que el filtro de moneda USD funciona igual que VES pero con los 9
+  # c_currency_id distintos que usa Santoni para dólares.
   #
-  # NOTA: La pregunta debe activar la rama GENERAL (build_sales_summary), no la
-  # rama de PRODUCTO. "notas de crédito" como frase activa la sección de NC por
-  # producto que calcula montos diferentes (por línea, no por factura). Al pedir
-  # "desglose de ventas" con "incluyendo notas de crédito", el bot devuelve la
-  # sección general que incluye totales.monto_notas_credito como campo separado.
-  - id: ventas_nc_monto_feb_2026_ves
+  # Función del bot: build_sales_summary → totales.venta_neta
+  # Filtros: currency_ids=USD (9 IDs), mes=2, anio=2026
+  - id: ventas_total_neto_usd_feb_2026
     agente: ventas
-    pregunta: "¿Cuánto vendimos en bolívares en febrero 2026? Incluye el desglose de notas de crédito"
+    pregunta: "¿Cuánto vendimos en dólares en febrero 2026?"
+    ground_truth:
+      extraer: scalar
+      sql: |
+        SELECT COALESCE(SUM(
+                 CASE WHEN dt.docbasetype = 'ARI' THEN i.totallines
+                      WHEN dt.docbasetype = 'ARC' THEN -i.totallines
+                      ELSE 0 END), 0) AS venta_neta
+        FROM adempiere.c_invoice i
+        JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id
+        WHERE i.issotrx = 'Y'
+          AND i.docstatus IN ('CO', 'CL')
+          AND i.isactive = 'Y'
+          AND i.c_currency_id IN (100,1000000,1000003,1000006,1000008,1000009,1000011,1000013,1000017)
+          AND i.dateinvoiced >= '2026-02-01'
+          AND i.dateinvoiced < '2026-03-01'
+    validar:
+      tipo: valor_exacto
+      tolerancia_pct: 0.01
     ground_truth:
       extraer: scalar
       sql: |
