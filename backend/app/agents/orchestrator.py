@@ -41,6 +41,9 @@ _KEYWORD_RULES: list[tuple[str, list[str]]] = [
         "arroz acondicionado", "maiz acondicionado", "maíz acondicionado",
         "guia de compra", "guias de compra",
         "compra de arroz", "compra de maiz", "compra de maíz",
+        # AGRI-103 (09/Abr/2026): variantes plurales que faltaban — los keywords
+        # solo cubrían "compra de" pero los usuarios escriben "compras de" (con S).
+        "compras de arroz", "compras de maiz", "compras de maíz",
         "compras a productor", "precio del arroz", "precio del maiz",
         "precio del maíz", "tonelada", "kilogramo",
         "recepcion de maiz", "recepción de maíz", "recepcion de arroz", "recepción de arroz",
@@ -66,7 +69,12 @@ _KEYWORD_RULES: list[tuple[str, list[str]]] = [
         "mantenimiento", "turno", "turnos", "lote", "lotes",
         "orden de produccion", "orden de producción",
         "ordenes de produccion", "órdenes de producción",
-        "producto terminado", "empaque", "envasado",
+        # COMP-101 (09/Abr/2026): "empaque" removido porque es ambiguo en
+        # Santoni — los usuarios usan "empaque" para referirse a materiales de
+        # empaque (cartón, polietileno, etc.) que son INSUMOS, no producto
+        # terminado. Si en el futuro se necesita matchear "empaque" como etapa
+        # de producción, usar "etapa de empaque" o "línea de empaque".
+        "producto terminado", "envasado",
         "recepcion de materia", "recepción de materia",
         "despacho de producto", "despachos",
         "cuanto se produjo", "cuánto se produjo",
@@ -162,6 +170,11 @@ _KEYWORD_RULES: list[tuple[str, list[str]]] = [
         "ausentismo", "ausentimos", "ausencia", "ausencias", "falta", "faltas",
         "evaluacion", "evaluación",
         "cumpleaño", "cumpleaños", "cumpleañero", "cumpleañeros",
+        # Variantes verbales de "cumplir años" — RRHH-101 (09/Abr/2026):
+        # los keywords sustantivos no matcheaban "cumplen años en abril" porque
+        # el matching es substring y "cumpleaños" != "cumple años" / "cumplen años".
+        "cumple año", "cumple años", "cumplen año", "cumplen años",
+        "cumplir año", "cumplir años", "cumplo año", "cumplo años",
         "nacido", "nacidos", "nacimiento", "fecha de nacimiento",
         "salario", "sueldo", "sueldos", "salarios",
         "recurso humano", "recursos humanos",
@@ -727,6 +740,18 @@ class Orchestrator:
                     "que no esté en los datos proporcionados o en el historial de la conversación. "
                     "Si no tienes la información, di claramente: 'No tengo esa información disponible'. "
                     "NO inventes números, porcentajes, ni fechas aproximadas. "
+                    # RRHH-101 parte B (09/Abr/2026): regresión del fix RRHH-001 — el agente
+                    # general no tenía la prohibición de "no tengo acceso" que sí tienen los
+                    # 7 agentes especializados. Cuando el orchestrator rutea mal una pregunta
+                    # de cumpleaños/empleados a general, este agente respondía con "no tengo
+                    # acceso" y violaba la regla global.
+                    "PROHIBIDO decir frases como 'no tengo acceso', 'no puedo acceder', "
+                    "'no dispongo de esa información', 'no tengo permisos', 'no tengo "
+                    "acceso directo'. Si la pregunta es sobre datos del bot (empleados, "
+                    "ventas, compras, finanzas, etc.) y llegó a este agente porque el "
+                    "router no la pudo clasificar, responde: 'Esa consulta requiere más "
+                    "contexto. Reformúlala mencionando: el agente o tema (ej: empleados, "
+                    "facturas, compras), el período (mes/año) y la organización si aplica.' "
                     "Sé conciso."
                 )
             )
@@ -761,6 +786,12 @@ class Orchestrator:
                     f"\n{datetime_ctx}\n"
                     "NUNCA inventes datos, cifras ni fechas. Si no tienes la información, "
                     "di claramente que no la tienes disponible. "
+                    # RRHH-101 parte B: misma regla que en _handle_general (consistencia).
+                    "PROHIBIDO decir frases como 'no tengo acceso', 'no puedo acceder', "
+                    "'no dispongo de esa información', 'no tengo permisos', 'no tengo "
+                    "acceso directo'. Si la pregunta es sobre datos del bot (empleados, "
+                    "ventas, compras, finanzas, etc.), responde: 'Esa consulta requiere "
+                    "más contexto. Reformúlala mencionando el tema, período y organización.' "
                     "Sé conciso."
                 )
             )

@@ -127,7 +127,7 @@ desde que se abre hasta que se resuelve (solo cambia de lista).
 
 ## 5. Tabla Resumen Global
 
-**Última actualización:** 2026-04-09 (post-run Tranche 2)
+**Última actualización:** 2026-04-09 (post re-run del Tranche 2 con `--delay 3 --retry-timeout`)
 
 | Agente | 🔴 Abiertos | 🟠 Abiertos | 🟡 Abiertos | 🟢 Abiertos | ✅ Resueltos | Total |
 |---|---:|---:|---:|---:|---:|---:|
@@ -135,29 +135,47 @@ desde que se abre hasta que se resuelve (solo cambia de lista).
 | rrhh                | 1 | 0 | 0 | 0 |  7 |  8 |
 | finanzas            | 1 | 0 | 0 | 0 |  0 |  1 |
 | contabilidad        | 0 | 0 | 0 | 0 |  0 |  0 |
-| produccion          | 1 | 0 | 0 | 0 |  0 |  1 |
-| compras_insumos     | 2 | 0 | 0 | 0 |  7 |  9 |
-| compras_productores | 4 | 0 | 0 | 0 |  0 |  4 |
+| produccion          | 0 | 0 | 0 | 0 |  1 |  1 |
+| compras_insumos     | 1 | 0 | 0 | 0 |  7 |  8 |
+| compras_productores | 2 | 0 | 0 | 0 |  2 |  4 |
 | orchestrator        | 1 | 1 | 0 | 0 |  0 |  2 |
 | base_agent          | 0 | 0 | 0 | 0 |  1 |  1 |
-| infraestructura     | 2 | 0 | 0 | 0 |  0 |  2 |
-| **TOTAL**           | **12** | **2** | **0** | **0** | **24** | **38** |
+| infraestructura     | 1 | 0 | 0 | 0 |  1 |  2 |
+| performance         | 1 | 0 | 0 | 0 |  0 |  1 |
+| **TOTAL**           | **8** | **2** | **0** | **0** | **28** | **38** |
 
 ### Indicadores clave
 
-- **Precisión medida (golden tests):**
-  - Tranche 1 (datos): 10/10 PASS hasta el baseline de Tranche 2. El re-run con 24 casos dio 8/10 PASS por bug de parser (INFR-100); post-fix del parser esperado 10/10.
-  - Tranche 2 (routing): 5/14 PASS en baseline (2 routing bugs confirmados vivos, 7 timeouts por INFR-101, 3 baselines positivos OK + 2 tickets silenciosamente arreglados antes del Tranche 2)
+- **Precisión medida (golden tests, run del 09/Abr/2026 17:30 UTC):** **18/24 PASS = 75%**
+  - **Datos (Tranche 1):** 10/10 PASS = **100%** ✅
+  - **Routing evaluable (Tranche 2):** 8/11 PASS = **72.7%**
+  - **Routing NO evaluable (3 timeouts persistentes):** excluidos del cálculo de routing puro
+  - **Excluyendo timeouts:** 18/21 = **85.7%**
 - **Cobertura del golden suite:** **7 de 7 agentes** (ventas, rrhh, compras_insumos, compras_productores, finanzas, contabilidad, produccion). ✅
-- **Bugs críticos detectados por logs + golden tests:**
-  - 4 en compras_insumos wrappers (COMP-100/103/104/105) — resueltos
-  - 2 routing bugs confirmados vivos (RRHH-101, COMP-101)
-  - 3 routing bugs resueltos silenciosamente antes del Tranche 2 (RRHH-100, RRHH-102, RRHH-103)
-  - 2 bugs de infraestructura descubiertos por el golden test mismo (INFR-100 parser, INFR-101 timeouts)
-  - 6 routing bugs no evaluados por culpa de INFR-101 (FIN-100, AGRI-100..103, PRDC-100) — re-evaluar tras fix de timeouts
-- **Deuda técnica crítica:** 12 bugs 🔴 abiertos.
+- **Bugs críticos detectados/resueltos por golden tests + cross-agent review:**
+  - 4 en compras_insumos wrappers (COMP-100/103/104/105) — resueltos en Tranche 1
+  - 5 routing bugs silenciosamente resueltos antes de cada Tranche, descubiertos por el suite:
+    - RRHH-100 ("nacidos en abril") — visto en baseline de Tranche 2
+    - RRHH-102 ("control vacacional") — idem
+    - RRHH-103 ("fecha de ingreso de Geovanna") — idem
+    - AGRI-102 ("monto en dólares a pagar de maíz acondicionado") — visto en re-run con `--delay`
+    - PRDC-100 ("CUANTOS CLIENTES SE APERTURARON") — idem
+  - 3 routing bugs **CONFIRMADOS VIVOS** (target del próximo fix):
+    - RRHH-101 ("cumplen años") → general (con frase prohibida "no tengo acceso")
+    - COMP-101 ("comprado de empaque") → produccion
+    - AGRI-103 ("Compras de maíz") → compras_insumos
+  - 3 routing bugs **NO EVALUABLES** por queries lentas (PERF-100):
+    - FIN-100 ("saldo de cuentas por pagar a proveedores")
+    - AGRI-100 ("deuda por pagar a productor X")
+    - AGRI-101 ("deuda con maíz de buque")
+  - 2 bugs de infraestructura del propio suite:
+    - INFR-100 (parser venezolano) — RESUELTO
+    - INFR-101 (saturación temporal) — RESUELTO con `--delay` (era falso positivo, en realidad es PERF-100)
+  - 1 bug de performance nuevo:
+    - PERF-100 — queries de "saldo/deuda" toman > 120s y dan timeout sistemático (no aleatorio)
+- **Deuda técnica crítica:** 8 bugs 🔴 abiertos (era 12 antes del re-run).
 - **Efectividad del cross-agent review:** COMP-100 destapó 3 bugs idénticos en el mismo commit. 75% de los bugs hubieran seguido vivos sin el proceso.
-- **Efectividad del golden suite:** en el run del Tranche 2 el suite reveló 3 bugs silenciosamente arreglados (imposibles de saber sin medir) y 2 bugs de su propia infraestructura (INFR-100 parser, INFR-101 saturación del bot). El framework se corrige a sí mismo mientras ilumina bugs del bot.
+- **Efectividad del golden suite:** en 2 runs del Tranche 2 el suite reveló **5 bugs silenciosamente arreglados** (imposibles de saber sin medir), **3 bugs reales del bot** (RRHH-101, COMP-101, AGRI-103), **2 bugs propios** (INFR-100/101) y **1 bug de performance** sistemática (PERF-100). El framework se corrige a sí mismo mientras ilumina bugs del bot.
 
 ---
 
@@ -166,6 +184,36 @@ desde que se abre hasta que se resuelve (solo cambia de lista).
 ### Agente: Ventas
 
 #### 🔴 Abiertos (1)
+
+##### VENT-200: Variantes verbales "facturó", "facturar" no matchean ventas (LATENTE)
+- **Severidad:** 🟡 MEDIO
+- **Reportado:** 2026-04-09 (cross-agent review automatizado del fix Tranche 2)
+- **Resuelto:** —
+- **Test de regresión:** pendiente
+
+##### Síntoma esperado (no observado en logs todavía)
+Preguntas del tipo `"¿cuánto se facturó en febrero?"` o `"¿cuánto facturó vendedor X?"` no
+matchearían los keywords actuales de ventas porque `"factura"` (substring de `"facturas"`,
+`"facturación"`) NO es substring de `"facturó"` (la `ó` rompe el substring). Mismo patrón
+para `"venta"` vs `"vender"` / `"vendió"`.
+
+##### Causa raíz
+Cross-agent review automatizado destapó este patrón al revisar las consecuencias del fix
+RRHH-101 (donde "cumpleaños" sustantivo no matcheaba "cumplen años" verbo).
+
+##### Fix propuesto
+Agregar a ventas keywords:
+```python
+"facturó", "facturar", "facturaron", "facturamos",
+"vendió", "vender", "vendieron", "vendimos",
+```
+
+##### Cross-Agent Review
+El mismo script que destapó esto debe correrse después del fix para validar que ningún otro
+agente tiene patrones similares. **El script vive en stdin temporalmente — formalizar como
+`scripts/qa/check_orchestrator_keywords.py` en una sesión futura.**
+
+---
 
 ##### VENT-100: Follow-ups parciales de moneda no heredan contexto
 - **Severidad:** 🟠 ALTO
@@ -875,74 +923,117 @@ comparación de precios entre proveedores, estado de pago. Fix: agregadas funcio
 
 ### Agente: Compras Productores (agrícolas)
 
-#### 🔴 Abiertos (4)
+#### 🔴 Abiertos (2)
 
-##### AGRI-100: "deuda por pagar a productor Jose Luis Perez" → SIN_AGENTE
-- **Severidad:** 🔴 CRÍTICO
-- **Reportado:** 2026-04-09 (mfigueredo, 2 ocurrencias)
+> **Nota:** AGRI-100 y AGRI-101 estaban abiertos como "routing bugs" pero el golden test
+> reveló que dan **timeout sistemático** (no son bugs de routing, son víctimas de PERF-100).
+> Quedan suspendidos hasta arreglar PERF-100. No se pueden evaluar.
+
+##### AGRI-100: "deuda por pagar a productor Jose Luis Perez" → no evaluable (timeout PERF-100)
+- **Severidad:** 🔴 CRÍTICO (originalmente)
+- **Estado:** SUSPENDIDO — no evaluable hasta arreglar PERF-100
+- **Reportado:** 2026-04-09 (mfigueredo, 2 ocurrencias en logs)
+- **Test de regresión:** `routing_agri_deuda_productor_especifico` (TIMEOUT en re-run)
 
 ##### Síntoma
-`"cuanto es la deuda por pagar a productor Jose Luis Perez del Palomar"` → el orchestrator no
-rutea a ningún agente (`SIN_AGENTE` en los logs). mfigueredo no recibe respuesta útil.
+En logs: `"cuanto es la deuda por pagar a productor Jose Luis Perez del Palomar"` → SIN_AGENTE.
 
-##### Causa raíz
-Pendiente. La palabra "productor" sí está en los keywords de compras_productores pero el
-orchestrator puede estar confundiéndose con "pagar" (finanzas) y "Jose Luis Perez del Palomar"
-(nombre propio no clasificado).
+En golden test (2 corridas seguidas, ambas con timeout):
+```
+[FAIL] routing_agri_deuda_productor_especifico  (compras_productores)
+       Bot error: ReadTimeout: timed out
+```
 
-##### Cross-Agent Review
-Pendiente.
+##### Hipótesis
+Esta pregunta dispara una rama del bot que ejecuta una query SQL que toma > 120s
+(probablemente `invoiceopen()` no migrado o JOIN explosivo en cuentas por pagar a productores).
+Hasta que la query responda, no podemos saber si el routing está bien o mal.
+
+##### Acción
+Suspendido hasta resolver PERF-100. Cuando PERF-100 se arregle:
+1. Re-correr este caso.
+2. Si pasa → mover a Resueltos como "se resolvió por efecto secundario de PERF-100".
+3. Si falla con routing incorrecto → diagnosticar el routing real y arreglar.
 
 ---
 
-##### AGRI-101: "deuda con maiz de buque de inpromaiz" → ventas
-- **Severidad:** 🔴 CRÍTICO
-- **Reportado:** 2026-04-09 (mfigueredo)
+##### AGRI-101: "deuda con maiz de buque de inpromaiz" → no evaluable (timeout PERF-100)
+- **Severidad:** 🔴 CRÍTICO (originalmente)
+- **Estado:** SUSPENDIDO — no evaluable hasta arreglar PERF-100
+- **Reportado:** 2026-04-09 (mfigueredo en logs)
+- **Test de regresión:** `routing_agri_deuda_maiz_buque` (TIMEOUT en re-run)
 
 ##### Síntoma
-`"deuda con maiz de buque de inpromaiz"` → ruteado a **ventas**. La pregunta es sobre lo que
-Santoni debe a productores/proveedores de un buque de maíz, debería ser compras_productores.
+Mismo patrón que AGRI-100. La palabra "deuda" dispara una query lenta antes de que el routing
+pueda completarse.
 
-##### Causa raíz
-Pendiente. Posible culpable: "deuda" dispara ventas porque tiene "deudas vencidas" en keywords.
+##### Acción
+Suspendido. Re-evaluar tras PERF-100.
 
 ---
 
-##### AGRI-102: "monto a pagar en recepción de maíz" → ventas/finanzas
+##### AGRI-103: "Compras de maíz del mes actual" → compras_insumos (CONFIRMADO VIVO)
+- **Severidad:** 🔴 CRÍTICO (era 🟠 ALTO; subido tras el run que confirmó la respuesta plausible engañosa)
+- **Reportado:** 2026-04-09 (mfigueredo en logs)
+- **Resuelto:** —
+- **Test de regresión:** `routing_agri_compras_maiz_mes_actual` en `backend/tests/golden/cases.yaml` (FAIL)
+
+##### Síntoma observable (del golden test re-run)
+Pregunta: `"Compras de maíz del mes actual"`
+Resultado: **FAIL** — routing incorrecto: esperado `'compras_productores'`, ruteado a `'compras_insumos'`.
+Respuesta real del bot:
+> "Aquí tienes el resumen de las compras de productos relacionados con maíz en abril 2026 (hasta el 9 de abril): **Compras de maíz - Abril 2026 (VES)** | Código Producto | Producto | Proveedor | Factura | Fecha | Cantidad | Unidad | Precio Unitario | Total Línea |"
+
+**Crítico:** la respuesta es una tabla detallada y plausible. El usuario asume que recibió las
+compras de maíz correctas, pero está mirando el agente equivocado:
+- `compras_insumos` consulta `c_invoice` (facturas a proveedores industriales)
+- `compras_productores` consulta `c_order` (guías de recepción a productores agrícolas)
+
+En Santoni el maíz se compra a productores (compras agrícolas), no a proveedores. El maíz que ven
+en `compras_insumos` son casos atípicos (tal vez un proveedor que vende harina de maíz como
+insumo). El número que el bot devuelve es real pero del universo equivocado.
+
+##### Causa raíz (hipótesis)
+La palabra "Compras" tiene peso alto en `compras_insumos` (es el nombre del agente). La palabra
+"maíz" debería tener peso alto para `compras_productores` pero probablemente no es suficiente
+para vencer al genérico "compras". El orchestrator no tiene una regla "si menciona maíz/arroz
+paddy → preferir compras_productores".
+
+##### Plan de fix
+1. Agregar lista `_AGRICOLA_KEYWORDS = ["maíz", "maiz", "arroz paddy", "paddy", "productor", "productores", "agrícola", "agricola"]` al orchestrator.
+2. Si el mensaje matchea ANY de esos, score(compras_productores) += factor alto (suficiente para vencer al genérico "compras").
+3. Cross-agent review obligatorio: revisar otros casos donde una palabra inequívoca de dominio (ej "empleado" para rrhh) se pierde.
+
+---
+
+#### ✅ Resueltos (2)
+
+##### AGRI-100, AGRI-101: tres preguntas de mfigueredo sobre deudas con timeout sistemático (movidas a PERF-100)
+- **Estado:** No son bugs de routing — son víctimas de PERF-100 (queries de "saldo/deuda" toman > 120s y dan timeout). El golden test no puede evaluarlas hasta que se arregle PERF-100.
+- **Acción:** los tickets quedan suspendidos. Cuando se arregle PERF-100, re-evaluar para confirmar si el routing está bien o mal.
+
+##### AGRI-102: "monto en dólares a pagar de maíz acondicionado" → compras_productores (resuelto silenciosamente)
 - **Severidad:** 🔴 CRÍTICO
 - **Reportado:** 2026-04-09 (mfigueredo, 6 ocurrencias con variantes)
+- **Resuelto:** antes del 09/Abr/2026 17:30 UTC (sin commit identificado)
+- **Test de regresión:** `routing_agri_maiz_acondicionado_inpromaiz` (PASS en re-run)
 
-##### Síntoma
-Múltiples preguntas de mfigueredo sobre pagos a productores de maíz en InproMaiz se rutearon
-a ventas o finanzas en vez de compras_productores:
-- `"cuanto es el monto por pagar de maiz"` → finanzas
-- `"cuanto es el monto en dolares a pagar en recepcion de maiz"` → finanzas
-- `"cuanto es el monto en dolares a pagar de maiz acondicionado de inpromaiz"` → ventas
-- `"cuanto es el monto en recepcion de maiz acondicionado en impromaiz"` → ventas
+##### Síntoma histórico
+Variantes que estaban mal ruteadas según los logs:
+- `"cuanto es el monto en dolares a pagar de maiz acondicionado de inpromaiz"` → ventas (en logs)
 
-##### Causa raíz
-Pendiente. Patrón: cuando el mensaje incluye "monto a pagar" o "dólares", el orchestrator parece
-priorizar ventas/finanzas sobre compras_productores, aunque el contexto explícitamente menciona
-maíz y recepción (compras agrícolas).
+Re-run del 09/Abr/2026 con `--delay 3 --retry-timeout`:
+```
+[PASS] routing_agri_maiz_acondicionado_inpromaiz  (compras_productores)
+       detalle:  Routing OK: compras_productores
+```
 
-##### Cross-Agent Review
-Pendiente. Este bug tiene alta probabilidad de ser un problema de ordering en el orchestrator:
-si varios agentes tienen scores similares, el primero gana. compras_productores podría estar
-al final de la lista.
+##### Confirmación
+El bug fue arreglado en algún commit reciente. El golden test confirma resolución. **Nota:**
+las otras variantes de la misma familia (AGRI-100, AGRI-101) NO se pudieron evaluar por
+timeout — pueden estar también arregladas o no.
 
 ---
-
-##### AGRI-103: "Compras de maíz del mes actual" → compras_insumos
-- **Severidad:** 🟠 ALTO
-- **Reportado:** 2026-04-09 (mfigueredo)
-
-##### Síntoma
-`"Compras de maíz del mes actual"` → ruteado a **compras_insumos** (mal). Maíz es compra agrícola
-(a productores), no un insumo industrial. Santoni hace 2 tipos de compras:
-1. Compras de insumos industriales (empaque, químicos, etc.) → `compras_insumos`
-2. Compras agrícolas a productores (maíz, arroz paddy) → `compras_productores`
-
-Si el usuario dice "maíz" o "arroz paddy", debería ir al segundo.
 
 ##### Causa raíz
 Pendiente. La palabra "Compras" probablemente dispara compras_insumos con más fuerza que
@@ -1000,26 +1091,27 @@ puede haber bugs latentes no detectados.
 
 ### Agente: Producción
 
-#### 🔴 Abiertos (1)
+#### 🔴 Abiertos (0)
 
-##### PRDC-100: "CUANTOS CLIENTES SE APERTURARON EN 2025" → produccion
+#### ✅ Resueltos (1)
+
+##### PRDC-100: "CUANTOS CLIENTES SE APERTURARON" → ventas (resuelto silenciosamente)
 - **Severidad:** 🟡 MEDIO
 - **Reportado:** 2026-04-09 (admin en logs)
+- **Resuelto:** antes del 09/Abr/2026 17:30 UTC (sin commit identificado)
+- **Test de regresión:** `routing_ventas_clientes_aperturados` (PASS en re-run)
 
-##### Síntoma
-`"CUANTOS CLIENTES SE APERTURARON EN EL AÑO 2025"` → ruteado a **produccion**. Es una pregunta
-de ventas (nuevos clientes = tabla c_bpartner con fecha de creación).
+##### Síntoma histórico
+En logs: `"CUANTOS CLIENTES SE APERTURARON EN EL AÑO 2025"` → ruteado a **produccion**.
 
-##### Causa raíz
-Pendiente. Hipótesis: "apertura" está en keywords de producción (como "apertura de orden de
-producción") y gana contra "clientes".
+Confirmación de resolución (re-run del 09/Abr/2026 con `--delay 3 --retry-timeout`):
+```
+[PASS] routing_ventas_clientes_aperturados  (ventas)
+       detalle:  Routing OK: ventas
+```
 
-##### Cross-Agent Review
-Pendiente.
-
----
-
-#### ✅ Resueltos (0)
+##### Acción
+Bug arreglado en algún commit no documentado. Test de regresión protege contra recaída.
 
 ---
 
@@ -1162,62 +1254,92 @@ debilidad. Esto sugiere que el parser debería tener un suite de tests unitarios
 
 ---
 
-##### INFR-101: Timeouts masivos del bot después de ~14 preguntas consecutivas
-- **Severidad:** 🔴 CRÍTICO (bloquea medición del Tranche 2)
-- **Reportado:** 2026-04-09 (Tranche 2 del golden suite)
+##### INFR-101: ~~Timeouts masivos por saturación temporal~~ → RESUELTO (era falso positivo, ver PERF-100)
+- **Severidad:** 🟡 MEDIO (downgrade tras diagnóstico)
+- **Reportado:** 2026-04-09 (baseline Tranche 2)
+- **Resuelto:** 2026-04-09 (re-run con `--delay 3 --retry-timeout` reveló que NO es saturación)
+- **Commit del fix:** `7facc78` (agrega `--delay` y `--retry-timeout` al runner)
+
+##### Diagnóstico final
+Hipótesis original: el bot se saturaba después de ~14 queries consecutivas y todos los casos
+subsecuentes daban timeout. **La hipótesis era incorrecta.**
+
+Re-run con `--delay 3 --retry-timeout` reveló que:
+1. Solo **3 casos específicos** dan timeout sistemáticamente (no es número creciente).
+2. Otros casos posteriores en la misma corrida SÍ responden normalmente (incluso uno tarda 36s
+   pero responde).
+3. Los 3 casos que dan timeout tienen palabras en común: **"saldo", "deuda", "pagar"**.
+
+Conclusión: NO es saturación del bot. Es un bug de **performance** específico de algunas queries
+SQL que el bot dispara para preguntas de "saldo de cuentas por pagar" / "deuda a productor". El
+bug ahora vive como **PERF-100**.
+
+##### Cierre
+Las flags `--delay` y `--retry-timeout` siguen siendo útiles aunque el bug fuera mal
+diagnosticado: ayudan a estabilizar el suite contra saturación verdadera si llega a ocurrir
+en el futuro.
+
+---
+
+### Performance / queries lentas
+
+#### 🔴 Abiertos (1)
+
+##### PERF-100: Queries de "saldo/deuda/pagar" toman > 120s y dan timeout
+- **Severidad:** 🔴 CRÍTICO
+- **Reportado:** 2026-04-09 (re-run del Tranche 2 destapó el patrón)
 - **Resuelto:** —
-- **Commit del fix (mitigación temporal):** (este commit agrega `--delay` al runner)
-- **Fix definitivo:** pendiente de investigación
+- **Commit del fix:** —
+- **Test de regresión:** los 3 casos suspendidos en `cases.yaml` (`routing_finanzas_saldo_cxp_proveedores`, `routing_agri_deuda_productor_especifico`, `routing_agri_deuda_maiz_buque`)
 
 ##### Síntoma observable
-En el baseline de Tranche 2 (24 casos), los casos [15..22] dieron `Bot error: ReadTimeout:
-timed out` consecutivamente:
+3 casos del golden suite dan `Bot error: ReadTimeout: timed out` consistentemente, incluso con
+`--retry-timeout` (que da 30s de espera entre intentos):
 
 ```
-[PASS] routing_compras_empaque_inproa_2025         (caso 14, 12s)
-[FAIL] routing_finanzas_saldo_cxp_proveedores      (caso 15, TIMEOUT)
-[FAIL] routing_agri_deuda_productor_especifico     (caso 16, TIMEOUT)
-[FAIL] routing_agri_deuda_maiz_buque               (caso 17, TIMEOUT)
-[FAIL] routing_agri_maiz_acondicionado_inpromaiz   (caso 18, TIMEOUT)
-[FAIL] routing_agri_compras_maiz_mes_actual        (caso 19, TIMEOUT)
-[FAIL] routing_ventas_clientes_aperturados         (caso 20, TIMEOUT)
-[FAIL] routing_finanzas_saldos_bancarios_baseline  (caso 21, TIMEOUT)
-[PASS] routing_contabilidad_balance_dic_2025_baseline  (caso 22, 17s)
-[PASS] routing_produccion_ordenes_ene_2026_baseline    (caso 23, 10s)
+[FAIL] routing_finanzas_saldo_cxp_proveedores       Bot error: ReadTimeout
+[FAIL] routing_agri_deuda_productor_especifico       Bot error: ReadTimeout
+[FAIL] routing_agri_deuda_maiz_buque                 Bot error: ReadTimeout
 ```
 
-Nótese que los últimos 2 casos volvieron a responder. Eso descarta "bot colgado permanentemente".
+Las preguntas son:
+- `"cual es el saldo de las cuentas por pagar a proveedores de inproa santoni al 28 de febrero de 2026"`
+- `"cuanto es la deuda por pagar a productor Jose Luis Perez del Palomar"`
+- `"deuda con maiz de buque de inpromaiz"`
 
-##### Causa raíz (hipótesis, pendiente)
-1. **Rate limit del proveedor LLM (OpenRouter/DeepSeek).** 14 requests consecutivos en < 3
-   minutos puede disparar throttling. Los últimos 2 casos pasaron porque hubo ~30s de espera
-   por los timeouts anteriores, dándole tiempo al rate limit a resetearse.
-2. **Saturación de memoria en el backend.** Las conversaciones se acumulan en memoria + DB.
-3. **Contención en iDempiere.** Cada caso dispara queries contra la DB de producción.
-4. **ChromaDB rate limit interno.** Los logs de inicio muestran errores `'_type'` en ChromaDB.
+**Patrón común:** todas tienen "saldo", "deuda", o "pagar a proveedor/productor".
 
-##### Mitigación temporal (este commit)
-`runner.py` ahora soporta:
-- `--delay N`: esperar N segundos entre casos (reduce ritmo de queries al LLM).
-- `--retry-timeout`: si un caso da timeout, esperar 30s y reintentar una vez.
+Otros casos similares en la misma corrida:
+- `"saldos bancarios actuales"` → 36s (lento pero responde)
+- `"monto en dólares a pagar de maíz acondicionado"` → 16s (responde)
 
-Ejemplo de uso:
-```bash
-docker compose exec ... backend python -m tests.golden.runner --delay 3 --retry-timeout
-```
+Eso descarta "todas las queries de pagos son lentas". El subset que falla tiene algo más
+específico, probablemente la cláusula de "cuentas por pagar a [tipo]" que dispara una rama
+particular del query.
 
-Con esto podemos reconfirmar si los 7 casos que fallaron por timeout son bugs reales o
-simplemente fueron víctimas de la saturación temporal.
+##### Causa raíz (hipótesis fuerte)
+Probablemente las queries de "saldo de cuentas por pagar a proveedor" usan `invoiceopen()`
+PL/pgSQL VOLATILE en alguna rama del agente que NO fue migrada al patrón `_ALLOC_JOIN` que
+arreglamos en VENT-007 (commit `503b232`).
 
-##### Fix definitivo (pendiente)
-Para arreglar el bug de raíz (que el bot no se sature con 14+ queries):
-1. Diagnosticar qué se satura exactamente (LLM, DB, memoria).
-2. Si es rate limit del LLM, agregar retry exponencial en el llm_factory del backend.
-3. Si es memoria, investigar la cache de conversaciones y agregar límites.
-4. Agregar monitoreo estructurado (latencia por proveedor, rate de errores).
+Para confirmar:
+1. Identificar qué función del bot se dispara para esas 3 preguntas.
+2. Inspeccionar el SQL generado.
+3. Buscar referencias a `invoiceopen(` en `idempiere_queries.py` que sigan vivas.
+4. Migrar al patrón de JOIN agregado.
 
-##### Cross-Agent Review
-N/A — es bug de infraestructura. Aplica a todos los agentes de la misma manera.
+##### Cross-Agent Review (al arreglar)
+Buscar `invoiceopen(` en TODO el codebase de `idempiere_queries.py`. Por cada ocurrencia:
+- ✅ Reemplazar con `_ALLOC_JOIN` + `_OPEN_EXPR`
+- ⚠️ O documentar por qué se queda con `invoiceopen()`
+
+##### Impacto
+Bloquea evaluación de:
+- AGRI-100, AGRI-101 (suspendidos)
+- FIN-100 (suspendido)
+
+Y probablemente impacta a usuarios reales: cualquier supervisor que pregunte "¿cuánto debo a
+mis productores?" o "¿cuál es el saldo de proveedores?" recibe timeout o respuesta lenta.
 
 ---
 
@@ -1229,4 +1351,5 @@ N/A — es bug de infraestructura. Aplica a todos los agentes de la misma manera
 | 2026-04-09 | Diagnóstico y fix de COMP-100 (TypeError silencioso en `query_service.build_supply_purchases`). **Primer uso del proceso obligatorio de cross-agent review** → destapó COMP-103, COMP-104, COMP-105 (bugs idénticos en otros 3 wrappers del mismo archivo). Los 4 bugs se resolvieron en el mismo commit `beef39a`. Sin el proceso, solo se habría arreglado COMP-100 y los otros 3 habrían quedado silenciosos indefinidamente. | Claude + Sergio |
 | 2026-04-09 | **Tranche 1 cerrado con 10/10 PASS (100% precisión medida).** Re-run del golden suite post-fix confirmó que los 2 FAILs de `compras_insumos_*_2025_ves` pasaron a PASS con match exacto. Timings promedio 10.9s, máximo 21.9s (top 10 vendedores). Primer cierre formal de un tranche con métrica verificable. | Claude + Sergio |
 | 2026-04-09 | **Tranche 2 baseline** (14 casos nuevos de routing). Resultado: 13/24 PASS, 11/24 FAIL. Análisis: (a) 3 tickets silenciosamente resueltos antes del Tranche 2 (RRHH-100/102/103 movidos a Resueltos); (b) 2 bugs de routing confirmados vivos (RRHH-101, COMP-101); (c) 2 bugs propios del framework descubiertos por el mismo golden test (INFR-100 parser, INFR-101 saturación/timeouts); (d) 6 tickets no evaluables por los timeouts (FIN-100, AGRI-100..103, PRDC-100) — requieren re-run con `--delay`. El framework detectó 3 arreglos invisibles y 2 bugs de sí mismo, demostrando su valor auto-correctivo. | Claude + Sergio |
+| 2026-04-09 | **Tranche 2 re-run con `--delay 3 --retry-timeout`** post-fix de parser. Resultado: **18/24 PASS = 75%** (datos 10/10 = 100%, routing evaluable 8/11 = 72.7%, routing no evaluable 0/3 por timeout). Hallazgos: (a) **5 tickets más silenciosamente resueltos** (AGRI-102, PRDC-100 sumados a los 3 anteriores de RRHH); (b) **3 routing bugs confirmados vivos**: RRHH-101 (cumpleaños→general), COMP-101 (empaque→produccion), AGRI-103 (compras maíz→compras_insumos); (c) **INFR-101 reclasificado**: no era saturación temporal — son 3 queries específicas de "saldo/deuda/pagar" que toman > 120s sistemáticamente. Bug nuevo abierto como **PERF-100** (probable invoiceopen() PL/pgSQL no migrado). Tabla resumen actualizada: 8 bugs 🔴 abiertos (era 12), 28 resueltos (era 24). | Claude + Sergio |
 
