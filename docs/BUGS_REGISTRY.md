@@ -144,12 +144,13 @@ desde que se abre hasta que se resuelve (solo cambia de lista).
 
 ### Indicadores clave
 
-- **Precisión medida (golden tests):** 8/10 PASS = **80%** (Tranche 1, 09/Abr/2026) — se espera 10/10 después del fix de COMP-100/103/104/105
+- **Precisión medida (golden tests):** **10/10 PASS = 100%** (Tranche 1 cerrado, 09/Abr/2026 tras fix de COMP-100/103/104/105)
 - **Cobertura del golden suite:** 4 de 7 agentes (ventas, rrhh, compras_insumos, compras_productores)
-- **Bugs críticos detectados por logs:** 10 (ver sección por agente)
-- **Bugs críticos detectados por golden tests:** 4 (COMP-100 + cross-agent review destapó COMP-103, COMP-104, COMP-105)
-- **Deuda técnica crítica:** 13 bugs 🔴 abiertos.
-- **Efectividad del cross-agent review:** en la primera aplicación del proceso (09/Abr/2026), la revisión cruzada de COMP-100 destapó 3 bugs idénticos (COMP-103, COMP-104, COMP-105) que habrían quedado silenciosos. Sin el proceso, habríamos arreglado solo 1 de 4.
+- **Agentes sin cobertura:** finanzas, contabilidad, produccion (objetivo de Tranche 2/3)
+- **Bugs críticos detectados por logs:** 10 (ver sección por agente, pendientes de fix)
+- **Bugs críticos detectados por golden tests:** 4 (COMP-100 + cross-agent review destapó COMP-103, COMP-104, COMP-105 — todos ya resueltos)
+- **Deuda técnica crítica:** 13 bugs 🔴 abiertos (todos de routing en orchestrator, detectados en análisis de logs de supervisores).
+- **Efectividad del cross-agent review:** en la primera aplicación del proceso (09/Abr/2026), la revisión cruzada de COMP-100 destapó 3 bugs idénticos (COMP-103, COMP-104, COMP-105) que habrían quedado silenciosos. Sin el proceso, habríamos arreglado solo 1 de 4 — 75% de los bugs hubieran seguido vivos.
 
 ---
 
@@ -1067,5 +1068,6 @@ con mensaje de error amigable al usuario. Loggeo estructurado con `logger.error(
 | Fecha | Cambio | Autor |
 |---|---|---|
 | 2026-04-09 | Creación del registro, backfill completo de ventas (9 resueltos), y apertura de 14 bugs nuevos detectados en análisis de logs reales | Claude + Sergio |
-| 2026-04-09 | Diagnóstico y fix de COMP-100 (TypeError silencioso en `query_service.build_supply_purchases`). **Primer uso del proceso obligatorio de cross-agent review** → destapó COMP-103, COMP-104, COMP-105 (bugs idénticos en otros 3 wrappers del mismo archivo). Los 4 bugs se resolvieron en el mismo commit. Sin el proceso, solo se habría arreglado COMP-100 y los otros 3 habrían quedado silenciosos indefinidamente. | Claude + Sergio |
+| 2026-04-09 | Diagnóstico y fix de COMP-100 (TypeError silencioso en `query_service.build_supply_purchases`). **Primer uso del proceso obligatorio de cross-agent review** → destapó COMP-103, COMP-104, COMP-105 (bugs idénticos en otros 3 wrappers del mismo archivo). Los 4 bugs se resolvieron en el mismo commit `beef39a`. Sin el proceso, solo se habría arreglado COMP-100 y los otros 3 habrían quedado silenciosos indefinidamente. | Claude + Sergio |
+| 2026-04-09 | **Tranche 1 cerrado con 10/10 PASS (100% precisión medida).** Re-run del golden suite post-fix confirmó que los 2 FAILs de `compras_insumos_*_2025_ves` pasaron a PASS con match exacto. Timings promedio 10.9s, máximo 21.9s (top 10 vendedores). Primer cierre formal de un tranche con métrica verificable. | Claude + Sergio |
 
