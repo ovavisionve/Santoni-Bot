@@ -268,10 +268,23 @@ Se crearon cuestionarios para que cada departamento valide las respuestas del bo
   - Framework de golden tests SantoniBot vs iDempiere (`backend/tests/golden/`)
   - Alineación de ground truth SQL con queries del bot (docstatus IN ('CO','CL'), totallines en ventas, allocation JOIN en CxC/CxP)
 
+- **Sesión 09/Abr/2026** — branch `claude/update-claude-md-docker-MbDJK`:
+  - **Golden tests: 33/33 PASS = 100%** cubriendo 7/7 agentes
+  - Análisis de 1,273 preguntas reales de usuarios (admin + 5 supervisores Santoni)
+  - `docs/BUGS_REGISTRY.md`: registro formal de 39 bugs con proceso cross-agent review obligatorio
+  - Fix COMP-100/103/104/105: TypeError silencioso en 4 wrappers de query_service.py
+  - Fix RRHH-101: "cumplen años" no matcheaba + "no tengo acceso" prohibido en agente general
+  - Fix COMP-101: "empaque" removido de keywords de produccion
+  - Fix AGRI-103: plurales faltantes en compras_productores
+  - Fix PERF-100: `_add_date_filter` usa rangos BETWEEN + `_ALLOC_JOIN` con filtro 3 años
+  - Pre-routing rules en orchestrator para conflictos de keywords
+  - Parser del runner mejorado para formato venezolano
+  - Runner con `--delay` y `--retry-timeout`
+
 ### Pendiente para cierre Fase 1:
-- **Verificación sistemática de estructuras SQL del ground truth vs bot** (pausado por límite de contexto, ver sección Golden Tests)
-- Mapeo completo de todas las tablas iDempiere (algunas queries aún en ajuste)
-- Tests E2E ← **CUBIERTO POR PROTOCOLO QA + GOLDEN TESTS**
+- ~~Verificación SQL ground truth vs bot~~ ✅ COMPLETADO (09/Abr)
+- ~~Tests E2E~~ ✅ **CUBIERTO POR GOLDEN TESTS (33 casos, 100% PASS)**
+- Filtro de orgs demo en queries USD (datos demo contaminan totales USD)
 - Script de migración datos demo → datos reales
 - Sentry (monitoreo de errores)
 - WhatsApp (Fase 2, post-lanzamiento)
