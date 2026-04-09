@@ -754,3 +754,163 @@ casos:
     validar:
       tipo: agente_esperado
       agente_esperado: compras_insumos
+
+  # ═════════════════════════════════════════════════════════════════════
+  # COBERTURA DE FUNCIONES (09/Abr/2026) — golden tests de DATOS
+  #
+  # Antes: 4/31 funciones con datos verificados (13%).
+  # Objetivo: subir a 11/31 (35%) cubriendo las más usadas por supervisores.
+  # ═════════════════════════════════════════════════════════════════════
+
+  # 1. build_top_clients (lsilva la usa constantemente)
+  - id: datos_top_clientes_ves_feb_2026
+    agente: ventas
+    pregunta: "Top 10 clientes por ventas en bolívares en febrero 2026"
+    ground_truth:
+      extraer: tabla
+      sql: |
+        SELECT bp.name AS cliente,
+               COALESCE(SUM(
+                 CASE WHEN dt.docbasetype = 'ARI' THEN i.totallines
+                      WHEN dt.docbasetype = 'ARC' THEN -i.totallines
+                      ELSE 0 END), 0) AS venta_neta
+        FROM adempiere.c_invoice i
+        JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id
+        JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id
+        WHERE i.issotrx = 'Y'
+          AND i.docstatus IN ('CO', 'CL')
+          AND i.isactive = 'Y'
+          AND bp.iscustomer = 'Y'
+          AND i.c_currency_id = 205
+          AND i.dateinvoiced >= '2026-02-01'
+          AND i.dateinvoiced < '2026-03-01'
+        GROUP BY bp.name
+        ORDER BY venta_neta DESC
+        LIMIT 10
+    validar:
+      tipo: tabla_ordenada
+      columna_etiqueta: cliente
+      columna_valor: venta_neta
+      tolerancia_pct: 0.01
+      posicion_estricta: true
+
+  # 2. build_financial_summary — saldos bancarios VES
+  # NOTA: currentbalance es snapshot vivo, tolerancia alta (5%)
+  - id: datos_saldos_bancarios_ves
+    agente: finanzas
+    pregunta: "¿Cuáles son los saldos bancarios en bolívares?"
+    ground_truth:
+      extraer: scalar
+      sql: |
+        SELECT COALESCE(SUM(ba.currentbalance), 0) AS total_saldo
+        FROM adempiere.c_bankaccount ba
+        JOIN adempiere.c_currency c ON ba.c_currency_id = c.c_currency_id
+        WHERE ba.isactive = 'Y'
+          AND c.iso_code = 'VES'
+    validar:
+      tipo: valor_exacto
+      tolerancia_pct: 0.05
+
+  # 3. build_birthday_list — cumpleañeros de mayo (conteo)
+  - id: datos_cumpleaneros_mayo_count
+    agente: rrhh
+    pregunta: "¿Cuántos cumpleañeros hay en mayo?"
+    ground_truth:
+      extraer: scalar
+      sql: |
+        SELECT COUNT(*) FROM (
+          SELECT DISTINCT ON (bp.c_bpartner_id) bp.c_bpartner_id
+          FROM adempiere.hr_employee e
+          JOIN adempiere.c_bpartner bp ON e.c_bpartner_id = bp.c_bpartner_id
+          CROSS JOIN LATERAL (
+            SELECT u.birthday
+            FROM adempiere.ad_user u
+            WHERE u.c_bpartner_id = bp.c_bpartner_id
+              AND u.birthday IS NOT NULL
+            ORDER BY u.ad_user_id
+            LIMIT 1
+          ) bday
+          WHERE e.isactive = 'Y'
+            AND EXTRACT(MONTH FROM bday.birthday) = 5
+          ORDER BY bp.c_bpartner_id, e.startdate DESC
+        ) sub
+    validar:
+      tipo: conteo_exacto
+
+  # 4. build_production_summary — movimientos de inventario feb 2026
+  - id: datos_movimientos_produccion_feb_2026
+    agente: produccion
+    pregunta: "¿Cuántos movimientos de inventario hubo en febrero 2026?"
+    ground_truth:
+      extraer: scalar
+      sql: |
+        SELECT COUNT(*) AS total_movimientos
+        FROM adempiere.m_inout io
+        WHERE io.isactive = 'Y'
+          AND io.docstatus IN ('CO', 'CL')
+          AND io.movementdate >= '2026-02-01'
+          AND io.movementdate < '2026-03-01'
+    validar:
+      tipo: conteo_exacto
+
+  # 5. build_accounting_summary — asientos contables feb 2026
+  - id: datos_asientos_contables_feb_2026
+    agente: contabilidad
+    pregunta: "¿Cuántos asientos contables se registraron en febrero 2026?"
+    ground_truth:
+      extraer: scalar
+      sql: |
+        SELECT COUNT(*) AS total_asientos
+        FROM adempiere.fact_acct fa
+        WHERE fa.isactive = 'Y'
+          AND fa.dateacct >= '2026-02-01'
+          AND fa.dateacct < '2026-03-01'
+    validar:
+      tipo: conteo_exacto
+
+  # 6. build_collection_summary — cobranza VES feb 2026
+  - id: datos_cobranza_ves_feb_2026
+    agente: ventas
+    pregunta: "¿Cuánto se cobró en bolívares en febrero 2026?"
+    ground_truth:
+      extraer: scalar
+      sql: |
+        SELECT COALESCE(SUM(p.payamt), 0) AS total_cobrado
+        FROM adempiere.c_payment p
+        WHERE p.isreceipt = 'Y'
+          AND p.docstatus IN ('CO', 'CL')
+          AND p.isactive = 'Y'
+          AND p.c_currency_id = 205
+          AND p.datetrx >= '2026-02-01'
+          AND p.datetrx < '2026-03-01'
+    validar:
+      tipo: valor_exacto
+      tolerancia_pct: 0.01
+
+  # 7. build_producer_pending_payments — facturas pendientes a productores
+  # NOTA: conteo vivo (cambia diariamente con pagos). Si el bot dice > 0
+  # y cuadra con SQL, está bien. Si dice 0, es bug.
+  - id: datos_facturas_pendientes_productores
+    agente: compras_productores
+    pregunta: "¿Cuántas facturas pendientes de pago a productores hay?"
+    ground_truth:
+      extraer: scalar
+      sql: |
+        SELECT COUNT(*) AS facturas_pendientes
+        FROM adempiere.c_invoice i
+        LEFT JOIN (
+          SELECT al.c_invoice_id,
+                 SUM(COALESCE(al.amount, 0) + COALESCE(al.discountamt, 0) + COALESCE(al.writeoffamt, 0)) AS paid
+          FROM adempiere.c_allocationline al
+          JOIN adempiere.c_allocationhdr ah ON al.c_allocationhdr_id = ah.c_allocationhdr_id
+          WHERE ah.isactive = 'Y' AND ah.docstatus IN ('CO', 'CL')
+            AND ah.dateacct >= (CURRENT_DATE - INTERVAL '3 years')
+          GROUP BY al.c_invoice_id
+        ) alloc ON alloc.c_invoice_id = i.c_invoice_id
+        WHERE i.issotrx = 'N'
+          AND i.docstatus IN ('CO', 'CL')
+          AND i.isactive = 'Y'
+          AND i.dateinvoiced >= (CURRENT_DATE - INTERVAL '2 years')
+          AND (i.grandtotal - COALESCE(alloc.paid, 0)) > 0
+    validar:
+      tipo: conteo_exacto
