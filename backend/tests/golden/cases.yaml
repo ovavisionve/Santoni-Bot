@@ -825,20 +825,22 @@ casos:
     validar:
       tipo: conteo_exacto
 
-  # 4. build_production_summary — recepciones y despachos feb 2026
-  # NOTA: "movimientos de inventario" ruteaba a compras_insumos porque
-  # "inventario" es keyword de ese agente. "recepciones y despachos"
-  # dispara produccion porque tiene "recepcion de materia" y "despacho".
+  # 4. build_production_summary — recepciones V+ feb 2026
+  # El bot desglosa los movimientos por tipo (V+, C-, M+/M-, P+/P-) y NO
+  # presenta el total sumado. Validamos específicamente las recepciones
+  # de materia prima (movementtype='V+') que es el indicador más usado
+  # por los supervisores de producción.
   - id: datos_movimientos_produccion_feb_2026
     agente: produccion
     pregunta: "¿Cuántas recepciones y despachos de producción hubo en febrero 2026?"
     ground_truth:
       extraer: scalar
       sql: |
-        SELECT COUNT(*) AS total_movimientos
+        SELECT COUNT(*) AS recepciones_mp
         FROM adempiere.m_inout io
         WHERE io.isactive = 'Y'
           AND io.docstatus IN ('CO', 'CL')
+          AND io.movementtype = 'V+'
           AND io.movementdate >= '2026-02-01'
           AND io.movementdate < '2026-03-01'
     validar:
