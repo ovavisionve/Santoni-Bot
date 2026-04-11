@@ -3332,3 +3332,121 @@ Incluye NC grandes como:
 | 10 | Montos con IVA (grandtotal) | Santoni reporta sin IVA | Cambiado a totallines en todas las queries de ventas |
 | 11 | "Top vendedores" devolvía clientes | No existía query_type "vendedor" | Nuevo tipo con prioridad antes de "top" |
 | 12 | NC de productos alucinadas | build_sales_by_product no incluye NC | **Pendiente**: agregar NC a la respuesta de productos |
+
+---
+
+## 20. Hallazgo crítico 10/Abr/2026 — Views oficiales LVE (Localización Venezuela)
+
+### Contexto
+
+El log exportado de esalas del 10/Abr/2026 mostró que el bot reportaba **457 empleados activos
+en INPROA SANTONI** pero el reporte oficial de iDempiere que usa Santoni (screenshot adjunto)
+muestra **141 empleados**. Diferencia de **3.2x**.
+
+Mi golden test `empleados_activos_inproa_santoni` estaba validando contra la misma query errada
+que usa el bot (`build_employee_summary`), por eso daba PASS. Ambos (bot y test) estaban
+equivocados contra la realidad de iDempiere.
+
+### Causa raíz: el bot consulta hr_employee directamente en vez de la view oficial
+
+iDempiere tiene procesos/reportes nativos para Santoni bajo el prefijo **`LVE_*`** (Localización
+Venezuela). El reporte que Santoni usa se llama `LVE_EmpleadosActivos` y consume una view
+`adempiere.lve_empleadosactivos` que aplica la lógica de negocio correcta (probablemente filtra
+por `hr_contract.isactive`, `enddate IS NULL`, o elimina registros de nómina histórica).
+
+**El bot NO usa esa view.** `build_employee_summary` hace:
+
+```sql
+SELECT COUNT(DISTINCT e.c_bpartner_id)
+FROM adempiere.hr_employee e
+WHERE e.isactive = 'Y'
+```
+
+Lo cual cuenta cualquier persona que haya estado alguna vez en nómina con `isactive='Y'` en
+su fila de hr_employee. Incluye:
+- Empleados con múltiples contratos históricos
+- Ex-empleados cuya fila no fue marcada como inactiva al salir
+- Duplicados por el mismo c_bpartner_id en diferentes organizaciones
+
+La view `lve_empleadosactivos` aplica la lógica de negocio real.
+
+### Evidencia
+
+```sql
+-- Reportes/procesos LVE relacionados con empleados en iDempiere:
+ ad_process_id |          value          |          name
+---------------+-------------------------+-------------------------
+       1000715 | GEO_PrestEmpleados      | GEO_PrestEmpleados
+       1000800 | GEO_ResPrestEmpleados   | GEO_ResPrestEmpleados
+       1000724 | LVE_EmpleadosActivos    | LVE_EmpleadosActivos     ← este es el del reporte
+       1000747 | LVE_EmpleadosActivose   | LVE_EmpleadosActivose
+       1000767 | LVE_EmpleadosInactivos  | LVE_EmpleadosInactivos
+       1000766 | LVE_EmpleadosInactivose | LVE_EmpleadosInactivose
+
+-- Views disponibles en el schema adempiere:
+ schemaname |        viewname
+------------+-------------------------
+ adempiere  | hr_movement_employee_v
+ adempiere  | hr_nov_employee
+ adempiere  | lve_empleadosactivos     ← ESTA es la fuente de verdad
+ adempiere  | lve_empleadosinactivos
+ adempiere  | lve_familygroupemployee
+ adempiere  | lve_prestsempleados
+ adempiere  | lve_resprocempleado
+ adempiere  | lve_resprocempleadogeo
+```
+
+### Columnas disponibles en hr_employee
+
+```
+  column_name  |          data_type
+---------------+-----------------------------
+ ad_org_id     | numeric
+ c_bpartner_id | numeric
+ enddate       | timestamp without time zone   ← existe, el bot no la usa
+ isactive      | character
+ startdate     | timestamp without time zone
+```
+
+**`hr_employee.enddate`** es la columna que marca la terminación del empleado. Si está poblada,
+el empleado ya no está activo (independientemente de `isactive`).
+
+### Fix pendiente (crítico)
+
+1. **Reemplazar `build_employee_summary` para usar `lve_empleadosactivos`** como fuente de
+   verdad, NO `hr_employee` directamente.
+2. **Lo mismo para `build_employee_list`** y cualquier otra función que cuente empleados.
+3. **Re-escribir el golden test** `empleados_activos_inproa_santoni` para esperar **141** (o el
+   número real que devuelva la view), no 457.
+4. **Aplicar el mismo patrón** (usar views LVE cuando existan) a los otros reportes de RRHH:
+   - Payroll: ¿hay `lve_nomina_*`?
+   - Ausentismo: ¿hay `lve_ausentismo` o similar?
+
+### Cross-agent review necesario
+
+El patrón "usar view LVE oficial vs tabla raw" probablemente aplica a:
+- **Ventas**: ¿hay `lve_ventas_*` que Darwin use en sus pivots?
+- **Compras**: ¿hay `lve_compras_*`?
+- **Cobranza**: ¿hay `lve_cobranza_*`?
+- **Contabilidad**: ¿hay `lve_balance_*` o `lve_asientos_*`?
+
+Si cualquiera de esas existe, el bot probablemente está reportando números diferentes a los
+oficiales por la misma razón.
+
+### Lección aprendida
+
+**Los golden tests auto-referenciales son peligrosos.** Cuando el SQL ground truth se escribe
+leyendo el código del bot, valida consistencia interna pero no verdad externa. El test pasa
+porque `bot == mi_sql`, pero ambos pueden estar equivocados contra la realidad.
+
+**Corrección del proceso:** para funciones donde exista una view LVE o un reporte nativo de
+iDempiere, el ground truth DEBE usar esa view/reporte, NO el código del bot. El test debería
+fallar cuando el bot no coincide con la view oficial — eso es exactamente lo que queremos
+detectar.
+
+**Tickets a abrir (sección BUGS_REGISTRY.md):**
+- **RRHH-200**: build_employee_summary reporta 3x más empleados que lve_empleadosactivos
+- **RRHH-201**: Golden test empleados_activos_inproa_santoni es auto-referencial y debe
+  migrarse a lve_empleadosactivos
+- **BASE-100** (candidato): auditar TODAS las funciones build_* contra views LVE existentes
+
