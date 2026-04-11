@@ -281,6 +281,37 @@ Se crearon cuestionarios para que cada departamento valide las respuestas del bo
   - Parser del runner mejorado para formato venezolano
   - Runner con `--delay` y `--retry-timeout`
 
+- **Sesión 10/Abr/2026** — branch `claude/update-claude-md-docker-MbDJK`:
+  - **Golden tests: 41/41 PASS = 100%** (expandido de 33 a 41 casos)
+  - **Hallazgo crítico**: los golden tests iniciales eran auto-referenciales (mi SQL copiaba
+    el código del bot, ambos podían estar equivocados contra la realidad). Descubierto al
+    comparar el bot vs reportes reales de Santoni del log de esalas.
+  - **Descubrimiento de 179 views LVE** en iDempiere (Localización Venezuela). Estas views
+    son la fuente oficial de los reportes que Santoni usa cada día. El bot las ignoraba
+    completamente y consultaba tablas raw. Mapeo completo en `docs/DATOS_VERIFICACION_IDEMPIERE.md`
+    sección 21.
+  - **Fase 1 RRHH completada**: migradas 3 funciones (`build_employee_summary`,
+    `build_birthday_list`, `build_employee_list`) de `hr_employee` raw a `lve_empleadosactivos`.
+    Los números ahora coinciden con los reportes oficiales:
+    * INPROA SANTONI: 258 (antes 457 — inflaba 77%)
+    * InproMaiz: 101 (antes 217 — inflaba 106%)
+    * AGA AGRICOLA: 15 (antes 91 — inflaba 507%)
+    * Grupo total: 544 (antes 1,056 — inflaba 94%)
+  - **Fase 2 Ventas CANCELADA**: investigación reveló que `lve_invoice` es line-level
+    (21,792 filas feb 2026 vs 2,110 facturas) y empeoraría los números en vez de mejorarlos.
+    `c_invoice` raw ya es correcto para ventas (no tiene multiplicación como `hr_employee`).
+  - **Fix VENT-300**: cobranza devolvía datos de VENTAS porque "cobró" (con acento) no
+    matcheaba "cobra"/"cobro" (sin acento) en keywords. Agregadas variantes acentuadas.
+    Impacto: cualquier supervisor que preguntaba "¿cuánto se cobró?" recibía facturación
+    (Bs 2,646M) en vez de cobranza real (Bs 12,105M). Diferencia de 5x.
+  - **Fix VENT-400**: "divisas" (sinónimo venezolano de dólares) no matcheaba el regex USD.
+    El bot defaulteaba a VES y el LLM etiquetaba como USD, mostrando $503M donde eran
+    Bs. 503M. Fix: regex USD ahora incluye `divisas?`. Anti-alucinación: regla nueva en el
+    system prompt de ventas que prohíbe etiquetar la moneda según la palabra del usuario
+    cuando no coincide con los datos.
+  - **Fix parser movimientos producción**: el bot desglosa m_inout por tipo (V+/C-/M+/P+)
+    y no presenta total sumado. Golden test ajustado para validar V+ específico.
+
 ### Pendiente para cierre Fase 1:
 - ~~Verificación SQL ground truth vs bot~~ ✅ COMPLETADO (09/Abr)
 - ~~Tests E2E~~ ✅ **CUBIERTO POR GOLDEN TESTS (33 casos, 100% PASS)**
