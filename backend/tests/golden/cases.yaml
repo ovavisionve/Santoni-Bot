@@ -193,11 +193,10 @@ casos:
     ground_truth:
       extraer: scalar
       sql: |
-        SELECT COUNT(DISTINCT e.c_bpartner_id) AS empleados
-        FROM adempiere.hr_employee e
-        JOIN adempiere.ad_org o ON e.ad_org_id = o.ad_org_id
-        WHERE e.isactive = 'Y'
-          AND o.name ILIKE '%INPROA SANTONI%'
+        SELECT COUNT(*) AS empleados
+        FROM adempiere.lve_empleadosactivos v
+        JOIN adempiere.ad_org o ON v.ad_org_id = o.ad_org_id
+        WHERE o.name ILIKE '%INPROA SANTONI%'
     validar:
       tipo: conteo_exacto
 
@@ -371,11 +370,10 @@ casos:
     ground_truth:
       extraer: scalar
       sql: |
-        SELECT COUNT(DISTINCT e.c_bpartner_id) AS empleados
-        FROM adempiere.hr_employee e
-        JOIN adempiere.ad_org o ON e.ad_org_id = o.ad_org_id
-        WHERE e.isactive = 'Y'
-          AND o.name ILIKE '%InproMaiz%'
+        SELECT COUNT(*) AS empleados
+        FROM adempiere.lve_empleadosactivos v
+        JOIN adempiere.ad_org o ON v.ad_org_id = o.ad_org_id
+        WHERE o.name ILIKE '%InproMaiz%'
     validar:
       tipo: conteo_exacto
 
@@ -661,21 +659,19 @@ casos:
   # ─────────────────────────────────────────────────────────────────────
 
   # CASO: rrhh_empleados_activos_agroinproa
-  # Tercera organización cubierta en rrhh (INPROA SANTONI y InproMaiz ya
-  # están). Valida que el filtro por nombre funciona para todas las orgs
-  # del grupo. AGROINPROA es la más pequeña (~38 empleados según docs).
-  # Función del bot: build_employee_summary.por_organizacion[AGROINPROA].activos
+  # Tercera organización cubierta en rrhh. AGROINPROA es la más chica.
+  # Post-migración a lve_empleadosactivos (10/Abr/2026): el número real es 19
+  # (antes el bot reportaba 38, que era hr_employee sin filtros correctos).
   - id: rrhh_empleados_activos_agroinproa
     agente: rrhh
     pregunta: "¿Cuántos empleados activos hay en AGROINPROA?"
     ground_truth:
       extraer: scalar
       sql: |
-        SELECT COUNT(DISTINCT e.c_bpartner_id) AS empleados
-        FROM adempiere.hr_employee e
-        JOIN adempiere.ad_org o ON e.ad_org_id = o.ad_org_id
-        WHERE e.isactive = 'Y'
-          AND o.name ILIKE '%AGROINPROA%'
+        SELECT COUNT(*) AS empleados
+        FROM adempiere.lve_empleadosactivos v
+        JOIN adempiere.ad_org o ON v.ad_org_id = o.ad_org_id
+        WHERE o.name ILIKE '%AGROINPROA%'
     validar:
       tipo: conteo_exacto
 
@@ -814,28 +810,18 @@ casos:
       tolerancia_pct: 0.05
 
   # 3. build_birthday_list — cumpleañeros de mayo (conteo)
+  # Post-migración (10/Abr/2026): usa lve_empleadosactivos.birthday directamente.
+  # La view ya tiene una fila por empleado activo, sin duplicados.
   - id: datos_cumpleaneros_mayo_count
     agente: rrhh
     pregunta: "¿Cuántos cumpleañeros hay en mayo?"
     ground_truth:
       extraer: scalar
       sql: |
-        SELECT COUNT(*) FROM (
-          SELECT DISTINCT ON (bp.c_bpartner_id) bp.c_bpartner_id
-          FROM adempiere.hr_employee e
-          JOIN adempiere.c_bpartner bp ON e.c_bpartner_id = bp.c_bpartner_id
-          CROSS JOIN LATERAL (
-            SELECT u.birthday
-            FROM adempiere.ad_user u
-            WHERE u.c_bpartner_id = bp.c_bpartner_id
-              AND u.birthday IS NOT NULL
-            ORDER BY u.ad_user_id
-            LIMIT 1
-          ) bday
-          WHERE e.isactive = 'Y'
-            AND EXTRACT(MONTH FROM bday.birthday) = 5
-          ORDER BY bp.c_bpartner_id, e.startdate DESC
-        ) sub
+        SELECT COUNT(*) AS cumpleaneros
+        FROM adempiere.lve_empleadosactivos v
+        WHERE v.birthday IS NOT NULL
+          AND EXTRACT(MONTH FROM v.birthday) = 5
     validar:
       tipo: conteo_exacto
 

@@ -1834,43 +1834,50 @@ def build_financial_summary(
 # ---------------------------------------------------------------------------
 
 def build_employee_summary(org_ids: list[int] | None = None) -> dict:
-    """Employee summary from iDempiere hr_employee (with DISTINCT to avoid duplicates).
+    """Employee summary from iDempiere using the OFFICIAL view lve_empleadosactivos.
 
-    hr_employee has multiple rows per person (one per payroll period), so we use
-    COUNT(DISTINCT e.c_bpartner_id) for accurate counts.  Organization is taken
-    from hr_employee.ad_org_id (correctly assigned) instead of c_bpartner.ad_org_id
-    (which often points to the wildcard '*' org).
+    FIX RRHH-200 (10/Abr/2026): esta función consultaba hr_employee directamente
+    lo cual contaba múltiples filas por persona (una por período de nómina) y
+    no aplicaba los filtros de negocio que aplica el reporte oficial de Santoni.
+    Resultado: el bot reportaba ~2x más empleados de los reales.
+
+    Ejemplo: INPROA SANTONI tenía 457 en el bot vs 258 en el reporte oficial.
+
+    La view lve_empleadosactivos es la fuente oficial — es la misma que usan
+    los reportes LVE_EmpleadosActivos que los supervisores de Santoni ven todos
+    los días. Incluye 32 columnas con todo pre-calculado:
+      ad_org_id, name, cargo, departamento, birthday, sueldo, edad, tservicio, etc.
+
+    La view solo contiene empleados ACTIVOS (no inactivos). Para inactivos hay
+    una view separada: lve_empleadosinactivos.
     """
     db = IdempiereSession()
     try:
-        # Overall counts (unique employees)
         conditions = ["1=1"]
         params: dict = {}
-        _add_org_filter(conditions, params, org_ids, "e")
+        _add_org_filter(conditions, params, org_ids, "v")
         where = " AND ".join(conditions)
 
+        # Totales: la view solo tiene activos, así que "total" = "activos"
         totals_q = text(
-            f"SELECT "
-            f"COUNT(DISTINCT e.c_bpartner_id) AS total, "
-            f"COUNT(DISTINCT CASE WHEN e.isactive = 'Y' THEN e.c_bpartner_id END) AS activos, "
-            f"COUNT(DISTINCT CASE WHEN e.isactive = 'N' THEN e.c_bpartner_id END) AS inactivos "
-            f"FROM adempiere.hr_employee e "
+            f"SELECT COUNT(*) AS total FROM adempiere.lve_empleadosactivos v "
             f"WHERE {where}"
         )
         row = db.execute(totals_q, params).fetchone()
+        total_activos = row[0] if row else 0
         totals = {
-            "total": row[0] if row else 0,
-            "activos": row[1] if row else 0,
-            "inactivos": row[2] if row else 0,
+            "total": total_activos,
+            "activos": total_activos,
+            "inactivos": 0,  # esta view no incluye inactivos
         }
 
-        # By organization (unique employees per org)
+        # Por organización
         by_org_q = text(
             f"SELECT COALESCE(o.name, 'Sin Organización') AS organizacion, "
-            f"COUNT(DISTINCT e.c_bpartner_id) AS total, "
-            f"COUNT(DISTINCT CASE WHEN e.isactive = 'Y' THEN e.c_bpartner_id END) AS activos "
-            f"FROM adempiere.hr_employee e "
-            f"LEFT JOIN adempiere.ad_org o ON e.ad_org_id = o.ad_org_id "
+            f"COUNT(*) AS total, "
+            f"COUNT(*) AS activos "
+            f"FROM adempiere.lve_empleadosactivos v "
+            f"LEFT JOIN adempiere.ad_org o ON v.ad_org_id = o.ad_org_id "
             f"WHERE {where} "
             f"GROUP BY o.name ORDER BY total DESC"
         )
@@ -1879,30 +1886,28 @@ def build_employee_summary(org_ids: list[int] | None = None) -> dict:
             for r in db.execute(by_org_q, params).fetchall()
         ]
 
-        # By department (from hr_department)
+        # Por departamento (la view ya tiene la columna "departamento")
         by_dept_q = text(
-            f"SELECT COALESCE(d.name, 'Sin Departamento') AS departamento, "
-            f"COUNT(DISTINCT e.c_bpartner_id) AS total, "
-            f"COUNT(DISTINCT CASE WHEN e.isactive = 'Y' THEN e.c_bpartner_id END) AS activos "
-            f"FROM adempiere.hr_employee e "
-            f"LEFT JOIN adempiere.hr_department d ON e.hr_department_id = d.hr_department_id "
+            f"SELECT COALESCE(v.departamento, 'Sin Departamento') AS departamento, "
+            f"COUNT(*) AS total, "
+            f"COUNT(*) AS activos "
+            f"FROM adempiere.lve_empleadosactivos v "
             f"WHERE {where} "
-            f"GROUP BY d.name ORDER BY total DESC LIMIT 20"
+            f"GROUP BY v.departamento ORDER BY total DESC LIMIT 20"
         )
         by_dept = [
             {"departamento": r[0], "total": r[1], "activos": r[2]}
             for r in db.execute(by_dept_q, params).fetchall()
         ]
 
-        # By job/cargo (from hr_job)
+        # Por cargo (la view ya tiene la columna "cargo")
         by_job_q = text(
-            f"SELECT COALESCE(j.name, 'Sin Cargo') AS cargo, "
-            f"COUNT(DISTINCT e.c_bpartner_id) AS total, "
-            f"COUNT(DISTINCT CASE WHEN e.isactive = 'Y' THEN e.c_bpartner_id END) AS activos "
-            f"FROM adempiere.hr_employee e "
-            f"LEFT JOIN adempiere.hr_job j ON e.hr_job_id = j.hr_job_id "
+            f"SELECT COALESCE(v.cargo, 'Sin Cargo') AS cargo, "
+            f"COUNT(*) AS total, "
+            f"COUNT(*) AS activos "
+            f"FROM adempiere.lve_empleadosactivos v "
             f"WHERE {where} "
-            f"GROUP BY j.name ORDER BY total DESC LIMIT 30"
+            f"GROUP BY v.cargo ORDER BY total DESC LIMIT 30"
         )
         by_job = [
             {"cargo": r[0], "total": r[1], "activos": r[2]}
@@ -1925,61 +1930,56 @@ def build_employee_list(
     date_from: str | None = None,
     date_to: str | None = None,
 ) -> list[dict]:
-    """List of unique active employees from iDempiere hr_employee + c_bpartner.
+    """List of active employees from iDempiere — official LVE view.
 
-    Uses DISTINCT ON (bp.c_bpartner_id) to eliminate duplicate rows caused by
-    hr_employee having multiple records per person (one per payroll period).
-    Joins hr_department and hr_job for richer employee info.
+    FIX RRHH-203 (10/Abr/2026): migrado de hr_employee a lve_empleadosactivos.
+    La view oficial ya tiene una fila por empleado activo (sin DISTINCT ON),
+    ya tiene las columnas cargo/departamento/organizacion/fecha_ingreso
+    pre-calculadas, y solo incluye empleados REALMENTE activos según la
+    lógica de negocio oficial de Santoni.
 
-    If cargo_search is provided, filters by job title using ILIKE.
-    If date_from/date_to provided, filters by startdate (fecha de ingreso).
+    Antes: 457 empleados en INPROA SANTONI (muchos ex-empleados y duplicados)
+    Ahora: 258 empleados reales (coincide con el reporte LVE_EmpleadosActivos)
     """
     db = _get_session(date_from=date_from, date_to=date_to)
     try:
-        conditions = ["e.isactive = 'Y'"]
+        conditions = ["1=1"]
         params: dict = {}
-        _add_org_filter(conditions, params, org_ids, "e")
+        _add_org_filter(conditions, params, org_ids, "v")
 
         if cargo_search:
-            # Split into words and require ALL words to appear (handles plural/singular)
-            # e.g. "obreros integrales" → j.name ILIKE '%obrero%' AND j.name ILIKE '%integral%'
+            # Match palabra-por-palabra con ILIKE en v.cargo
             words = cargo_search.strip().split()
             for i, word in enumerate(words):
-                # Strip trailing 's'/'es' for basic singular matching
                 stem = word.rstrip("s")
                 if stem.endswith("e") and word.endswith("es") and len(stem) > 3:
-                    stem = stem[:-1]  # "integrales" → "integral"
+                    stem = stem[:-1]
                 key = f"cargo_w{i}"
-                conditions.append(f"j.name ILIKE :{key}")
+                conditions.append(f"v.cargo ILIKE :{key}")
                 params[key] = f"%{stem}%"
 
         if date_from:
-            conditions.append("e.startdate >= :date_from")
+            conditions.append("v.startdate >= :date_from")
             params["date_from"] = date_from
         if date_to:
-            conditions.append("e.startdate <= :date_to")
+            conditions.append("v.startdate <= :date_to")
             params["date_to"] = date_to
 
         where = " AND ".join(conditions)
 
         q = text(
-            f"SELECT DISTINCT ON (bp.c_bpartner_id) "
-            f"bp.name AS nombre, bp.value AS codigo, "
+            f"SELECT v.name AS nombre, v.value AS codigo, "
             f"COALESCE(o.name, '') AS organizacion, "
-            f"COALESCE(d.name, '') AS departamento, "
-            f"COALESCE(j.name, '') AS cargo, "
-            f"e.startdate AS fecha_ingreso "
-            f"FROM adempiere.hr_employee e "
-            f"JOIN adempiere.c_bpartner bp ON e.c_bpartner_id = bp.c_bpartner_id "
-            f"LEFT JOIN adempiere.ad_org o ON e.ad_org_id = o.ad_org_id "
-            f"LEFT JOIN adempiere.hr_department d ON e.hr_department_id = d.hr_department_id "
-            f"LEFT JOIN adempiere.hr_job j ON e.hr_job_id = j.hr_job_id "
+            f"COALESCE(v.departamento, '') AS departamento, "
+            f"COALESCE(v.cargo, '') AS cargo, "
+            f"v.startdate AS fecha_ingreso "
+            f"FROM adempiere.lve_empleadosactivos v "
+            f"LEFT JOIN adempiere.ad_org o ON v.ad_org_id = o.ad_org_id "
             f"WHERE {where} "
-            f"ORDER BY bp.c_bpartner_id, e.startdate DESC"
+            f"ORDER BY v.name"
         )
         rows = db.execute(q, params).fetchall()
 
-        # Sort by name for display after deduplication
         results = [
             {
                 "nombre": r[0],
@@ -1991,7 +1991,6 @@ def build_employee_list(
             }
             for r in rows
         ]
-        results.sort(key=lambda x: x["nombre"])
         # When filtering by cargo, allow more results; otherwise cap at 100
         limit = 200 if cargo_search else 100
         return results[:limit]
@@ -2005,43 +2004,44 @@ def build_birthday_list(
 ) -> list[dict]:
     """List employees whose birthday falls in the given month.
 
-    Uses ad_user.birthday joined through c_bpartner to hr_employee.
+    FIX RRHH-202 (10/Abr/2026): esta función consultaba hr_employee + ad_user
+    con JOIN LATERAL para obtener el birthday. Problema: al combinarse con la
+    multiplicación de filas de hr_employee (una por período de nómina), algunos
+    empleados aparecían duplicados en la respuesta. Ej: GONZALEZ GONZALEZ JOSE
+    GREGORIO aparecía 7 veces en los cumpleañeros de mayo.
+
+    Además, usaba hr_employee.isactive='Y' lo que incluía ex-empleados que
+    nunca fueron marcados como inactivos → nombres inventados en respuestas.
+
+    La view lve_empleadosactivos:
+      - Tiene una sola fila por empleado activo (sin duplicados)
+      - Tiene la columna birthday directamente (sin JOIN con ad_user)
+      - Solo incluye empleados REALMENTE activos según la lógica de negocio
+        oficial de Santoni
     """
     db = _get_session(mes=mes)
     try:
-        conditions = ["e.isactive = 'Y'", "bday.birthday IS NOT NULL"]
+        conditions = ["v.birthday IS NOT NULL"]
         params: dict = {}
-        _add_org_filter(conditions, params, org_ids, "e")
+        _add_org_filter(conditions, params, org_ids, "v")
 
         if mes:
-            conditions.append("EXTRACT(MONTH FROM bday.birthday) = :mes")
+            conditions.append("EXTRACT(MONTH FROM v.birthday) = :mes")
             params["mes"] = mes
 
         where = " AND ".join(conditions)
 
-        # Use LATERAL subquery to pick exactly one birthday per c_bpartner
-        # (avoids duplicates when a partner has multiple ad_user rows)
         q = text(
-            f"SELECT DISTINCT ON (bp.c_bpartner_id) "
-            f"bp.name AS nombre, "
-            f"EXTRACT(DAY FROM bday.birthday)::int AS dia, "
-            f"EXTRACT(MONTH FROM bday.birthday)::int AS mes, "
-            f"COALESCE(d.name, '') AS departamento, "
+            f"SELECT v.name AS nombre, "
+            f"EXTRACT(DAY FROM v.birthday)::int AS dia, "
+            f"EXTRACT(MONTH FROM v.birthday)::int AS mes, "
+            f"COALESCE(v.departamento, '') AS departamento, "
             f"COALESCE(o.name, '') AS organizacion, "
-            f"COALESCE(j.name, '') AS cargo "
-            f"FROM adempiere.hr_employee e "
-            f"JOIN adempiere.c_bpartner bp ON e.c_bpartner_id = bp.c_bpartner_id "
-            f"JOIN LATERAL ("
-            f"  SELECT u.birthday FROM adempiere.ad_user u "
-            f"  WHERE u.c_bpartner_id = bp.c_bpartner_id "
-            f"  AND u.birthday IS NOT NULL "
-            f"  ORDER BY u.ad_user_id LIMIT 1"
-            f") bday ON TRUE "
-            f"LEFT JOIN adempiere.ad_org o ON e.ad_org_id = o.ad_org_id "
-            f"LEFT JOIN adempiere.hr_department d ON e.hr_department_id = d.hr_department_id "
-            f"LEFT JOIN adempiere.hr_job j ON e.hr_job_id = j.hr_job_id "
+            f"COALESCE(v.cargo, '') AS cargo "
+            f"FROM adempiere.lve_empleadosactivos v "
+            f"LEFT JOIN adempiere.ad_org o ON v.ad_org_id = o.ad_org_id "
             f"WHERE {where} "
-            f"ORDER BY bp.c_bpartner_id, e.startdate DESC"
+            f"ORDER BY EXTRACT(DAY FROM v.birthday), v.name"
         )
         rows = db.execute(q, params).fetchall()
 
@@ -2056,8 +2056,6 @@ def build_birthday_list(
             }
             for r in rows
         ]
-        # Sort by day of month for display
-        results.sort(key=lambda x: x["dia"])
         return results
     finally:
         db.close()
