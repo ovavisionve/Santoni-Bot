@@ -880,6 +880,47 @@ casos:
       tipo: valor_exacto
       tolerancia_pct: 0.01
 
+  # VENT-400: regression test — "divisas" es sinónimo venezolano de dólares.
+  # En producción (log de esalas 10/Abr/2026), el bot respondía con VES
+  # etiquetado como USD cuando el usuario usaba "divisas" en lugar de "dólares".
+  # Este test valida que el routing sí detecta "divisas" como USD y el bot
+  # retorna números de USD reales (no VES con etiqueta falsa).
+  #
+  # El ground truth es la MISMA query USD del test top_10 existente, que
+  # sabemos que funciona. Si este caso falla pero top_10_vendedores_usd pasa,
+  # es porque "divisas" no matchea el detector de moneda.
+  - id: datos_top_vendedores_divisas_feb_2026
+    agente: ventas
+    pregunta: "Ranking de vendedores del mes de febrero 2026 en inproa santoni en divisas"
+    ground_truth:
+      extraer: tabla
+      sql: |
+        SELECT au.name AS vendedor,
+               COALESCE(SUM(
+                 CASE WHEN dt.docbasetype = 'ARI' THEN i.totallines
+                      WHEN dt.docbasetype = 'ARC' THEN -i.totallines
+                      ELSE 0 END), 0) AS venta_neta
+        FROM adempiere.c_invoice i
+        JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id
+        JOIN adempiere.ad_user au ON i.salesrep_id = au.ad_user_id
+        JOIN adempiere.ad_org o ON i.ad_org_id = o.ad_org_id
+        WHERE i.issotrx = 'Y'
+          AND i.docstatus IN ('CO', 'CL')
+          AND i.isactive = 'Y'
+          AND o.name ILIKE '%INPROA SANTONI%'
+          AND i.c_currency_id IN (100,1000000,1000003,1000006,1000008,1000009,1000011,1000013,1000017)
+          AND i.dateinvoiced >= '2026-02-01'
+          AND i.dateinvoiced < '2026-03-01'
+        GROUP BY au.name
+        ORDER BY venta_neta DESC
+        LIMIT 10
+    validar:
+      tipo: tabla_ordenada
+      columna_etiqueta: vendedor
+      columna_valor: venta_neta
+      tolerancia_pct: 0.01
+      posicion_estricta: true
+
   # 7. build_producer_purchases — guías de compra a productores 2026
   # NOTA: En Santoni las compras a productores se miden por GUÍAS (c_order),
   # no por facturas (c_invoice). El bot usa build_producer_purchases para el

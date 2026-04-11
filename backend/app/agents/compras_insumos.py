@@ -162,6 +162,9 @@ Datos de compras de insumos en iDempiere:
         "en dólares", "en dolares", "en dólar", "en dolar",
         "en usd", "en dol", "moneda dol", "moneda usd",
         "moneda dólar", "moneda dolares",
+        # VENT-400 (10/Abr/2026): "divisa/divisas" es sinónimo venezolano
+        # común de dólar. esalas lo usó en producción.
+        "divisa", "divisas", "en divisa", "en divisas",
     ]
 
     # Keywords that indicate the user wants VES

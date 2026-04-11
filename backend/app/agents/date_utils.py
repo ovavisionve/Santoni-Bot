@@ -60,7 +60,11 @@ _COMPACT_DATE_RE = re.compile(r'\b(\d{6,8})\b')
 
 # Currency detection patterns
 _CURRENCY_VES_RE = re.compile(r'\b(bol[ií]vares?|bs\.?f?|ves)\b', re.IGNORECASE)
-_CURRENCY_USD_RE = re.compile(r'\b(d[oó]lares?|usd|dol)\b', re.IGNORECASE)
+# VENT-400 (10/Abr/2026): agregado "divisa/divisas" porque esalas usó esa
+# palabra en producción y el bot defaulteaba a VES pero el LLM la etiquetaba
+# como USD en la respuesta → supervisor veía bolívares con etiqueta USD.
+# "divisa" en Venezuela es sinónimo común de dólar.
+_CURRENCY_USD_RE = re.compile(r'\b(d[oó]lares?|usd|dol|divisas?)\b', re.IGNORECASE)
 
 # iDempiere c_currency_id values
 # Santoni uses multiple currency entries for dollars (DOL, Dol, DoL, USA, dol, etc.)
