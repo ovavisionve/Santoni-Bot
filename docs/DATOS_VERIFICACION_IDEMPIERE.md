@@ -3450,3 +3450,315 @@ detectar.
   migrarse a lve_empleadosactivos
 - **BASE-100** (candidato): auditar TODAS las funciones build_* contra views LVE existentes
 
+---
+
+## 21. Diagnóstico completo del 10/Abr/2026 — 179 views LVE mapeadas
+
+### 21.1 Estructura de `lve_empleadosactivos`
+
+La view oficial que usa el reporte `LVE_EmpleadosActivos` (ad_process_id 1000724) tiene
+**32 columnas** con toda la información que el bot necesita para reportes de RRHH:
+
+```
+ad_client_id       numeric
+ad_org_id          numeric                  ← organización
+value              character varying        ← cédula / codigo
+name               character varying        ← nombre completo
+c_bpartner_id      numeric
+taxid              character varying        ← RIF
+codnomina          character varying        ← código de nómina
+hr_payroll_id      numeric
+nomina             character varying        ← tipo de nómina
+startdate          timestamp                ← fecha de ingreso
+hr_department_id   numeric
+departamento       character varying        ← depto (nombre)
+hr_job_id          numeric
+cargo              character varying        ← cargo (nombre)
+birthday           timestamp                ← fecha de nacimiento (PARA CUMPLEAÑOS)
+phone2             character varying
+email              character varying
+ctaprincipal       text                     ← cuenta bancaria
+ctafideicomiso     text
+ctaalterna         text
+sueldo             numeric                  ← sueldo base
+asignacion         numeric                  ← asignaciones
+direccion          character varying
+edad               text                     ← ya calculado
+tservicio          text                     ← años de servicio
+bonoali            numeric                  ← bono alimentación
+total              numeric                  ← TOTAL DEVENGADO
+gender             character
+tallac/tallap/tallab  character varying     ← tallas de uniforme
+asigveh            numeric                  ← asignación de vehículo
+```
+
+**Observación crítica:** esta view tiene TODO pre-calculado. El bot no necesita hacer
+JOINs complejos con hr_department, hr_job, ad_user, c_bpartner. Solo consultar la view
+y filtrar por los criterios que necesite.
+
+### 21.2 Conteos reales bot vs view oficial (discrepancia masiva)
+
+| Organización | Bot reporta | View oficial | Discrepancia |
+|---|---:|---:|---:|
+| INPROA SANTONI C.A. | 451-457 | **258** | **+77% sobre lo real** |
+| InproMaiz C.A | 208 | **101** | **+106%** (el doble) |
+| Santoni Service C.A | 138 | **89** | **+55%** |
+| AGROPECUARIA R.R. C.A. | 126 | **59** | **+114%** (más del doble) |
+| AGROINPROA C.A | 38 | **19** | **+100%** (el doble) |
+| AGA AGRICOLA C.A | 91 | **15** | **+507%** (6x más) |
+| INVERSIONES AGA C.A | 4 | **3** | +33% |
+| **TOTAL GRUPO** | **1,056** | **544** | **+94% (casi el doble)** |
+
+**Conclusión:** cada vez que un supervisor pregunta "¿cuántos empleados tengo?", el bot
+responde con un número **~2x mayor del real**. AGA AGRICOLA es el caso más extremo:
+el bot dice 91 cuando realmente hay 15.
+
+### 21.3 Progresión de criterios en INPROA SANTONI
+
+```
+hr_employee isactive=Y (actual del bot)          →  457
+hr_employee isactive=Y AND enddate IS NULL       →  316
+lve_empleadosactivos (OFICIAL)                   →  258
+Reporte "Empleados Activos" del screenshot      →  141 (*)
+```
+
+(*) El screenshot del usuario mostraba 141, pero la view da 258. La diferencia de 258→141
+puede venir de:
+- El reporte filtraba por sede o por nómina específica (el query probablemente tiene
+  parámetros adicionales que no conocemos)
+- El reporte se corrió en una fecha diferente
+- Hay una view adicional `lve_activos` que también aparece en la lista de views LVE y
+  que podría ser la que da 141 (pendiente de investigar)
+
+**En cualquier caso, 258 > 141 y ambos son MUCHO menores que los 457 del bot.**
+
+### 21.4 Catálogo completo de las 179 views LVE
+
+iDempiere tiene **179 views** con prefijo `lve_*` (Localización Venezuela). Estas contienen
+la lógica de negocio real que Santoni usa en sus reportes oficiales. Aquí el mapeo agrupado
+por dominio del bot:
+
+#### RRHH (6 views)
+```
+lve_empleadosactivos       ← reportes de "cuántos empleados activos"
+lve_empleadosinactivos
+lve_familygroupemployee    ← grupos familiares
+lve_dotacionemp            ← dotación (uniformes, equipos)
+lve_prestsempleados        ← préstamos a empleados
+lve_activos                ← general (probable fuente del 141 del screenshot)
+```
+
+#### Ventas / Facturación (12 views)
+```
+lve_invoice                ← facturación general
+lve_invoiceaga             ← facturación AGA AGRICOLA
+lve_invoiceinproa          ← facturación INPROA
+lve_facturaagalocal        ← facturación local AGA
+lve_invoiceheader          ← headers de facturas
+lve_invoiceline            ← líneas de factura
+lve_invoicelist            ← listado de facturas
+lve_invoicelistpre         ← listado preliminar
+lve_c_invoice_day          ← facturación por día
+lve_sales_book             ← libro de ventas
+lve_sales_books            ← libros (plural)
+lve_invoiceopenhistorysales ← historial con saldo abierto
+lve_invoicepaidwithoutreception ← facturas pagadas sin recepción
+```
+
+#### Cobranza (12 views)
+```
+lve_customer_statement           ← estado de cuenta cliente
+lve_customer_statement_2         ← variante
+lve_customer_statementg          ← variante general
+lve_client_customer_statement    ← estado de cuenta cliente (plural)
+lve_saldosclientes              ← saldos de clientes
+lve_cobroasocproforma           ← cobros asociados a proforma
+lve_cobroasocproformaprod       ← idem con producto
+lve_cobrosagalocal              ← cobros AGA local
+lve_informepago                 ← informe de pago
+lve_informepagogeo              ← variante geo
+lve_resumencobro                ← resumen de cobros
+lve_resumencobroasig            ← resumen asignado
+lve_resumencobrosvenc           ← cobros vencidos
+lve_payment                     ← pagos
+lve_payment_receipt             ← recibos de pago
+lve_paymentgeo                  ← variante geo
+lve_paying                      ← pagando
+lve_payselectiongeo             ← selección de pagos
+```
+
+#### Compras / Productores (14 views)
+```
+lve_saldosproductor             ← saldos a productores (deudas)
+lve_saldosproveedor             ← saldos a proveedores
+lve_anticipoproductor           ← anticipos a productores
+lve_anticipoproveedor           ← anticipos a proveedores
+lve_receppendientesagroinproa   ← recepciones pendientes AGROINPROA
+lve_facturacxpproductor         ← CxP de productores
+lve_entregavsrecibosagroinproa  ← entregas vs recibos AGROINPROA
+lve_entregavsrecibosveneagro    ← idem VENEAGRO
+lve_buy_book                    ← libro de compras
+lve_buy_book_sumary             ← resumen de libro de compras
+lve_buyer_customer_statement    ← estado de cuenta comprador-cliente
+lve_supplier_statement          ← estado de cuenta proveedor
+lve_guiasmovilizacion           ← guías de movilización
+lve_guiagranelsindespacho       ← guía a granel sin despacho
+lve_guiacaleta                  ← guía caleta
+lve_facturasvsentregas          ← facturas vs entregas
+```
+
+#### Contabilidad (7 views)
+```
+lve_fact_acct                   ← hechos contables (CLAVE para balance)
+lve_trialbalance                ← balance de comprobación
+lve_asientos_pagos              ← asientos de pagos
+lve_cargos_acct                 ← cargos contables
+lve_ajuste_costo                ← ajuste de costo
+lve_ajuste_costoinv             ← ajuste costo de inventario
+lve_ajustecostospro             ← ajustes de costos (pro)
+lve_transfersaccounts           ← transferencias entre cuentas
+```
+
+#### Finanzas / Bancos (11 views)
+```
+lve_disponibilidadbancaria              ← saldos bancarios disponibles
+lve_disponibilidadbancariagerencia      ← vista gerencia
+lve_disponibilidadbancariagerenciaf     ← variante F
+lve_disponibilidadbancariagerenciag     ← variante G
+lve_disponibilidadbancariagerenciai     ← variante I
+lve_disponibilidadbancariateso          ← vista tesorería
+lve_compromisosbancarios                ← compromisos bancarios
+lve_bankaccountgeo                      ← cuentas bancarias geo
+lve_bankstatement_v                     ← estado de cuenta bancario
+lve_bankstatementnotcomplete_v          ← idem incompleto
+lve_check_mov                           ← movimientos de cheques
+lve_checkformat                         ← formato de cheques
+lve_geobitacoratesoreria                ← bitácora tesorería
+```
+
+#### Inventario / Producción (18 views)
+```
+lve_inventario_abonofoliar
+lve_inventario_agroinproasp             ← inventario AGROINPROA
+lve_inventario_agroquimico
+lve_inventario_arrozagro
+lve_inventario_cauchosyaccesorios
+lve_inventario_comercial
+lve_inventario_costo
+lve_inventario_empaque                  ← EMPAQUE (el que causó COMP-101)
+lve_inventario_fabempmaiz
+lve_inventario_fertilizante
+lve_inventario_fuegosartificiales
+lve_inventario_granos
+lve_inventario_lubricante
+lve_inventario_maiz                     ← inventario de maíz
+lve_inventario_maquinaria
+lve_inventario_paddy                    ← inventario de arroz paddy
+lve_inventario_proceso
+lve_inventario_procmaiz
+lve_inventario_repuesto
+lve_inventario_repuestosagricolas
+lve_inventario_semilla
+lve_inventario_termaiz
+lve_inventario_terminado                ← producto terminado
+lve_inventario_veneagro
+lve_inventariocontableagro
+lve_inventariocontablemaiz
+lve_existenciaalmacenagroinproa         ← existencias por almacén
+lve_existenciaalmacenveneagro
+lve_existenciayubicacion
+```
+
+#### Análisis / Vencimientos (5 views)
+```
+lve_analisisvencimientoinproa           ← análisis vencimiento INPROA
+lve_analisisvencimientodetalladolar     ← idem detallado USD
+lve_analisisvencimientoinproadolar      ← INPROA en USD
+lve_analisisvencimientomaizdolar        ← maíz USD
+lve_vencimientoagroi                    ← vencimiento AGROI
+lve_vencimientoagroiporproductor        ← vencimiento por productor
+```
+
+#### Retenciones / Impuestos (8 views)
+```
+lve_retention_ciiu
+lve_retention_islr              ← retenciones ISLR
+lve_retention_iva               ← retenciones IVA
+lve_retention_iva2
+lve_retentioncomp
+lve_retentionislrlist
+lve_retentionlist_isae
+lve_txtiva
+lve_xmlislr                     ← declaración ISLR
+```
+
+### 21.5 Mapeo función del bot → view LVE recomendada
+
+| Función del bot | View LVE a usar | Domain |
+|---|---|---|
+| `build_employee_summary` | `lve_empleadosactivos` | rrhh |
+| `build_employee_list` | `lve_empleadosactivos` | rrhh |
+| `build_birthday_list` | `lve_empleadosactivos` (col `birthday`) | rrhh |
+| `build_payroll_summary` | `lve_empleadosactivos` (col `total`, `sueldo`, `asignacion`) | rrhh |
+| `build_sales_summary` | `lve_invoice` / `lve_invoiceinproa` | ventas |
+| `build_top_clients` | `lve_saldosclientes` / `lve_customer_statement` | ventas |
+| `build_collection_summary` | `lve_informepago` / `lve_resumencobro` | ventas |
+| `build_overdue_receivables` | `lve_analisisvencimientoinproa` | ventas |
+| `build_financial_summary` (banks) | `lve_disponibilidadbancaria` | finanzas |
+| `build_financial_summary` (AP) | `lve_saldosproveedor` | finanzas |
+| `build_financial_summary` (AR) | `lve_saldosclientes` | finanzas |
+| `build_accounting_summary` | `lve_fact_acct` / `lve_trialbalance` | contabilidad |
+| `build_supply_purchases` | `lve_buy_book` / `lve_buy_book_sumary` | compras_insumos |
+| `build_producer_purchases` | `lve_entregavsrecibosagroinproa` | compras_productores |
+| `build_producer_pending_payments` | `lve_saldosproductor` | compras_productores |
+| `build_inventory_stock` | `lve_existenciaalmacenagroinproa` / `lve_inventario_*` | produccion |
+| `build_production_summary` | `lve_inventario_terminado` | produccion |
+
+**Esto implica reescritura de ~20 funciones** en `idempiere_queries.py` para usar las views
+oficiales en vez de tablas raw. Es trabajo intensivo pero es la única forma de que los
+números del bot coincidan con los reportes oficiales de Santoni (los que Darwin usa en su
+Excel, los que esalas ve en sus reportes de RRHH, etc.).
+
+### 21.6 Plan de migración propuesto
+
+**Fase 1 — RRHH (prioridad inmediata porque esalas está reportando errores visibles):**
+1. Crear `build_employee_summary_v2` que consulta `lve_empleadosactivos`
+2. Migrar agente rrhh a usar la nueva versión
+3. Actualizar golden tests para esperar los valores de la view
+4. Verificar con esalas que los números coinciden con sus reportes
+
+**Fase 2 — Ventas (prioridad alta porque Darwin es el QA principal):**
+1. Identificar cuál de las views de ventas (lve_invoice, lve_invoiceinproa, etc.) da los
+   mismos números que el Excel de Darwin
+2. Migrar `build_sales_summary` y `build_top_clients` a esa view
+3. Re-verificar con el pivot de Darwin
+
+**Fase 3 — Finanzas + Contabilidad (prioridad media):**
+1. `lve_disponibilidadbancaria` para saldos bancarios
+2. `lve_saldosproveedor` y `lve_saldosclientes` para AP/AR
+3. `lve_trialbalance` para balance general
+
+**Fase 4 — Compras + Producción (prioridad media-baja):**
+1. `lve_saldosproductor` para deudas a productores (mfigueredo)
+2. `lve_inventario_*` para existencias por categoría
+
+**Fase 5 — Análisis y vencimientos (prioridad baja):**
+1. `lve_analisisvencimiento*` para vencimientos detallados
+
+### 21.7 Lección estratégica
+
+**El bot fue construido consultando tablas raw de iDempiere en vez de las views de negocio.**
+Esto causó un desfase sistemático con los números oficiales de Santoni. Los golden tests no
+lo detectaron porque eran auto-referenciales.
+
+A partir de ahora, el **principio de diseño** es: **si existe una view LVE para un reporte,
+USAR ESA VIEW**, no reconstruir la lógica desde las tablas raw. Las views ya encapsulan:
+- Filtros de negocio (fechas de terminación, estados válidos, etc.)
+- Joins correctos (sin duplicados, sin contaminación cross-org)
+- Cálculos derivados (edad, años de servicio, total devengado)
+- Convenciones de moneda y formato
+
+Y sobre todo: **son la misma fuente de verdad que los reportes que los usuarios ven todos
+los días**. Si el bot da el mismo número que el reporte oficial, los usuarios confían en el
+bot. Si no, cualquier diferencia — por pequeña que sea — destruye la confianza.
+
