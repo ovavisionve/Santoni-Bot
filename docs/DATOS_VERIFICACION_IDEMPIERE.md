@@ -3727,11 +3727,31 @@ Excel, los que esalas ve en sus reportes de RRHH, etc.).
 3. Actualizar golden tests para esperar los valores de la view
 4. Verificar con esalas que los números coinciden con sus reportes
 
-**Fase 2 — Ventas (prioridad alta porque Darwin es el QA principal):**
-1. Identificar cuál de las views de ventas (lve_invoice, lve_invoiceinproa, etc.) da los
-   mismos números que el Excel de Darwin
-2. Migrar `build_sales_summary` y `build_top_clients` a esa view
-3. Re-verificar con el pivot de Darwin
+**Fase 2 — Ventas** ❌ **CANCELADA (10/Abr/2026)**
+
+Investigación reveló que las views LVE de ventas NO son mejores que `c_invoice` raw:
+- `lve_invoice` es **line-level** (21,792 filas para feb 2026 vs 2,110 facturas distintas).
+  Sumar `grandtotal` directamente multiplica ~5x (repite header por cada línea).
+- `lve_invoice` **no tiene `c_currency_id`** ni filtro `issotrx`, así que hay que hacer
+  JOIN con c_invoice de todos modos.
+- `lve_invoiceinproa` tiene el mismo problema (line-level, 94 columnas con detalle de producto).
+- `lve_sales_book` es per-invoice pero solo tiene 21 columnas (libro SENIAT) y no incluye
+  salesrep_id, por lo que no sirve para rankings de vendedores.
+
+**Conclusión:** a DIFERENCIA de RRHH (donde `hr_employee` duplicaba filas por período de
+nómina), `c_invoice` YA tiene 1 fila por factura. No hay multiplicación. Los totales del bot
+para ventas son correctos.
+
+Los bugs reales de ventas (documentados en BUGS_REGISTRY.md) son de otro tipo:
+- VENT-001: mezcla de monedas por default (fix 08/Abr)
+- VENT-002: vendedores duplicados ROJAS OBANDO (fix 08/Abr)
+- VENT-004: LLM reordenaba tabla de vendedores (fix 08/Abr)
+- VENT-400: "divisas" no matcheaba + etiqueta VES como USD (fix 10/Abr)
+
+Para cada bug reportado de ventas se aplicará un fix puntual (como VENT-400) en vez de una
+migración masiva. Si en el futuro Santoni reporta que un reporte oficial (ej: libro de ventas
+SENIAT) no coincide con el bot, usar `lve_sales_book` específicamente para ese caso, pero no
+como reemplazo general de `c_invoice`.
 
 **Fase 3 — Finanzas + Contabilidad (prioridad media):**
 1. `lve_disponibilidadbancaria` para saldos bancarios
