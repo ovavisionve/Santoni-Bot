@@ -948,66 +948,146 @@ async def process_with_sql_direct(
 
     messages.append(HumanMessage(content=f"Genera el SQL para: {message}"))
 
-    try:
-        sql_response = await llm.ainvoke(messages)
-        generated_sql = sql_response.content.strip()
-    except Exception as exc:
-        logger.warning("SQL Direct: LLM error generating SQL: %s", exc)
-        _write_audit(message=message, status="llm_gen_error", error_detail=str(exc))
-        return None
+    # ──────────────────────────────────────────────────────────────────
+    # LOOP DE RETRY CON ERROR FEEDBACK (15/Abr/2026 — capa macro)
+    # ──────────────────────────────────────────────────────────────────
+    # Si el SQL falla (validation_failed o execute_error), le pasamos el
+    # error al LLM como feedback y pedimos que lo regenere. Esto se hace
+    # hasta MAX_RETRIES veces. Con esto el bot se auto-corrige sin
+    # intervención humana ante errores del tipo "columna no existe",
+    # "tabla no permitida", "tipo incorrecto", etc.
+    #
+    # Cada intento queda en sql_audit con status específico para
+    # diagnosticar en qué intento tuvo éxito o qué error final quedó.
+    MAX_RETRIES = 2  # 1 intento inicial + 2 retries = 3 intentos totales
+    retry_count = 0
+    sql_pre_enforce: str | None = None
+    validated_sql: str | None = None
+    enforced = False
+    cols: list[str] = []
+    rows: list = []
+    elapsed_ms: float = 0.0
+    last_error: str | None = None
 
-    # Check if LLM said it can't generate SQL
-    if "NO_SQL" in generated_sql or not generated_sql.upper().startswith("SELECT"):
-        logger.info("SQL Direct: LLM declined (NO_SQL or non-SELECT)")
-        _write_audit(
-            message=message,
-            sql_generated=generated_sql[:500],
-            status="llm_declined",
-        )
-        return None
+    while retry_count <= MAX_RETRIES:
+        # Generar SQL (primer intento o retry con error de contexto)
+        try:
+            sql_response = await llm.ainvoke(messages)
+            generated_sql = sql_response.content.strip()
+        except Exception as exc:
+            logger.warning("SQL Direct: LLM error generating SQL: %s", exc)
+            _write_audit(
+                message=message,
+                status=f"llm_gen_error{'_retry' + str(retry_count) if retry_count else ''}",
+                error_detail=str(exc),
+            )
+            return None
 
-    # Clean up any markdown formatting the LLM might have added
-    generated_sql = generated_sql.replace("```sql", "").replace("```", "").strip()
+        # Chequear si el LLM declinó
+        if "NO_SQL" in generated_sql or not generated_sql.upper().startswith("SELECT"):
+            logger.info("SQL Direct: LLM declined (NO_SQL or non-SELECT)")
+            _write_audit(
+                message=message,
+                sql_generated=generated_sql[:500],
+                status=f"llm_declined{'_retry' + str(retry_count) if retry_count else ''}",
+            )
+            return None
 
-    # Step 2: Validate
-    is_valid, validated_sql = _validate_sql(generated_sql)
-    if not is_valid:
-        logger.warning("SQL Direct: validation failed: %s | SQL: %s", validated_sql, generated_sql[:200])
-        _write_audit(
-            message=message,
-            sql_generated=generated_sql,
-            status="validation_failed",
-            error_detail=validated_sql,  # contiene el mensaje de error
-        )
-        return None
+        # Limpiar markdown
+        generated_sql = generated_sql.replace("```sql", "").replace("```", "").strip()
 
-    # Step 2.5: Enforcement de filtro de orgs reales (14/Abr/2026)
-    # El system prompt le pide a Claude que aplique este filtro, pero
-    # a veces lo omite para queries cortas. Si generó SQL contra una
-    # tabla financiera (c_invoice, c_payment, c_order, fact_acct) sin
-    # filtrar por org, inyectamos el filtro aquí para garantizar que
-    # los totales no sean contaminados por orgs demo de iDempiere.
-    sql_pre_enforce = validated_sql
-    validated_sql, enforced = _enforce_org_filter(validated_sql)
-    if enforced:
+        # Validar
+        is_valid, validated_sql = _validate_sql(generated_sql)
+        if not is_valid:
+            last_error = f"VALIDATION_FAILED: {validated_sql}"
+            logger.warning(
+                "SQL Direct: validation failed (intento %d/%d): %s | SQL: %s",
+                retry_count + 1, MAX_RETRIES + 1, validated_sql, generated_sql[:200],
+            )
+            _write_audit(
+                message=message,
+                sql_generated=generated_sql,
+                status=f"validation_failed{'_retry' + str(retry_count) if retry_count else ''}",
+                error_detail=validated_sql,
+            )
+            if retry_count >= MAX_RETRIES:
+                return None
+            # Preparar mensaje de retry
+            messages.append(AIMessage(content=generated_sql))
+            messages.append(HumanMessage(content=(
+                f"El SQL que generaste fue RECHAZADO por el validador con este error:\n"
+                f"  {validated_sql}\n\n"
+                "Regeneralo corrigiendo el problema. Recordá:\n"
+                "- Todas las tablas deben tener prefijo 'adempiere.'\n"
+                "- Solo podés usar views lve_* y tablas del catálogo\n"
+                "- Solo SELECT (no INSERT/UPDATE/DELETE/etc)\n"
+                "- Incluye LIMIT 500\n"
+                "Devolvé SOLO el SQL corregido, sin explicaciones."
+            )))
+            retry_count += 1
+            continue
+
+        # Enforcement de filtro de orgs
+        sql_pre_enforce = validated_sql
+        validated_sql, enforced = _enforce_org_filter(validated_sql)
+        if enforced:
+            logger.info(
+                "SQL Direct: filtro de orgs reales INYECTADO (Claude no lo aplicó)"
+            )
+
         logger.info(
-            "SQL Direct: filtro de orgs reales INYECTADO (Claude no lo aplicó)"
+            "SQL Direct: executing (intento %d/%d): %s",
+            retry_count + 1, MAX_RETRIES + 1, validated_sql[:300],
         )
 
-    logger.info("SQL Direct: executing: %s", validated_sql[:300])
+        # Ejecutar
+        try:
+            cols, rows, elapsed_ms = _execute_sql(validated_sql)
+            # ¡Éxito! Salir del loop de retry.
+            if retry_count > 0:
+                logger.info("SQL Direct: éxito en intento %d de %d", retry_count + 1, MAX_RETRIES + 1)
+            break
+        except Exception as exc:
+            last_error = str(exc)
+            logger.warning(
+                "SQL Direct: execution error (intento %d/%d): %s | SQL: %s",
+                retry_count + 1, MAX_RETRIES + 1, exc, validated_sql[:200],
+            )
+            _write_audit(
+                message=message,
+                sql_generated=sql_pre_enforce,
+                sql_final=validated_sql,
+                org_filter_injected=enforced,
+                status=f"execute_error{'_retry' + str(retry_count) if retry_count else ''}",
+                error_detail=str(exc),
+            )
+            if retry_count >= MAX_RETRIES:
+                return None
+            # Preparar mensaje de retry con el error de PostgreSQL
+            # El error de psycopg2 trae el HINT de PostgreSQL que es oro puro
+            # ej: "column p.hrdate does not exist. HINT: Perhaps you meant p.created or p.updated"
+            messages.append(AIMessage(content=generated_sql))
+            messages.append(HumanMessage(content=(
+                f"El SQL que generaste falló al ejecutarse contra PostgreSQL con "
+                f"este error:\n\n  {str(exc)[:600]}\n\n"
+                "Regeneralo corrigiendo el problema específico. El error de "
+                "PostgreSQL ya te dice qué está mal (columna inexistente, tipo "
+                "incorrecto, etc.) y a veces sugiere la columna correcta con 'HINT:'. "
+                "Seguí ese hint si está disponible.\n"
+                "Devolvé SOLO el SQL corregido, sin explicaciones."
+            )))
+            retry_count += 1
+            continue
 
-    # Step 3: Execute
-    try:
-        cols, rows, elapsed_ms = _execute_sql(validated_sql)
-    except Exception as exc:
-        logger.warning("SQL Direct: execution error: %s | SQL: %s", exc, validated_sql[:200])
+    # Si salimos del loop sin éxito (no debería pasar por los return None), retornar
+    if not cols and not rows:
         _write_audit(
             message=message,
             sql_generated=sql_pre_enforce,
             sql_final=validated_sql,
             org_filter_injected=enforced,
-            status="execute_error",
-            error_detail=str(exc),
+            status="retry_exhausted",
+            error_detail=last_error,
         )
         return None
 
@@ -1082,7 +1162,13 @@ async def process_with_sql_direct(
         len(rows), elapsed_ms, validated_sql[:100],
     )
 
-    # Registrar en audit log para diagnóstico posterior
+    # Registrar en audit log para diagnóstico posterior.
+    # Si hubo retries antes del éxito, lo marcamos como 'success_retryN' para
+    # medir la efectividad del auto-retry en datos reales.
+    success_status = (
+        "success" if retry_count == 0
+        else f"success_after_retry{retry_count}"
+    )
     audit_id = _write_audit(
         message=message,
         sql_generated=sql_pre_enforce,
@@ -1091,7 +1177,7 @@ async def process_with_sql_direct(
         rows_returned=len(rows),
         elapsed_ms=int(elapsed_ms),
         format_failed=format_failed,
-        status="success",
+        status=success_status,
     )
 
     return {
