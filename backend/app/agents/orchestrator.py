@@ -524,6 +524,45 @@ class Orchestrator:
         if document:
             return await self._handle_document(message, document, history)
 
+        # ── SQL DIRECT: intenta responder con SQL generado por el LLM ──
+        # Esto BYPASS el routing por keywords para preguntas de datos.
+        # Si funciona, retorna directo. Si falla, cae al flujo normal.
+        # Solo para preguntas que "parecen datos" (no saludos, no follow-ups
+        # muy cortos que necesitan contexto del agente anterior).
+        msg_lower = message.lower().strip()
+        is_greeting = any(p in msg_lower for p in _GENERAL_PATTERNS) and len(msg_lower) < 60
+        is_short_followup = len(msg_lower) < 25 and not any(
+            c in msg_lower for c in ["cuánt", "cuant", "total", "saldo", "emplea", "venta",
+                                      "compr", "produc", "factur", "cobr", "banco"]
+        )
+
+        if not is_greeting and not is_short_followup:
+            try:
+                from app.services.sql_direct import process_with_sql_direct
+                sql_result = await process_with_sql_direct(
+                    message=message,
+                    history=history,
+                    org_ids=user.org_ids,
+                )
+                if sql_result is not None:
+                    logger.info(
+                        "SQL Direct handled: '%s' → %d rows",
+                        message[:60],
+                        sql_result.get("metadata", {}).get("rows_returned", 0),
+                    )
+                    # Add confidence score
+                    sql_result["confidence_score"] = 1.0
+                    sql_result["score_breakdown"] = {
+                        "routing": 1.0,
+                        "data": 1.0 if sql_result.get("metadata", {}).get("has_data") else 0.2,
+                        "overall": 1.0,
+                        "match_type": "sql_direct",
+                    }
+                    return sql_result
+            except Exception as exc:
+                logger.warning("SQL Direct failed, falling back to agents: %s", exc)
+
+        # ── FLUJO NORMAL: routing por keywords → agente especializado ──
         allowed = user.allowed_departments
         user_caps = user.capability_ids  # set[str] | None
 
