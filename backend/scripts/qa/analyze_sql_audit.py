@@ -156,13 +156,50 @@ def classify_error(error: str) -> tuple[str, str]:
 # Análisis
 # ─────────────────────────────────────────────────────────────────────
 
-def analyze(days: int = 7, limit: int = 1000, as_json: bool = False) -> dict:
-    """Corre el análisis sobre las últimas `days` días del audit log."""
-    since = datetime.now(timezone.utc) - timedelta(days=days)
+def analyze(
+    days: int = 7,
+    limit: int = 1000,
+    as_json: bool = False,
+    since_id: int | None = None,
+    last_n: int | None = None,
+) -> dict:
+    """Corre el análisis sobre las últimas `days` días del audit log.
+
+    Filtros opcionales:
+      since_id: solo analiza queries con id >= N (útil para ver "qué pasó
+                después del último deploy sin el ruido de bugs viejos")
+      last_n:   solo analiza las últimas N queries (ignora days)
+    """
     db = SessionLocal()
     try:
-        rows = db.execute(
-            text("""
+        # Construir WHERE dinámicamente según los filtros
+        where_clauses = []
+        params: dict = {"limit": limit}
+        if last_n:
+            # Tomar las últimas N queries
+            query = """
+                SELECT id, message, status, rows_returned, elapsed_ms,
+                       format_failed, sql_generated, sql_final, error_detail,
+                       created_at
+                FROM sql_audit
+                ORDER BY id DESC
+                LIMIT :last_n
+            """
+            params = {"last_n": last_n}
+        elif since_id is not None:
+            query = """
+                SELECT id, message, status, rows_returned, elapsed_ms,
+                       format_failed, sql_generated, sql_final, error_detail,
+                       created_at
+                FROM sql_audit
+                WHERE id >= :since_id
+                ORDER BY id DESC
+                LIMIT :limit
+            """
+            params = {"since_id": since_id, "limit": limit}
+        else:
+            since = datetime.now(timezone.utc) - timedelta(days=days)
+            query = """
                 SELECT id, message, status, rows_returned, elapsed_ms,
                        format_failed, sql_generated, sql_final, error_detail,
                        created_at
@@ -170,9 +207,10 @@ def analyze(days: int = 7, limit: int = 1000, as_json: bool = False) -> dict:
                 WHERE created_at >= :since
                 ORDER BY id DESC
                 LIMIT :limit
-            """),
-            {"since": since, "limit": limit},
-        ).fetchall()
+            """
+            params = {"since": since, "limit": limit}
+
+        rows = db.execute(text(query), params).fetchall()
     finally:
         db.close()
 
@@ -364,10 +402,20 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--days", type=int, default=7, help="Días hacia atrás (default 7)")
     parser.add_argument("--limit", type=int, default=1000, help="Máx queries a analizar")
+    parser.add_argument("--since-id", type=int, default=None,
+                        help="Analizar solo queries con id >= N (para ver post-deploy)")
+    parser.add_argument("--last", type=int, default=None,
+                        help="Analizar solo las últimas N queries (ignora --days)")
     parser.add_argument("--json", action="store_true", help="Salida en JSON")
     args = parser.parse_args()
 
-    report = analyze(days=args.days, limit=args.limit, as_json=args.json)
+    report = analyze(
+        days=args.days,
+        limit=args.limit,
+        as_json=args.json,
+        since_id=args.since_id,
+        last_n=args.last,
+    )
 
     if args.json:
         import json
