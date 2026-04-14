@@ -453,6 +453,88 @@ Se crearon cuestionarios para que cada departamento valide las respuestas del bo
   - **Cambio post-investigación (14/Abr tarde):** whitelist → blacklist.
     Ver sección "Política de filtro de orgs" en los Pendientes.
 
+- **Sesión 15/Abr/2026** — branch `claude/amazing-brown-R5Yzm`:
+  **CICLO MACRO DE AUTO-DIAGNÓSTICO + AUTO-CORRECCIÓN**
+  
+  Problema detectado: estábamos arreglando bugs query por query (eternidad).
+  Solución: 3 capas de automatización que convierten el bot de "sistema
+  que se mantiene manualmente" a "sistema que se auto-corrige y se
+  auto-diagnostica".
+  
+  **CAPA 1 — Auto-retry con error feedback** (`sql_direct.py`):
+  Si el SQL falla (validation_failed o execute_error), el bot NO cae
+  directo al fallback. En su lugar, pasa el error de PostgreSQL al LLM
+  como feedback y pide que regenere. Hasta 3 intentos totales.
+  PostgreSQL a veces sugiere el nombre correcto con HINT ("perhaps you
+  meant p.created or p.updated") — Claude lo aprende y corrige solo.
+  Métrica real: 4 queries rescatadas de 22 en la primera prueba, 1 de 4
+  después del fix del CTE. Auto-retry funciona en 18-25% de queries que
+  fallarían sin él.
+  
+  **CAPA 2 — `backend/scripts/qa/analyze_sql_audit.py`**:
+  Lee la tabla `sql_audit` y detecta patrones agrupados por causa raíz
+  (columnas inexistentes, tablas bloqueadas, JOINs mal, etc.). Sugiere
+  fixes priorizados. Flags `--days`, `--since-id N`, `--last N` para
+  filtrar por período o ID mínimo (útil post-deploy).
+  
+  **CAPA 3 — `backend/scripts/qa/validate_catalog.py`**:
+  Valida el VIEWS_CATALOG y _ALLOWED_TABLES contra `information_schema`
+  de iDempiere. Detecta tablas/columnas mencionadas en el catálogo que
+  NO existen en iDempiere. Corre antes de cada deploy para prevenir
+  bugs tipo "hr_process.hrdate" (inexistente en Santoni).
+  
+  **Infraestructura: tabla `sql_audit`** en DB local guarda cada SQL
+  generado por Claude (pre-enforcement, post-enforcement, status,
+  rows_returned, elapsed_ms, format_failed, error_detail). Sin truncado
+  como los logs. Endpoints admin: `/api/admin/sql-audit` y
+  `/api/admin/sql-audit/{id}`.
+  
+  **Bugs encontrados y resueltos por el ciclo macro (en 3 iteraciones):**
+  - ID `p.hrdate` inexistente → catálogo apuntaba mal, corregido a
+    `p.dateacct` + REGLA #6 documenta mapeo col→tabla
+  - ID `hr_payslip` inventada → agregada lista de tablas inexistentes
+    al catálogo, Claude usa `hr_movement` en su lugar
+  - ID `bp.c_region_id`, `bp.c_salesregion_id`, `loc.c_salesregion_id`
+    → documentado path correcto via `c_bpartner_location` en REGLA #6
+  - ID WITH/CTE bloqueado como "non-SELECT" → validator ahora acepta
+    `SELECT` y `WITH` como prefijos válidos
+  - ID `FROM desglose` rechazado por no estar en whitelist → validator
+    ahora extrae nombres de CTEs y los acepta como tablas temporales
+  - ID Claude declinando NO_SQL con prompt muy largo → REGLA #6
+    condensada + instrucción #5 reforzada: "NUNCA NO_SQL excepto
+    saludos/chistes — el auto-retry te da 3 chances"
+  - ID `ORDER BY (expr) DESC` tras UNION ALL → PostgreSQL rechazó.
+    Ejemplos cambiados a usar columna `sort_order` auxiliar + REGLA
+    #7 documenta patrón correcto.
+  
+  **Métricas del ciclo:**
+  Loop 1 (9 patrones detectados): tasa éxito 44% → 44% (5 fixes aplicados)
+  Loop 2 (bug WITH/CTE bloqueado): 36% → 36% (fix aplicado)
+  Loop 3 (3 bugs nuevos destapados por el fix WITH): 36% → **100%** para
+  las 4 queries post-fix (1 rescatada por auto-retry).
+  
+  **FILOSOFÍA CONSOLIDADA DEL CICLO MACRO:**
+  > El bot no se mantiene pregunta por pregunta. Se mantiene patrón por
+  > patrón. El audit log captura TODO, el script detecta patrones
+  > recurrentes, y el fix macro cubre N queries similares de una vez.
+  > Cada fix expone una nueva capa de bugs (patrón normal de software
+  > complejo), y el ciclo sigue hasta que la tasa de éxito sube al 90%+.
+  > Después, el auto-retry se encarga de los casos borde en tiempo real.
+  >
+  > Antirpatrón: "el bot responde mal a X, agrega regla para X".
+  > Patrón correcto: "el bot responde mal a X porque el validador
+  > rechaza Y. Arreglar Y cubre X y también futuras queries Z, W, V
+  > que tengan el mismo patrón Y."
+  
+  **Comando de rutina post-deploy:**
+  ```bash
+  # Ver solo las queries nuevas post-deploy
+  docker compose exec backend python scripts/qa/analyze_sql_audit.py --last 10
+  
+  # Validar catálogo antes del deploy
+  docker compose exec backend python scripts/qa/validate_catalog.py
+  ```
+
 ### Pendiente para cierre Fase 1:
 - ~~Verificación SQL ground truth vs bot~~ ✅ COMPLETADO (09/Abr)
 - ~~Tests E2E~~ ✅ **CUBIERTO POR GOLDEN TESTS (41 casos, 100% PASS)**
