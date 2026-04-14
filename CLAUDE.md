@@ -354,18 +354,43 @@ Se crearon cuestionarios para que cada departamento valide las respuestas del bo
   - **Estado:** SQL directo funciona en producción. Los agentes siguen como fallback para
     preguntas que SQL directo decline (saludos, follow-ups cortos, documentos).
 
+- **Sesión 14/Abr/2026 (continuación)** — branch `claude/amazing-brown-R5Yzm`:
+  - **Fix VENT-200**: Agregadas variantes verbales a keywords de ventas (`facturó`,
+    `facturar`, `vendió`, `vender`, `cobró`, etc.) + cross-agent review detectó mismas
+    carencias en producción (`producimos`, `fabricaron`), compras_insumos (`compró`,
+    `compraron`), y RRHH (`renunció`, `despidió`). Todos corregidos.
+  - **Fix VENT-100 / ORCH-101**: Implementados `_FOLLOWUP_PATTERNS` (~30 patrones de
+    follow-up como "en dólares", "por zona", "dame en febrero") en las 3 funciones
+    classify del orchestrator. Si el mensaje tiene < 40 chars y matchea un patrón de
+    follow-up, se usa `last_agent` directamente en vez de re-clasificar por keywords.
+    Esto resuelve el routing inconsistente de follow-ups.
+  - **Fix PERF-100**: Eliminadas las últimas 4 llamadas a `invoiceopen()` PL/pgSQL en
+    `dashboard.py` (KPIs y alertas). Reemplazadas con LEFT JOIN agregado igual que en
+    `idempiere_queries.py`. Esto debería eliminar los timeouts de > 120s en queries de
+    "saldo/deuda/pagar" que bloqueaban FIN-100 y AGRI-100.
+  - **Expansión VIEWS_CATALOG de SQL Directo**: Agregadas ~25 views LVE adicionales al
+    catálogo y ~10 tablas raw nuevas a la whitelist (m_production, pp_product_bom,
+    m_movement, m_warehouse, inventarios LVE, cobranza, compras, contabilidad).
+    SQL directo ahora puede responder preguntas sobre inventario, producción, BOMs,
+    anticipos, guías de movilización, y más sin código nuevo.
+  - **Fix INFR-102 (demo org filter)**: Implementado filtro automático que excluye
+    organizaciones demo de iDempiere (HQ, Store Central, etc.) cuando no hay filtro
+    explícito de org. Se aplica a las funciones principales: `build_sales_summary`,
+    `build_top_clients`, `build_collection_summary`, y queries financieras (AR/AP).
+    Esto corrige la contaminación de totales USD por facturas dummy de orgs demo.
+
 ### Pendiente para cierre Fase 1:
 - ~~Verificación SQL ground truth vs bot~~ ✅ COMPLETADO (09/Abr)
 - ~~Tests E2E~~ ✅ **CUBIERTO POR GOLDEN TESTS (41 casos, 100% PASS)**
 - ~~Fase 1 RRHH (migrar a lve_empleadosactivos)~~ ✅ COMPLETADO (10/Abr)
 - ~~Fase 2 Ventas (migrar a lve_invoice)~~ ❌ **CANCELADA** — c_invoice raw ya es correcto
-- **PRÓXIMA SESIÓN — Verificación sección por sección del doc de iDempiere:**
-  Recorrer `docs/DATOS_VERIFICACION_IDEMPIERE.md` sección por sección. Para cada dato
-  verificado, confirmar que el bot (ahora con SQL directo) da el número correcto. Los que
-  no cuadren → fix inmediato. Documentar cada verificación como PASS/FAIL en el md.
-  Esto reemplaza la migración masiva de Fases 2-5 porque SQL directo ya consulta las views
-  LVE directamente sin necesidad de reescribir funciones build_*.
-- Filtro de orgs demo en queries USD (datos demo contaminan totales USD)
+- ~~Filtro de orgs demo en queries USD~~ ✅ COMPLETADO (14/Abr)
+- ~~PERF-100 (invoiceopen timeouts)~~ ✅ COMPLETADO (14/Abr)
+- ~~VENT-200 (variantes verbales)~~ ✅ COMPLETADO (14/Abr)
+- ~~VENT-100 / ORCH-101 (follow-ups inconsistentes)~~ ✅ COMPLETADO (14/Abr)
+- **Verificación sección por sección** de `docs/DATOS_VERIFICACION_IDEMPIERE.md`: confirmar
+  que el bot (con SQL directo) da los números correctos para cada sección del documento.
+  Los que no cuadren → fix inmediato. Pendiente para ejecutar en producción.
 - Sentry (monitoreo de errores)
 - WhatsApp (Fase 2, post-lanzamiento)
 

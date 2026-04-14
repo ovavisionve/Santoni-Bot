@@ -148,19 +148,44 @@ def _rows_to_dicts(rows, columns) -> list[dict]:
     ]
 
 
+# Las organizaciones REALES de Santoni en iDempiere. Se usa para excluir
+# orgs demo (HQ, Store Central, Furniture, etc.) que contaminan queries USD.
+# INFR-102 (14/Abr/2026): datos demo de iDempiere tienen facturas dummy en
+# USD que inflan los totales. Cuando un usuario no tiene restricción de org
+# (admin), se aplica este filtro automáticamente en consultas que no tienen
+# org_ids explícitos.
+_SANTONI_ORG_NAMES = (
+    "INPROA SANTONI", "InproMaiz", "AGROINPROA",
+    "AGROPECUARIA R.R.", "AGA AGRICOLA", "INVERSIONES AGA", "Santoni Service",
+)
+_SANTONI_ORG_FILTER = (
+    "{alias}.ad_org_id IN ("
+    "SELECT ad_org_id FROM adempiere.ad_org WHERE "
+    + " OR ".join(f"name ILIKE '%{n}%'" for n in _SANTONI_ORG_NAMES)
+    + ")"
+)
+
+
 def _add_org_filter(
     conditions: list[str],
     params: dict,
     org_ids: list[int] | None,
     table_alias: str,
+    exclude_demo: bool = False,
 ) -> None:
     """Add ad_org_id IN (...) filter if org_ids is provided.
-    Modifies conditions and params in place."""
+    Modifies conditions and params in place.
+
+    If exclude_demo=True and org_ids is None, adds a filter to restrict
+    to real Santoni organizations (excluding iDempiere demo orgs).
+    """
     if org_ids:
         placeholders = ", ".join(f":org_{i}" for i in range(len(org_ids)))
         conditions.append(f"{table_alias}.ad_org_id IN ({placeholders})")
         for i, org_id in enumerate(org_ids):
             params[f"org_{i}"] = org_id
+    elif exclude_demo:
+        conditions.append(_SANTONI_ORG_FILTER.format(alias=table_alias))
 
 
 def _add_org_name_filter(
@@ -580,7 +605,9 @@ def build_sales_summary(
             "i.isactive = 'Y'",
         ]
         params: dict = {}
-        _add_org_filter(conditions, params, org_ids, "i")
+        # INFR-102: exclude_demo=True para evitar que orgs demo de iDempiere
+        # contaminen los totales USD cuando no hay filtro de org explícito.
+        _add_org_filter(conditions, params, org_ids, "i", exclude_demo=True)
         _add_org_name_filter(conditions, params, org_name, "i")
         _add_salesrep_filter(conditions, params, salesrep_id, "i")
         _add_currency_filter(conditions, params, currency_ids, "i")
@@ -806,7 +833,7 @@ def build_collection_summary(
             "p.isactive = 'Y'",
         ]
         params: dict = {}
-        _add_org_filter(conditions, params, org_ids, "p")
+        _add_org_filter(conditions, params, org_ids, "p", exclude_demo=True)
         _add_org_name_filter(conditions, params, org_name, "p")
         _add_currency_filter(conditions, params, currency_ids, "p")
         # Payments don't have salesrep_id directly; filter via linked invoice
@@ -917,7 +944,7 @@ def build_top_clients(
             "bp.iscustomer = 'Y'",
         ]
         params: dict = {"limit": limit}
-        _add_org_filter(conditions, params, org_ids, "i")
+        _add_org_filter(conditions, params, org_ids, "i", exclude_demo=True)
         _add_org_name_filter(conditions, params, org_name, "i")
         _add_salesrep_filter(conditions, params, salesrep_id, "i")
         _add_currency_filter(conditions, params, currency_ids, "i")
@@ -1160,7 +1187,7 @@ def build_sales_by_product(
             "dt.docbasetype = 'ARI'",
         ]
         params: dict = {"limit": limit}
-        _add_org_filter(conditions, params, org_ids, "i")
+        _add_org_filter(conditions, params, org_ids, "i", exclude_demo=True)
         _add_org_name_filter(conditions, params, org_name, "i")
         _add_currency_filter(conditions, params, currency_ids, "i")
         _add_date_filter(conditions, params, date_from, date_to, mes, anio, "i.dateinvoiced")
@@ -1701,7 +1728,7 @@ def build_financial_summary(
             f"{_OPEN_EXPR} > 0",
         ]
         ar_params: dict = {}
-        _add_org_filter(ar_conditions, ar_params, org_ids, "i")
+        _add_org_filter(ar_conditions, ar_params, org_ids, "i", exclude_demo=True)
         _add_date_filter(ar_conditions, ar_params, date_from, date_to, mes, anio, "i.dateinvoiced")
 
         ar_where = " AND ".join(ar_conditions)
@@ -1761,7 +1788,7 @@ def build_financial_summary(
             f"{_OPEN_EXPR} > 0",
         ]
         ap_params: dict = {}
-        _add_org_filter(ap_conditions, ap_params, org_ids, "i")
+        _add_org_filter(ap_conditions, ap_params, org_ids, "i", exclude_demo=True)
         _add_date_filter(ap_conditions, ap_params, date_from, date_to, mes, anio, "i.dateinvoiced")
 
         ap_where = " AND ".join(ap_conditions)

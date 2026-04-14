@@ -90,8 +90,10 @@ Columnas: c_payment_id, c_bpartner_id, payamt, datetrx, c_currency_id,
   isreceipt ('Y'=cobro, 'N'=pago), docstatus, tendertype (método de pago)
 
 ### Finanzas — Bancos
-**lve_disponibilidadbancaria** — Saldos bancarios disponibles
-(consultar estructura si se necesita)
+**lve_disponibilidadbancaria** — Saldos bancarios disponibles (view oficial de Santoni)
+**lve_disponibilidadbancariateso** — Saldos bancarios vista tesorería
+**lve_disponibilidadbancariagerencia** — Saldos bancarios vista gerencia
+**lve_compromisosbancarios** — Compromisos bancarios pendientes
 
 ### Compras a Productores — Guías
 **c_order** — Órdenes de compra / Guías de recepción a productores
@@ -120,6 +122,40 @@ movementtype: V+=Recepción, C-=Despacho, M+/M-=Mov. interno, P+/P-=Producción
 **lve_saldosclientes** — Saldos pendientes de clientes
 **lve_saldosproveedor** — Saldos pendientes de proveedores
 **lve_saldosproductor** — Saldos pendientes de productores agrícolas
+**lve_customer_statement** — Estado de cuenta de clientes
+**lve_supplier_statement** — Estado de cuenta de proveedores
+**lve_analisisvencimientoinproa** — Análisis de vencimiento de facturas INPROA
+
+### Cobranza — Views oficiales
+**lve_informepago** — Informe de pagos
+**lve_resumencobro** — Resumen de cobros
+**lve_payment** — Pagos detallados
+**lve_payment_receipt** — Recibos de pago
+
+### Compras — Views oficiales
+**lve_buy_book** — Libro de compras
+**lve_buy_book_sumary** — Resumen del libro de compras
+**lve_anticipoproductor** — Anticipos a productores
+**lve_anticipoproveedor** — Anticipos a proveedores
+**lve_guiasmovilizacion** — Guías de movilización de productores
+
+### Contabilidad — Views oficiales
+**lve_fact_acct** — Hechos contables (versión LVE)
+**lve_trialbalance** — Balance de comprobación
+
+### Inventario — Views oficiales
+**lve_inventario_terminado** — Inventario de producto terminado
+**lve_inventario_paddy** — Inventario de arroz paddy
+**lve_inventario_maiz** — Inventario de maíz
+**lve_inventario_empaque** — Inventario de materiales de empaque
+**lve_inventario_granos** — Inventario de granos
+**lve_inventario_repuesto** — Inventario de repuestos
+**lve_inventario_comercial** — Inventario comercial
+**lve_existenciayubicacion** — Existencias y ubicación por almacén
+
+### Ventas — Views oficiales
+**lve_sales_book** — Libro de ventas (por factura, estilo SENIAT)
+**lve_sales_books** — Libros de ventas (plural)
 
 ## REGLAS para generar SQL:
 1. SOLO usar SELECT (nunca INSERT, UPDATE, DELETE, DROP, ALTER, TRUNCATE)
@@ -188,17 +224,29 @@ _ALLOWED_TABLES = {
     "lve_informepago", "lve_resumencobro",
     "lve_customer_statement", "lve_supplier_statement",
     "lve_analisisvencimientoinproa",
+    "lve_analisisvencimientodetalladolar", "lve_analisisvencimientoinproadolar",
     "lve_compromisosbancarios",
+    "lve_payment", "lve_payment_receipt",
+    "lve_anticipoproductor", "lve_anticipoproveedor",
+    "lve_guiasmovilizacion", "lve_guiagranelsindespacho", "lve_guiacaleta",
+    "lve_facturasvsentregas",
     "lve_inventario_terminado", "lve_inventario_paddy", "lve_inventario_maiz",
     "lve_inventario_empaque", "lve_inventario_granos",
     "lve_inventario_repuesto", "lve_inventario_comercial",
-    "lve_existenciayubicacion",
+    "lve_inventario_semilla", "lve_inventario_proceso", "lve_inventario_procmaiz",
+    "lve_inventario_costo", "lve_inventario_maquinaria",
+    "lve_existenciayubicacion", "lve_existenciaalmacenagroinproa",
+    "lve_dotacionemp", "lve_prestsempleados", "lve_activos",
     # Tablas raw necesarias (no tienen view LVE equivalente)
     "c_invoice", "c_invoiceline", "c_bpartner", "c_bpartner_location",
     "c_payment", "c_order", "c_orderline",
     "c_doctype", "c_currency", "c_tax",
     "ad_user", "ad_org",
     "m_product", "m_product_category", "m_inout", "m_inoutline",
+    "m_production", "m_productionline", "m_storageonhand",
+    "m_movement", "m_movementline",
+    "pp_product_bom", "pp_product_bomline",
+    "m_warehouse", "m_locator",
     "hr_employee", "hr_department", "hr_job", "hr_process", "hr_movement",
     "fact_acct", "c_elementvalue",
     "c_bankaccount", "c_bank",

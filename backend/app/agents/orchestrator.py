@@ -63,7 +63,9 @@ _KEYWORD_RULES: list[tuple[str, list[str]]] = [
     # and "producción"-related keywords before they fall through to inventory/compras
     ("produccion", [
         "produccion", "producción", "producir", "produjo", "producido",
-        "fabricar", "fabricó", "fabricado", "manufactura",
+        "producimos", "produjeron",
+        "fabricar", "fabricó", "fabricado", "fabricamos", "fabricaron",
+        "manufactura",
         "planta", "línea de producción", "linea de produccion",
         "eficiencia", "oee", "desperdicio", "merma", "scrap",
         "mantenimiento", "turno", "turnos", "lote", "lotes",
@@ -95,7 +97,9 @@ _KEYWORD_RULES: list[tuple[str, list[str]]] = [
         "cuánto hay", "cuanto hay", "cuánto queda", "cuanto queda",
         "historial de compra", "historial de compras",
         "compras de", "compra del producto",
-        # "compra" catches verb forms: compramos, comprado, compró
+        # "compra" como substring cubre "compras", "comprador", etc.
+        # Variantes verbales explícitas para formas con tilde:
+        "compró", "compramos", "compraron",
         "compra",
     ]),
     # Contabilidad — BEFORE ventas/finanzas to catch accounting terms first
@@ -141,6 +145,11 @@ _KEYWORD_RULES: list[tuple[str, list[str]]] = [
     ("ventas", [
         "venta", "ventas", "vendedor", "vendedores", "cliente",
         "clientes", "factura", "facturación", "facturacion",
+        # VENT-200 (14/Abr/2026): variantes verbales que no matcheaban porque
+        # "factura" no es substring de "facturó" (la tilde rompe el substring).
+        "facturó", "facturar", "facturaron", "facturamos",
+        "vendió", "vender", "vendieron", "vendimos",
+        "cobró", "cobraron", "cobramos",
         "cobranza", "cobro", "cobrar", "recaudacion", "recaudación",
         "zona", "zonas", "ranking", "pareto", "top clientes",
         "top 10", "top 20", "top 5", "mejores clientes",
@@ -183,8 +192,8 @@ _KEYWORD_RULES: list[tuple[str, list[str]]] = [
         "ingreso", "ingresos", "ingresaron", "ingresó",
         "liquidacion", "liquidación",
         "prestacion", "prestación", "prestaciones",
-        "renuncia", "renunciado", "renuncias",
-        "despido", "despidos", "despedido",
+        "renuncia", "renunciado", "renuncias", "renunció", "renunciaron",
+        "despido", "despidos", "despedido", "despidió", "despidieron",
         "bono", "bonos", "bonificacion", "bonificación",
         "permiso", "permisos", "reposo", "reposos",
         "incapacidad", "incapacidades",
@@ -233,6 +242,32 @@ def _has_account_code(msg: str) -> bool:
     return bool(re.search(r'\d\.\d{2}\.\d{2}', msg))
 
 
+# VENT-100 / ORCH-101 (14/Abr/2026): Patterns that indicate a follow-up
+# message (e.g., "en dólares", "dame por zona", "ok muéstrame en febrero").
+# When a short message (< 40 chars) matches one of these patterns AND we
+# have a last_agent, route to last_agent directly instead of re-classifying
+# with keywords — because these messages modify the previous query, not
+# start a new one.
+_FOLLOWUP_PATTERNS = [
+    # Currency switch
+    "en dólar", "en dolár", "en dolares", "en dólares", "en usd",
+    "en bolívar", "en bolivar", "en bolívares", "en bolivares", "en ves",
+    "en moneda", "moneda dol", "moneda usd", "moneda ves", "en divisas",
+    # Temporal switch
+    "dame en ", "ok dame", "damelo en", "dámelo en", "muéstrame en",
+    "mustrame en", "ahora en ", "y en ", "pero en ",
+    "del mes", "del año", "este mes", "este año", "mes pasado", "año pasado",
+    # Grouping/filter switch
+    "por zona", "por producto", "por vendedor", "por mes", "por año",
+    "por organización", "por organizacion", "por org", "por moneda",
+    "por departamento", "por proveedor", "por cliente",
+    # Confirmations/refinements
+    "sí, dame", "si, dame", "ok, dame", "dale", "eso mismo",
+    "más detalle", "mas detalle", "detallado", "desglosado",
+    "y las notas", "y los totales",
+]
+
+
 def classify_by_keywords(
     message: str,
     allowed_departments: list[str],
@@ -252,6 +287,15 @@ def classify_by_keywords(
     # Check greetings / general first
     if any(p in msg for p in _GENERAL_PATTERNS) and len(msg) < 60:
         return "general"
+
+    # VENT-100 / ORCH-101 (14/Abr/2026): short follow-up messages that
+    # modify the previous query (e.g., "en dólares", "por zona", "dame en
+    # febrero") should route to last_agent instead of re-classifying. This
+    # prevents "en dólares" from being classified by keywords and ending up
+    # in the wrong agent.
+    if last_agent and last_agent in allowed_departments and last_agent != "general":
+        if len(msg) < 40 and any(fp in msg for fp in _FOLLOWUP_PATTERNS):
+            return last_agent
 
     # Pre-routing: high-specificity phrases that resolve keyword conflicts.
     # Evaluated BEFORE the main keyword loop so that "cuentas por pagar a
@@ -323,6 +367,11 @@ def classify_with_capabilities(
     if any(p in msg for p in _GENERAL_PATTERNS) and len(msg) < 60:
         return "general", None, 1.0, "saludo_directo"
 
+    # VENT-100 / ORCH-101: short follow-ups route to last_agent
+    if last_agent and last_agent in allowed_departments and last_agent != "general":
+        if len(msg) < 40 and any(fp in msg for fp in _FOLLOWUP_PATTERNS):
+            return last_agent, None, 0.9, "followup_pattern_last_agent"
+
     # Accounting code → contabilidad_cuenta
     if _has_account_code(msg):
         cap_id = "contabilidad_cuenta"
@@ -389,6 +438,11 @@ def classify_with_confidence(
     # Greetings
     if any(p in msg for p in _GENERAL_PATTERNS) and len(msg) < 60:
         return "general", 1.0, "saludo_directo"
+
+    # VENT-100 / ORCH-101: short follow-ups route to last_agent
+    if last_agent and last_agent in allowed_departments and last_agent != "general":
+        if len(msg) < 40 and any(fp in msg for fp in _FOLLOWUP_PATTERNS):
+            return last_agent, 0.9, "followup_pattern_last_agent"
 
     # Accounting code
     if _has_account_code(msg):
