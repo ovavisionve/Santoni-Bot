@@ -145,6 +145,51 @@ IMPORTANTE: Para cumpleañeros SIEMPRE generar SQL con SELECT name, cargo, depar
 
 **lve_empleadosinactivos** — Empleados inactivos/retirados (misma estructura)
 
+### RRHH — Nómina (movimientos de pago)
+**hr_movement** — Filas de movimientos de nómina (cada concepto por empleado por período)
+Columnas: hr_movement_id, hr_process_id, hr_concept_id, c_bpartner_id, ad_org_id,
+  validfrom (fecha inicio del período), validto (fecha fin),
+  amount (monto en Bs para conceptos de dinero; qty (cantidad para conceptos de días/horas))
+IMPORTANTE: para montos $ usar `amount`. Para días/horas, usar `qty`. Muchos conceptos tienen
+  AMBOS (ej: "Días de Reposo" tiene qty=días y amount=0).
+
+**hr_concept** — Catálogo de conceptos de nómina (sueldos, asignaciones, deducciones, etc.)
+Columnas: hr_concept_id, name (ej: 'Sueldo Mensual', 'Monto a deducir por Faltas y Atrasos'),
+  value (código corto), hr_concept_category_id, type (E=Earning devengado, D=Deduction, etc.)
+IMPORTANTE: para filtrar por concepto, usar `c.name ILIKE '%XXX%'`.
+Conceptos comunes para ausentismo (buscar con ILIKE):
+  - 'Faltas y Atrasos' → monto descontado
+  - 'Permiso No Remunerado'
+  - 'Permiso Remunerado'
+  - 'Reposo Pagado', 'Reposo Medico'
+  - 'Inasistencia Injustificada'
+  - 'Días de Asignación de Permiso'
+  - 'Días de Asignación de Reposo'
+Conceptos de ingresos: 'Sueldo Mensual', 'Salario', 'Total Asignaciones', 'Provisión Utilidades'.
+Conceptos de vacaciones (buscar 'vacacion' ILIKE): muchos tipos.
+
+**hr_process** — Proceso de nómina (un proceso = correr una nómina para un período)
+Columnas: hr_process_id, name, hrdate (fecha del proceso), hr_payroll_id, hr_period_id,
+  ad_org_id, docstatus
+IMPORTANTE: para filtrar nóminas de un período, usar `p.hrdate >= 'YYYY-MM-DD' AND p.hrdate < 'YYYY-MM-DD'`
+
+**hr_payroll** — Catálogo de tipos de nómina (Nómina Semanal, Quincenal, Directivos, etc.)
+Columnas: hr_payroll_id, name (ej: 'Nómina Semanal OBREROS', 'Nómina Directivos'),
+  value (código)
+IMPORTANTE: para desglosar un resumen por tipo de nómina, JOIN hr_process.hr_payroll_id →
+  hr_payroll.hr_payroll_id.
+
+**hr_employee** — Metadata del empleado (NO usar para contar activos — usar lve_empleadosactivos).
+Columnas: c_bpartner_id (foreign key a c_bpartner que tiene el nombre),
+  hr_department_id, hr_job_id, startdate, enddate, isactive
+
+**c_bpartner** (para nómina) — el NOMBRE real del empleado está en c_bpartner.name.
+  JOIN: hr_movement.c_bpartner_id = c_bpartner.c_bpartner_id para traer el nombre.
+  La cédula suele estar en c_bpartner.taxid.
+
+**hr_department** — Departamentos (hr_department_id, name, value)
+**hr_job** — Cargos (hr_job_id, name, value)
+
 ### Ventas — Facturas
 **c_invoice** — Facturas de venta Y compra (tabla raw, funciona bien para ventas)
 Columnas: c_invoice_id, c_bpartner_id, salesrep_id, c_currency_id,
@@ -335,6 +380,74 @@ WHERE i.issotrx='Y' AND i.docstatus IN ('CO','CL') AND i.isactive='Y'
   AND i.dateinvoiced >= '2026-02-01' AND i.dateinvoiced < '2026-03-01'
 GROUP BY au.name ORDER BY venta_neta DESC
 LIMIT 10
+
+-- Resumen de procesos de nómina por tipo (desglose COMPLETO por hr_payroll):
+-- OJO: el total general = SUMA de todos los tipos. NO filtrar a un solo tipo.
+SELECT pr.name AS tipo_nomina,
+       COUNT(DISTINCT p.hr_process_id) AS procesos,
+       COUNT(DISTINCT m.c_bpartner_id) AS empleados,
+       COALESCE(SUM(m.amount), 0) AS total_bs
+FROM adempiere.hr_movement m
+JOIN adempiere.hr_process p ON m.hr_process_id = p.hr_process_id
+JOIN adempiere.hr_payroll pr ON p.hr_payroll_id = pr.hr_payroll_id
+JOIN adempiere.ad_org o ON m.ad_org_id = o.ad_org_id
+WHERE p.hrdate >= '2026-03-01' AND p.hrdate < '2026-04-01'
+  AND o.name ILIKE '%INPROA SANTONI%'
+GROUP BY pr.name
+ORDER BY total_bs DESC
+LIMIT 500
+
+-- Ausentismo por concepto en un período (AGROINPROA marzo 2026):
+SELECT c.name AS concepto,
+       COUNT(DISTINCT m.c_bpartner_id) AS empleados_afectados,
+       COUNT(*) AS ocurrencias,
+       COALESCE(SUM(m.amount), 0) AS monto_bs,
+       COALESCE(SUM(m.qty), 0) AS cantidad
+FROM adempiere.hr_movement m
+JOIN adempiere.hr_concept c ON m.hr_concept_id = c.hr_concept_id
+JOIN adempiere.ad_org o ON m.ad_org_id = o.ad_org_id
+WHERE m.validfrom >= '2026-03-01' AND m.validfrom < '2026-04-01'
+  AND o.name ILIKE '%AGROINPROA%'
+  AND (c.name ILIKE '%Falta%' OR c.name ILIKE '%Permiso%'
+       OR c.name ILIKE '%Inasistencia%' OR c.name ILIKE '%Reposo%')
+GROUP BY c.name
+ORDER BY monto_bs DESC
+LIMIT 500
+
+-- Nombres de trabajadores con un concepto específico (ej: Faltas y Atrasos):
+-- El nombre real del empleado viene de c_bpartner, NO de hr_employee.
+SELECT DISTINCT bp.name AS empleado,
+       bp.taxid AS cedula,
+       j.name AS cargo,
+       COUNT(*) AS ocurrencias,
+       COALESCE(SUM(m.amount), 0) AS monto_bs,
+       COALESCE(SUM(m.qty), 0) AS qty
+FROM adempiere.hr_movement m
+JOIN adempiere.hr_concept c ON m.hr_concept_id = c.hr_concept_id
+JOIN adempiere.c_bpartner bp ON m.c_bpartner_id = bp.c_bpartner_id
+LEFT JOIN adempiere.hr_employee e ON e.c_bpartner_id = bp.c_bpartner_id
+LEFT JOIN adempiere.hr_job j ON e.hr_job_id = j.hr_job_id
+JOIN adempiere.ad_org o ON m.ad_org_id = o.ad_org_id
+WHERE c.name ILIKE '%Faltas y Atrasos%'
+  AND m.validfrom >= '2026-03-01' AND m.validfrom < '2026-04-01'
+  AND o.name ILIKE '%AGROINPROA%'
+GROUP BY bp.name, bp.taxid, j.name
+ORDER BY monto_bs DESC
+LIMIT 500
+
+-- Conceptos pagados/deducidos a UN empleado específico en un período:
+SELECT c.name AS concepto,
+       COUNT(*) AS ocurrencias,
+       COALESCE(SUM(m.amount), 0) AS monto_bs,
+       COALESCE(SUM(m.qty), 0) AS qty
+FROM adempiere.hr_movement m
+JOIN adempiere.hr_concept c ON m.hr_concept_id = c.hr_concept_id
+JOIN adempiere.c_bpartner bp ON m.c_bpartner_id = bp.c_bpartner_id
+WHERE bp.name ILIKE '%Geovanna%'
+  AND m.validfrom >= '2026-03-01' AND m.validfrom < '2026-04-01'
+GROUP BY c.name
+ORDER BY monto_bs DESC
+LIMIT 500
 """
 
 # Tablas/views permitidas (whitelist)
@@ -375,6 +488,8 @@ _ALLOWED_TABLES = {
     "pp_product_bom", "pp_product_bomline",
     "m_warehouse", "m_locator",
     "hr_employee", "hr_department", "hr_job", "hr_process", "hr_movement",
+    "hr_concept", "hr_concept_category", "hr_payroll", "hr_contract",
+    "hr_period", "hr_year", "hr_attribute", "hr_rule",
     "fact_acct", "c_elementvalue",
     "c_bankaccount", "c_bank",
     "c_salesregion", "c_project",
