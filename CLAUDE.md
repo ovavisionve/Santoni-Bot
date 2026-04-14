@@ -397,15 +397,78 @@ Se crearon cuestionarios para que cada departamento valide las respuestas del bo
     `ai_provider.hybrid_mode.sql_direct_uses` para verificar qué proveedor
     está manejando SQL Directo en tiempo real.
 
+- **Sesión 14/Abr/2026 (post activación Claude)** — branch `claude/amazing-brown-R5Yzm`:
+  - **APRENDIZAJE CRÍTICO — enfoque macro vs caso puntual:**
+    En la primera iteración con Claude en producción, "Total de ventas USD marzo
+    2026" devolvió USD 7.117.516 / 2.641 facturas, pero el doc de verificación
+    del 14/Mar decía USD 1.858.812 / 788 facturas. La reacción inicial fue
+    "Claude no aplicó mi filtro de orgs demo" → se intentó forzarlo con prompt
+    engineering (commit `9c5a1ef`) y después con enforcement en código
+    (commits `3d50acf`, `15ef39c`). Ninguna de las dos tácticas resolvió el
+    problema porque **el problema era otro**.
+  - **Investigación correcta**: desglose de ese total por organización y por
+    tipo de documento reveló:
+    1. **NO había orgs demo**. Las 5 orgs que componen el total son todas
+       reales de Santoni (INPROA SANTONI 4.3M, InproMaiz 2.4M, AGROINPROA 305k,
+       INVERSIONES AGA 69k, AGROPECUARIA R.R. 3k).
+    2. **NO había alucinación**. El número USD 7.117.516 es matemáticamente
+       correcto (suma de ARI menos ARC del período).
+    3. **El doc estaba desactualizado**. Al 14/Mar solo había 14 días del mes
+       — hoy el mes está completo + hubo una factura+NC anulatoria de USD 9.4M
+       aplicada después.
+    4. **Existe ambigüedad semántica real**: "ventas USD marzo" puede significar
+       "grupo consolidado" o "la org principal". El bot asumía "grupo" sin
+       avisar — el mismo patrón que ya estaba resuelto en el agente clásico
+       de ventas (VENT-003, decisión: "preguntar antes que adivinar").
+  - **Fix macro (en vez de fix puntual):** SQL Directo recibió dos reglas
+    sistemáticas que aplican a TODAS las queries financieras, no solo a
+    "total USD marzo":
+    1. **Desglose por organización obligatorio**: cuando la pregunta es
+       agregada (SUM/COUNT) sobre tabla financiera (c_invoice, c_payment,
+       c_order, fact_acct) y NO menciona org específica → el SQL debe incluir
+       `GROUP BY ad_org_id` y la respuesta muestra el desglose + total
+       consolidado. Esto da transparencia (el usuario ve qué orgs están
+       sumando) y elimina ambigüedad.
+    2. **Separación de facturas vs notas de crédito en el conteo**: antes el
+       bot decía "2.641 facturas" pero en realidad eran 2.218 facturas + 423
+       notas de crédito. La regla ahora es que el `COUNT` debe discriminar y
+       la respuesta debe reportar ambos números por separado.
+  - **FILOSOFÍA DEL PROYECTO** (meta-aprendizaje que guía TODA solución futura):
+    > **No optimizar prompts ni código para que una query específica dé el
+    > número correcto. Investigar qué está pidiendo la base de datos, por qué
+    > devuelve lo que devuelve, y hacer que las reglas del bot reflejen la
+    > realidad del negocio. Una solución aplicada a nivel macro (prompt +
+    > catálogo) cubre cientos de queries futuras sin fixes caso por caso.**
+    >
+    > Ejemplo del anti-patrón a evitar: "el bot responde mal a X, agrega una
+    > regla para X". Ejemplo del patrón correcto: "el bot responde mal a X
+    > porque asume una interpretación. Arreglar que el bot NUNCA asuma en
+    > esa clase de preguntas — impacta X, Y, Z y todas las futuras similares."
+  - **Status de los commits `3d50acf` y `15ef39c` (enforcement de orgs demo):**
+    se dejan activos como **protección defensiva futura**. En la práctica
+    actual, el enforcement NO se activa porque las orgs del ERP son todas
+    reales. Si algún día se importa un dump de iDempiere con orgs demo, el
+    código las filtrará automáticamente sin fixes nuevos.
+
 ### Pendiente para cierre Fase 1:
 - ~~Verificación SQL ground truth vs bot~~ ✅ COMPLETADO (09/Abr)
 - ~~Tests E2E~~ ✅ **CUBIERTO POR GOLDEN TESTS (41 casos, 100% PASS)**
 - ~~Fase 1 RRHH (migrar a lve_empleadosactivos)~~ ✅ COMPLETADO (10/Abr)
 - ~~Fase 2 Ventas (migrar a lve_invoice)~~ ❌ **CANCELADA** — c_invoice raw ya es correcto
-- ~~Filtro de orgs demo en queries USD~~ ✅ COMPLETADO (14/Abr)
+- ~~Filtro de orgs demo en queries USD~~ ⚠️ **REDIRECCIONADO** — no era orgs demo, era ambigüedad de org. Ver aprendizaje 14/Abr.
 - ~~PERF-100 (invoiceopen timeouts)~~ ✅ COMPLETADO (14/Abr)
 - ~~VENT-200 (variantes verbales)~~ ✅ COMPLETADO (14/Abr)
 - ~~VENT-100 / ORCH-101 (follow-ups inconsistentes)~~ ✅ COMPLETADO (14/Abr)
+- ~~Modo híbrido Claude activado en producción~~ ✅ COMPLETADO (14/Abr)
+- ~~Desglose automático por org en SQL Directo~~ ✅ COMPLETADO (14/Abr post-Claude)
+- **Pendiente — validar con esalas/Darwin el criterio "factura real vs proforma"**:
+  en Santoni, las "AR Invoice ProDolares*" son 92% del volumen de facturas USD.
+  Si son preliminares, hay que filtrarlas en el catálogo. Si son facturas
+  reales, el catálogo ya las incluye correctamente. Darwin/esalas son los que
+  pueden confirmar.
+- **Pendiente — actualizar `docs/DATOS_VERIFICACION_IDEMPIERE.md`** con los
+  números de marzo completo (la sección 16.4 está hecha con datos parciales al
+  14/Mar y ahora está desactualizada).
 - **Verificación sección por sección** de `docs/DATOS_VERIFICACION_IDEMPIERE.md`: confirmar
   que el bot (con SQL directo) da los números correctos para cada sección del documento.
   Los que no cuadren → fix inmediato. Pendiente para ejecutar en producción.

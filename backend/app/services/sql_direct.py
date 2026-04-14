@@ -395,19 +395,34 @@ def _build_santoni_org_filter(alias: str) -> str:
 
 
 def _enforce_org_filter(sql: str) -> tuple[str, bool]:
-    """Inyecta el filtro de orgs reales cuando el SQL lo necesita pero no lo tiene.
+    """Inyecta filtro de orgs reales de Santoni cuando falta (PROTECCIÓN DEFENSIVA).
+
+    ⚠️ IMPORTANTE (14/Abr/2026): en la producción actual de Santoni las 7 orgs
+    del ERP son TODAS reales (INPROA SANTONI, InproMaiz, AGROINPROA, etc.). No
+    hay orgs demo de fábrica (HQ, Store Central, Ocean Equipment, Furniture,
+    etc.). Esta función fue pensada para bloquear contaminación por orgs demo
+    y por eso fue menos relevante de lo esperado al activar Claude.
+
+    Se mantiene activa como PROTECCIÓN FUTURA para 3 escenarios:
+      1. Si en el futuro se restaura un dump de iDempiere con orgs demo
+         incluidas (es lo que pasa cuando un sysadmin hace un full import).
+      2. Si se crea manualmente una org de prueba en el ERP sin eliminarla
+         antes de producción.
+      3. Si Santoni adquiere otra empresa y su ERP se migra con sus propias
+         orgs demo.
+
+    El problema real de totales inflados que pensábamos resolver aquí resultó
+    ser AMBIGÜEDAD DE ORGANIZACIÓN (el usuario pregunta sin especificar qué
+    org quiere y el bot asume "el grupo"). Ese problema se resuelve en el
+    system prompt con la regla de "desglose por org obligatorio".
 
     Criterios para inyectar:
       - El SQL toca una de las tablas financieras (_ORG_ENFORCEMENT_TABLES)
       - Usa un alias identificable (ej. `FROM adempiere.c_invoice i`)
-      - NO tiene ya un filtro `ad_org_id IN (...)` o `ad_org_id = N`
-        (o sea, el usuario o el LLM no ya filtraron por org específica)
+      - NO tiene ya un filtro `ad_org_id IN (...)` o `ad_org_id = N` en el
+        WHERE clause (no en JOINs, que no son filtros)
 
     Returns (sql_modificado, se_inyecto_flag).
-
-    Este enforcement es necesario porque el LLM (Claude) a veces omite el
-    filtro de orgs aun con instrucciones explícitas en el system prompt —
-    hay que forzarlo en código para garantizar totales correctos.
     """
     sql_upper = sql.upper()
 
@@ -540,30 +555,59 @@ async def process_with_sql_direct(
             "Eres un asistente SQL experto para Alimentos Santoni, C.A. (Venezuela). "
             "Tu trabajo es convertir preguntas en lenguaje natural a queries SQL contra "
             "la base de datos iDempiere de Santoni.\n\n"
-            "🚨 REGLA CRÍTICA #1 — FILTRO DE ORGANIZACIONES REALES (aplicar SIEMPRE):\n"
-            "iDempiere tiene organizaciones DEMO de fábrica que contaminan los totales "
-            "con facturas dummy en USD (HQ, Store Central, Furniture, Store East/North/South/"
-            "West, Ocean Equipment, Fertilizer). Si las incluís en un SUM o COUNT, el "
-            "total sale inflado hasta 4x.\n\n"
-            "POR ESTO, cuando generés SQL contra las tablas c_invoice, c_payment, c_order, "
-            "fact_acct, c_bpartner y el usuario NO mencionó una organización específica de "
-            "Santoni (INPROA SANTONI, InproMaiz, AGROINPROA, etc.), DEBÉS agregar "
-            "OBLIGATORIAMENTE este filtro al WHERE:\n"
-            "```\n"
-            "AND {alias}.ad_org_id IN (\n"
-            "  SELECT ad_org_id FROM adempiere.ad_org\n"
-            "  WHERE name ILIKE '%INPROA SANTONI%' OR name ILIKE '%InproMaiz%'\n"
-            "     OR name ILIKE '%AGROINPROA%' OR name ILIKE '%AGROPECUARIA R.R.%'\n"
-            "     OR name ILIKE '%AGA AGRICOLA%' OR name ILIKE '%INVERSIONES AGA%'\n"
-            "     OR name ILIKE '%Santoni Service%'\n"
-            ")\n"
-            "```\n"
-            "NO se aplica a: lve_empleadosactivos (ya filtra internamente), queries de "
-            "cumpleaños o RRHH, ni cuando el usuario ya filtró por una org específica "
-            "con ILIKE. En cualquier otro SUM/COUNT financiero: SIEMPRE incluir.\n\n"
-            "ANTES de responder el SQL, verificá mentalmente: '¿estoy sumando dinero o "
-            "contando facturas/pagos sin un filtro de org específico?' → SI SÍ, incluir "
-            "el filtro. Si lo omitís, el usuario recibe datos contaminados.\n\n"
+            "🎯 REGLA CRÍTICA #1 — DESGLOSE POR ORGANIZACIÓN (evitar ambigüedad):\n"
+            "Santoni es un GRUPO de 7 organizaciones (INPROA SANTONI, InproMaiz, "
+            "AGROINPROA, AGROPECUARIA R.R., AGA AGRICOLA, INVERSIONES AGA, Santoni "
+            "Service). Cuando el usuario pregunta por montos agregados (ventas, compras, "
+            "cobranza, saldos) y NO menciona una organización específica, hay dos "
+            "interpretaciones igual de válidas: 'el grupo consolidado' o 'la org "
+            "principal'. No podés adivinar cuál. La SOLUCIÓN macro de Santoni es:\n\n"
+            "  SI la pregunta es agregada (SUM/COUNT) contra c_invoice, c_payment, "
+            "c_order o fact_acct, Y no menciona una org específica → GENERÁ el SQL "
+            "con GROUP BY por organización (uniendo ad_org para traer el name). La "
+            "respuesta final va a mostrar el desglose por org + el total consolidado.\n\n"
+            "Ejemplo correcto para 'ventas USD marzo 2026' (sin org específica):\n"
+            "```sql\n"
+            "SELECT o.name AS organizacion,\n"
+            "       COUNT(DISTINCT CASE WHEN dt.docbasetype='ARI' THEN i.c_invoice_id END) AS facturas,\n"
+            "       COUNT(DISTINCT CASE WHEN dt.docbasetype='ARC' THEN i.c_invoice_id END) AS notas_credito,\n"
+            "       COALESCE(SUM(CASE WHEN dt.docbasetype='ARI' THEN i.totallines "
+            "WHEN dt.docbasetype='ARC' THEN -i.totallines ELSE 0 END), 0) AS venta_neta\n"
+            "FROM adempiere.c_invoice i\n"
+            "JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id\n"
+            "JOIN adempiere.ad_org o ON i.ad_org_id = o.ad_org_id\n"
+            "WHERE i.issotrx='Y' AND i.docstatus IN ('CO','CL') AND i.isactive='Y'\n"
+            "  AND i.c_currency_id IN (100,1000000,1000003,1000006,1000008,1000009,1000011,1000013,1000017)\n"
+            "  AND i.dateinvoiced >= '2026-03-01' AND i.dateinvoiced < '2026-04-01'\n"
+            "GROUP BY o.name\n"
+            "ORDER BY venta_neta DESC\n"
+            "LIMIT 500\n"
+            "```\n\n"
+            "Cuando el usuario SÍ mencione una org (ej. 'de INPROA SANTONI'), filtrá por\n"
+            "esa org con `WHERE o.name ILIKE '%INPROA SANTONI%'` o equivalente, SIN "
+            "GROUP BY. Si menciona VARIAS orgs ('INPROA SANTONI e InproMaiz'), usá IN + "
+            "ILIKE. No apliques esta regla a queries sobre lve_empleadosactivos (RRHH), "
+            "cumpleaños, nómina — esas son internas por diseño.\n\n"
+            "🎯 REGLA CRÍTICA #2 — SEPARAR FACTURAS DE NOTAS DE CRÉDITO:\n"
+            "Cuando contés documentos en c_invoice, NO agrupes facturas (ARI) con notas "
+            "de crédito (ARC) en un solo COUNT. En Santoni, una factura grande puede "
+            "ser anulada con una NC del mismo monto (ejemplo real: marzo 2026 tiene una "
+            "AR Invoice de USD 9.4M con su correspondiente AR Credit Memo de USD 9.4M "
+            "que la anula). Si sumás todo el COUNT, el usuario no se da cuenta que son "
+            "cosas distintas. Usá siempre dos contadores:\n"
+            "  `COUNT(DISTINCT CASE WHEN dt.docbasetype='ARI' THEN i.c_invoice_id END) AS facturas`\n"
+            "  `COUNT(DISTINCT CASE WHEN dt.docbasetype='ARC' THEN i.c_invoice_id END) AS notas_credito`\n"
+            "En la respuesta final mostrá ambos por separado. Para montos, usá la "
+            "expresión neta (ARI positivo − ARC negativo) en un SUM con CASE como "
+            "mostré arriba.\n\n"
+            "🎯 REGLA CRÍTICA #3 — DESTACAR TRANSACCIONES GRANDES ANULATORIAS:\n"
+            "Si el SQL devuelve resultados donde una sola factura (ARI) representa "
+            ">20% del total bruto del período Y hay una NC (ARC) del mismo monto "
+            "aproximado en el mismo período, probable es una transacción anulada. "
+            "No podés detectar esto en el SQL inicial, pero al formatear la respuesta "
+            "para el usuario, si ves esa situación, mencionala explícitamente: 'hay "
+            "una factura de USD X que parece haber sido anulada con una NC del mismo "
+            "monto — el neto del mes sería Y sin considerar esa anulación'.\n\n"
             f"{datetime_ctx}\n\n"
             f"{VIEWS_CATALOG}\n\n"
             "INSTRUCCIONES:\n"
