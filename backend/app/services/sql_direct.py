@@ -545,9 +545,15 @@ def _validate_sql(sql: str) -> tuple[bool, str]:
     """
     sql_clean = sql.strip().rstrip(";")
 
-    # Must start with SELECT
-    if not sql_clean.upper().startswith("SELECT"):
-        return False, "Solo se permiten queries SELECT"
+    # Must start with SELECT or WITH (CTE prefix).
+    # Antes solo aceptábamos SELECT, pero después de enseñarle a Claude
+    # a usar `WITH desglose AS (...) SELECT ... UNION ALL ...` para totales
+    # (REGLA #7), todos los SQL con CTE quedaban rechazados con
+    # "Solo se permiten queries SELECT" y se marcaban como llm_declined.
+    # Los CTE (WITH) son SELECTs también — solo con scope local.
+    sql_upper = sql_clean.upper()
+    if not (sql_upper.startswith("SELECT") or sql_upper.startswith("WITH")):
+        return False, "Solo se permiten queries SELECT (o WITH ... SELECT)"
 
     # No forbidden keywords
     if _FORBIDDEN.search(sql_clean):
@@ -999,9 +1005,19 @@ async def process_with_sql_direct(
             )
             return None
 
-        # Chequear si el LLM declinó
-        if "NO_SQL" in generated_sql or not generated_sql.upper().startswith("SELECT"):
-            logger.info("SQL Direct: LLM declined (NO_SQL or non-SELECT)")
+        # Chequear si el LLM declinó.
+        # Aceptar también SQL que empiece con WITH (CTE) — antes solo
+        # SELECT era válido y los SQL con CTE generados por Claude
+        # (después de REGLA #7 que les pide usar UNION ALL para totales)
+        # se marcaban erróneamente como llm_declined.
+        sql_upper_check = generated_sql.upper().strip()
+        is_valid_start = (
+            sql_upper_check.startswith("SELECT")
+            or sql_upper_check.startswith("WITH ")
+            or sql_upper_check.startswith("(SELECT")
+        )
+        if "NO_SQL" in generated_sql or not is_valid_start:
+            logger.info("SQL Direct: LLM declined (NO_SQL or non-SELECT/WITH)")
             _write_audit(
                 message=message,
                 sql_generated=generated_sql[:500],
