@@ -44,10 +44,16 @@ Estas son las fuentes OFICIALES de datos de Alimentos Santoni. Usa SOLO estas vi
 
 ### RRHH — Empleados
 **lve_empleadosactivos** — Empleados activos del grupo Santoni (1 fila por empleado REAL)
-Columnas: ad_org_id, name (nombre completo), value (cédula), c_bpartner_id,
+Columnas: ad_org_id, name (nombre completo REAL del empleado), value (cédula), c_bpartner_id,
   hr_payroll_id, nomina (tipo nómina), startdate (fecha ingreso),
-  hr_department_id, departamento, hr_job_id, cargo, birthday (fecha nacimiento),
-  sueldo, asignacion, total (devengado), edad, tservicio (años servicio), gender
+  hr_department_id, departamento, hr_job_id, cargo,
+  birthday (fecha de nacimiento — usar para cumpleañeros: EXTRACT(MONTH FROM birthday) = N),
+  sueldo (sueldo BASE sin bonos), asignacion (bonos/asignaciones),
+  total (TOTAL DEVENGADO = sueldo + asignacion — usar este para "sueldo promedio" o "cuánto gana"),
+  edad, tservicio (años servicio), gender
+IMPORTANTE: Para "sueldo promedio" usar AVG(total), NO AVG(sueldo). La columna 'sueldo' es solo el base.
+IMPORTANTE: Para cumpleañeros SIEMPRE generar SQL con SELECT name, cargo, departamento, birthday.
+  NUNCA responder NO_SQL para preguntas de cumpleaños — la columna birthday está en esta view.
 
 **lve_empleadosinactivos** — Empleados inactivos/retirados (misma estructura)
 
@@ -329,11 +335,13 @@ async def process_with_sql_direct(
             "2. El SQL debe ser un SELECT válido para PostgreSQL.\n"
             "3. Usa las tablas/views del catálogo con prefijo 'adempiere.'\n"
             "4. Incluye LIMIT 500 al final.\n"
-            "5. Si la pregunta no se puede responder con SQL, responde exactamente: NO_SQL\n"
+            "5. SIEMPRE genera SQL para cualquier pregunta sobre datos. Solo responde NO_SQL para saludos (hola, gracias, chistes). Si la pregunta menciona empleados, ventas, compras, saldos, facturas, cumpleaños, producción, nómina, sueldos, departamentos → GENERA SQL.\n"
             "6. Para montos de ventas usa totallines (sin IVA). Para compras usa grandtotal.\n"
             "7. Si mencionan 'bolívares' o 'Bs' filtra c_currency_id = 205.\n"
             "8. Si mencionan 'dólares', 'USD' o 'divisas' filtra c_currency_id IN (100,1000000,1000003,1000006,1000008,1000009,1000011,1000013,1000017).\n"
             "9. Para empleados activos SIEMPRE usa lve_empleadosactivos (NO hr_employee).\n"
+            "10. Para 'sueldo promedio' o 'cuánto gana' usa AVG(total) de lve_empleadosactivos (total = sueldo+bonos).\n"
+            "11. Para 'cumpleaños' o 'cumplen años' usa EXTRACT(MONTH FROM birthday) en lve_empleadosactivos. NUNCA respondas NO_SQL para cumpleaños.\n"
         )),
     ]
 
