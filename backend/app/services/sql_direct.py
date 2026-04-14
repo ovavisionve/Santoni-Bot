@@ -520,10 +520,13 @@ _ALLOWED_TABLES = {
     "m_warehouse", "m_locator",
     "hr_employee", "hr_department", "hr_job", "hr_process", "hr_movement",
     "hr_concept", "hr_concept_category", "hr_payroll", "hr_contract",
-    "hr_period", "hr_year", "hr_attribute", "hr_rule",
+    "hr_period", "hr_year", "hr_attribute",
+    # Nota: hr_rule NO existe en Santoni. Tampoco hr_payslip.
     "fact_acct", "c_elementvalue",
     "c_bankaccount", "c_bank",
     "c_salesregion", "c_project",
+    "c_location", "c_region", "c_country", "c_city",
+    "c_bp_group",  # tipología de cliente (Clientes, Proveedores, etc.)
     "c_allocationline", "c_allocationhdr",
     "c_paymentterm",
 }
@@ -881,20 +884,47 @@ async def process_with_sql_direct(
             "individual (si eso pasa, el SQL está mal). Aplicá este 'sanity check' "
             "mentalmente antes de entregar: 'el total que digo, ¿es la suma real de "
             "mi desglose?' Si no cuadra, el SQL está mal — regenéralo.\n\n"
-            "🎯 REGLA CRÍTICA #6 — COLUMNAS HR DE SANTONI ESPECÍFICAS:\n"
-            "Esta instalación de iDempiere en Santoni tiene columnas propias que NO\n"
-            "siguen la documentación genérica de iDempiere. Memorízalas:\n"
-            "  - hr_process NO tiene `hrdate`. Usar `dateacct` (fecha contable) o\n"
-            "    `datetrx` (fecha de transacción). Preferir dateacct.\n"
-            "  - hr_movement SÍ tiene `validfrom` / `validto` — son las fechas del\n"
-            "    período del movimiento. Preferir filtrar por m.validfrom directamente\n"
-            "    (más rápido que JOIN con hr_process + dateacct).\n"
-            "  - hr_period tiene `startdate` / `enddate` para fechas del período.\n"
-            "  - Si tenés duda sobre una columna HR, usá m.validfrom en hr_movement\n"
-            "    — casi siempre es la vía más corta y segura.\n"
-            "Si generás SQL con `p.hrdate` va a fallar con 'column does not exist'.\n"
-            "Antes de responder un SQL con hr_process, verificá mentalmente: ¿estoy\n"
-            "usando `dateacct` (correcto) y no `hrdate` (inexistente en Santoni)?\n\n"
+            "🎯 REGLA CRÍTICA #6 — COLUMNAS Y TABLAS HR DE SANTONI ESPECÍFICAS:\n"
+            "Esta instalación de iDempiere en Santoni NO sigue la documentación\n"
+            "genérica de iDempiere. Memorízate este mapeo exacto:\n"
+            "\n"
+            "TABLAS QUE EXISTEN en adempiere.* (usables):\n"
+            "  hr_movement, hr_process, hr_concept, hr_concept_category,\n"
+            "  hr_payroll, hr_period, hr_employee, hr_department, hr_job,\n"
+            "  hr_contract, hr_attribute, lve_empleadosactivos, lve_empleadosinactivos\n"
+            "\n"
+            "TABLAS QUE NO EXISTEN (NO las uses, fallan con 'relation does not exist'):\n"
+            "  hr_payslip (NO existe — usar hr_movement en su lugar)\n"
+            "  hr_rule (NO existe)\n"
+            "  hr_payroll_employee (NO existe)\n"
+            "\n"
+            "MAPEO COLUMNA → TABLA (crítico para fechas, confunde mucho a LLMs):\n"
+            "  validfrom, validto → SOLO en hr_movement y hr_period (NO en hr_process)\n"
+            "  dateacct, datetrx  → SOLO en hr_process (NO en hr_movement)\n"
+            "  startdate, enddate → SOLO en hr_period (NO en hr_movement ni hr_process)\n"
+            "                       hr_employee también tiene startdate/enddate pero\n"
+            "                       es fecha de ingreso/egreso del empleado, NO período.\n"
+            "  amount, qty, servicedate → SOLO en hr_movement\n"
+            "  name, hr_payroll_id     → hr_process y hr_payroll\n"
+            "\n"
+            "FECHAS EN HR (usar esta regla, es la menos error-prone):\n"
+            "  Para filtrar movimientos de nómina de un período SIEMPRE usar:\n"
+            "    WHERE m.validfrom >= 'YYYY-MM-DD' AND m.validfrom < 'YYYY-MM-DD'\n"
+            "  (columna m.validfrom de hr_movement, NUNCA p.hrdate, NUNCA m.dateacct,\n"
+            "   NUNCA m.startdate, NUNCA hm.dateacct — todas esas son inexistentes).\n"
+            "\n"
+            "NOMBRE DE EMPLEADO en queries de nómina:\n"
+            "  El nombre real está en c_bpartner.name (NO en hr_employee.name).\n"
+            "  Siempre: JOIN adempiere.c_bpartner bp ON m.c_bpartner_id = bp.c_bpartner_id\n"
+            "  La cédula está en bp.taxid (no en hr_employee).\n"
+            "\n"
+            "REGIÓN / ZONA de un cliente (c_bpartner):\n"
+            "  NO existe c_bpartner.c_region_id. La región va así:\n"
+            "    c_bpartner.c_bpartner_id → c_bpartner_location.c_bpartner_id\n"
+            "    c_bpartner_location.c_location_id → c_location.c_region_id\n"
+            "    c_location.c_region_id → c_region.c_region_id (para nombre)\n"
+            "  Para ZONAS de venta usar: c_bpartner.c_salesregion_id → c_salesregion\n"
+            "  (Zonas y regiones son cosas diferentes en iDempiere.)\n\n"
             "🎯 REGLA CRÍTICA #7 — NO HAGAS ARITMÉTICA MENTAL (es fuente de errores):\n"
             "Los LLMs cometemos errores sistemáticos al sumar muchos números grandes\n"
             "en texto. Ejemplo real: 28 valores de millones de bolívares → sumé mal\n"

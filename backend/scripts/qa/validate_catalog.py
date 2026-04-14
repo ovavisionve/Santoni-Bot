@@ -78,10 +78,18 @@ def extract_columns_from_catalog(catalog: str) -> dict[str, set[str]]:
 
     # 1. Referencias explícitas tipo "tabla.columna" en los comentarios/docs
     #    Ej: "hr_process.hrdate", "c_invoice.totallines"
+    # Las columnas en iDempiere casi SIEMPRE tienen >= 2 chars (rara vez de 1).
+    # Además filtramos columnas de 1 char como 'a', 'b' que suelen ser
+    # falsos positivos de regex que caza "tabla.a" como si fuera columna.
     for m in re.finditer(r'(\b[a-z_]+\b)\.([a-z_][a-z_0-9]*)', catalog, re.IGNORECASE):
         tbl = m.group(1).lower()
         col = m.group(2).lower()
         if tbl in SQL_KEYWORDS or col in SQL_KEYWORDS:
+            continue
+        # Filtrar columnas sospechosamente cortas (< 3 chars) — son casi siempre
+        # falsos positivos del regex con palabras en prosa tipo "a 'c'" o
+        # "column.a" en comentarios/frases cortadas.
+        if len(col) < 3:
             continue
         # Heurística: solo considerar si parece nombre de tabla iDempiere
         # (tiene guión bajo o empieza con prefijo conocido c_, m_, hr_, ad_, lve_, pp_)
