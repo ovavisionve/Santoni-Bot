@@ -27,11 +27,43 @@ from datetime import datetime
 
 from sqlalchemy import text
 
+from app.config import get_settings
 from app.database import IdempiereSession
-from app.services.llm_factory import create_llm
+from app.services.llm_factory import create_llm, is_claude_available
 from app.agents.base_agent import _build_datetime_context
 
 logger = logging.getLogger("santonibot.sql_direct")
+
+
+def _create_sql_direct_llm(temperature: float = 0.0, max_tokens: int = 2048):
+    """Create the LLM for SQL Direct (hybrid mode).
+
+    Modo híbrido (14/Abr/2026): si `use_claude_for_sql=True` Y hay API key
+    de Anthropic configurada → fuerza Claude. Claude es ~20-100x más caro
+    que DeepSeek pero mucho más preciso generando SQL sin inventar columnas
+    ni alucinar montos contables. El resto del bot (routing, saludos,
+    follow-ups cortos) sigue usando el proveedor por defecto (openrouter).
+
+    Fallback: si Claude falla o no está configurada, usa el AI_PROVIDER
+    por defecto — SQL Directo sigue funcionando, solo con menor precisión.
+    """
+    settings = get_settings()
+    if settings.use_claude_for_sql and is_claude_available():
+        logger.debug(
+            "SQL Direct: usando Claude (%s) por USE_CLAUDE_FOR_SQL=True",
+            settings.anthropic_model,
+        )
+        return create_llm(
+            temperature=temperature,
+            max_tokens=max_tokens,
+            purpose="sql_direct",
+            provider="anthropic",
+        )
+    return create_llm(
+        temperature=temperature,
+        max_tokens=max_tokens,
+        purpose="sql_direct",
+    )
 
 # ─────────────────────────────────────────────────────────────────────
 # Catálogo de views disponibles para el LLM
@@ -365,7 +397,9 @@ async def process_with_sql_direct(
     Returns a response dict if successful, or None if the approach failed
     (so the caller can fall back to the traditional agent routing).
     """
-    llm = create_llm(temperature=0.0, max_tokens=2048, purpose="sql_direct")
+    # Hybrid mode: usa Claude para SQL gen + formateo si está configurada.
+    # Si Claude no está, cae automáticamente al proveedor por defecto.
+    llm = _create_sql_direct_llm(temperature=0.0, max_tokens=2048)
     datetime_ctx = _build_datetime_context()
 
     # Step 1: Ask LLM to generate SQL

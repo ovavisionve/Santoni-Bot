@@ -19,7 +19,8 @@ en lenguaje natural via chat (web y futuro WhatsApp), sin necesidad de conocer S
 | DB interna | PostgreSQL 16 (usuarios, conversaciones, auditoría) |
 | DB empresarial | PostgreSQL 13 (iDempiere ERP - solo lectura) |
 | Vector DB | ChromaDB (RAG / base de conocimiento) |
-| IA primaria | OpenRouter (DeepSeek Chat v3) - producción |
+| IA primaria | OpenRouter (DeepSeek Chat v3) — routing, saludos, follow-ups, agentes clásicos |
+| IA SQL Directo | Claude (Anthropic Sonnet 4.5/4.6) — SQL gen + formateo de datos contables (modo híbrido, flag USE_CLAUDE_FOR_SQL) |
 | IA secundaria | Groq (Llama 3.3 70B) - alternativa gratuita |
 | IA documentos | Claude API (Anthropic) - análisis de documentos/imágenes |
 | Orquestación | LangChain |
@@ -378,6 +379,23 @@ Se crearon cuestionarios para que cada departamento valide las respuestas del bo
     explícito de org. Se aplica a las funciones principales: `build_sales_summary`,
     `build_top_clients`, `build_collection_summary`, y queries financieras (AR/AP).
     Esto corrige la contaminación de totales USD por facturas dummy de orgs demo.
+  - **Modo HÍBRIDO Claude para SQL Directo**: Nuevo flag `USE_CLAUDE_FOR_SQL` en
+    `.env` (default `true`) + helper `_create_sql_direct_llm()` en `sql_direct.py`.
+    Cuando `ANTHROPIC_API_KEY` está configurada, SQL Directo (generación SQL +
+    formateo de resultados) usa Claude. El resto del bot (routing, saludos,
+    follow-ups, agentes clásicos, clasificación) sigue en OpenRouter/DeepSeek.
+    **Razón**: DeepSeek alucina con tablas grandes (inventa montos NC, reordena
+    columnas, crea nombres fake — ver bugs VENT-003, VENT-004, RRHH-hallucinations
+    en el BUGS_REGISTRY.md). Claude Sonnet 4.5/4.6 es mucho más preciso generando
+    SQL correcto y formateando datos contables sin inventar.
+    **Costo**: ~20-100x más caro por token pero solo se invoca en ~30% de queries
+    (las que pasan a SQL Directo). El resto del tráfico sigue barato.
+    **Fallback automático**: si Claude no está configurada o falla, SQL Directo
+    cae al proveedor por defecto — el bot sigue funcionando con menor precisión.
+    **Nuevo default de modelo**: `claude-sonnet-4-5` (Claude 4.x family 2026).
+    **Healthcheck**: el endpoint `/api/health` ahora reporta
+    `ai_provider.hybrid_mode.sql_direct_uses` para verificar qué proveedor
+    está manejando SQL Directo en tiempo real.
 
 ### Pendiente para cierre Fase 1:
 - ~~Verificación SQL ground truth vs bot~~ ✅ COMPLETADO (09/Abr)

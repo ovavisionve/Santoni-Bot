@@ -179,11 +179,22 @@ def health_check_detailed(current_user=Depends(get_current_user)):
         checks["database"] = {"status": "error"}
 
     # AI Provider
+    claude_ok = bool(settings.anthropic_api_key)
+    sql_direct_provider = (
+        "anthropic" if (settings.use_claude_for_sql and claude_ok)
+        else settings.ai_provider
+    )
     checks["ai_provider"] = {
         "active": settings.ai_provider,
         "groq": "ok" if settings.groq_api_key else "not_configured",
         "openrouter": "ok" if settings.openrouter_api_key else "not_configured",
-        "anthropic": "ok" if settings.anthropic_api_key else "not_configured",
+        "anthropic": "ok" if claude_ok else "not_configured",
+        "hybrid_mode": {
+            "enabled": settings.use_claude_for_sql,
+            "sql_direct_uses": sql_direct_provider,
+            "anthropic_model": settings.anthropic_model,
+            "anthropic_proxy": bool(settings.anthropic_base_url),
+        },
     }
 
     # iDempiere
