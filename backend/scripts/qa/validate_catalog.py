@@ -28,8 +28,9 @@ import re
 import sys
 from pathlib import Path
 
-# Permite correr desde cualquier directorio
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "backend"))
+# Permite correr desde cualquier directorio.
+# Script vive en backend/scripts/qa/ → parent.parent.parent = backend root
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from sqlalchemy import text  # noqa: E402
 from app.database import IdempiereSession  # noqa: E402

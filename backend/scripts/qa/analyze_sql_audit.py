@@ -6,14 +6,9 @@ Lee la tabla `sql_audit` de la DB local y detecta patrones de fallas
 que sugieren fixes al catálogo o al prompt de Claude. Genera un
 reporte legible con sugerencias priorizadas.
 
-Uso:
-    # Desde el host (fuera del contenedor)
+Uso (desde el servidor con docker):
     docker compose exec backend python scripts/qa/analyze_sql_audit.py
-
-    # Por período específico
     docker compose exec backend python scripts/qa/analyze_sql_audit.py --days 7
-
-    # Formato JSON para procesar programáticamente
     docker compose exec backend python scripts/qa/analyze_sql_audit.py --json
 
 Lo que detecta:
@@ -33,8 +28,9 @@ from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-# Permite correr desde cualquier directorio
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "backend"))
+# Permite correr desde cualquier directorio.
+# Script vive en backend/scripts/qa/ → parent.parent.parent = backend root
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from sqlalchemy import text  # noqa: E402
 from app.database import SessionLocal  # noqa: E402
