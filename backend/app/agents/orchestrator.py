@@ -649,6 +649,35 @@ class Orchestrator:
         last_agent: str | None = None,
     ) -> AsyncIterator[str]:
         """Stream response tokens via the appropriate agent."""
+
+        # ── SQL DIRECT: intenta responder con SQL generado por el LLM ──
+        msg_lower = message.lower().strip()
+        is_greeting = any(p in msg_lower for p in _GENERAL_PATTERNS) and len(msg_lower) < 60
+        is_short_followup = len(msg_lower) < 25 and not any(
+            c in msg_lower for c in ["cuánt", "cuant", "total", "saldo", "emplea", "venta",
+                                      "compr", "produc", "factur", "cobr", "banco"]
+        )
+
+        if not is_greeting and not is_short_followup:
+            try:
+                from app.services.sql_direct import process_with_sql_direct
+                sql_result = await process_with_sql_direct(
+                    message=message,
+                    history=history,
+                    org_ids=user.org_ids,
+                )
+                if sql_result is not None:
+                    logger.info(
+                        "SQL Direct (stream) handled: '%s' → %d rows",
+                        message[:60],
+                        sql_result.get("metadata", {}).get("rows_returned", 0),
+                    )
+                    yield sql_result["response"]
+                    return
+            except Exception as exc:
+                logger.warning("SQL Direct (stream) failed, falling back: %s", exc)
+
+        # ── FLUJO NORMAL: routing por keywords → agente streaming ──
         allowed = user.allowed_departments
         user_caps = user.capability_ids
 
