@@ -313,15 +313,59 @@ Se crearon cuestionarios para que cada departamento valide las respuestas del bo
   - **Fix parser movimientos producción**: el bot desglosa m_inout por tipo (V+/C-/M+/P+)
     y no presenta total sumado. Golden test ajustado para validar V+ específico.
 
+- **Sesión 14/Abr/2026** — branch `claude/update-claude-md-docker-MbDJK`:
+  - **CAMBIO ARQUITECTÓNICO: SQL DIRECTO** — nuevo módulo `backend/app/services/sql_direct.py`
+    que elimina las 8 capas intermedias del bot (routing → agente → parámetros → función → SQL
+    → formateo → LLM → respuesta) y las reemplaza con 3 pasos:
+    1. LLM recibe la pregunta + catálogo de views/tablas de iDempiere
+    2. LLM genera un SELECT SQL válido
+    3. Python valida (solo SELECT, whitelist de ~60 tablas, LIMIT 500) y ejecuta
+    4. LLM formatea los resultados como respuesta natural
+  - **Integrado en orchestrator.py** como primera opción antes del routing por keywords.
+    Si SQL directo funciona → bypass completo de agentes. Si falla → cae al flujo normal.
+  - **Resultados de pruebas en producción:**
+    * "¿Cuántos empleados en EMPAQUE de INPROA SANTONI?" → SQL: `SELECT COUNT(*) FROM
+      lve_empleadosactivos WHERE departamento='EMPAQUE'` → **17 empleados** (dato real) ✅
+    * "¿Cuánto se cobró en bolívares en febrero 2026?" → SQL: `SELECT SUM(payamt) FROM
+      c_payment WHERE isreceipt='Y'` → **Bs. 12,105,176,897.13** (coincide con golden test) ✅
+    * "¿Quiénes cumplen años en mayo en INPROA SANTONI?" → SQL: `SELECT name, cargo,
+      departamento, birthday FROM lve_empleadosactivos WHERE EXTRACT(MONTH FROM birthday)=5`
+      → **19 empleados REALES** (TERAN ORTIZ JHAN CARLOS, CASTRO VALERO JOCSAN ENRIQUE, etc.)
+      — antes el bot inventaba nombres fake ("María Pérez", "Luis González") ✅
+    * "¿Cuántos empleados por departamento en INPROA SANTONI?" → SQL: `SELECT departamento,
+      COUNT(*) FROM lve_empleadosactivos GROUP BY departamento` → **35 departamentos** — esta
+      pregunta NO tenía función build_* dedicada, SQL directo la respondió sin código nuevo ✅
+  - **Protecciones de seguridad:** solo SELECT, whitelist de tablas, LIMIT 500, timeout 30s,
+    statement_timeout en PostgreSQL, audit log de cada query generada
+  - **Catálogo de views** (`VIEWS_CATALOG` en sql_direct.py): descripción de las views LVE +
+    tablas principales con columnas, tipos, reglas de negocio y ejemplos de queries comunes.
+    Cuando se agrega una view nueva a iDempiere, solo hay que agregarla al catálogo (~5 líneas)
+    y el bot inmediatamente puede responder preguntas sobre ella sin código nuevo.
+  - **Bugs arreglados durante la implementación:**
+    * Validador `_validate_sql()` confundía `EXTRACT(MONTH FROM birthday)` con `FROM birthday`
+      (tabla). Fix: pre-procesar SQL eliminando EXTRACT() antes de buscar tablas.
+    * LLM declinaba (NO_SQL) para cumpleaños y sueldo promedio. Fix: ejemplos explícitos en
+      catálogo + instrucción "NUNCA respondas NO_SQL para preguntas de datos".
+    * Sueldo promedio usaba `AVG(sueldo)` (base) en vez de `AVG(total)` (devengado). Fix:
+      catálogo especifica que `total = sueldo + bonos` y se debe usar para promedios.
+  - **Anonimización propuesta (de la propuesta técnica) NO está activa**: el archivo
+    `backend/app/utils/anonymizer.py` existe pero nunca se importa. Los datos viajan sin
+    anonimizar. No interfiere con los resultados.
+  - **Estado:** SQL directo funciona en producción. Los agentes siguen como fallback para
+    preguntas que SQL directo decline (saludos, follow-ups cortos, documentos).
+
 ### Pendiente para cierre Fase 1:
 - ~~Verificación SQL ground truth vs bot~~ ✅ COMPLETADO (09/Abr)
 - ~~Tests E2E~~ ✅ **CUBIERTO POR GOLDEN TESTS (41 casos, 100% PASS)**
 - ~~Fase 1 RRHH (migrar a lve_empleadosactivos)~~ ✅ COMPLETADO (10/Abr)
 - ~~Fase 2 Ventas (migrar a lve_invoice)~~ ❌ **CANCELADA** — c_invoice raw ya es correcto
+- **PRÓXIMA SESIÓN — Verificación sección por sección del doc de iDempiere:**
+  Recorrer `docs/DATOS_VERIFICACION_IDEMPIERE.md` sección por sección. Para cada dato
+  verificado, confirmar que el bot (ahora con SQL directo) da el número correcto. Los que
+  no cuadren → fix inmediato. Documentar cada verificación como PASS/FAIL en el md.
+  Esto reemplaza la migración masiva de Fases 2-5 porque SQL directo ya consulta las views
+  LVE directamente sin necesidad de reescribir funciones build_*.
 - Filtro de orgs demo en queries USD (datos demo contaminan totales USD)
-- Migrar Finanzas a views LVE (`lve_disponibilidadbancaria`, `lve_saldosclientes`, `lve_saldosproveedor`)
-- Migrar Compras a views LVE (`lve_saldosproductor`, `lve_inventario_*`)
-- Migrar Contabilidad a views LVE (`lve_trialbalance`, `lve_fact_acct`)
 - Sentry (monitoreo de errores)
 - WhatsApp (Fase 2, post-lanzamiento)
 
