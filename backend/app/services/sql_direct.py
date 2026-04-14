@@ -28,11 +28,67 @@ from datetime import datetime
 from sqlalchemy import text
 
 from app.config import get_settings
-from app.database import IdempiereSession
+from app.database import IdempiereSession, SessionLocal
 from app.services.llm_factory import create_llm, is_claude_available
 from app.agents.base_agent import _build_datetime_context
 
 logger = logging.getLogger("santonibot.sql_direct")
+
+
+def _write_audit(
+    message: str,
+    sql_generated: str | None = None,
+    sql_final: str | None = None,
+    org_filter_injected: bool = False,
+    rows_returned: int = 0,
+    elapsed_ms: int = 0,
+    format_failed: bool = False,
+    status: str = "success",
+    error_detail: str | None = None,
+) -> int | None:
+    """Guarda la traza del SQL en la tabla sql_audit de la DB local.
+
+    Silencioso: si falla la escritura del audit log, no afecta la respuesta
+    al usuario (la telemetría es best-effort).
+
+    Returns el id de la fila insertada, o None si falló.
+    """
+    settings = get_settings()
+    try:
+        from app.models.sql_audit import SqlAudit
+        db = SessionLocal()
+        try:
+            row = SqlAudit(
+                message=message[:2000],  # truncado por seguridad
+                sql_generated=sql_generated,
+                sql_final=sql_final,
+                org_filter_injected=org_filter_injected,
+                rows_returned=rows_returned,
+                elapsed_ms=elapsed_ms,
+                format_failed=format_failed,
+                llm_provider=(
+                    "anthropic"
+                    if (settings.use_claude_for_sql and is_claude_available())
+                    else settings.ai_provider
+                ),
+                llm_model=(
+                    settings.anthropic_model
+                    if (settings.use_claude_for_sql and is_claude_available())
+                    else settings.openrouter_model
+                ),
+                status=status,
+                error_detail=error_detail[:2000] if error_detail else None,
+            )
+            db.add(row)
+            db.commit()
+            db.refresh(row)
+            return row.id
+        finally:
+            db.close()
+    except Exception as exc:
+        # Nunca dejar que un bug del audit log rompa el bot
+        logger.debug("SQL audit write failed (no crítico): %s", exc)
+        return None
 
 
 def _create_sql_direct_llm(temperature: float = 0.0, max_tokens: int = 2048):
@@ -653,6 +709,32 @@ async def process_with_sql_direct(
             "para el usuario, si ves esa situación, mencionala explícitamente: 'hay "
             "una factura de USD X que parece haber sido anulada con una NC del mismo "
             "monto — el neto del mes sería Y sin considerar esa anulación'.\n\n"
+            "🎯 REGLA CRÍTICA #4 — SOS LA FUENTE DE DATOS, NO DERIVES A OTRA:\n"
+            "NUNCA, JAMÁS respondas con frases tipo 'ver respuesta original', "
+            "'(Se consultaron datos reales)', 'consulte al departamento', 'contacte "
+            "Talento Humano', '(datos omitidos por confidencialidad)', 'Ejemplo 1 "
+            "/ Ejemplo 2', 'los nombres exactos se omiten', ni datos placeholder. "
+            "Vos SOS la fuente de datos de Santoni — no existe otra fuente para el "
+            "usuario. Si el usuario pide detalle sobre un resumen que diste en un "
+            "turno anterior (ej: primero diste totales, ahora te pide nombres), "
+            "GENERÁ UNA NUEVA QUERY SQL que obtenga los detalles individuales desde "
+            "iDempiere. Los datos del turno anterior NO están en tu contexto — "
+            "tenés que ir a la DB a buscarlos de nuevo. Si realmente no podés "
+            "generar SQL para la pregunta, respondé NO_SQL (el sistema hace fallback). "
+            "Pero nunca des respuestas con plantillas que pretendan tener datos "
+            "reales sin tenerlos.\n\n"
+            "🎯 REGLA CRÍTICA #5 — DESGLOSES COMPLETOS, NO RESÚMENES INCOMPLETOS:\n"
+            "Cuando el usuario pide un 'resumen', 'total', 'reporte' o 'índice' que "
+            "involucre múltiples categorías (tipos de nómina, conceptos de ausentismo, "
+            "organizaciones, departamentos, etc.), tu SQL debe devolver TODAS las "
+            "categorías agrupadas — no una sola. NO uses LIMIT 1, NO filtres a un "
+            "tipo específico, NO uses DISTINCT ON sin razón. Si el usuario dice "
+            "'resumen de nómina', debe incluir TODOS los payrolls (semanal, quincenal, "
+            "directivos, gerencial, obreros, etc.), no solo uno. El total global debe "
+            "ser la SUMA de todo lo desglosado, NUNCA inferior a una categoría "
+            "individual (si eso pasa, el SQL está mal). Aplicá este 'sanity check' "
+            "mentalmente antes de entregar: 'el total que digo, ¿es la suma real de "
+            "mi desglose?' Si no cuadra, el SQL está mal — regenéralo.\n\n"
             f"{datetime_ctx}\n\n"
             f"{VIEWS_CATALOG}\n\n"
             "INSTRUCCIONES:\n"
@@ -692,11 +774,17 @@ async def process_with_sql_direct(
         generated_sql = sql_response.content.strip()
     except Exception as exc:
         logger.warning("SQL Direct: LLM error generating SQL: %s", exc)
+        _write_audit(message=message, status="llm_gen_error", error_detail=str(exc))
         return None
 
     # Check if LLM said it can't generate SQL
     if "NO_SQL" in generated_sql or not generated_sql.upper().startswith("SELECT"):
         logger.info("SQL Direct: LLM declined (NO_SQL or non-SELECT)")
+        _write_audit(
+            message=message,
+            sql_generated=generated_sql[:500],
+            status="llm_declined",
+        )
         return None
 
     # Clean up any markdown formatting the LLM might have added
@@ -706,6 +794,12 @@ async def process_with_sql_direct(
     is_valid, validated_sql = _validate_sql(generated_sql)
     if not is_valid:
         logger.warning("SQL Direct: validation failed: %s | SQL: %s", validated_sql, generated_sql[:200])
+        _write_audit(
+            message=message,
+            sql_generated=generated_sql,
+            status="validation_failed",
+            error_detail=validated_sql,  # contiene el mensaje de error
+        )
         return None
 
     # Step 2.5: Enforcement de filtro de orgs reales (14/Abr/2026)
@@ -714,6 +808,7 @@ async def process_with_sql_direct(
     # tabla financiera (c_invoice, c_payment, c_order, fact_acct) sin
     # filtrar por org, inyectamos el filtro aquí para garantizar que
     # los totales no sean contaminados por orgs demo de iDempiere.
+    sql_pre_enforce = validated_sql
     validated_sql, enforced = _enforce_org_filter(validated_sql)
     if enforced:
         logger.info(
@@ -727,10 +822,27 @@ async def process_with_sql_direct(
         cols, rows, elapsed_ms = _execute_sql(validated_sql)
     except Exception as exc:
         logger.warning("SQL Direct: execution error: %s | SQL: %s", exc, validated_sql[:200])
+        _write_audit(
+            message=message,
+            sql_generated=sql_pre_enforce,
+            sql_final=validated_sql,
+            org_filter_injected=enforced,
+            status="execute_error",
+            error_detail=str(exc),
+        )
         return None
 
     if not rows and not cols:
         logger.info("SQL Direct: empty result")
+        _write_audit(
+            message=message,
+            sql_generated=sql_pre_enforce,
+            sql_final=validated_sql,
+            org_filter_injected=enforced,
+            rows_returned=0,
+            elapsed_ms=int(elapsed_ms),
+            status="empty_result",
+        )
         # Don't return None — return an explicit "no data" response
         # so the user knows the query ran but found nothing
         return {
@@ -791,6 +903,18 @@ async def process_with_sql_direct(
         len(rows), elapsed_ms, validated_sql[:100],
     )
 
+    # Registrar en audit log para diagnóstico posterior
+    audit_id = _write_audit(
+        message=message,
+        sql_generated=sql_pre_enforce,
+        sql_final=validated_sql,
+        org_filter_injected=enforced,
+        rows_returned=len(rows),
+        elapsed_ms=int(elapsed_ms),
+        format_failed=format_failed,
+        status="success",
+    )
+
     return {
         "response": final_response,
         "agent_used": "sql_direct",
@@ -801,5 +925,6 @@ async def process_with_sql_direct(
             "classification": "sql_direct",
             "has_data": True,
             "format_failed": format_failed,
+            "audit_id": audit_id,
         },
     }
