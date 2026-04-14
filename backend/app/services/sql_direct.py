@@ -387,39 +387,62 @@ WHERE i.issotrx='Y' AND i.docstatus IN ('CO','CL') AND i.isactive='Y'
 GROUP BY au.name ORDER BY venta_neta DESC
 LIMIT 10
 
--- Resumen de procesos de nómina por tipo (desglose COMPLETO por hr_payroll):
--- OJO: el total general = SUMA de todos los tipos. NO filtrar a un solo tipo.
+-- Resumen de procesos de nómina por tipo (desglose COMPLETO + TOTAL en una query):
+-- OJO: NO calcules el total sumando en tu cabeza al formatear — el SQL incluye
+-- la fila TOTAL GENERAL vía UNION ALL para que el número sea exacto.
 -- IMPORTANTE: hr_process usa `dateacct`, NO `hrdate`. Filtramos por m.validfrom
--- (en hr_movement) que es más directo y no requiere fechar el proceso.
-SELECT pr.name AS tipo_nomina,
-       COUNT(DISTINCT p.hr_process_id) AS procesos,
-       COUNT(DISTINCT m.c_bpartner_id) AS empleados,
-       COALESCE(SUM(m.amount), 0) AS total_bs
-FROM adempiere.hr_movement m
-JOIN adempiere.hr_process p ON m.hr_process_id = p.hr_process_id
-JOIN adempiere.hr_payroll pr ON p.hr_payroll_id = pr.hr_payroll_id
-JOIN adempiere.ad_org o ON m.ad_org_id = o.ad_org_id
-WHERE m.validfrom >= '2026-03-01' AND m.validfrom < '2026-04-01'
-  AND o.name ILIKE '%INPROA SANTONI%'
-GROUP BY pr.name
-ORDER BY total_bs DESC
+-- (en hr_movement) que es más directo.
+WITH desglose AS (
+    SELECT pr.name AS tipo_nomina,
+           COUNT(DISTINCT p.hr_process_id) AS procesos,
+           COUNT(DISTINCT m.c_bpartner_id) AS empleados,
+           COALESCE(SUM(m.amount), 0) AS total_bs
+    FROM adempiere.hr_movement m
+    JOIN adempiere.hr_process p ON m.hr_process_id = p.hr_process_id
+    JOIN adempiere.hr_payroll pr ON p.hr_payroll_id = pr.hr_payroll_id
+    JOIN adempiere.ad_org o ON m.ad_org_id = o.ad_org_id
+    WHERE m.validfrom >= '2026-03-01' AND m.validfrom < '2026-04-01'
+      AND o.name ILIKE '%INPROA SANTONI%'
+    GROUP BY pr.name
+)
+SELECT tipo_nomina, procesos, empleados, total_bs FROM desglose
+UNION ALL
+SELECT 'TOTAL GENERAL',
+       (SELECT SUM(procesos) FROM desglose),
+       (SELECT SUM(empleados) FROM desglose),
+       (SELECT SUM(total_bs) FROM desglose)
+ORDER BY (tipo_nomina = 'TOTAL GENERAL'), total_bs DESC
 LIMIT 500
 
 -- Ausentismo por concepto en un período (AGROINPROA marzo 2026):
-SELECT c.name AS concepto,
-       COUNT(DISTINCT m.c_bpartner_id) AS empleados_afectados,
-       COUNT(*) AS ocurrencias,
-       COALESCE(SUM(m.amount), 0) AS monto_bs,
-       COALESCE(SUM(m.qty), 0) AS cantidad
-FROM adempiere.hr_movement m
-JOIN adempiere.hr_concept c ON m.hr_concept_id = c.hr_concept_id
-JOIN adempiere.ad_org o ON m.ad_org_id = o.ad_org_id
-WHERE m.validfrom >= '2026-03-01' AND m.validfrom < '2026-04-01'
-  AND o.name ILIKE '%AGROINPROA%'
-  AND (c.name ILIKE '%Falta%' OR c.name ILIKE '%Permiso%'
-       OR c.name ILIKE '%Inasistencia%' OR c.name ILIKE '%Reposo%')
-GROUP BY c.name
-ORDER BY monto_bs DESC
+-- USAR FILTROS GENÉRICOS: %Permiso% captura "Dias de Asignacion de Permiso",
+-- "Horas de Permiso No Remunerado", "Monto por Permiso Remunerado", etc.
+-- Si usás sólo "%Permiso No Remunerado%" perdés las asignaciones de permiso.
+-- Incluye TOTAL GENERAL vía UNION ALL para evitar que Claude sume mal.
+WITH desglose AS (
+    SELECT c.name AS concepto,
+           COUNT(DISTINCT m.c_bpartner_id) AS empleados_afectados,
+           COUNT(*) AS ocurrencias,
+           COALESCE(SUM(m.amount), 0) AS monto_bs,
+           COALESCE(SUM(m.qty), 0) AS cantidad
+    FROM adempiere.hr_movement m
+    JOIN adempiere.hr_concept c ON m.hr_concept_id = c.hr_concept_id
+    JOIN adempiere.ad_org o ON m.ad_org_id = o.ad_org_id
+    WHERE m.validfrom >= '2026-03-01' AND m.validfrom < '2026-04-01'
+      AND o.name ILIKE '%AGROINPROA%'
+      AND (c.name ILIKE '%Falta%' OR c.name ILIKE '%Permiso%'
+           OR c.name ILIKE '%Inasistencia%' OR c.name ILIKE '%Reposo%'
+           OR c.name ILIKE '%Ausencia%' OR c.name ILIKE '%Atraso%')
+    GROUP BY c.name
+)
+SELECT concepto, empleados_afectados, ocurrencias, monto_bs, cantidad FROM desglose
+UNION ALL
+SELECT 'TOTAL GENERAL',
+       NULL,
+       (SELECT SUM(ocurrencias) FROM desglose),
+       (SELECT SUM(monto_bs) FROM desglose),
+       (SELECT SUM(cantidad) FROM desglose)
+ORDER BY (concepto = 'TOTAL GENERAL'), monto_bs DESC
 LIMIT 500
 
 -- Nombres de trabajadores con un concepto específico (ej: Faltas y Atrasos):
@@ -872,6 +895,25 @@ async def process_with_sql_direct(
             "Si generás SQL con `p.hrdate` va a fallar con 'column does not exist'.\n"
             "Antes de responder un SQL con hr_process, verificá mentalmente: ¿estoy\n"
             "usando `dateacct` (correcto) y no `hrdate` (inexistente en Santoni)?\n\n"
+            "🎯 REGLA CRÍTICA #7 — NO HAGAS ARITMÉTICA MENTAL (es fuente de errores):\n"
+            "Los LLMs cometemos errores sistemáticos al sumar muchos números grandes\n"
+            "en texto. Ejemplo real: 28 valores de millones de bolívares → sumé mal\n"
+            "por ~11M (277M en lugar de 266M reales).\n"
+            "POR ESTO, NUNCA calcules 'Total General' sumando mentalmente las filas\n"
+            "del desglose al formatear la respuesta. En su lugar:\n"
+            "  (a) Si generaste un SQL con GROUP BY y querés un total también, usá\n"
+            "      UNION ALL para que el SQL devuelva ambas cosas:\n"
+            "        WITH desglose AS (SELECT ... GROUP BY categoria)\n"
+            "        SELECT categoria, valor FROM desglose\n"
+            "        UNION ALL\n"
+            "        SELECT 'TOTAL GENERAL', SUM(valor) FROM desglose\n"
+            "        ORDER BY (categoria = 'TOTAL GENERAL'), valor DESC\n"
+            "  (b) O en la respuesta, si el SQL no devolvió total explícito, NO lo\n"
+            "      muestres. Di 'para ver el total general, regenerame con total'.\n"
+            "  (c) Solo muestres totales que VIENEN TEXTUALMENTE del SQL. Los números\n"
+            "      de las filas individuales SIEMPRE los mostrás exactos como vienen.\n"
+            "Sanity check: ¿el 'total' que voy a mostrar está en los datos que recibí,\n"
+            "o lo estoy sumando yo? Si es lo segundo — NO LO HAGAS.\n\n"
             f"{datetime_ctx}\n\n"
             f"{VIEWS_CATALOG}\n\n"
             "INSTRUCCIONES:\n"
