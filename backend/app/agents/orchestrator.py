@@ -268,6 +268,64 @@ _FOLLOWUP_PATTERNS = [
 ]
 
 
+# ──────────────────────────────────────────────────────────────────
+# SQL Direct gate — decide si una pregunta entra a SQL Directo o se
+# manda al flujo de agentes clásicos. Debe correr ANTES del routing
+# por keywords. Si retorna True, intentar SQL Directo primero.
+# ──────────────────────────────────────────────────────────────────
+
+# Keywords de dominio (indicadores de que es pregunta de datos) derivados
+# de los _KEYWORD_RULES. Se computan una sola vez al importar el módulo.
+# Mantener este set sincronizado con _KEYWORD_RULES era frágil antes
+# (lista hardcoded de ~11 fragmentos). Ahora se deriva automáticamente.
+_DOMAIN_KEYWORD_FRAGMENTS: frozenset[str] = frozenset({
+    # Fragmentos cortos (3-6 chars) que son prefijo/substring de los
+    # keywords más comunes. Usamos fragmentos en vez de keywords completos
+    # para atrapar variantes: "cuánt" matchea "cuántos"/"cuántas"/"cuánto".
+    "cuánt", "cuant", "total", "saldo", "emplea", "venta", "vended",
+    "compr", "produc", "factur", "cobr", "banco", "nomina", "nómina",
+    "empaque", "inventa", "stock", "deuda", "vencid", "pendient",
+    "arroz", "maiz", "maíz", "productor", "proveedor", "cliente",
+    "cumpl", "vacacion", "sueldo", "salario", "pago", "movimiento",
+})
+
+
+def _is_greeting(msg_lower: str) -> bool:
+    """True si el mensaje parece un saludo o pregunta general (no de datos)."""
+    return any(p in msg_lower for p in _GENERAL_PATTERNS) and len(msg_lower) < 60
+
+
+def _is_short_followup(msg_lower: str) -> bool:
+    """True si el mensaje es un follow-up corto sin keyword de dominio.
+
+    Estos follow-ups ("sí", "ok", "gracias", "más detalle") necesitan el
+    contexto del agente anterior y no deben ir a SQL Directo (que los
+    interpretaría como preguntas nuevas sin contexto).
+
+    Un mensaje se considera follow-up corto si:
+      - tiene menos de 25 caracteres, Y
+      - NO contiene ningún fragmento de keyword de dominio
+    """
+    if len(msg_lower) >= 25:
+        return False
+    return not any(frag in msg_lower for frag in _DOMAIN_KEYWORD_FRAGMENTS)
+
+
+def should_try_sql_direct(message: str) -> bool:
+    """Decide si vale la pena invocar SQL Directo para este mensaje.
+
+    Retorna False para saludos, chistes, y follow-ups muy cortos sin
+    keywords de dominio. En esos casos el flujo va directo al handler
+    general (saludos) o hereda el last_agent (follow-ups).
+    """
+    msg_lower = message.lower().strip()
+    if _is_greeting(msg_lower):
+        return False
+    if _is_short_followup(msg_lower):
+        return False
+    return True
+
+
 def classify_by_keywords(
     message: str,
     allowed_departments: list[str],
@@ -558,6 +616,56 @@ class Orchestrator:
             "compras_productores": ComprasProductoresAgent(),
         }
 
+    async def _try_sql_direct(
+        self,
+        message: str,
+        user: User,
+        history: list[tuple[str, str]] | None,
+    ) -> dict | None:
+        """Intenta responder con SQL Directo (Claude en modo híbrido).
+
+        Gate único para process() y stream() — antes había duplicación literal
+        en ambos métodos que se desincronizaba silenciosamente.
+
+        Retorna:
+          - dict con `response`, `metadata`, `confidence_score` si tuvo éxito
+          - None si no aplica (saludo/follow-up corto), si el LLM declinó,
+            si la validación SQL falló, o si hubo error de ejecución.
+            El caller debe caer al flujo de agentes clásicos en ese caso.
+        """
+        if not should_try_sql_direct(message):
+            return None
+
+        try:
+            from app.services.sql_direct import process_with_sql_direct
+            sql_result = await process_with_sql_direct(
+                message=message,
+                history=history,
+                org_ids=user.org_ids,
+            )
+        except Exception as exc:
+            logger.warning("SQL Direct failed, falling back to agents: %s", exc)
+            return None
+
+        if sql_result is None:
+            return None
+
+        logger.info(
+            "SQL Direct handled: '%s' → %d rows",
+            message[:60],
+            sql_result.get("metadata", {}).get("rows_returned", 0),
+        )
+        # Enriquece con confidence score (antes solo process() lo hacía,
+        # stream() lo descartaba silenciosamente)
+        sql_result["confidence_score"] = 1.0
+        sql_result["score_breakdown"] = {
+            "routing": 1.0,
+            "data": 1.0 if sql_result.get("metadata", {}).get("has_data") else 0.2,
+            "overall": 1.0,
+            "match_type": "sql_direct",
+        }
+        return sql_result
+
     async def classify(
         self, message: str, allowed_departments: list[str], last_agent: str | None = None,
     ) -> str:
@@ -579,42 +687,10 @@ class Orchestrator:
             return await self._handle_document(message, document, history)
 
         # ── SQL DIRECT: intenta responder con SQL generado por el LLM ──
-        # Esto BYPASS el routing por keywords para preguntas de datos.
-        # Si funciona, retorna directo. Si falla, cae al flujo normal.
-        # Solo para preguntas que "parecen datos" (no saludos, no follow-ups
-        # muy cortos que necesitan contexto del agente anterior).
-        msg_lower = message.lower().strip()
-        is_greeting = any(p in msg_lower for p in _GENERAL_PATTERNS) and len(msg_lower) < 60
-        is_short_followup = len(msg_lower) < 25 and not any(
-            c in msg_lower for c in ["cuánt", "cuant", "total", "saldo", "emplea", "venta",
-                                      "compr", "produc", "factur", "cobr", "banco"]
-        )
-
-        if not is_greeting and not is_short_followup:
-            try:
-                from app.services.sql_direct import process_with_sql_direct
-                sql_result = await process_with_sql_direct(
-                    message=message,
-                    history=history,
-                    org_ids=user.org_ids,
-                )
-                if sql_result is not None:
-                    logger.info(
-                        "SQL Direct handled: '%s' → %d rows",
-                        message[:60],
-                        sql_result.get("metadata", {}).get("rows_returned", 0),
-                    )
-                    # Add confidence score
-                    sql_result["confidence_score"] = 1.0
-                    sql_result["score_breakdown"] = {
-                        "routing": 1.0,
-                        "data": 1.0 if sql_result.get("metadata", {}).get("has_data") else 0.2,
-                        "overall": 1.0,
-                        "match_type": "sql_direct",
-                    }
-                    return sql_result
-            except Exception as exc:
-                logger.warning("SQL Direct failed, falling back to agents: %s", exc)
+        # Si aplica y tiene éxito, retorna directo. Si no, cae al flujo normal.
+        sql_result = await self._try_sql_direct(message, user, history)
+        if sql_result is not None:
+            return sql_result
 
         # ── FLUJO NORMAL: routing por keywords → agente especializado ──
         allowed = user.allowed_departments
@@ -705,31 +781,13 @@ class Orchestrator:
         """Stream response tokens via the appropriate agent."""
 
         # ── SQL DIRECT: intenta responder con SQL generado por el LLM ──
-        msg_lower = message.lower().strip()
-        is_greeting = any(p in msg_lower for p in _GENERAL_PATTERNS) and len(msg_lower) < 60
-        is_short_followup = len(msg_lower) < 25 and not any(
-            c in msg_lower for c in ["cuánt", "cuant", "total", "saldo", "emplea", "venta",
-                                      "compr", "produc", "factur", "cobr", "banco"]
-        )
+        # Usa el mismo helper que process() para garantizar paridad total
+        # (pre-checks, score, logging) entre ambos paths.
+        sql_result = await self._try_sql_direct(message, user, history)
+        if sql_result is not None:
+            yield sql_result["response"]
+            return
 
-        if not is_greeting and not is_short_followup:
-            try:
-                from app.services.sql_direct import process_with_sql_direct
-                sql_result = await process_with_sql_direct(
-                    message=message,
-                    history=history,
-                    org_ids=user.org_ids,
-                )
-                if sql_result is not None:
-                    logger.info(
-                        "SQL Direct (stream) handled: '%s' → %d rows",
-                        message[:60],
-                        sql_result.get("metadata", {}).get("rows_returned", 0),
-                    )
-                    yield sql_result["response"]
-                    return
-            except Exception as exc:
-                logger.warning("SQL Direct (stream) failed, falling back: %s", exc)
 
         # ── FLUJO NORMAL: routing por keywords → agente streaming ──
         allowed = user.allowed_departments

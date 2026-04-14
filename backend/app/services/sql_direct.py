@@ -193,7 +193,10 @@ movementtype: V+=Recepción, C-=Despacho, M+/M-=Mov. interno, P+/P-=Producción
 1. SOLO usar SELECT (nunca INSERT, UPDATE, DELETE, DROP, ALTER, TRUNCATE)
 2. Todas las tablas deben tener prefijo 'adempiere.' (ej: adempiere.lve_empleadosactivos)
 3. Limitar a 500 filas con LIMIT 500
-4. Para fechas usar formato 'YYYY-MM-DD'
+4. Para fechas SIEMPRE usar rangos `dateXX >= 'YYYY-MM-DD' AND dateXX < 'YYYY-MM-DD'`.
+   NO usar `EXTRACT(YEAR FROM ...)` ni `EXTRACT(MONTH FROM ...)` en filtros de fecha
+   (excepto para cumpleaños en `birthday`) porque rompe el uso de índices y causa
+   timeouts de > 120s. Ejemplo OK: `dateinvoiced >= '2026-02-01' AND dateinvoiced < '2026-03-01'`.
 5. Para ventas SIEMPRE filtrar: issotrx='Y', docstatus IN ('CO','CL'), isactive='Y'
 6. Para compras a proveedores: issotrx='N' en c_invoice
 7. Para compras a productores: usar c_order (guías), NO c_invoice
@@ -201,6 +204,22 @@ movementtype: V+=Recepción, C-=Despacho, M+/M-=Mov. interno, P+/P-=Producción
 9. Usar totallines (sin IVA) para montos de ventas, grandtotal (con IVA) para compras
 10. Si no sabes qué columna tiene una tabla, haz tu mejor intento con las columnas del catálogo
 11. SIEMPRE intenta generar SQL. Solo responde NO_SQL si la pregunta no tiene nada que ver con datos (ej: "hola", "gracias", chistes). Para cualquier pregunta sobre datos empresariales, genera el SQL.
+12. **FILTRO DE ORGS REALES DE SANTONI (crítico para USD):** iDempiere tiene organizaciones
+    demo de fábrica (HQ, Store Central, Furniture, Store East/North/South/West, Ocean
+    Equipment, Fertilizer) que tienen facturas dummy en USD que contaminan los totales.
+    Cuando el usuario NO especifique una organización concreta Y estés sumando/contando
+    facturas, pagos, saldos u otros montos financieros, **SIEMPRE agregá este filtro**:
+    ```
+    AND {alias}.ad_org_id IN (
+      SELECT ad_org_id FROM adempiere.ad_org
+      WHERE name ILIKE '%INPROA SANTONI%' OR name ILIKE '%InproMaiz%'
+         OR name ILIKE '%AGROINPROA%' OR name ILIKE '%AGROPECUARIA R.R.%'
+         OR name ILIKE '%AGA AGRICOLA%' OR name ILIKE '%INVERSIONES AGA%'
+         OR name ILIKE '%Santoni Service%'
+    )
+    ```
+    Esto NO aplica para `lve_empleadosactivos` (que ya filtra internamente) ni para
+    queries de RRHH/cumpleaños. Sí aplica para c_invoice, c_payment, c_order, fact_acct.
 
 ## EJEMPLOS de queries comunes:
 
@@ -210,7 +229,7 @@ FROM adempiere.lve_empleadosactivos
 WHERE ad_org_id = (SELECT ad_org_id FROM adempiere.ad_org WHERE name ILIKE '%InproMaiz%')
 LIMIT 500
 
--- Facturas de venta por moneda y período:
+-- Facturas de venta por moneda y período (CON filtro de orgs reales, imprescindible para USD):
 SELECT COUNT(DISTINCT i.c_invoice_id) AS facturas,
        COALESCE(SUM(i.totallines), 0) AS total
 FROM adempiere.c_invoice i
@@ -219,6 +238,13 @@ WHERE i.issotrx = 'Y' AND i.docstatus IN ('CO','CL') AND i.isactive = 'Y'
   AND dt.docbasetype = 'ARI'
   AND i.c_currency_id IN (100,1000000,1000003,1000006,1000008,1000009,1000011,1000013,1000017)
   AND i.dateinvoiced >= '2026-03-01' AND i.dateinvoiced < '2026-04-01'
+  AND i.ad_org_id IN (
+    SELECT ad_org_id FROM adempiere.ad_org
+    WHERE name ILIKE '%INPROA SANTONI%' OR name ILIKE '%InproMaiz%'
+       OR name ILIKE '%AGROINPROA%' OR name ILIKE '%AGROPECUARIA R.R.%'
+       OR name ILIKE '%AGA AGRICOLA%' OR name ILIKE '%INVERSIONES AGA%'
+       OR name ILIKE '%Santoni Service%'
+  )
 LIMIT 500
 
 -- Cumpleañeros de un mes en una org:
@@ -427,13 +453,19 @@ async def process_with_sql_direct(
         )),
     ]
 
-    # Add recent history for context
+    # Add recent history for context.
+    # 14/Abr/2026: ampliamos el truncado de 200 → 1500 chars para respuestas
+    # del asistente. 200 chars cortaban tablas markdown a mitad de header y el
+    # LLM perdía el contexto de qué columnas/period había en la respuesta
+    # anterior. 1500 chars es suficiente para header + 10-15 filas de tabla.
+    # El mensaje del usuario se limita a 1000 chars para evitar prompts
+    # gigantes cuando alguien pega un email/doc entero.
     if history:
         for role, content in history[-6:]:
             if role == "user":
-                messages.append(HumanMessage(content=content))
+                messages.append(HumanMessage(content=content[:1000]))
             elif role == "assistant":
-                messages.append(AIMessage(content=content[:200]))
+                messages.append(AIMessage(content=content[:1500]))
 
     messages.append(HumanMessage(content=f"Genera el SQL para: {message}"))
 
@@ -507,13 +539,22 @@ async def process_with_sql_direct(
         )),
     ]
 
+    format_failed = False
     try:
         format_response = await llm.ainvoke(format_messages)
         final_response = format_response.content
     except Exception as exc:
-        logger.warning("SQL Direct: LLM format error: %s", exc)
-        # Fallback: return raw markdown table
-        final_response = f"**Resultado de la consulta** ({len(rows)} filas):\n\n{results_md}"
+        # 14/Abr/2026: antes esto era silencioso (usuario veía tabla cruda
+        # sin saber por qué). Ahora avisamos explícitamente para que el
+        # usuario sepa que los datos son reales pero el formateo falló
+        # (posiblemente por timeout de Claude o error del proxy).
+        logger.error("SQL Direct: LLM format error (usando fallback markdown): %s", exc)
+        format_failed = True
+        final_response = (
+            "⚠️ *(El formateo automático de la respuesta falló — "
+            "mostrando datos crudos. Los números SÍ son correctos.)*\n\n"
+            f"**Resultado de la consulta** ({len(rows)} filas):\n\n{results_md}"
+        )
 
     logger.info(
         "SQL Direct: success. %d rows in %.0fms. SQL: %s",
@@ -529,5 +570,6 @@ async def process_with_sql_direct(
             "elapsed_ms": elapsed_ms,
             "classification": "sql_direct",
             "has_data": True,
+            "format_failed": format_failed,
         },
     }

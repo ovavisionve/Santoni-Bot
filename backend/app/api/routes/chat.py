@@ -97,7 +97,16 @@ def _get_history(db: Session, conversation_id: int, limit: int = 40) -> list[tup
 
 
 def _get_last_agent(db: Session, conversation_id: int) -> str | None:
-    """Get the agent used in the last bot response for context continuity."""
+    """Get the agent used in the last bot response for context continuity.
+
+    IMPORTANTE (14/Abr/2026): excluimos "sql_direct" del historial porque
+    SQL Directo NO es un agente — es un camino de ejecución paralelo.
+    Si una pregunta fue respondida por SQL Directo y el usuario hace un
+    follow-up ("dame en dólares"), queremos heredar el agente CLÁSICO
+    anterior (ventas, finanzas, etc.) que sí sabe interpretar el contexto
+    de moneda. Si heredáramos "sql_direct", el follow-up iría a
+    clasificación general y perdería el dominio real de la pregunta.
+    """
     last_bot_msg = (
         db.query(Message)
         .filter(
@@ -105,6 +114,7 @@ def _get_last_agent(db: Session, conversation_id: int) -> str | None:
             Message.role == MessageRole.ASSISTANT,
             Message.agent_used.isnot(None),
             Message.agent_used != "general",
+            Message.agent_used != "sql_direct",
         )
         .order_by(Message.created_at.desc())
         .first()
