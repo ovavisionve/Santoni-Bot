@@ -237,15 +237,16 @@ Se crearon cuestionarios para que cada departamento valide las respuestas del bo
 
 ## Estado Actual del Proyecto (Abril 2026)
 
-### Completado (~92% del alcance Fase 1):
+### Completado (~95% del alcance Fase 1):
 - Backend core completo (FastAPI, auth, RBAC, API endpoints)
 - 7 agentes IA + orchestrator funcionando con iDempiere real
 - Frontend completo (chat, login, admin panel, exportaciones)
 - Docker/deploy configurado y funcionando en servidor
-- 150+ tests automatizados + framework de golden tests contra iDempiere
+- 150+ tests automatizados + **41 golden tests contra iDempiere (100% PASS)**
 - CI/CD con GitHub Actions
 - Documentación completa + verificación de schema contra iDempiere real
 - Seguridad hardened
+- **RRHH migrado a view oficial `lve_empleadosactivos`** (números coinciden con reportes oficiales)
 
 ### Trabajo reciente (Feb-Abr 2026):
 - **Datos históricos locales (10/Mar 2026)**: Sistema para cachear datos de iDempiere pre-marzo 2026 en DB local
@@ -314,9 +315,13 @@ Se crearon cuestionarios para que cada departamento valide las respuestas del bo
 
 ### Pendiente para cierre Fase 1:
 - ~~Verificación SQL ground truth vs bot~~ ✅ COMPLETADO (09/Abr)
-- ~~Tests E2E~~ ✅ **CUBIERTO POR GOLDEN TESTS (33 casos, 100% PASS)**
+- ~~Tests E2E~~ ✅ **CUBIERTO POR GOLDEN TESTS (41 casos, 100% PASS)**
+- ~~Fase 1 RRHH (migrar a lve_empleadosactivos)~~ ✅ COMPLETADO (10/Abr)
+- ~~Fase 2 Ventas (migrar a lve_invoice)~~ ❌ **CANCELADA** — c_invoice raw ya es correcto
 - Filtro de orgs demo en queries USD (datos demo contaminan totales USD)
-- Script de migración datos demo → datos reales
+- Migrar Finanzas a views LVE (`lve_disponibilidadbancaria`, `lve_saldosclientes`, `lve_saldosproveedor`)
+- Migrar Compras a views LVE (`lve_saldosproductor`, `lve_inventario_*`)
+- Migrar Contabilidad a views LVE (`lve_trialbalance`, `lve_fact_acct`)
 - Sentry (monitoreo de errores)
 - WhatsApp (Fase 2, post-lanzamiento)
 
@@ -435,76 +440,94 @@ relaciones FK contra el doc de Santoni. Hallazgos importantes:
 
 ---
 
-## Framework de Golden Tests vs iDempiere (08/Abr/2026)
+## Framework de Golden Tests vs iDempiere (08-10/Abr/2026)
 
 Ubicación: `backend/tests/golden/`. Ejecuta preguntas contra el bot vía HTTP y compara con SQL
-ground truth ejecutado directamente contra iDempiere. Tres componentes:
+ground truth ejecutado directamente contra iDempiere.
 
-1. **`cases.yaml`**: Casos de prueba YAML con pregunta, SQL ground truth, comparador,
-   tolerancia. Editable por humanos.
+### Estado actual: **41/41 PASS = 100%** (10/Abr/2026)
+
+| Tipo de validación | Casos | Qué verifica |
+|---|---:|---|
+| `valor_exacto` | 5 | Un número escalar del bot coincide con SQL ±tolerancia |
+| `conteo_exacto` | 6 | Un conteo entero exacto (facturas, empleados, kg) |
+| `tabla_ordenada` | 3 | Top N filas coinciden en etiqueta + valor + posición |
+| `agente_esperado` | 27 | El orchestrator rutea al agente correcto |
+| **Total** | **41** | **7/7 agentes cubiertos** |
+
+### Cobertura de funciones build_* verificadas con datos numéricos: **11/31 (35%)**
+
+Funciones con datos verificados contra iDempiere:
+- `build_sales_summary` (ventas totales, facturas, NC, vendedores)
+- `build_top_clients` (top 10 clientes VES)
+- `build_collection_summary` (cobranza VES)
+- `build_employee_summary` (empleados activos — usa `lve_empleadosactivos`)
+- `build_birthday_list` (cumpleañeros — usa `lve_empleadosactivos`)
+- `build_supply_purchases` (compras insumos totales)
+- `build_producer_purchases` (guías de arroz paddy)
+- `build_production_summary` (recepciones V+ de m_inout)
+- `build_accounting_summary` (asientos contables)
+- `build_financial_summary` (saldos bancarios VES)
+- `build_inventory_stock` (routing verificado)
+
+### Componentes
+
+1. **`cases.yaml`**: 41 casos con pregunta, SQL ground truth, comparador, tolerancia. Cada caso
+   de datos documenta la función del bot que dispara, el campo que verifica, y la correspondencia
+   exacta con el código de `idempiere_queries.py`.
 2. **`runner.py`**: Cliente HTTP al bot + psycopg2 a iDempiere + parser de tablas markdown +
-   parser de números venezolanos (maneja tanto `1.234.567,89` como `1,234,567.89`) + 3
-   comparadores (`valor_exacto`, `conteo_exacto`, `tabla_ordenada`) + reporte PASS/FAIL con
-   timings y top-3 candidatos cercanos en fallos.
-3. **Filtro de años**: El parser ignora números que son años 2020-2030 (antes agarraba "2,026"
-   como candidato en cada respuesta).
+   parser de números venezolanos (maneja `1.234.567,89` y `1,234,567.89` y `1.730` = 1730) +
+   4 comparadores (`valor_exacto`, `conteo_exacto`, `tabla_ordenada`, `agente_esperado`) +
+   reporte PASS/FAIL con timings y top-3 candidatos cercanos en fallos.
+3. **Flags de estabilidad**: `--delay N` (segundos entre casos), `--retry-timeout` (reintenta
+   si timeout), `--only <substring>` (correr solo un caso), `-v` (verbose).
 
 ### Ejecución
 ```bash
-cd /opt/santonibot && git pull origin claude/santoni-fresh-start-XlnT2
+cd /opt/santonibot
 docker compose exec \
   -e BOT_USERNAME=admin \
   -e BOT_PASSWORD='SantoniAdmin2026!' \
   -e IDEMPIERE_PASSWORD='ova2026*' \
-  backend python -m tests.golden.runner
+  backend python -m tests.golden.runner --delay 2
 
 # Solo un caso:
-... backend python -m tests.golden.runner --only top_10_vendedores_inproa_usd_feb_2026
+... backend python -m tests.golden.runner --only top_10_vendedores
 # Verbose (ver respuestas completas del bot):
 ... backend python -m tests.golden.runner -v
 ```
 
-### Primer run (08/Abr/2026)
-Resultado después de iteraciones de fixes en el parser y re-alineación de casos al modelo real
-del bot:
+### ⚠️ LECCIÓN CRÍTICA: golden tests auto-referenciales (10/Abr/2026)
 
-| Caso | Resultado | Nota |
-|------|-----------|------|
-| `ventas_total_neto_ves_feb_2026` | FAIL → PASS tras fix parser | Bot escribía `2,646,020,028,92` (todas comas); parser lo leía ×100 |
-| `top_10_vendedores_inproa_usd_feb_2026` | PASS | 10/10 filas coinciden (etiqueta + valor + posición) |
-| `facturas_venta_feb_2026` | Reformulado | "facturas de venta" era ambiguo (bot = solo Bs, SQL = total); caso parte por moneda |
-| `empleados_activos_inproa_santoni` | PASS | Match exacto (457) |
-| `compras_arroz_paddy_2026_total_kg` | FAIL → Fixed SQL | Ground truth usaba `c_invoice` pero el bot usa `c_order` (guías, no facturas) |
+**Los golden tests escritos leyendo el código del bot son PELIGROSOS.** Si el bot calcula mal
+y mi SQL copia esa misma lógica incorrecta, ambos coinciden mientras los dos están equivocados
+contra la realidad de iDempiere.
 
-### ⚠️ TAREA PAUSADA (prioridad alta)
-**Verificación sistemática de estructuras SQL del ground truth vs el bot.**
+Ejemplo real: `empleados_activos_inproa_santoni` daba 457 (bot) vs 457 (mi SQL) = PASS. Pero
+el reporte oficial de Santoni (view `lve_empleadosactivos`) daba **258**. El test pasaba mientras
+el bot inflaba 77% el número real. Detectado al comparar con logs reales de la supervisora esalas.
 
-En el primer intento, los 5 casos seed se escribieron **por intuición sin leer la implementación
-real del bot**. Eso es exactamente el anti-patrón que el framework debe cazar:
-- Si los tests no espejan el código real, los PASS son por casualidad
-- El caso de `compras_arroz_paddy` destapó que `c_order` ≠ `c_invoice` en Santoni
-- Probablemente otros casos tienen desalineación similar
+**Corrección del proceso (post 10/Abr/2026):**
+- Para funciones donde exista una **view LVE** (Localización Venezuela), el ground truth DEBE
+  usar esa view, NO el código del bot.
+- Si no existe view LVE, el SQL del ground truth sigue la función del bot PERO se documenta
+  como "auto-referencial — pendiente de validación contra reporte oficial de Santoni".
+- Las views LVE están catalogadas en `docs/DATOS_VERIFICACION_IDEMPIERE.md` sección 21
+  (179 views identificadas, mapeadas por dominio).
 
-**Lo que falta hacer** (continuar en próxima sesión):
-1. Para cada caso en `cases.yaml`, leer la función real del bot que se dispara:
-   - `ventas_total_neto_ves_feb_2026` → `build_sales_summary` (¿aplica filtro de moneda en totales
-     principales? ¿o solo en `por_moneda`?)
-   - `facturas_venta_feb_2026` → idem, verificar `docstatus IN (...)` y joins
-   - `empleados_activos_inproa_santoni` → `build_employee_summary` (¿usa `isactive='Y'`, alguna
-     otra condición?)
-2. Ajustar el SQL del ground truth para que sea **byte-equivalent** a la query que corre el bot
-3. Re-correr y validar que los PASS sean por alineación real, no coincidencia
-4. Documentar la correspondencia caso-a-función en comentario del YAML para futuras referencias
+### Historial de precisión
 
-**Commits pusheados en la sesión** (branch `claude/santoni-fresh-start-XlnT2`):
-- `483698a` — fix(ventas): 3 correcciones (dedup + default VES + consolidación)
-- `3c74770` — fix(ventas): clarificación org ambigua
-- `2439a96` — fix(ventas): tabla vendedores pre-formateada
-- `50d2b17` — diag: script verificar schema ventas
-- `85203a3` — fix(verificación): alinear SQL ground truth con queries del bot
-- `c710f91` — feat(qa): framework golden tests
-- `adca5a9` — fix(golden): parser filtra años, muestra top-3 + snippet
-- `128ec06` — fix(golden): parser ISO+venezolano + alinear casos al modelo real del bot
+| Run | Fecha | PASS | % |
+|---|---|---:|---:|
+| Tranche 1 baseline | 09/Abr am | 8/10 | 80% |
+| Tranche 1 cerrado | 09/Abr am | 10/10 | 100% |
+| Tranche 2 baseline | 09/Abr pm | 13/24 | 54% |
+| Tranche 2 post-parser | 09/Abr pm | 18/24 | 75% |
+| Tranche 2 post-routing | 09/Abr pm | 22/24 | 91.7% |
+| Tranche 3 baseline | 09/Abr | 30/34 | 88.2% |
+| Tranche 3 post-fixes | 09/Abr | 33/34 | 97.1% |
+| Post Fase 1 RRHH LVE | 10/Abr | 39/40 | 97.5% |
+| **Post VENT-300/400** | **10/Abr** | **41/41** | **100%** |
 
 ---
 
@@ -696,6 +719,9 @@ Checklist manual en navegador + validación automatizada de endpoints auth.
 
 ### Bugs Conocidos (verificar en cada QA para evitar regresiones)
 
+> **Registro formal completo:** `docs/BUGS_REGISTRY.md` (~1,300 líneas, 39+ tickets con
+> causa raíz, cross-agent review, y proceso obligatorio documentado).
+
 | Bug | Fix date | Verificación |
 |-----|----------|-------------|
 | docstatus='CO' excluía facturas pagadas | 11/Mar/2026 | Query con facturas pagadas → resultados |
@@ -708,7 +734,15 @@ Checklist manual en navegador + validación automatizada de endpoints auth.
 | Org ambigua ("inproa") se adivinaba | 08/Abr/2026 | Bot pide clarificación SANTONI/InproMaiz/AGROINPROA |
 | LLM reordenaba tabla de vendedores | 08/Abr/2026 | Pre-format en backend, LLM solo copia verbatim |
 | `grandtotal` incluía IVA en totales ventas | 08/Abr/2026 | Ventas usan `totallines` (sin IVA), compras sí `grandtotal` |
-| Ground truth SQL no espejaba el bot | 08/Abr/2026 | Framework golden tests expone discrepancias (en progreso) |
+| TypeError en 4 wrappers query_service (COMP-100/103/104/105) | 09/Abr/2026 | Cross-agent review cazó 3 extras |
+| "cumplen años" no matcheaba rrhh (RRHH-101) | 09/Abr/2026 | Variantes verbales en keywords |
+| "empaque" ruteaba a produccion (COMP-101) | 09/Abr/2026 | Removido de keywords produccion |
+| "Compras de maíz" → compras_insumos (AGRI-103) | 09/Abr/2026 | Plurales en compras_productores |
+| EXTRACT() en filtros impedía uso de índices (PERF-100) | 09/Abr/2026 | Rangos BETWEEN + _ALLOC_JOIN 3 años |
+| "no tengo acceso" en agente general | 09/Abr/2026 | Frase prohibida en _handle_general + _stream_general |
+| **Empleados activos 3x inflados (RRHH-200)** | **10/Abr/2026** | **Migrado a `lve_empleadosactivos`. INPROA: 258 no 457** |
+| **Cobranza respondía facturación (VENT-300)** | **10/Abr/2026** | **"cobró" con acento → keywords cobranza. Bs 12,105M no 2,646M** |
+| **"divisas" no matcheaba USD (VENT-400)** | **10/Abr/2026** | **Regex USD incluye `divisas?`. Anti-alucinación en prompt** |
 
 ---
 
