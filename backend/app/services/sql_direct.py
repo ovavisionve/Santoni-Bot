@@ -364,6 +364,93 @@ def _validate_sql(sql: str) -> tuple[bool, str]:
     return True, sql_clean
 
 
+# ─────────────────────────────────────────────────────────────────────
+# Enforcement: forzar filtro de orgs reales en queries financieras
+# ─────────────────────────────────────────────────────────────────────
+
+# Tablas donde aplica el filtro de orgs demo (tienen ad_org_id y datos
+# financieros contaminados por orgs de fábrica de iDempiere).
+_ORG_ENFORCEMENT_TABLES = {
+    "c_invoice", "c_payment", "c_order", "fact_acct",
+}
+
+# Nombres de orgs reales de Santoni (para el filtro forzado).
+# DEBE mantenerse sincronizado con _SANTONI_ORG_NAMES en
+# backend/app/services/idempiere_queries.py.
+_SANTONI_ORG_NAMES_ENFORCE = (
+    "INPROA SANTONI", "InproMaiz", "AGROINPROA",
+    "AGROPECUARIA R.R.", "AGA AGRICOLA", "INVERSIONES AGA", "Santoni Service",
+)
+
+
+def _build_santoni_org_filter(alias: str) -> str:
+    """Construye el WHERE clause para filtrar orgs reales de Santoni."""
+    names_sql = " OR ".join(
+        f"name ILIKE '%{n}%'" for n in _SANTONI_ORG_NAMES_ENFORCE
+    )
+    return (
+        f"{alias}.ad_org_id IN (SELECT ad_org_id FROM adempiere.ad_org WHERE "
+        f"{names_sql})"
+    )
+
+
+def _enforce_org_filter(sql: str) -> tuple[str, bool]:
+    """Inyecta el filtro de orgs reales cuando el SQL lo necesita pero no lo tiene.
+
+    Criterios para inyectar:
+      - El SQL toca una de las tablas financieras (_ORG_ENFORCEMENT_TABLES)
+      - Usa un alias identificable (ej. `FROM adempiere.c_invoice i`)
+      - NO tiene ya un filtro `ad_org_id IN (...)` o `ad_org_id = N`
+        (o sea, el usuario o el LLM no ya filtraron por org específica)
+
+    Returns (sql_modificado, se_inyecto_flag).
+
+    Este enforcement es necesario porque el LLM (Claude) a veces omite el
+    filtro de orgs aun con instrucciones explícitas en el system prompt —
+    hay que forzarlo en código para garantizar totales correctos.
+    """
+    sql_upper = sql.upper()
+
+    # Si el SQL ya tiene un filtro de ad_org_id, asumimos que el LLM o el
+    # usuario ya restringieron y no tocamos (evita doble-filtro que daría 0 rows)
+    if re.search(r"\bAD_ORG_ID\s*(=|IN|<>|!=)", sql_upper):
+        return sql, False
+
+    # Buscar el primer alias de una tabla enforceable.
+    # Pattern: FROM adempiere.TABLE [AS] ALIAS  (el alias es 1-2 letras típicamente)
+    alias_to_enforce: str | None = None
+    for table in _ORG_ENFORCEMENT_TABLES:
+        m = re.search(
+            rf"FROM\s+adempiere\.{table}\s+(?:AS\s+)?(\w+)\b",
+            sql,
+            re.IGNORECASE,
+        )
+        if m:
+            alias_to_enforce = m.group(1)
+            break
+
+    if not alias_to_enforce:
+        return sql, False
+
+    # Inyectar el filtro justo antes del GROUP BY / ORDER BY / LIMIT.
+    # Buscamos esos tokens y agregamos el AND antes.
+    org_filter = _build_santoni_org_filter(alias_to_enforce)
+    insertion = f" AND {org_filter}\n"
+
+    # Regex para encontrar dónde cortar: el primer GROUP BY / ORDER BY / LIMIT
+    # fuera de paréntesis. Como simplificación, buscamos la última ocurrencia
+    # de cada uno y elegimos la de posición más baja (más temprana en el SQL).
+    cut_tokens = ["GROUP BY", "ORDER BY", "LIMIT"]
+    cut_pos = len(sql)
+    for tok in cut_tokens:
+        m = re.search(rf"\b{tok}\b", sql, re.IGNORECASE)
+        if m and m.start() < cut_pos:
+            cut_pos = m.start()
+
+    modified = sql[:cut_pos].rstrip() + insertion + sql[cut_pos:]
+    return modified, True
+
+
 def _execute_sql(sql: str, timeout_seconds: int = 30) -> tuple[list[str], list[tuple], float]:
     """Execute a validated SQL query against iDempiere (read-only).
 
@@ -515,7 +602,19 @@ async def process_with_sql_direct(
         logger.warning("SQL Direct: validation failed: %s | SQL: %s", validated_sql, generated_sql[:200])
         return None
 
-    logger.info("SQL Direct: executing: %s", validated_sql[:200])
+    # Step 2.5: Enforcement de filtro de orgs reales (14/Abr/2026)
+    # El system prompt le pide a Claude que aplique este filtro, pero
+    # a veces lo omite para queries cortas. Si generó SQL contra una
+    # tabla financiera (c_invoice, c_payment, c_order, fact_acct) sin
+    # filtrar por org, inyectamos el filtro aquí para garantizar que
+    # los totales no sean contaminados por orgs demo de iDempiere.
+    validated_sql, enforced = _enforce_org_filter(validated_sql)
+    if enforced:
+        logger.info(
+            "SQL Direct: filtro de orgs reales INYECTADO (Claude no lo aplicó)"
+        )
+
+    logger.info("SQL Direct: executing: %s", validated_sql[:300])
 
     # Step 3: Execute
     try:
