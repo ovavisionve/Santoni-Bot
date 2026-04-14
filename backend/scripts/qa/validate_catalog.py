@@ -63,59 +63,96 @@ def extract_tables_from_catalog(catalog: str) -> set[str]:
     return tables
 
 
+def _extract_sql_blocks(catalog: str) -> list[str]:
+    """Extrae SOLO los bloques que son SQL real del catálogo.
+
+    Los ejemplos SQL en el catálogo están claramente marcados por una
+    sentencia SELECT al inicio y terminan con LIMIT N o con una línea
+    vacía seguida de texto en prosa.
+
+    Extraer solo esos bloques evita que la validación tire falsos
+    positivos por frases como 'hr_concept.a' que pueden aparecer en
+    comentarios, explicaciones, o frases partidas.
+    """
+    blocks = []
+    lines = catalog.split("\n")
+    current: list[str] = []
+    in_sql = False
+    for line in lines:
+        stripped = line.strip()
+        # Heurística para detectar inicio de SQL: comentario SQL (-- ...) seguido
+        # de un SELECT, o línea que empiece con SELECT o WITH
+        upper = stripped.upper()
+        starts_sql = (
+            upper.startswith("SELECT")
+            or upper.startswith("WITH ")
+            or upper == "WITH"
+        )
+        if starts_sql and not in_sql:
+            in_sql = True
+            current = [line]
+            continue
+        if in_sql:
+            current.append(line)
+            # Fin del bloque SQL: línea con LIMIT o ; al final, o línea vacía
+            if upper.rstrip(";").endswith(("LIMIT 500", "LIMIT 10", "LIMIT 20", "LIMIT 30")):
+                blocks.append("\n".join(current))
+                current = []
+                in_sql = False
+            elif stripped == "":
+                # línea vacía = fin del bloque
+                blocks.append("\n".join(current))
+                current = []
+                in_sql = False
+    if current:
+        blocks.append("\n".join(current))
+    return blocks
+
+
 def extract_columns_from_catalog(catalog: str) -> dict[str, set[str]]:
-    """Extrae columnas mencionadas como 'alias.columna' en los ejemplos SQL.
+    """Extrae columnas mencionadas dentro de los BLOQUES SQL del catálogo.
 
-    Retorna dict {tabla_alias: {columnas}} — pero como los aliases suelen ser
-    i/m/p/c/etc, no podemos mapearlos a tabla concreta sin parsear el SQL.
-    En su lugar, extrae por referencia explícita tipo 'c_invoice.issotrx' o
-    dentro de documentación.
+    Antes (buggy): buscábamos columnas en TODO el texto del catálogo,
+    incluyendo prosa. Eso generaba falsos positivos como 'hr_concept.a'
+    cuando el regex capturaba frases en lenguaje natural.
 
-    Para validación más robusta, consumimos también los aliases del SQL de
-    los ejemplos y los resolvemos con el nombre de la tabla.
+    Ahora: solo analizamos los bloques SQL reales (detectados por SELECT/WITH
+    al inicio + LIMIT al final). Esto es mucho más preciso.
     """
     cols_by_table: dict[str, set[str]] = {}
+    sql_blocks = _extract_sql_blocks(catalog)
 
-    # 1. Referencias explícitas tipo "tabla.columna" en los comentarios/docs
-    #    Ej: "hr_process.hrdate", "c_invoice.totallines"
-    # Las columnas en iDempiere casi SIEMPRE tienen >= 2 chars (rara vez de 1).
-    # Además filtramos columnas de 1 char como 'a', 'b' que suelen ser
-    # falsos positivos de regex que caza "tabla.a" como si fuera columna.
-    for m in re.finditer(r'(\b[a-z_]+\b)\.([a-z_][a-z_0-9]*)', catalog, re.IGNORECASE):
-        tbl = m.group(1).lower()
-        col = m.group(2).lower()
-        if tbl in SQL_KEYWORDS or col in SQL_KEYWORDS:
-            continue
-        # Filtrar columnas sospechosamente cortas (< 3 chars) — son casi siempre
-        # falsos positivos del regex con palabras en prosa tipo "a 'c'" o
-        # "column.a" en comentarios/frases cortadas.
-        if len(col) < 3:
-            continue
-        # Heurística: solo considerar si parece nombre de tabla iDempiere
-        # (tiene guión bajo o empieza con prefijo conocido c_, m_, hr_, ad_, lve_, pp_)
-        if "_" in tbl or tbl.startswith(("c_", "m_", "hr_", "ad_", "lve_", "pp_")):
-            cols_by_table.setdefault(tbl, set()).add(col)
+    for block in sql_blocks:
+        # Mapear alias → tabla real en este bloque
+        alias_to_table: dict[str, str] = {}
+        for m in re.finditer(
+            r'(?:FROM|JOIN)\s+adempiere\.(\w+)(?:\s+AS)?\s+(\w+)',
+            block, re.IGNORECASE,
+        ):
+            tbl = m.group(1).lower()
+            alias = m.group(2).lower()
+            if alias in SQL_KEYWORDS or alias == tbl:
+                continue
+            alias_to_table[alias] = tbl
 
-    # 2. Extraer aliases de FROM/JOIN en los ejemplos SQL y resolver columnas
-    #    Ej: "FROM adempiere.c_invoice i" → alias "i" = "c_invoice"
-    alias_to_table: dict[str, str] = {}
-    for m in re.finditer(
-        r'(?:FROM|JOIN)\s+adempiere\.(\w+)(?:\s+AS)?\s+(\w+)',
-        catalog, re.IGNORECASE,
-    ):
-        tbl = m.group(1).lower()
-        alias = m.group(2).lower()
-        if alias in SQL_KEYWORDS or alias == tbl:
-            continue
-        alias_to_table[alias] = tbl
-
-    # 3. Por cada uso de "alias.columna" en el SQL, resolver a tabla real
-    for m in re.finditer(r'(\b\w+\b)\.(\w+)', catalog):
-        alias = m.group(1).lower()
-        col = m.group(2).lower()
-        if alias in alias_to_table and col not in SQL_KEYWORDS:
-            tbl = alias_to_table[alias]
-            cols_by_table.setdefault(tbl, set()).add(col)
+        # Extraer todas las referencias "alias.columna" en el SQL
+        for m in re.finditer(r'(\b\w+\b)\.(\w+)', block):
+            alias = m.group(1).lower()
+            col = m.group(2).lower()
+            if col in SQL_KEYWORDS:
+                continue
+            # Filtrar columnas irrealmente cortas (de 1 char) — iDempiere no
+            # las tiene. Esto evita falsos positivos de regex.
+            if len(col) < 2:
+                continue
+            # Caso 1: alias mapeado a tabla → usar la tabla real
+            if alias in alias_to_table:
+                tbl = alias_to_table[alias]
+                cols_by_table.setdefault(tbl, set()).add(col)
+                continue
+            # Caso 2: nombre de tabla completo directo (ej: "hr_concept.name")
+            if "_" in alias or alias.startswith(("c_", "m_", "hr_", "ad_", "lve_", "pp_")):
+                cols_by_table.setdefault(alias, set()).add(col)
 
     return cols_by_table
 
