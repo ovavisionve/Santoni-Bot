@@ -204,22 +204,32 @@ movementtype: V+=Recepción, C-=Despacho, M+/M-=Mov. interno, P+/P-=Producción
 9. Usar totallines (sin IVA) para montos de ventas, grandtotal (con IVA) para compras
 10. Si no sabes qué columna tiene una tabla, haz tu mejor intento con las columnas del catálogo
 11. SIEMPRE intenta generar SQL. Solo responde NO_SQL si la pregunta no tiene nada que ver con datos (ej: "hola", "gracias", chistes). Para cualquier pregunta sobre datos empresariales, genera el SQL.
-12. **FILTRO DE ORGS REALES DE SANTONI (crítico para USD):** iDempiere tiene organizaciones
-    demo de fábrica (HQ, Store Central, Furniture, Store East/North/South/West, Ocean
-    Equipment, Fertilizer) que tienen facturas dummy en USD que contaminan los totales.
-    Cuando el usuario NO especifique una organización concreta Y estés sumando/contando
-    facturas, pagos, saldos u otros montos financieros, **SIEMPRE agregá este filtro**:
+12. **FILTRO DE ORGS DEMO (blacklist, no whitelist):** iDempiere trae orgs DEMO
+    de fábrica (HQ, Store Central/East/North/South/West, Stores, Furniture,
+    Fertilizer) y la org system-wide (nombre '*'). No son orgs reales de Santoni
+    y pueden contaminar totales. Cuando el usuario NO especifique una organización
+    concreta Y estés sumando/contando datos financieros (c_invoice, c_payment,
+    c_order, fact_acct), **agregá SIEMPRE este filtro para excluirlas**:
     ```
     AND {alias}.ad_org_id IN (
       SELECT ad_org_id FROM adempiere.ad_org
-      WHERE name ILIKE '%INPROA SANTONI%' OR name ILIKE '%InproMaiz%'
-         OR name ILIKE '%AGROINPROA%' OR name ILIKE '%AGROPECUARIA R.R.%'
-         OR name ILIKE '%AGA AGRICOLA%' OR name ILIKE '%INVERSIONES AGA%'
-         OR name ILIKE '%Santoni Service%'
+      WHERE isactive = 'Y'
+        AND name NOT ILIKE 'HQ' AND name NOT ILIKE 'Fertilizer'
+        AND name NOT ILIKE 'Furniture'
+        AND name NOT ILIKE 'Store Central' AND name NOT ILIKE 'Store East'
+        AND name NOT ILIKE 'Store North' AND name NOT ILIKE 'Store South'
+        AND name NOT ILIKE 'Store West' AND name NOT ILIKE 'Stores'
+        AND name NOT ILIKE '*'
     )
     ```
-    Esto NO aplica para `lve_empleadosactivos` (que ya filtra internamente) ni para
-    queries de RRHH/cumpleaños. Sí aplica para c_invoice, c_payment, c_order, fact_acct.
+    Este filtro es BLACKLIST: incluye TODAS las orgs reales (INPROA SANTONI,
+    InproMaiz, AGROINPROA, AGROPECUARIA R.R., AGA AGRICOLA, INVERSIONES AGA,
+    Santoni Service, Ocean Equipment Industries LLC, Venecauchos, Agro Import,
+    y cualquier filial nueva que Santoni cree a futuro) y solo excluye las demos
+    conocidas de iDempiere. Esto es mejor que whitelist porque no oculta orgs
+    reales durmientes si el usuario pregunta histórico.
+    Esto NO aplica para `lve_empleadosactivos` (ya filtra internamente) ni para
+    queries de RRHH/cumpleaños.
 
 ## EJEMPLOS de queries comunes:
 
@@ -229,7 +239,7 @@ FROM adempiere.lve_empleadosactivos
 WHERE ad_org_id = (SELECT ad_org_id FROM adempiere.ad_org WHERE name ILIKE '%InproMaiz%')
 LIMIT 500
 
--- Facturas de venta por moneda y período (CON filtro de orgs reales, imprescindible para USD):
+-- Facturas de venta por moneda y período (CON filtro blacklist de orgs demo):
 SELECT COUNT(DISTINCT i.c_invoice_id) AS facturas,
        COALESCE(SUM(i.totallines), 0) AS total
 FROM adempiere.c_invoice i
@@ -240,10 +250,13 @@ WHERE i.issotrx = 'Y' AND i.docstatus IN ('CO','CL') AND i.isactive = 'Y'
   AND i.dateinvoiced >= '2026-03-01' AND i.dateinvoiced < '2026-04-01'
   AND i.ad_org_id IN (
     SELECT ad_org_id FROM adempiere.ad_org
-    WHERE name ILIKE '%INPROA SANTONI%' OR name ILIKE '%InproMaiz%'
-       OR name ILIKE '%AGROINPROA%' OR name ILIKE '%AGROPECUARIA R.R.%'
-       OR name ILIKE '%AGA AGRICOLA%' OR name ILIKE '%INVERSIONES AGA%'
-       OR name ILIKE '%Santoni Service%'
+    WHERE isactive = 'Y'
+      AND name NOT ILIKE 'HQ' AND name NOT ILIKE 'Fertilizer'
+      AND name NOT ILIKE 'Furniture'
+      AND name NOT ILIKE 'Store Central' AND name NOT ILIKE 'Store East'
+      AND name NOT ILIKE 'Store North' AND name NOT ILIKE 'Store South'
+      AND name NOT ILIKE 'Store West' AND name NOT ILIKE 'Stores'
+      AND name NOT ILIKE '*'
   )
 LIMIT 500
 
@@ -374,23 +387,53 @@ _ORG_ENFORCEMENT_TABLES = {
     "c_invoice", "c_payment", "c_order", "fact_acct",
 }
 
-# Nombres de orgs reales de Santoni (para el filtro forzado).
-# DEBE mantenerse sincronizado con _SANTONI_ORG_NAMES en
-# backend/app/services/idempiere_queries.py.
-_SANTONI_ORG_NAMES_ENFORCE = (
-    "INPROA SANTONI", "InproMaiz", "AGROINPROA",
-    "AGROPECUARIA R.R.", "AGA AGRICOLA", "INVERSIONES AGA", "Santoni Service",
+# Nombres de orgs DEMO de iDempiere (a excluir explícitamente).
+#
+# 14/Abr/2026: cambio de estrategia whitelist → blacklist. Las 7 orgs reales
+# de Santoni eran una lista cerrada, pero había orgs reales DURMIENTES que
+# el whitelist ocultaba sin avisar (Ocean Equipment Industries LLC con
+# $114,625 USD en marzo 2025, Venecauchos con 2,607 facturas históricas,
+# Agro Import C.A. con 498 facturas). Si alguien preguntaba por histórico,
+# el bot ocultaba datos legítimos silenciosamente.
+#
+# La blacklist lista solo las demos estándar de iDempiere (HQ, Store*,
+# Furniture, Fertilizer, "*" system-wide). Cualquier otra org del ERP se
+# considera real. Si Santoni crea una filial nueva, se incluye
+# automáticamente sin cambios de código.
+#
+# Confirmado con consulta a ad_org del 14/Abr/2026: las 11 orgs listadas
+# abajo tienen 0 facturas activas (o 10 obsoletas en el caso de HQ) —
+# son definitivamente demos sin uso operativo.
+_IDEMPIERE_DEMO_ORGS = (
+    "HQ",
+    "Fertilizer",
+    "Furniture",
+    "Store Central",
+    "Store East",
+    "Store North",
+    "Store South",
+    "Store West",
+    "Stores",
+    "*",  # la org system-wide, nunca debe sumar transacciones reales
 )
 
 
 def _build_santoni_org_filter(alias: str) -> str:
-    """Construye el WHERE clause para filtrar orgs reales de Santoni."""
-    names_sql = " OR ".join(
-        f"name ILIKE '%{n}%'" for n in _SANTONI_ORG_NAMES_ENFORCE
+    """Construye el WHERE clause para excluir orgs demo de iDempiere.
+
+    Estrategia blacklist: se incluyen TODAS las orgs del ERP excepto las
+    ~10 demos conocidas de fábrica. Esto garantiza que:
+      - Orgs reales durmientes (Ocean Equipment, Venecauchos, etc.) SÍ
+        aparezcan en reportes históricos
+      - Nuevas filiales de Santoni se incluyan automáticamente
+      - Las demos de iDempiere queden excluidas (no contaminan totales)
+    """
+    names_sql = " AND ".join(
+        f"name NOT ILIKE '{n}'" for n in _IDEMPIERE_DEMO_ORGS
     )
     return (
         f"{alias}.ad_org_id IN (SELECT ad_org_id FROM adempiere.ad_org WHERE "
-        f"{names_sql})"
+        f"isactive = 'Y' AND {names_sql})"
     )
 
 
@@ -556,12 +599,14 @@ async def process_with_sql_direct(
             "Tu trabajo es convertir preguntas en lenguaje natural a queries SQL contra "
             "la base de datos iDempiere de Santoni.\n\n"
             "🎯 REGLA CRÍTICA #1 — DESGLOSE POR ORGANIZACIÓN (evitar ambigüedad):\n"
-            "Santoni es un GRUPO de 7 organizaciones (INPROA SANTONI, InproMaiz, "
-            "AGROINPROA, AGROPECUARIA R.R., AGA AGRICOLA, INVERSIONES AGA, Santoni "
-            "Service). Cuando el usuario pregunta por montos agregados (ventas, compras, "
-            "cobranza, saldos) y NO menciona una organización específica, hay dos "
-            "interpretaciones igual de válidas: 'el grupo consolidado' o 'la org "
-            "principal'. No podés adivinar cuál. La SOLUCIÓN macro de Santoni es:\n\n"
+            "Santoni es un GRUPO de organizaciones (INPROA SANTONI es la principal; "
+            "InproMaiz, AGROINPROA, AGROPECUARIA R.R., AGA AGRICOLA, INVERSIONES AGA, "
+            "Santoni Service son subsidiarias activas; hay también orgs durmientes como "
+            "Ocean Equipment Industries LLC, Venecauchos, Agro Import). Cuando el usuario "
+            "pregunta por montos agregados (ventas, compras, cobranza, saldos) y NO "
+            "menciona una organización específica, hay dos interpretaciones igual de "
+            "válidas: 'el grupo consolidado' o 'la org principal'. No podés adivinar "
+            "cuál. La SOLUCIÓN macro de Santoni es:\n\n"
             "  SI la pregunta es agregada (SUM/COUNT) contra c_invoice, c_payment, "
             "c_order o fact_acct, Y no menciona una org específica → GENERÁ el SQL "
             "con GROUP BY por organización (uniendo ad_org para traer el name). La "

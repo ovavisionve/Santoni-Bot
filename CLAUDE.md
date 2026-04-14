@@ -445,10 +445,13 @@ Se crearon cuestionarios para que cada departamento valide las respuestas del bo
     > porque asume una interpretación. Arreglar que el bot NUNCA asuma en
     > esa clase de preguntas — impacta X, Y, Z y todas las futuras similares."
   - **Status de los commits `3d50acf` y `15ef39c` (enforcement de orgs demo):**
-    se dejan activos como **protección defensiva futura**. En la práctica
-    actual, el enforcement NO se activa porque las orgs del ERP son todas
-    reales. Si algún día se importa un dump de iDempiere con orgs demo, el
-    código las filtrará automáticamente sin fixes nuevos.
+    se dejan activos. La hipótesis inicial era "no había orgs demo" pero la
+    investigación del ad_org completo reveló que **SÍ las hay y el enforcement
+    SÍ se activaba** — solo que no pudimos verlo antes porque en marzo 2026 no
+    había orgs demo facturando. En marzo 2025, Ocean Equipment Industries LLC
+    facturó $114k USD y el enforcement whitelist la excluía silenciosamente.
+  - **Cambio post-investigación (14/Abr tarde):** whitelist → blacklist.
+    Ver sección "Política de filtro de orgs" en los Pendientes.
 
 ### Pendiente para cierre Fase 1:
 - ~~Verificación SQL ground truth vs bot~~ ✅ COMPLETADO (09/Abr)
@@ -461,6 +464,17 @@ Se crearon cuestionarios para que cada departamento valide las respuestas del bo
 - ~~VENT-100 / ORCH-101 (follow-ups inconsistentes)~~ ✅ COMPLETADO (14/Abr)
 - ~~Modo híbrido Claude activado en producción~~ ✅ COMPLETADO (14/Abr)
 - ~~Desglose automático por org en SQL Directo~~ ✅ COMPLETADO (14/Abr post-Claude)
+- ~~Política de filtro de orgs: whitelist → blacklist~~ ✅ COMPLETADO (14/Abr)
+  Investigación del ad_org completo reveló que la whitelist de 7 orgs ocultaba
+  orgs reales durmientes (Ocean Equipment Industries LLC con $114k USD en
+  marzo 2025, Venecauchos con 2.607 facturas históricas, Agro Import con
+  498 facturas). La blacklist excluye solo las 10 demos conocidas de iDempiere
+  (HQ, Fertilizer, Furniture, Store Central/East/North/South/West, Stores, "*")
+  y incluye TODAS las demás orgs. Ventajas:
+  * Orgs reales durmientes SÍ aparecen en reportes históricos
+  * Nuevas filiales de Santoni se incluyen automáticamente sin cambio de código
+  * Las demos de iDempiere son estándar y la lista no cambia entre instalaciones
+  Aplicado en `sql_direct.py::_IDEMPIERE_DEMO_ORGS` y `idempiere_queries.py`.
 - **Pendiente — validar con esalas/Darwin el criterio "factura real vs proforma"**:
   en Santoni, las "AR Invoice ProDolares*" son 92% del volumen de facturas USD.
   Si son preliminares, hay que filtrarlas en el catálogo. Si son facturas

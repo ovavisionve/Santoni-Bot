@@ -148,20 +148,28 @@ def _rows_to_dicts(rows, columns) -> list[dict]:
     ]
 
 
-# Las organizaciones REALES de Santoni en iDempiere. Se usa para excluir
-# orgs demo (HQ, Store Central, Furniture, etc.) que contaminan queries USD.
-# INFR-102 (14/Abr/2026): datos demo de iDempiere tienen facturas dummy en
-# USD que inflan los totales. Cuando un usuario no tiene restricción de org
-# (admin), se aplica este filtro automáticamente en consultas que no tienen
-# org_ids explícitos.
-_SANTONI_ORG_NAMES = (
-    "INPROA SANTONI", "InproMaiz", "AGROINPROA",
-    "AGROPECUARIA R.R.", "AGA AGRICOLA", "INVERSIONES AGA", "Santoni Service",
+# Orgs DEMO de iDempiere a excluir (blacklist).
+#
+# Histórico: empezamos con whitelist de 7 orgs Santoni conocidas, pero eso
+# ocultaba orgs reales durmientes (Ocean Equipment, Venecauchos, Agro Import)
+# que tienen historial legítimo. Con blacklist, incluimos TODAS las orgs del
+# ERP excepto las demos conocidas de fábrica. Esto protege contra:
+#   - Orgs dummy de iDempiere (HQ, Store*, Furniture, Fertilizer)
+#   - La org "*" system-wide
+# Y permite que:
+#   - Nuevas filiales de Santoni se incluyan automáticamente
+#   - Orgs durmientes aparezcan en reportes históricos
+#
+# Cambio implementado 14/Abr/2026 tras análisis del ad_org completo.
+_IDEMPIERE_DEMO_ORGS = (
+    "HQ", "Fertilizer", "Furniture",
+    "Store Central", "Store East", "Store North", "Store South", "Store West",
+    "Stores", "*",
 )
 _SANTONI_ORG_FILTER = (
     "{alias}.ad_org_id IN ("
-    "SELECT ad_org_id FROM adempiere.ad_org WHERE "
-    + " OR ".join(f"name ILIKE '%{n}%'" for n in _SANTONI_ORG_NAMES)
+    "SELECT ad_org_id FROM adempiere.ad_org WHERE isactive = 'Y' AND "
+    + " AND ".join(f"name NOT ILIKE '{n}'" for n in _IDEMPIERE_DEMO_ORGS)
     + ")"
 )
 
