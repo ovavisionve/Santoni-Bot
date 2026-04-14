@@ -405,13 +405,17 @@ WITH desglose AS (
       AND o.name ILIKE '%INPROA SANTONI%'
     GROUP BY pr.name
 )
-SELECT tipo_nomina, procesos, empleados, total_bs FROM desglose
+-- Usamos una columna 'sort_order' auxiliar para ordenar el resultado.
+-- PostgreSQL NO acepta expresiones calculadas como ORDER BY tras UNION ALL,
+-- pero SÍ acepta columnas del SELECT. Por eso agregamos sort_order (0/1).
+SELECT tipo_nomina, procesos, empleados, total_bs, 0 AS sort_order FROM desglose
 UNION ALL
 SELECT 'TOTAL GENERAL',
        (SELECT SUM(procesos) FROM desglose),
        (SELECT SUM(empleados) FROM desglose),
-       (SELECT SUM(total_bs) FROM desglose)
-ORDER BY (tipo_nomina = 'TOTAL GENERAL'), total_bs DESC
+       (SELECT SUM(total_bs) FROM desglose),
+       1 AS sort_order
+ORDER BY sort_order, total_bs DESC
 LIMIT 500
 
 -- Ausentismo por concepto en un período (AGROINPROA marzo 2026):
@@ -435,14 +439,15 @@ WITH desglose AS (
            OR c.name ILIKE '%Ausencia%' OR c.name ILIKE '%Atraso%')
     GROUP BY c.name
 )
-SELECT concepto, empleados_afectados, ocurrencias, monto_bs, cantidad FROM desglose
+SELECT concepto, empleados_afectados, ocurrencias, monto_bs, cantidad, 0 AS sort_order FROM desglose
 UNION ALL
 SELECT 'TOTAL GENERAL',
        NULL,
        (SELECT SUM(ocurrencias) FROM desglose),
        (SELECT SUM(monto_bs) FROM desglose),
-       (SELECT SUM(cantidad) FROM desglose)
-ORDER BY (concepto = 'TOTAL GENERAL'), monto_bs DESC
+       (SELECT SUM(cantidad) FROM desglose),
+       1 AS sort_order
+ORDER BY sort_order, monto_bs DESC
 LIMIT 500
 
 -- Nombres de trabajadores con un concepto específico (ej: Faltas y Atrasos):
@@ -568,6 +573,25 @@ def _validate_sql(sql: str) -> tuple[bool, str]:
     # Step 1: Remove EXTRACT(...FROM...) patterns to avoid false positives
     sql_no_extract = re.sub(r'EXTRACT\s*\([^)]*\)', 'EXTRACT_REMOVED', sql_clean, flags=re.IGNORECASE)
 
+    # Step 1.5: Extract CTE names declared with "WITH cte_name AS (...)".
+    # Estas son tablas TEMPORALES válidas durante la ejecución del SQL —
+    # NO están en _ALLOWED_TABLES (porque no son tablas reales de iDempiere)
+    # pero sí son referencias legítimas que no hay que rechazar.
+    #
+    # Patrones que soporta:
+    #   WITH desglose AS (SELECT ...)
+    #   WITH desglose AS (SELECT ...), otro AS (SELECT ...)
+    #   WITH RECURSIVE desglose AS (...)
+    cte_names = set()
+    for m in re.finditer(
+        r'\bWITH\s+(?:RECURSIVE\s+)?(\w+)\s+AS\s*\(',
+        sql_no_extract, re.IGNORECASE,
+    ):
+        cte_names.add(m.group(1).lower())
+    # También capturar CTEs encadenados: "), nombre AS ("
+    for m in re.finditer(r'\)\s*,\s*(\w+)\s+AS\s*\(', sql_no_extract, re.IGNORECASE):
+        cte_names.add(m.group(1).lower())
+
     # Step 2: Find table references in the cleaned SQL
     table_refs = re.findall(
         r'(?:adempiere\.|\bFROM\s+|\bJOIN\s+)(\w+)',
@@ -577,6 +601,9 @@ def _validate_sql(sql: str) -> tuple[bool, str]:
     for table in table_refs:
         table_lower = table.lower()
         if table_lower in ("adempiere", "extract_removed", "lateral", "select", "as"):
+            continue
+        # Aceptar nombres de CTEs declarados en el mismo SQL
+        if table_lower in cte_names:
             continue
         if table_lower not in _ALLOWED_TABLES:
             return False, f"Tabla no permitida: {table_lower}. Solo se pueden consultar views lve_* y tablas del catálogo."
@@ -901,10 +928,14 @@ async def process_with_sql_direct(
             "    JOIN c_bpartner bp ON m.c_bpartner_id = bp.c_bpartner_id.\n"
             "    Cédula: bp.taxid.\n"
             "\n"
-            "  Región de cliente → c_bpartner NO tiene c_region_id directo. Hay que ir:\n"
-            "    c_bpartner_location → c_location.c_region_id → c_region.name.\n"
-            "    Pero si el usuario dice 'zona', usar c_bpartner.c_salesregion_id "
-            "→ c_salesregion (zona comercial, distinta de región geográfica).\n"
+            "  Región/zona de cliente → c_bpartner NO tiene c_region_id ni\n"
+            "    c_salesregion_id directos. Hay que ir a través de c_bpartner_location:\n"
+            "      JOIN c_bpartner_location bpl ON bp.c_bpartner_id = bpl.c_bpartner_id\n"
+            "    Luego, para región geográfica: bpl.c_location_id → c_location.c_region_id\n"
+            "    Para zona de venta: bpl.c_salesregion_id → c_salesregion (es la Zona\n"
+            "    comercial tipo 'ZONA BARQUISIMETO', 'ZONA MARACAIBO').\n"
+            "    NO uses ni `bp.c_salesregion_id` ni `loc.c_salesregion_id` —\n"
+            "    la columna vive en `c_bpartner_location`.\n"
             "\n"
             "  Tablas que NO existen en Santoni: hr_payslip, hr_rule, hr_payroll_employee.\n"
             "  Usar hr_movement para cualquier consulta de nómina/pagos/ausentismo.\n\n"
@@ -915,12 +946,16 @@ async def process_with_sql_direct(
             "POR ESTO, NUNCA calcules 'Total General' sumando mentalmente las filas\n"
             "del desglose al formatear la respuesta. En su lugar:\n"
             "  (a) Si generaste un SQL con GROUP BY y querés un total también, usá\n"
-            "      UNION ALL para que el SQL devuelva ambas cosas:\n"
+            "      UNION ALL con una columna auxiliar `sort_order` (0 para filas,\n"
+            "      1 para el total). PostgreSQL NO acepta expresiones calculadas\n"
+            "      en ORDER BY después de UNION ALL — solo columnas del SELECT.\n"
+            "      Patrón correcto:\n"
             "        WITH desglose AS (SELECT ... GROUP BY categoria)\n"
-            "        SELECT categoria, valor FROM desglose\n"
+            "        SELECT categoria, valor, 0 AS sort_order FROM desglose\n"
             "        UNION ALL\n"
-            "        SELECT 'TOTAL GENERAL', SUM(valor) FROM desglose\n"
-            "        ORDER BY (categoria = 'TOTAL GENERAL'), valor DESC\n"
+            "        SELECT 'TOTAL GENERAL', SUM(valor), 1 AS sort_order FROM desglose\n"
+            "        ORDER BY sort_order, valor DESC\n"
+            "      (NO uses `ORDER BY (col = 'X')` — da FeatureNotSupported error.)\n"
             "  (b) O en la respuesta, si el SQL no devolvió total explícito, NO lo\n"
             "      muestres. Di 'para ver el total general, regenerame con total'.\n"
             "  (c) Solo muestres totales que VIENEN TEXTUALMENTE del SQL. Los números\n"
