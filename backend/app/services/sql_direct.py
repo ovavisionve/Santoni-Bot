@@ -411,10 +411,27 @@ def _enforce_org_filter(sql: str) -> tuple[str, bool]:
     """
     sql_upper = sql.upper()
 
-    # Si el SQL ya tiene un filtro de ad_org_id, asumimos que el LLM o el
-    # usuario ya restringieron y no tocamos (evita doble-filtro que daría 0 rows)
-    if re.search(r"\bAD_ORG_ID\s*(=|IN|<>|!=)", sql_upper):
-        return sql, False
+    # Si el SQL ya tiene un filtro de ad_org_id en el WHERE clause, asumimos
+    # que el LLM o el usuario ya restringieron y no tocamos (evita doble-filtro).
+    # IMPORTANTE: solo contamos filtros en WHERE, NO en JOINs (un `ON o.ad_org_id
+    # = i.ad_org_id` es una relación, no un filtro — el SQL seguiría incluyendo
+    # todas las orgs demo).
+    #
+    # Heurística: cortamos el SQL en el WHERE y buscamos ad_org_id ahí (y en el
+    # resto, excluyendo zonas de JOIN).
+    where_match = re.search(r"\bWHERE\b", sql_upper)
+    if where_match:
+        # Todo lo que viene después del WHERE, hasta GROUP BY/ORDER BY/LIMIT
+        where_and_after = sql_upper[where_match.end():]
+        # Cortar cualquier subquery que venga después (simplificación)
+        for tok in ("GROUP BY", "ORDER BY", "LIMIT"):
+            m = re.search(rf"\b{tok}\b", where_and_after)
+            if m:
+                where_and_after = where_and_after[:m.start()]
+                break
+        # Buscar ad_org_id = N / IN (...) / etc. en el WHERE
+        if re.search(r"\bAD_ORG_ID\s*(=|IN|<>|!=)", where_and_after):
+            return sql, False
 
     # Buscar el primer alias de una tabla enforceable.
     # Pattern: FROM adempiere.TABLE [AS] ALIAS  (el alias es 1-2 letras típicamente)
