@@ -169,9 +169,15 @@ Conceptos de ingresos: 'Sueldo Mensual', 'Salario', 'Total Asignaciones', 'Provi
 Conceptos de vacaciones (buscar 'vacacion' ILIKE): muchos tipos.
 
 **hr_process** — Proceso de nómina (un proceso = correr una nómina para un período)
-Columnas: hr_process_id, name, hrdate (fecha del proceso), hr_payroll_id, hr_period_id,
-  ad_org_id, docstatus
-IMPORTANTE: para filtrar nóminas de un período, usar `p.hrdate >= 'YYYY-MM-DD' AND p.hrdate < 'YYYY-MM-DD'`
+Columnas: hr_process_id, name, dateacct (fecha contable del proceso), datetrx (fecha
+  de transacción), hr_payroll_id, hr_period_id, ad_org_id, docstatus, c_bpartner_id
+⚠️ CRÍTICO: en Santoni, la columna NO se llama `hrdate` (ese es el nombre en otras
+instalaciones de iDempiere). En Santoni la fecha del proceso es **`dateacct`**.
+Si usás `hrdate` va a fallar con "column does not exist".
+IMPORTANTE: para filtrar nóminas de un período, usar
+  `p.dateacct >= 'YYYY-MM-DD' AND p.dateacct < 'YYYY-MM-DD'`
+Alternativa más segura: filtrar por `hr_movement.validfrom` que SIEMPRE tiene la
+fecha del período directamente (sin necesidad de JOIN con hr_process).
 
 **hr_payroll** — Catálogo de tipos de nómina (Nómina Semanal, Quincenal, Directivos, etc.)
 Columnas: hr_payroll_id, name (ej: 'Nómina Semanal OBREROS', 'Nómina Directivos'),
@@ -383,6 +389,8 @@ LIMIT 10
 
 -- Resumen de procesos de nómina por tipo (desglose COMPLETO por hr_payroll):
 -- OJO: el total general = SUMA de todos los tipos. NO filtrar a un solo tipo.
+-- IMPORTANTE: hr_process usa `dateacct`, NO `hrdate`. Filtramos por m.validfrom
+-- (en hr_movement) que es más directo y no requiere fechar el proceso.
 SELECT pr.name AS tipo_nomina,
        COUNT(DISTINCT p.hr_process_id) AS procesos,
        COUNT(DISTINCT m.c_bpartner_id) AS empleados,
@@ -391,7 +399,7 @@ FROM adempiere.hr_movement m
 JOIN adempiere.hr_process p ON m.hr_process_id = p.hr_process_id
 JOIN adempiere.hr_payroll pr ON p.hr_payroll_id = pr.hr_payroll_id
 JOIN adempiere.ad_org o ON m.ad_org_id = o.ad_org_id
-WHERE p.hrdate >= '2026-03-01' AND p.hrdate < '2026-04-01'
+WHERE m.validfrom >= '2026-03-01' AND m.validfrom < '2026-04-01'
   AND o.name ILIKE '%INPROA SANTONI%'
 GROUP BY pr.name
 ORDER BY total_bs DESC
@@ -850,6 +858,20 @@ async def process_with_sql_direct(
             "individual (si eso pasa, el SQL está mal). Aplicá este 'sanity check' "
             "mentalmente antes de entregar: 'el total que digo, ¿es la suma real de "
             "mi desglose?' Si no cuadra, el SQL está mal — regenéralo.\n\n"
+            "🎯 REGLA CRÍTICA #6 — COLUMNAS HR DE SANTONI ESPECÍFICAS:\n"
+            "Esta instalación de iDempiere en Santoni tiene columnas propias que NO\n"
+            "siguen la documentación genérica de iDempiere. Memorízalas:\n"
+            "  - hr_process NO tiene `hrdate`. Usar `dateacct` (fecha contable) o\n"
+            "    `datetrx` (fecha de transacción). Preferir dateacct.\n"
+            "  - hr_movement SÍ tiene `validfrom` / `validto` — son las fechas del\n"
+            "    período del movimiento. Preferir filtrar por m.validfrom directamente\n"
+            "    (más rápido que JOIN con hr_process + dateacct).\n"
+            "  - hr_period tiene `startdate` / `enddate` para fechas del período.\n"
+            "  - Si tenés duda sobre una columna HR, usá m.validfrom en hr_movement\n"
+            "    — casi siempre es la vía más corta y segura.\n"
+            "Si generás SQL con `p.hrdate` va a fallar con 'column does not exist'.\n"
+            "Antes de responder un SQL con hr_process, verificá mentalmente: ¿estoy\n"
+            "usando `dateacct` (correcto) y no `hrdate` (inexistente en Santoni)?\n\n"
             f"{datetime_ctx}\n\n"
             f"{VIEWS_CATALOG}\n\n"
             "INSTRUCCIONES:\n"
