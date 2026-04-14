@@ -125,7 +125,47 @@ movementtype: V+=Recepción, C-=Despacho, M+/M-=Mov. interno, P+/P-=Producción
 7. Para compras a productores: usar c_order (guías), NO c_invoice
 8. VES = c_currency_id = 205. USD = c_currency_id IN (100,1000000,1000003,1000006,1000008,1000009,1000011,1000013,1000017)
 9. Usar totallines (sin IVA) para montos de ventas, grandtotal (con IVA) para compras
-10. Si no sabes qué columna tiene una tabla, pregunta o usa un query simple primero
+10. Si no sabes qué columna tiene una tabla, haz tu mejor intento con las columnas del catálogo
+11. SIEMPRE intenta generar SQL. Solo responde NO_SQL si la pregunta no tiene nada que ver con datos (ej: "hola", "gracias", chistes). Para cualquier pregunta sobre datos empresariales, genera el SQL.
+
+## EJEMPLOS de queries comunes:
+
+-- Sueldo promedio por organización:
+SELECT AVG(sueldo) AS sueldo_promedio, COUNT(*) AS empleados
+FROM adempiere.lve_empleadosactivos
+WHERE ad_org_id = (SELECT ad_org_id FROM adempiere.ad_org WHERE name ILIKE '%InproMaiz%')
+LIMIT 500
+
+-- Facturas de venta por moneda y período:
+SELECT COUNT(DISTINCT i.c_invoice_id) AS facturas,
+       COALESCE(SUM(i.totallines), 0) AS total
+FROM adempiere.c_invoice i
+JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id
+WHERE i.issotrx = 'Y' AND i.docstatus IN ('CO','CL') AND i.isactive = 'Y'
+  AND dt.docbasetype = 'ARI'
+  AND i.c_currency_id IN (100,1000000,1000003,1000006,1000008,1000009,1000011,1000013,1000017)
+  AND i.dateinvoiced >= '2026-03-01' AND i.dateinvoiced < '2026-04-01'
+LIMIT 500
+
+-- Cumpleañeros de un mes en una org:
+SELECT name, cargo, departamento, birthday
+FROM adempiere.lve_empleadosactivos
+WHERE EXTRACT(MONTH FROM birthday) = 5
+  AND ad_org_id = (SELECT ad_org_id FROM adempiere.ad_org WHERE name ILIKE '%INPROA SANTONI%')
+ORDER BY EXTRACT(DAY FROM birthday)
+LIMIT 500
+
+-- Top vendedores por venta neta:
+SELECT au.name AS vendedor,
+  COALESCE(SUM(CASE WHEN dt.docbasetype='ARI' THEN i.totallines WHEN dt.docbasetype='ARC' THEN -i.totallines ELSE 0 END),0) AS venta_neta
+FROM adempiere.c_invoice i
+JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id
+JOIN adempiere.ad_user au ON i.salesrep_id = au.ad_user_id
+WHERE i.issotrx='Y' AND i.docstatus IN ('CO','CL') AND i.isactive='Y'
+  AND i.c_currency_id = 205
+  AND i.dateinvoiced >= '2026-02-01' AND i.dateinvoiced < '2026-03-01'
+GROUP BY au.name ORDER BY venta_neta DESC
+LIMIT 10
 """
 
 # Tablas/views permitidas (whitelist)
@@ -185,15 +225,22 @@ def _validate_sql(sql: str) -> tuple[bool, str]:
         return False, f"Operación prohibida: {match.group()}"
 
     # Check that all referenced tables are in the whitelist
-    # Simple regex: find all occurrences of "adempiere.TABLE_NAME" or "FROM/JOIN TABLE_NAME"
+    # Strategy: find "adempiere.TABLE" patterns (explicit schema) and
+    # FROM/JOIN clauses. We must EXCLUDE "FROM" inside SQL functions like
+    # EXTRACT(MONTH FROM col), LATERAL(...), etc.
+    #
+    # Step 1: Remove EXTRACT(...FROM...) patterns to avoid false positives
+    sql_no_extract = re.sub(r'EXTRACT\s*\([^)]*\)', 'EXTRACT_REMOVED', sql_clean, flags=re.IGNORECASE)
+
+    # Step 2: Find table references in the cleaned SQL
     table_refs = re.findall(
         r'(?:adempiere\.|\bFROM\s+|\bJOIN\s+)(\w+)',
-        sql_clean,
+        sql_no_extract,
         re.IGNORECASE,
     )
     for table in table_refs:
         table_lower = table.lower()
-        if table_lower == "adempiere":
+        if table_lower in ("adempiere", "extract_removed", "lateral", "select", "as"):
             continue
         if table_lower not in _ALLOWED_TABLES:
             return False, f"Tabla no permitida: {table_lower}. Solo se pueden consultar views lve_* y tablas del catálogo."
