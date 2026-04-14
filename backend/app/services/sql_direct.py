@@ -138,10 +138,17 @@ Columnas: ad_org_id, name (nombre completo REAL del empleado), value (cédula), 
   birthday (fecha de nacimiento — usar para cumpleañeros: EXTRACT(MONTH FROM birthday) = N),
   sueldo (sueldo BASE sin bonos), asignacion (bonos/asignaciones),
   total (TOTAL DEVENGADO = sueldo + asignacion — usar este para "sueldo promedio" o "cuánto gana"),
-  edad, tservicio (años servicio), gender
+  edad (TEXT con formato "N años M meses D dias"),
+  tservicio (TEXT con formato "N años M meses D dias" — NO es numérico),
+  gender
 IMPORTANTE: Para "sueldo promedio" usar AVG(total), NO AVG(sueldo). La columna 'sueldo' es solo el base.
 IMPORTANTE: Para cumpleañeros SIEMPRE generar SQL con SELECT name, cargo, departamento, birthday.
   NUNCA responder NO_SQL para preguntas de cumpleaños — la columna birthday está en esta view.
+⚠️ tservicio y edad son TEXTO (no numérico). Si necesitás años de servicio como número,
+calculalo desde startdate: `EXTRACT(YEAR FROM AGE(CURRENT_DATE, startdate))`.
+NO uses `FLOOR(tservicio)` ni `tservicio::numeric` — va a fallar con "invalid input syntax".
+Para control de vacaciones (cálculo LOTT venezolano basado en antigüedad), usar startdate:
+  `EXTRACT(YEAR FROM AGE(CURRENT_DATE, startdate))` = años enteros de servicio.
 
 **lve_empleadosinactivos** — Empleados inactivos/retirados (misma estructura)
 
@@ -955,7 +962,15 @@ async def process_with_sql_direct(
             "        UNION ALL\n"
             "        SELECT 'TOTAL GENERAL', SUM(valor), 1 AS sort_order FROM desglose\n"
             "        ORDER BY sort_order, valor DESC\n"
-            "      (NO uses `ORDER BY (col = 'X')` — da FeatureNotSupported error.)\n"
+            "      ⚠️ NUNCA uses ORDER BY con EXPRESIONES después de UNION ALL:\n"
+            "         NO: `ORDER BY (col = 'X')` → FeatureNotSupported\n"
+            "         NO: `ORDER BY CASE WHEN ... END` → FeatureNotSupported\n"
+            "         NO: `ORDER BY SUBSTRING(col, 1, 3)` → FeatureNotSupported\n"
+            "         SÍ: `ORDER BY sort_order, valor DESC` (solo columnas del SELECT)\n"
+            "         SÍ: `ORDER BY 1, 2 DESC` (por posición).\n"
+            "      Si necesitás ordenar por mes/CASE/expresión tras UNION ALL,\n"
+            "      calculalo DENTRO del SELECT como columna: `..., CASE mes WHEN 'Enero' THEN 1 ... END AS mes_num FROM ...`\n"
+            "      y después usar `ORDER BY mes_num` (columna real, no expresión).\n"
             "  (b) O en la respuesta, si el SQL no devolvió total explícito, NO lo\n"
             "      muestres. Di 'para ver el total general, regenerame con total'.\n"
             "  (c) Solo muestres totales que VIENEN TEXTUALMENTE del SQL. Los números\n"

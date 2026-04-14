@@ -128,12 +128,65 @@ def _detect_ambiguous_column(error: str) -> tuple[str, str] | None:
     )
 
 
+def _detect_query_timeout(error: str) -> tuple[str, str] | None:
+    """Detecta timeouts de query (PostgreSQL cancela tras 30s)."""
+    if "canceling statement due to statement timeout" not in error.lower() and "querycanceled" not in error.lower():
+        return None
+    return (
+        "query_timeout",
+        "🔧 Query demasiado lenta (>30s), PostgreSQL canceló. Causas comunes: "
+        "JOIN sin índice, función VOLATILE en WHERE (ej: invoiceopen()), "
+        "falta filtro de fecha. Revisar el SQL generado."
+    )
+
+
+def _detect_union_orderby_expr(error: str) -> tuple[str, str] | None:
+    """Detecta ORDER BY con expresión tras UNION ALL (PostgreSQL lo prohíbe)."""
+    if "invalid UNION/INTERSECT/EXCEPT ORDER BY" not in error:
+        return None
+    return (
+        "union_orderby_expr",
+        "🔧 ORDER BY con expresión calculada (CASE/paréntesis) tras UNION ALL. "
+        "PostgreSQL solo acepta columnas del SELECT. Usar columna auxiliar "
+        "`sort_order` o posición numérica (ORDER BY 1, 2)."
+    )
+
+
+def _detect_function_on_text(error: str) -> tuple[str, str] | None:
+    """Detecta aplicar función numérica sobre columna TEXT (ej: FLOOR(tservicio))."""
+    m = re.search(
+        r'function\s+(\w+)\(text\)\s+does not exist',
+        error, re.IGNORECASE,
+    )
+    if m:
+        fn = m.group(1).upper()
+        return (
+            f"funcion_numerica_en_texto:{fn}",
+            f"🔧 Se aplicó `{fn}()` a una columna TEXT. En lve_empleadosactivos "
+            f"las columnas tservicio/edad son TEXTO ('N años M meses'). "
+            f"Documentar en catálogo los tipos reales."
+        )
+    # Otro caso: invalid input syntax for type numeric
+    m2 = re.search(r'invalid input syntax for type numeric:\s*"([^"]+)"', error)
+    if m2:
+        val = m2.group(1)[:40]
+        return (
+            "cast_text_a_numeric",
+            f"🔧 Se intentó convertir texto a numérico: '{val}'. Hay columnas que "
+            f"aparentan numéricas pero son TEXT. Documentar tipos reales."
+        )
+    return None
+
+
 _DETECTORS = [
     _detect_column_not_exist,
     _detect_table_not_whitelisted,
     _detect_table_not_exist,
     _detect_type_mismatch,
     _detect_ambiguous_column,
+    _detect_query_timeout,
+    _detect_union_orderby_expr,
+    _detect_function_on_text,
 ]
 
 
