@@ -157,7 +157,23 @@ async def stream_message(
 
     history = _get_history(db, conversation.id)
     last_agent = _get_last_agent(db, conversation.id)
-    agent_name, routing_score, match_type = await orchestrator.get_stream_agent_name(data.message, current_user, last_agent=last_agent)
+
+    # ── FIX 15/Abr/2026: intentar SQL Directo ANTES del classificador ──
+    # Antes: el classificador por keywords se ejecutaba primero y el meta
+    # event se emitía con un agente clásico (ventas/rrhh/etc). Luego
+    # orchestrator.stream() intentaba SQL Directo pero el meta ya estaba
+    # mal. Resultado: batch_test reportaba 0% SQL Directo aunque el audit
+    # log mostrara 96% éxito de SQL Directo.
+    # Ahora: probamos SQL Directo primero aquí; si funciona, el meta lleva
+    # "sql_direct" y orchestrator.stream() se evita (no se duplica).
+    sql_result_pre = await orchestrator._try_sql_direct(data.message, current_user, history)
+
+    if sql_result_pre is not None:
+        agent_name = "sql_direct"
+        routing_score = 1.0
+        match_type = "sql_direct"
+    else:
+        agent_name, routing_score, match_type = await orchestrator.get_stream_agent_name(data.message, current_user, last_agent=last_agent)
 
     # Send initial metadata
     conv_id = conversation.id
@@ -165,8 +181,8 @@ async def stream_message(
     message_text = data.message
     ip_addr = request.client.host if request.client else None
 
-    # Check cache before streaming
-    cached = get_cached_response(message_text, agent_name)
+    # Check cache before streaming (skip para SQL Directo — siempre fresh)
+    cached = None if sql_result_pre is not None else get_cached_response(message_text, agent_name)
     data_ts = get_data_timestamp()
 
     async def event_generator():
@@ -179,6 +195,12 @@ async def stream_message(
         if cached:
             full_response.append(cached["response"])
             yield f"data: {json.dumps({'type': 'token', 'content': cached['response']})}\n\n"
+        elif sql_result_pre is not None:
+            # SQL Directo ya respondió exitosamente — enviamos su respuesta
+            # como un único chunk. NO llamamos orchestrator.stream() para
+            # evitar doble ejecución (y doble costo de Claude).
+            full_response.append(sql_result_pre["response"])
+            yield f"data: {json.dumps({'type': 'token', 'content': sql_result_pre['response']})}\n\n"
         else:
             try:
                 async for token in orchestrator.stream(
@@ -258,8 +280,10 @@ async def stream_message(
             logger.error("Error saving streamed response: %s", save_exc)
             msg_id = 0
 
-        # Final event: done signal with message_id
-        yield f"data: {json.dumps({'type': 'done', 'message_id': msg_id, 'conversation_id': conv_id})}\n\n"
+        # Final event: done signal with message_id and agent_used.
+        # agent_used permite a runners/clients saber si SQL Directo o un
+        # agente clásico manejó la query (batch_test.py lo usa para métricas).
+        yield f"data: {json.dumps({'type': 'done', 'message_id': msg_id, 'conversation_id': conv_id, 'agent_used': agent_name})}\n\n"
 
     return StreamingResponse(
         event_generator(),

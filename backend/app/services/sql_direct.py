@@ -479,7 +479,7 @@ movementtype: V+=Recepción, C-=Despacho, M+/M-=Mov. interno, P+/P-=Producción
 -- Sueldo promedio por organización:
 SELECT AVG(sueldo) AS sueldo_promedio, COUNT(*) AS empleados
 FROM adempiere.lve_empleadosactivos
-WHERE ad_org_id = (SELECT ad_org_id FROM adempiere.ad_org WHERE name ILIKE '%InproMaiz%')
+WHERE ad_org_id IN (SELECT ad_org_id FROM adempiere.ad_org WHERE name ILIKE '%InproMaiz%')
 LIMIT 500
 
 -- Facturas de venta por moneda y período (CON filtro blacklist de orgs demo):
@@ -507,7 +507,7 @@ LIMIT 500
 SELECT name, cargo, departamento, birthday
 FROM adempiere.lve_empleadosactivos
 WHERE EXTRACT(MONTH FROM birthday) = 5
-  AND ad_org_id = (SELECT ad_org_id FROM adempiere.ad_org WHERE name ILIKE '%INPROA SANTONI%')
+  AND ad_org_id IN (SELECT ad_org_id FROM adempiere.ad_org WHERE name ILIKE '%INPROA SANTONI%')
 ORDER BY EXTRACT(DAY FROM birthday)
 LIMIT 500
 
@@ -1214,6 +1214,15 @@ async def process_with_sql_direct(
             "\n"
             "  Tablas que NO existen en Santoni: hr_payslip, hr_rule, hr_payroll_employee.\n"
             "  Usar hr_movement para cualquier consulta de nómina/pagos/ausentismo.\n\n"
+            "  ⚠️ FILTRO DE ORG: usar SIEMPRE `ad_org_id IN (SELECT ...)`, NUNCA\n"
+            "  `ad_org_id = (SELECT ...)`. Razón: ILIKE puede matchear múltiples\n"
+            "  orgs (ej. 'AGROINPROA' matchea 'AGROINPROA C.A.' y otra variante),\n"
+            "  y `= (subquery)` tira CardinalityViolation si la subquery devuelve\n"
+            "  más de una fila. Con `IN (subquery)` funciona correctamente\n"
+            "  matcheando TODAS las orgs.\n"
+            "  NO: `WHERE ad_org_id = (SELECT ad_org_id FROM ad_org WHERE name ILIKE '%AGROINPROA%')`\n"
+            "  SÍ: `WHERE ad_org_id IN (SELECT ad_org_id FROM ad_org WHERE name ILIKE '%AGROINPROA%')`\n"
+            "  Esto aplica a TODAS las queries con filtro de org por ILIKE.\n\n"
             "🎯 REGLA CRÍTICA #7 — NO HAGAS ARITMÉTICA MENTAL (es fuente de errores):\n"
             "Los LLMs cometemos errores sistemáticos al sumar muchos números grandes\n"
             "en texto. Ejemplo real: 28 valores de millones de bolívares → sumé mal\n"
