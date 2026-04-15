@@ -889,8 +889,24 @@ async def process_with_sql_direct(
     # Step 1: Ask LLM to generate SQL
     from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 
-    messages = [
-        SystemMessage(content=(
+    # ──────────────────────────────────────────────────────────────────
+    # PROMPT CACHING (15/Abr/2026) — ahorro ~10x en costo de input
+    # ──────────────────────────────────────────────────────────────────
+    # El system prompt tiene ~10-12K tokens (catálogo completo + 8 reglas
+    # + ejemplos). Es IDÉNTICO en todas las queries. Anthropic ofrece
+    # prompt caching con 90% descuento en tokens cacheados.
+    #
+    # Estructura: separamos el prompt en 2 partes:
+    #   - SYSTEM_PROMPT_CACHED: catálogo + reglas + instrucciones (cacheable)
+    #   - datetime_ctx: varía cada 5-10 minutos (no cacheable, va aparte)
+    #
+    # Con cache_control={"type": "ephemeral"} Anthropic cachea el prefix
+    # por ~5 min. Si hay tráfico continuo, el cache se renueva y nunca
+    # expira — ahorro perpetuo del 90% en el system prompt.
+    #
+    # LangChain Anthropic soporta este formato desde v0.3+ usando content
+    # blocks en lugar de strings planos.
+    system_cacheable_text = (
             "Eres un asistente SQL experto para Alimentos Santoni, C.A. (Venezuela). "
             "Tu trabajo es convertir preguntas en lenguaje natural a queries SQL contra "
             "la base de datos iDempiere de Santoni.\n\n"
@@ -1033,7 +1049,10 @@ async def process_with_sql_direct(
             "      de las filas individuales SIEMPRE los mostrás exactos como vienen.\n"
             "Sanity check: ¿el 'total' que voy a mostrar está en los datos que recibí,\n"
             "o lo estoy sumando yo? Si es lo segundo — NO LO HAGAS.\n\n"
-            f"{datetime_ctx}\n\n"
+            # NOTA: el {datetime_ctx} NO se incluye acá — se concatena aparte
+            # después para que el content cacheable sea 100% estático (sin
+            # fechas que cambian). Eso permite que el cache se mantenga activo
+            # al 100% entre requests.
             f"{VIEWS_CATALOG}\n\n"
             "INSTRUCCIONES:\n"
             "1. Genera SOLO el SQL, sin explicaciones. No uses ```sql ni marcadores.\n"
@@ -1057,8 +1076,36 @@ async def process_with_sql_direct(
             "10. Para 'sueldo promedio' o 'cuánto gana' usa AVG(total) de lve_empleadosactivos (total = sueldo+bonos).\n"
             "11. Para 'cumpleaños' o 'cumplen años' usa EXTRACT(MONTH FROM birthday) en lve_empleadosactivos. NUNCA respondas NO_SQL para cumpleaños.\n"
             "12. Para fechas usá siempre rangos `dateXX >= 'YYYY-MM-DD' AND dateXX < 'YYYY-MM-DD'` (NO EXTRACT en filtros salvo birthday). Esto evita timeouts por falta de índice.\n"
-        )),
-    ]
+    )
+
+    # Construir el system message con content blocks para habilitar cache.
+    # Si el LLM es ChatAnthropic, usamos el formato [{type:text, cache_control:...}]
+    # que Anthropic reconoce para caching. Si no (fallback a OpenRouter), usamos
+    # string plano — OpenRouter ignora cache_control sin romper.
+    settings = get_settings()
+    use_cache = settings.use_claude_for_sql and is_claude_available()
+    if use_cache:
+        system_msg = SystemMessage(content=[
+            {
+                "type": "text",
+                "text": system_cacheable_text,
+                "cache_control": {"type": "ephemeral"},
+            },
+            # El datetime_ctx va DESPUÉS del cacheable, sin cache_control.
+            # Así el contexto temporal se actualiza cada request sin invalidar
+            # el prefix cacheado.
+            {
+                "type": "text",
+                "text": f"\n\n{datetime_ctx}",
+            },
+        ])
+    else:
+        # Formato plano para proveedores que no soportan cache (DeepSeek/OpenRouter)
+        system_msg = SystemMessage(
+            content=system_cacheable_text + f"\n\n{datetime_ctx}"
+        )
+
+    messages = [system_msg]
 
     # Add recent history for context.
     # 14/Abr/2026: ampliamos el truncado de 200 → 1500 chars para respuestas
