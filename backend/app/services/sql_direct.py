@@ -379,6 +379,41 @@ Columnas: c_payment_id, c_bpartner_id, payamt, datetrx, c_currency_id,
 **lve_disponibilidadbancariagerencia** — Saldos bancarios vista gerencia
 **lve_compromisosbancarios** — Compromisos bancarios pendientes
 
+### Cuentas por Cobrar / Antigüedad de Saldos (CxC aging)
+IMPORTANTE — columnas que NO EXISTEN en c_invoice (errores comunes):
+  - `i.duedate` NO existe. Calcular: `i.dateinvoiced + COALESCE(pt.netdays, 30)`
+  - `i.netdays` NO existe. `netdays` vive en `c_paymentterm`.
+  - NO existe tabla `c_invoicepayschedule` en uso — usar cálculo directo.
+
+**c_paymentterm** — Términos de pago
+Columnas: c_paymentterm_id, name, netdays (int — días hasta vencimiento), isdefault
+
+**c_allocationhdr** — Cabecera de asignación pago→factura
+Columnas: c_allocationhdr_id, dateacct, docstatus, isactive
+  ⚠️ NO tiene columna `amount` ni `allocatedamt`.
+
+**c_allocationline** — Líneas de asignación (montos aplicados)
+Columnas: c_allocationline_id, c_allocationhdr_id, c_invoice_id, c_payment_id,
+  amount (monto aplicado), discountamt (descuento), writeoffamt (write-off)
+  ⚠️ El `amount` vive ACÁ (en line), NO en hdr.
+
+**c_invoice** para CxC:
+  - ispaid ('Y'/'N') — flag de pago completo
+  - Saldo abierto = grandtotal − SUM(al.amount + al.discountamt + al.writeoffamt)
+  - Fecha vencimiento = dateinvoiced + pt.netdays (JOIN a c_paymentterm)
+  - Días vencido = CURRENT_DATE − (dateinvoiced + pt.netdays)
+
+Patrón correcto para "facturas vencidas" o "antigüedad de saldos":
+  LEFT JOIN c_paymentterm pt ON i.c_paymentterm_id = pt.c_paymentterm_id
+  LEFT JOIN (SELECT c_invoice_id, SUM(amount+discountamt+writeoffamt) AS paid
+             FROM c_allocationline al
+             JOIN c_allocationhdr ah ON al.c_allocationhdr_id = ah.c_allocationhdr_id
+             WHERE ah.isactive='Y' AND ah.docstatus IN ('CO','CL')
+               AND ah.dateacct >= CURRENT_DATE - INTERVAL '3 years'
+             GROUP BY c_invoice_id) alloc ON alloc.c_invoice_id = i.c_invoice_id
+  Saldo abierto: (i.grandtotal - COALESCE(alloc.paid, 0))
+  Días vencido: (CURRENT_DATE - (i.dateinvoiced + COALESCE(pt.netdays, 30)))
+
 ### Compras a Productores — Guías
 **c_order** — Órdenes de compra / Guías de recepción a productores
 Columnas: c_order_id, c_bpartner_id, dateordered, issotrx, docstatus, ad_org_id
@@ -700,6 +735,37 @@ JOIN adempiere.ad_org o ON v.ad_org_id = o.ad_org_id
 WHERE EXTRACT(YEAR FROM AGE(CURRENT_DATE, v.startdate)) >= 5
   AND o.name ILIKE '%INPROA SANTONI%'
 ORDER BY anos_servicio DESC
+LIMIT 500
+
+-- Análisis de antigüedad de saldos / facturas vencidas (CxC aging):
+-- Calcula saldo abierto y días vencidos. NO uses i.duedate (no existe) ni
+-- QUALIFY (PostgreSQL no lo soporta). Patrón oficial de Santoni.
+SELECT bp.name AS cliente,
+       i.documentno AS factura,
+       i.dateinvoiced::date AS fecha_emision,
+       (i.dateinvoiced + COALESCE(pt.netdays, 30))::date AS fecha_vencimiento,
+       i.grandtotal AS monto_factura,
+       COALESCE(alloc.paid, 0) AS monto_pagado,
+       (i.grandtotal - COALESCE(alloc.paid, 0)) AS saldo_abierto,
+       (CURRENT_DATE - (i.dateinvoiced + COALESCE(pt.netdays, 30))) AS dias_vencido
+FROM adempiere.c_invoice i
+JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id
+JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id
+LEFT JOIN adempiere.c_paymentterm pt ON i.c_paymentterm_id = pt.c_paymentterm_id
+LEFT JOIN (
+    SELECT al.c_invoice_id,
+           SUM(COALESCE(al.amount, 0) + COALESCE(al.discountamt, 0) + COALESCE(al.writeoffamt, 0)) AS paid
+    FROM adempiere.c_allocationline al
+    JOIN adempiere.c_allocationhdr ah ON al.c_allocationhdr_id = ah.c_allocationhdr_id
+    WHERE ah.isactive = 'Y' AND ah.docstatus IN ('CO','CL')
+      AND ah.dateacct >= CURRENT_DATE - INTERVAL '3 years'
+    GROUP BY al.c_invoice_id
+) alloc ON alloc.c_invoice_id = i.c_invoice_id
+WHERE i.issotrx = 'Y' AND i.docstatus IN ('CO','CL') AND i.isactive = 'Y'
+  AND dt.docbasetype = 'ARI'
+  AND (i.grandtotal - COALESCE(alloc.paid, 0)) > 0
+  AND (CURRENT_DATE - (i.dateinvoiced + COALESCE(pt.netdays, 30))) > 60
+ORDER BY dias_vencido DESC
 LIMIT 500
 
 -- Ausentismo MULTI-MES (Enero, Febrero, Marzo) — patrón correcto para ORDER BY
@@ -1256,7 +1322,32 @@ async def process_with_sql_direct(
             "  con ad_org que permite a PostgreSQL pushear el filtro de org:\n"
             "    LENTO (timeout): `FROM lve_empleadosactivos WHERE ad_org_id IN (SELECT ...)`\n"
             "    RÁPIDO: `FROM lve_empleadosactivos v JOIN ad_org o ON ... WHERE o.name ILIKE ...`\n"
-            "  El JOIN también evita el problema de CardinalityViolation.\n\n"
+            "  El JOIN también evita el problema de CardinalityViolation.\n"
+            "\n"
+            "  ⚠️ SINTAXIS SQL — SOLO PostgreSQL (NUNCA Snowflake/BigQuery/MSSQL):\n"
+            "    NO: `QUALIFY ranking <= 20` (es Snowflake/BigQuery, PostgreSQL NO lo tiene)\n"
+            "    SÍ: `SELECT ... FROM (SELECT ..., ROW_NUMBER() OVER (...) AS rnk FROM ...) t\n"
+            "         WHERE rnk <= 20`\n"
+            "    NO: `TOP 10` (MSSQL) → usar `LIMIT 10`.\n"
+            "    NO: `DATEADD(day, 30, date)` (MSSQL) → usar `date + 30` o `date + INTERVAL '30 days'`.\n"
+            "    NO: `IIF(cond, a, b)` → usar `CASE WHEN cond THEN a ELSE b END`.\n"
+            "  Si usás window functions (ROW_NUMBER, RANK, LAG), filtralas en\n"
+            "  una subquery o CTE, NUNCA en QUALIFY.\n"
+            "\n"
+            "  ⚠️ COLUMNAS INEXISTENTES en c_invoice (errores recurrentes):\n"
+            "    NO: `i.duedate` — no existe. Calcular: `i.dateinvoiced + COALESCE(pt.netdays, 30)`.\n"
+            "    NO: `i.netdays` — no existe. `netdays` vive en `c_paymentterm` (JOIN).\n"
+            "    NO: `ps.ispaid` inventando alias `ps` (no hay tabla schedule) →\n"
+            "        usar directamente `i.ispaid` (columna real en c_invoice).\n"
+            "    NO: `al.amount` si `al` alias de c_allocationhdr → amount vive\n"
+            "        en c_allocationline, no en hdr. Alias correctos:\n"
+            "        `c_allocationline al` (tiene amount, discountamt, writeoffamt).\n"
+            "        `c_allocationhdr ah` (tiene dateacct, docstatus, NO tiene amount).\n"
+            "    NO: `a.allocatedamt` — no existe en allocation. Usar SUM(al.amount)\n"
+            "        agregado desde c_allocationline.\n"
+            "  Para cualquier query de CxC/saldos/vencimiento, ver el ejemplo\n"
+            "  completo `Análisis de antigüedad de saldos` en los ejemplos del\n"
+            "  catálogo (usa LEFT JOIN agregado a c_allocationline).\n\n"
             "🎯 REGLA CRÍTICA #7 — NO HAGAS ARITMÉTICA MENTAL (es fuente de errores):\n"
             "Los LLMs cometemos errores sistemáticos al sumar muchos números grandes\n"
             "en texto. Ejemplo real: 28 valores de millones de bolívares → sumé mal\n"
