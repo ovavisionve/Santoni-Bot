@@ -738,8 +738,20 @@ ORDER BY anos_servicio DESC
 LIMIT 500
 
 -- Análisis de antigüedad de saldos / facturas vencidas (CxC aging):
--- Calcula saldo abierto y días vencidos. NO uses i.duedate (no existe) ni
--- QUALIFY (PostgreSQL no lo soporta). Patrón oficial de Santoni.
+-- IMPORTANTE sobre SCOPE: la CTE `alloc` pre-agrega pagos por factura y
+-- NO tiene visibilidad de `i`. Filtros de org, moneda o fecha van en el
+-- OUTER WHERE (después del LEFT JOIN), NUNCA dentro de la CTE.
+-- NO uses `i.ad_org_id` ni nada de `i` dentro de la CTE — PostgreSQL tira
+-- 'invalid reference to FROM-clause entry for table "i"'.
+WITH alloc AS (
+    SELECT al.c_invoice_id,
+           SUM(COALESCE(al.amount, 0) + COALESCE(al.discountamt, 0) + COALESCE(al.writeoffamt, 0)) AS paid
+    FROM adempiere.c_allocationline al
+    JOIN adempiere.c_allocationhdr ah ON al.c_allocationhdr_id = ah.c_allocationhdr_id
+    WHERE ah.isactive = 'Y' AND ah.docstatus IN ('CO','CL')
+      AND ah.dateacct >= CURRENT_DATE - INTERVAL '3 years'
+    GROUP BY al.c_invoice_id
+)
 SELECT bp.name AS cliente,
        i.documentno AS factura,
        i.dateinvoiced::date AS fecha_emision,
@@ -752,15 +764,8 @@ FROM adempiere.c_invoice i
 JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id
 JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id
 LEFT JOIN adempiere.c_paymentterm pt ON i.c_paymentterm_id = pt.c_paymentterm_id
-LEFT JOIN (
-    SELECT al.c_invoice_id,
-           SUM(COALESCE(al.amount, 0) + COALESCE(al.discountamt, 0) + COALESCE(al.writeoffamt, 0)) AS paid
-    FROM adempiere.c_allocationline al
-    JOIN adempiere.c_allocationhdr ah ON al.c_allocationhdr_id = ah.c_allocationhdr_id
-    WHERE ah.isactive = 'Y' AND ah.docstatus IN ('CO','CL')
-      AND ah.dateacct >= CURRENT_DATE - INTERVAL '3 years'
-    GROUP BY al.c_invoice_id
-) alloc ON alloc.c_invoice_id = i.c_invoice_id
+LEFT JOIN alloc ON alloc.c_invoice_id = i.c_invoice_id
+-- TODOS los filtros de c_invoice (i) van acá, NUNCA dentro de la CTE `alloc`:
 WHERE i.issotrx = 'Y' AND i.docstatus IN ('CO','CL') AND i.isactive = 'Y'
   AND dt.docbasetype = 'ARI'
   AND (i.grandtotal - COALESCE(alloc.paid, 0)) > 0
@@ -1347,7 +1352,28 @@ async def process_with_sql_direct(
             "        agregado desde c_allocationline.\n"
             "  Para cualquier query de CxC/saldos/vencimiento, ver el ejemplo\n"
             "  completo `Análisis de antigüedad de saldos` en los ejemplos del\n"
-            "  catálogo (usa LEFT JOIN agregado a c_allocationline).\n\n"
+            "  catálogo (usa WITH alloc AS ... pre-agregado).\n"
+            "\n"
+            "  ⚠️ SCOPE de CTEs y subqueries — REGLA DE VISIBILIDAD:\n"
+            "  Una CTE (WITH x AS ...) o subquery en FROM/LEFT JOIN tiene scope\n"
+            "  AISLADO. Solo ve las tablas que declara en su propio FROM.\n"
+            "  NO ve las tablas del outer query (i, bp, pt, etc.).\n"
+            "  \n"
+            "  ERROR TÍPICO: tratar de 'pushear' un filtro dentro de la CTE.\n"
+            "    NO: `WITH alloc AS (SELECT ... FROM c_allocationline al\n"
+            "         WHERE ... AND i.ad_org_id = 1000000)`\n"
+            "    → PostgreSQL: 'invalid reference to FROM-clause entry for table i'\n"
+            "  \n"
+            "  PATRÓN CORRECTO: la CTE pre-agrega con sus propias tablas, los\n"
+            "  filtros del outer van en el WHERE externo (después del LEFT JOIN):\n"
+            "    SÍ: `WITH alloc AS (SELECT al.c_invoice_id, SUM(...) ... FROM\n"
+            "         c_allocationline al JOIN c_allocationhdr ah ON ... WHERE\n"
+            "         ah.isactive='Y' GROUP BY al.c_invoice_id)\n"
+            "         SELECT ... FROM c_invoice i LEFT JOIN alloc ON ...\n"
+            "         WHERE i.ad_org_id IN (...) AND i.dateinvoiced >= ...`\n"
+            "  \n"
+            "  Si realmente necesitás correlación, usá subquery CORRELACIONADA\n"
+            "  con EXISTS/NOT EXISTS (NO JOIN), pero generalmente NO hace falta.\n\n"
             "🎯 REGLA CRÍTICA #7 — NO HAGAS ARITMÉTICA MENTAL (es fuente de errores):\n"
             "Los LLMs cometemos errores sistemáticos al sumar muchos números grandes\n"
             "en texto. Ejemplo real: 28 valores de millones de bolívares → sumé mal\n"
