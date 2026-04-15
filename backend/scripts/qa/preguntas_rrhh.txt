@@ -1,41 +1,94 @@
-# RRHH — batch de pruebas (ver docs/MAPA_PRUEBAS_CUESTIONARIOS.md sec 5)
-# Una pregunta por línea. Líneas que empiezan con # se ignoran.
+# RRHH — batch COMPLETO basado en cuestionarios Santoni
+# Fuentes:
+#   - docs/Cuestionario_SantoniBot_02_RRHH (1).docx (Emelin/Leonardo/Daniela)
+#   - docs/CUESTIONARIO DE LEVANTAMIENTO sección 5.4 (RRHH)
 # Fuente de verdad: lve_empleadosactivos (258 INPROA SANTONI, 101 InproMaiz)
 
-# --- Empleados activos ---
+# ═══ Preguntas de validación del cuestionario 02 (con respuesta esperada) ═══
+
 ¿Cuántos empleados activos hay en INPROA SANTONI?
+¿Cuántos empleados hay por departamento en INPROA SANTONI?
+¿Cuántos obreros integrales hay en INPROA SANTONI?
+¿Cuántos choferes tiene la empresa?
+Indicadores de ausentismo de INPROA SANTONI de septiembre 2025
+¿Cuántos empleados ingresaron entre enero y junio 2025?
+
+# ═══ Empleados activos por organización ═══
+
 ¿Cuántos empleados activos hay en InproMaiz?
 ¿Cuántos empleados activos hay en AGROINPROA?
+¿Cuántos empleados activos hay en AGA AGRICOLA?
 ¿Cuántos empleados hay en el grupo Santoni en total?
-¿Cuántos empleados por departamento en INPROA SANTONI?
+
+# ═══ Por departamento y cargo ═══
+
+¿Cuántos empleados por departamento en InproMaiz?
 ¿Cuántos empleados hay en EMPAQUE de INPROA SANTONI?
 ¿Cuántos empleados hay en MANTENIMIENTO de InproMaiz?
-
-# --- Búsquedas ---
-Lista los operarios de producción de INPROA SANTONI
+¿Cuántos operarios integrales hay en InproMaiz?
 ¿Cuántos supervisores hay en INPROA SANTONI?
 ¿Cuántas mujeres trabajan en INPROA SANTONI?
+Lista los operarios de producción de INPROA SANTONI
 
-# --- Cumpleaños ---
+# ═══ Cumpleaños ═══
+
 ¿Quiénes cumplen años en mayo en INPROA SANTONI?
 ¿Quiénes cumplen años este mes en InproMaiz?
 Cumpleañeros de abril AGROINPROA
+Cumpleañeros del mes de marzo INPROA SANTONI
 
-# --- Sueldos ---
+# ═══ Sueldos (usar AVG(sueldo) por default) ═══
+
 Sueldo promedio en InproMaiz
+Sueldo promedio en INPROA SANTONI
 Sueldo promedio de los operarios de producción
+Sueldo promedio del departamento de EMPAQUE de INPROA SANTONI
 ¿Quiénes ganan más de 5000 Bs en INPROA SANTONI?
 
-# --- Nómina ---
-Resumen de nómina INPROA SANTONI marzo 2026
-Ausentismo de AGROINPROA en marzo 2026
-Trabajadores con Faltas y Atrasos en marzo 2026 AGROINPROA
-Conceptos pagados a Geovanna en marzo 2026
+# ═══ Nómina ═══
 
-# --- Antigüedad y vacaciones ---
+Resumen de nómina INPROA SANTONI marzo 2026
+Resumen de nómina InproMaiz marzo 2026
+Resumen de procesos de nómina INPROA SANTONI del 01/03/2026 al 31/03/2026
+Conceptos pagados a Geovanna en marzo 2026
+Nómina de directivos INPROA SANTONI marzo 2026
+
+# ═══ Ausentismo e inasistencias ═══
+
+Ausentismo de AGROINPROA en marzo 2026
+Ausentismo de INPROA SANTONI marzo 2026
+Ausentismo enero-marzo 2026 AGROINPROA desglosado por mes
+Trabajadores con Faltas y Atrasos en marzo 2026 AGROINPROA
+Trabajadores con Reposo Pre-Post Natal marzo 2026 INPROA SANTONI
+Permisos remunerados INPROA SANTONI marzo 2026
+
+# ═══ Antigüedad y servicio ═══
+
 Empleados con antigüedad mayor a 5 años en INPROA SANTONI
+Empleados con antigüedad mayor a 10 años INPROA SANTONI
+Empleados con antigüedad menor a 1 año InproMaiz
+
+# ═══ Vacaciones ═══
+
 Control vacacional abril-mayo 2026 INPROA SANTONI
 ¿Quiénes tomaron vacaciones en marzo 2026?
+Vacaciones disfrutadas primer trimestre 2026 InproMaiz
 
-# --- Ausentismo multi-mes (REGLA #7 UNION ALL) ---
-Ausentismo enero-marzo 2026 AGROINPROA desglosado por mes
+# ═══ Indicadores (Levantamiento sección 5.4 — pendientes de implementar) ═══
+
+Productividad laboral de INPROA SANTONI marzo 2026
+Factor de costo de compensación INPROA SANTONI
+Tasa de ausentismo INPROA SANTONI marzo 2026
+Índice de rotación INPROA SANTONI 2025
+
+# ═══ Garantía de prestaciones sociales ═══
+
+Garantía de prestaciones sociales acumulada INPROA SANTONI
+Provisiones mensuales de pasivos laborales marzo 2026
+
+# ═══ Follow-ups ═══
+
+¿Y de InproMaiz?
+¿Y en AGROINPROA?
+Dame también febrero
+Ahora solo los gerentes

@@ -1,37 +1,77 @@
-# Ventas — batch de pruebas (ver docs/MAPA_PRUEBAS_CUESTIONARIOS.md sec 4)
-# Una pregunta por línea. Líneas que empiezan con # se ignoran.
-# Prioridad del cliente: Darwin / esalas — Ventas es prioridad máxima
+# Ventas — batch COMPLETO basado en cuestionarios Santoni
+# Fuentes:
+#   - docs/Cuestionario_SantoniBot_01_Ventas (1).docx (Darwin/Lenny/Yuleidys)
+#   - docs/CUESTIONARIO DE LEVANTAMIENTO (sección 5.3 Lenny Silva)
+# Prioridad #1 del cliente según sección 2 del Levantamiento
 
-# --- Totales y agregados ---
+# ═══ Preguntas de validación del cuestionario 01 ═══
+
+Top 10 clientes de InproMaíz en enero 2026
+Ranking de ventas por zona del mes de enero 2026
+Top 10 mejores vendedores de INPROMAIZ
+Top 10 mejores vendedores de INPROA SANTONI
+
+# ═══ Lenny Silva — Preguntas clave del Levantamiento 5.3 ═══
+
+Ranking de ventas por zona del mes de febrero 2026
+Ranking de ventas por vendedor del mes de febrero 2026
+Ranking de ventas por tipología de cliente del mes de febrero 2026
+Cuáles son las zonas desatendidas
+Dame el pareto de clientes de INPROA SANTONI en febrero 2026
+Mejores 20 clientes por zona en febrero 2026
+Mejores 20 clientes por categoría de producto febrero 2026
+Mejores 20 clientes por vendedor febrero 2026
+Mejores 20 clientes en general de febrero 2026 INPROA SANTONI
+Cuántos clientes activos tiene INPROA SANTONI
+Cuántos clientes nuevos se abrieron en febrero 2026
+Ranking de cobranza por zona febrero 2026
+Ranking de cobranza por vendedor febrero 2026
+Ranking de cobranza por tipología de cliente febrero 2026
+Cuáles son las cuentas por cobrar más atrasadas
+Cuánto se cobró hoy
+Cuánto se cobró esta semana
+Cobranza diaria de febrero 2026
+
+# ═══ Preguntas clave — totales y agregados ═══
+
 Total de ventas en bolívares de INPROA SANTONI en febrero 2026
 Total de ventas en dólares de marzo 2026
 Total de ventas en dólares de InproMaiz en marzo 2026
 ¿Cuánto se facturó en bolívares en marzo 2026?
+¿Cuánto se cobró en bolívares en febrero 2026?
+¿Cuánto se cobró en dólares en marzo 2026 INPROA SANTONI?
 
-# --- ProForma vs Factura (REGLA #8) ---
+# ═══ ProForma vs Factura (REGLA #8) ═══
+
 Dame el desglose de ventas USD de marzo 2026 separando proformas de facturas legales
 Cuántas proformas emitió InproMaiz en marzo 2026
 Cuántas facturas legales tiene INPROA SANTONI en marzo 2026
 
-# --- Top N / rankings ---
-Top 10 clientes por facturación neta en febrero 2026 en bolívares
-Top 5 vendedores de INPROA SANTONI feb 2026
-Top 10 clientes USD de InproMaiz marzo 2026
+# ═══ Ventas por categoría de producto (G05/G15/G17/G03) ═══
 
-# --- Cobranza ---
-¿Cuánto se cobró en bolívares en febrero 2026?
-¿Cuánto se cobró en dólares en marzo 2026 INPROA SANTONI?
+Ventas de arroz blanco G05 de febrero 2026 INPROA SANTONI
+Ventas de bebidas G15 de febrero 2026
+Ventas de cereales G17 de febrero 2026
+Ventas de harina de maíz G03 de InproMaiz febrero 2026
 
-# --- Por categoría ---
-Ventas por zona comercial en marzo 2026 INPROA SANTONI
-Ventas por categoría de producto G05 ARROZ marzo 2026
-Ventas por tipología de cliente en febrero 2026
+# ═══ Regiones y sucursales ═══
 
-# --- Órdenes y documentos pendientes ---
+Ventas de la región Centro-Occidente febrero 2026
+Ventas de la región Oriente febrero 2026
+Ventas de la región Zulia-Andes febrero 2026
+Ventas de la sucursal Valencia febrero 2026
+Ventas de la sucursal Caracas febrero 2026
+
+# ═══ Órdenes y documentos pendientes ═══
+
 ¿Qué órdenes de venta están pendientes de facturar?
 Facturas pendientes de cobro del cliente mayores a 60 días
+Análisis de antigüedad de saldos InproMaiz
+Listado de cobranza por vencimiento en USD
 
-# --- Follow-ups (correr después de una pregunta de contexto) ---
+# ═══ Follow-ups (correr después de una pregunta de contexto) ═══
+
 ¿Y en dólares?
 ¿Y de InproMaiz?
 Ahora top 5 en vez de 10
+Dame también de marzo
