@@ -604,6 +604,24 @@ def build_sales_summary(
 
     Excludes credit notes (ARC) from the main totals and shows them
     separately so the user sees net sales = facturas - notas de crédito.
+
+    NOTA SOBRE FLUJO DE DOCUMENTOS (REGLA #8 — 15/Abr/2026):
+    En Santoni los c_invoice incluyen DOS tipos de documentos con el mismo
+    docbasetype='ARI': (1) ProFormas (dt.name ILIKE '%Proforma%' o
+    '%ProDolares%') — USD preliminar, corazón del reporte USD — y (2)
+    Facturas Legales (dt.name con 'AR Invoice B/F/E', 'Factura AGA',
+    'AR Invoice Dolares', etc.) — cierre legal Bs.
+
+    Esta función AGRUPA AMBOS tipos sin distinguir. Para queries donde el
+    usuario necesita desagregar ProForma vs Factura (típicamente reportes
+    USD vs cierre SENIAT), SQL Directo maneja la distinción directamente
+    vía c_doctype.name — este agente clásico es fallback y retorna el
+    total combinado sin distinción.
+
+    TODO (post-validación con esalas/Darwin): considerar agregar parámetro
+    `doctype_filter: Literal["facturas_legales", "proformas", "todas"]`
+    para devolver métricas separadas. Pendiente hasta confirmar semántica
+    con el equipo de contabilidad de Santoni.
     """
     db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
     try:

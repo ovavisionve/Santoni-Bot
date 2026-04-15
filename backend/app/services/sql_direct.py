@@ -335,7 +335,11 @@ Columnas: c_invoice_id, c_bpartner_id, salesrep_id, c_currency_id,
   issotrx ('Y'=venta, 'N'=compra), ad_org_id, c_doctypetarget_id
 IMPORTANTE: Para ventas filtrar issotrx='Y', docstatus IN ('CO','CL'), isactive='Y'
 Para el tipo de documento: JOIN c_doctype dt ON c_doctypetarget_id = dt.c_doctype_id
-  → dt.docbasetype: 'ARI'=factura, 'ARC'=nota de crédito
+  → dt.docbasetype: 'ARI'=factura o proforma (ambas comparten docbasetype),
+                    'ARC'=nota de crédito
+  → dt.name: distingue entre ProForma ('ProDolares', 'ProDolaresV', 'ProDolaresC',
+             'Proforma') y Factura Legal ('AR Invoice Dolares', 'AR Invoice B/F/E',
+             'Factura AGA', 'AR Invoice Dolares Valencia/Caracas'). Ver REGLA #8.
 
 **c_bpartner** — Clientes/Proveedores/Empleados
 Columnas: c_bpartner_id, name, value, iscustomer, isvendor, isemployee
@@ -641,6 +645,35 @@ WHERE c.name ILIKE '%vacacion%'
 ORDER BY bp.name, m.validfrom
 LIMIT 500
 
+-- Ventas USD separando ProFormas de Facturas Legales (REGLA #8):
+-- El usuario pregunta "ventas en dólares marzo 2026". Santoni distingue
+-- ProFormas (USD real pre-factura) de Facturas Legales (cierre Bs/USD).
+-- Devolvemos AMBAS métricas así el usuario entiende la diferencia.
+WITH clasificacion AS (
+    SELECT i.c_invoice_id, i.totallines, dt.name AS tipo_doc,
+           dt.docbasetype,
+           CASE
+               WHEN dt.name ILIKE '%Proforma%' OR dt.name ILIKE '%ProDolares%'
+                    OR dt.name ILIKE '%Pro-Forma%' THEN 'ProForma'
+               ELSE 'FacturaLegal'
+           END AS categoria
+    FROM adempiere.c_invoice i
+    JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id
+    WHERE i.issotrx='Y' AND i.docstatus IN ('CO','CL') AND i.isactive='Y'
+      AND i.c_currency_id IN (100,1000000,1000003,1000006,1000008,1000009,1000011,1000013,1000017)
+      AND i.dateinvoiced >= '2026-03-01' AND i.dateinvoiced < '2026-04-01'
+)
+SELECT categoria,
+       docbasetype,
+       COUNT(*) FILTER (WHERE docbasetype='ARI') AS facturas,
+       COUNT(*) FILTER (WHERE docbasetype='ARC') AS notas_credito,
+       COALESCE(SUM(CASE WHEN docbasetype='ARI' THEN totallines
+                         WHEN docbasetype='ARC' THEN -totallines ELSE 0 END), 0) AS neto_usd
+FROM clasificacion
+GROUP BY categoria, docbasetype
+ORDER BY categoria, docbasetype
+LIMIT 500
+
 -- Empleados con antigüedad >= N años (usar EXTRACT sobre startdate, NO
 -- tservicio que es texto). Ejemplo para priorización de vacaciones:
 SELECT name, cargo, departamento, startdate::date AS ingreso,
@@ -650,6 +683,41 @@ JOIN adempiere.ad_org o ON v.ad_org_id = o.ad_org_id
 WHERE EXTRACT(YEAR FROM AGE(CURRENT_DATE, startdate)) >= 5
   AND o.name ILIKE '%INPROA SANTONI%'
 ORDER BY anos_servicio DESC
+LIMIT 500
+
+-- Ausentismo MULTI-MES (Enero, Febrero, Marzo) — patrón correcto para ORDER BY
+-- tras UNION ALL con columna cronológica.
+-- CLAVE: las columnas del ORDER BY DEBEN estar en TODAS las ramas del UNION,
+-- aunque sean NULL en la fila TOTAL. PostgreSQL solo acepta columnas del
+-- SELECT como ORDER BY tras UNION ALL, NUNCA expresiones CASE ni cálculos.
+WITH desglose AS (
+    SELECT EXTRACT(MONTH FROM m.validfrom)::int AS mes_num,
+           TO_CHAR(m.validfrom, 'TMMonth') AS mes,
+           c.name AS concepto,
+           COUNT(DISTINCT m.c_bpartner_id) AS empleados,
+           COUNT(*) AS ocurrencias,
+           COALESCE(SUM(m.amount), 0) AS monto_bs
+    FROM adempiere.hr_movement m
+    JOIN adempiere.hr_concept c ON m.hr_concept_id = c.hr_concept_id
+    JOIN adempiere.ad_org o ON m.ad_org_id = o.ad_org_id
+    WHERE m.validfrom >= '2026-01-01' AND m.validfrom < '2026-04-01'
+      AND o.name ILIKE '%AGROINPROA%'
+      AND (c.name ILIKE '%Falta%' OR c.name ILIKE '%Permiso%'
+           OR c.name ILIKE '%Inasistencia%' OR c.name ILIKE '%Reposo%')
+    GROUP BY EXTRACT(MONTH FROM m.validfrom), TO_CHAR(m.validfrom, 'TMMonth'), c.name
+)
+-- FIJARSE: mes_num, mes, concepto, empleados, ocurrencias, monto_bs, sort_order
+-- Las 7 columnas están en AMBAS ramas del UNION, con NULL donde no aplique.
+SELECT mes_num, mes, concepto, empleados, ocurrencias, monto_bs, 0 AS sort_order
+FROM desglose
+UNION ALL
+SELECT NULL AS mes_num, 'TOTAL GENERAL' AS mes, NULL AS concepto,
+       NULL AS empleados,
+       (SELECT SUM(ocurrencias) FROM desglose) AS ocurrencias,
+       (SELECT SUM(monto_bs) FROM desglose) AS monto_bs,
+       1 AS sort_order
+ORDER BY sort_order, mes_num, monto_bs DESC  -- mes_num funciona porque
+                                              -- está en AMBAS ramas (NULL en TOTAL)
 LIMIT 500
 """
 
@@ -1182,6 +1250,53 @@ async def process_with_sql_direct(
             "      de las filas individuales SIEMPRE los mostrás exactos como vienen.\n"
             "Sanity check: ¿el 'total' que voy a mostrar está en los datos que recibí,\n"
             "o lo estoy sumando yo? Si es lo segundo — NO LO HAGAS.\n\n"
+            "🎯 REGLA CRÍTICA #8 — FLUJO DE DOCUMENTOS (Orden → ProForma → Factura):\n"
+            "El flujo oficial de Santoni para ventas es:\n"
+            "  1. ORDEN DE VENTA (c_order) — disparador. No es un documento legal.\n"
+            "     Prefijos típicos: PFV, PFC, PF. Vive en `c_order`.\n"
+            "  2. PRO-FORMA (c_invoice con doctype 'ProDolares', 'ProDolaresV',\n"
+            "     'ProDolaresC', 'Proforma') — el corazón del REPORTE USD. Son\n"
+            "     facturas preliminares en dólares, antes de que se emita la\n"
+            "     factura legal. Es lo que esalas/contabilidad usa para reportar\n"
+            "     'ventas en dólares' del mes.\n"
+            "  3. FACTURA LEGAL (c_invoice con doctype 'AR Invoice B', 'InvoiceE',\n"
+            "     'InvoiceF', 'Factura AGA', 'AR Invoice Dolares', 'AR Invoice\n"
+            "     Dolares Valencia/Caracas', etc.) — cierre legal en Bs. Lo que\n"
+            "     se declara al SENIAT.\n"
+            "\n"
+            "TODOS los proformas tienen `docbasetype='ARI'` EN IDEMPIERE (no usan\n"
+            "'ARP'). Lo que diferencia una PROFORMA de una FACTURA es el `dt.name`\n"
+            "del c_doctype, NO el docbasetype. Por eso tenés que filtrar por\n"
+            "`dt.name` cuando el usuario pide explícitamente 'facturas' vs\n"
+            "'proformas' o reporta divergencias contra el reporte oficial.\n"
+            "\n"
+            "Patrón de filtro para separar proformas de facturas reales:\n"
+            "  PROFORMAS:  dt.name ILIKE '%Proforma%' OR dt.name ILIKE '%ProDolares%'\n"
+            "              OR dt.name ILIKE '%Pro-Forma%'\n"
+            "  FACTURAS:   NOT (dt.name ILIKE '%Proforma%' OR dt.name ILIKE '%ProDolares%'\n"
+            "                   OR dt.name ILIKE '%Pro-Forma%')\n"
+            "\n"
+            "HEURÍSTICA DEL USUARIO:\n"
+            "  • 'ventas USD de marzo' / 'ventas en dólares de InproMaiz' →\n"
+            "    devolvé AMBAS métricas separadas:\n"
+            "       (a) Total ProFormas USD (el reporte USD oficial)\n"
+            "       (b) Total Facturas legales USD (cierre SENIAT)\n"
+            "    Y aclarale al usuario que son dos conceptos distintos.\n"
+            "  • 'ventas de bolívares' / 'factura en Bs' → SOLO facturas legales\n"
+            "    (excluí proformas, no tienen sentido en Bs).\n"
+            "  • 'proformas emitidas' / 'reporte USD contabilidad' → SOLO proformas.\n"
+            "  • Pregunta genérica ('total ventas marzo') → facturas legales, pero\n"
+            "    mencionale que las proformas son otro conjunto si detectás que\n"
+            "    hay muchas en el período.\n"
+            "\n"
+            "SANITY CHECK post-query: si el total USD que devolvés tiene avg por\n"
+            "factura > $500K, probablemente estás sumando FACTURAS DOLARES (que\n"
+            "tienen monto en Bs). Si el avg por factura < $100, probable es\n"
+            "proforma de prueba. Valores USD reales de Santoni suelen estar entre\n"
+            "$1K y $100K por factura.\n"
+            "\n"
+            "Este filtro NO aplica a `c_payment` (cobros) ni a `c_order`\n"
+            "(órdenes) — esos no tienen el concepto de proforma.\n\n"
             # NOTA: el {datetime_ctx} NO se incluye acá — se concatena aparte
             # después para que el content cacheable sea 100% estático (sin
             # fechas que cambian). Eso permite que el cache se mantenga activo

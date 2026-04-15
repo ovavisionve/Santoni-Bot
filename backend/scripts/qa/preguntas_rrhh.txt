@@ -1,0 +1,41 @@
+# RRHH — batch de pruebas (ver docs/MAPA_PRUEBAS_CUESTIONARIOS.md sec 5)
+# Una pregunta por línea. Líneas que empiezan con # se ignoran.
+# Fuente de verdad: lve_empleadosactivos (258 INPROA SANTONI, 101 InproMaiz)
+
+# --- Empleados activos ---
+¿Cuántos empleados activos hay en INPROA SANTONI?
+¿Cuántos empleados activos hay en InproMaiz?
+¿Cuántos empleados activos hay en AGROINPROA?
+¿Cuántos empleados hay en el grupo Santoni en total?
+¿Cuántos empleados por departamento en INPROA SANTONI?
+¿Cuántos empleados hay en EMPAQUE de INPROA SANTONI?
+¿Cuántos empleados hay en MANTENIMIENTO de InproMaiz?
+
+# --- Búsquedas ---
+Lista los operarios de producción de INPROA SANTONI
+¿Cuántos supervisores hay en INPROA SANTONI?
+¿Cuántas mujeres trabajan en INPROA SANTONI?
+
+# --- Cumpleaños ---
+¿Quiénes cumplen años en mayo en INPROA SANTONI?
+¿Quiénes cumplen años este mes en InproMaiz?
+Cumpleañeros de abril AGROINPROA
+
+# --- Sueldos ---
+Sueldo promedio en InproMaiz
+Sueldo promedio de los operarios de producción
+¿Quiénes ganan más de 5000 Bs en INPROA SANTONI?
+
+# --- Nómina ---
+Resumen de nómina INPROA SANTONI marzo 2026
+Ausentismo de AGROINPROA en marzo 2026
+Trabajadores con Faltas y Atrasos en marzo 2026 AGROINPROA
+Conceptos pagados a Geovanna en marzo 2026
+
+# --- Antigüedad y vacaciones ---
+Empleados con antigüedad mayor a 5 años en INPROA SANTONI
+Control vacacional abril-mayo 2026 INPROA SANTONI
+¿Quiénes tomaron vacaciones en marzo 2026?
+
+# --- Ausentismo multi-mes (REGLA #7 UNION ALL) ---
+Ausentismo enero-marzo 2026 AGROINPROA desglosado por mes

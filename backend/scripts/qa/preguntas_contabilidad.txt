@@ -1,0 +1,20 @@
+# Contabilidad — batch de pruebas (ver docs/MAPA_PRUEBAS_CUESTIONARIOS.md sec 6)
+# Una pregunta por línea. Líneas que empiezan con # se ignoran.
+# Fuente: fact_acct + views LVE (lve_trialbalance, lve_fact_acct, lve_sales_book)
+
+# --- Balances ---
+Balance general diciembre 2025
+Balance general marzo 2026 INPROA SANTONI
+Balance de comprobación marzo 2026 InproMaiz
+
+# --- Estados ---
+Estado de resultados marzo 2026 INPROA SANTONI
+Estado de resultados primer trimestre 2026
+
+# --- Libro diario / mayor ---
+Libro diario marzo 2026 INPROA SANTONI
+Libro mayor cuenta 1102 marzo 2026
+
+# --- Libros fiscales (SENIAT) ---
+Libro de ventas marzo 2026 INPROA SANTONI
+Libro de compras marzo 2026 INPROA SANTONI

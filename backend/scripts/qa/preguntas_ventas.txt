@@ -1,0 +1,37 @@
+# Ventas — batch de pruebas (ver docs/MAPA_PRUEBAS_CUESTIONARIOS.md sec 4)
+# Una pregunta por línea. Líneas que empiezan con # se ignoran.
+# Prioridad del cliente: Darwin / esalas — Ventas es prioridad máxima
+
+# --- Totales y agregados ---
+Total de ventas en bolívares de INPROA SANTONI en febrero 2026
+Total de ventas en dólares de marzo 2026
+Total de ventas en dólares de InproMaiz en marzo 2026
+¿Cuánto se facturó en bolívares en marzo 2026?
+
+# --- ProForma vs Factura (REGLA #8) ---
+Dame el desglose de ventas USD de marzo 2026 separando proformas de facturas legales
+Cuántas proformas emitió InproMaiz en marzo 2026
+Cuántas facturas legales tiene INPROA SANTONI en marzo 2026
+
+# --- Top N / rankings ---
+Top 10 clientes por facturación neta en febrero 2026 en bolívares
+Top 5 vendedores de INPROA SANTONI feb 2026
+Top 10 clientes USD de InproMaiz marzo 2026
+
+# --- Cobranza ---
+¿Cuánto se cobró en bolívares en febrero 2026?
+¿Cuánto se cobró en dólares en marzo 2026 INPROA SANTONI?
+
+# --- Por categoría ---
+Ventas por zona comercial en marzo 2026 INPROA SANTONI
+Ventas por categoría de producto G05 ARROZ marzo 2026
+Ventas por tipología de cliente en febrero 2026
+
+# --- Órdenes y documentos pendientes ---
+¿Qué órdenes de venta están pendientes de facturar?
+Facturas pendientes de cobro del cliente mayores a 60 días
+
+# --- Follow-ups (correr después de una pregunta de contexto) ---
+¿Y en dólares?
+¿Y de InproMaiz?
+Ahora top 5 en vez de 10
