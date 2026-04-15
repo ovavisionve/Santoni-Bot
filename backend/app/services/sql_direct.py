@@ -261,12 +261,21 @@ Columnas: ad_org_id, name (nombre completo REAL del empleado), value (cédula), 
   hr_payroll_id, nomina (tipo nómina), startdate (fecha ingreso),
   hr_department_id, departamento, hr_job_id, cargo,
   birthday (fecha de nacimiento — usar para cumpleañeros: EXTRACT(MONTH FROM birthday) = N),
-  sueldo (sueldo BASE sin bonos), asignacion (bonos/asignaciones),
-  total (TOTAL DEVENGADO = sueldo + asignacion — usar este para "sueldo promedio" o "cuánto gana"),
+  sueldo (sueldo BASE sin bonos — COLUMNA DIRECTA, agregados rápidos),
+  asignacion (bonos/asignaciones),
+  total (TOTAL DEVENGADO = sueldo + asignacion — COLUMNA CALCULADA per-row,
+         agregados sobre esta columna son LENTOS y pueden tirar timeout),
   edad (TEXT con formato "N años M meses D dias"),
   tservicio (TEXT con formato "N años M meses D dias" — NO es numérico),
   gender
-IMPORTANTE: Para "sueldo promedio" usar AVG(total), NO AVG(sueldo). La columna 'sueldo' es solo el base.
+IMPORTANTE — PERFORMANCE de AVG/SUM sobre lve_empleadosactivos:
+  - Para "sueldo promedio" genérico (queries rápidas): usar AVG(v.sueldo) —
+    es el sueldo BASE y es mucho más rápido porque es columna directa.
+  - AVG(v.total) es más preciso (incluye bonos) pero la columna `total`
+    se calcula per-row dentro de la view y AVG fuerza TODOS esos cálculos,
+    lo que puede tirar timeout (>30s). Usalo SOLO si el usuario pide
+    explícitamente "devengado", "con bonos", "total real".
+  - COUNT(*) y filtros WHERE son siempre rápidos (no evalúan `total`).
 IMPORTANTE: Para cumpleañeros SIEMPRE generar SQL con SELECT name, cargo, departamento, birthday.
   NUNCA responder NO_SQL para preguntas de cumpleaños — la columna birthday está en esta view.
 ⚠️ tservicio y edad son TEXTO (no numérico). Si necesitás años de servicio como número,
@@ -476,10 +485,13 @@ movementtype: V+=Recepción, C-=Despacho, M+/M-=Mov. interno, P+/P-=Producción
 
 ## EJEMPLOS de queries comunes:
 
--- Sueldo promedio por organización (usar JOIN, es más rápido que subquery):
+-- Sueldo promedio por organización (usar `sueldo` base, NO `total`):
+-- NOTA DE PERFORMANCE: `v.sueldo` es columna directa y AVG es rápido.
+-- `v.total` es calculado per-row (sueldo + bonos) y AVG(v.total) puede
+-- tirar timeout >30s. Solo usá `total` si el usuario pide "devengado".
 -- IMPORTANTE: usar siempre alias `v.` para lve_empleadosactivos cuando hay
 -- JOIN con ad_org (ambas tablas tienen columna `name` → ambigua sin alias).
-SELECT AVG(v.total) AS sueldo_promedio, COUNT(*) AS empleados
+SELECT AVG(v.sueldo) AS sueldo_promedio_base, COUNT(*) AS empleados
 FROM adempiere.lve_empleadosactivos v
 JOIN adempiere.ad_org o ON v.ad_org_id = o.ad_org_id
 WHERE o.name ILIKE '%InproMaiz%'
@@ -1352,7 +1364,10 @@ async def process_with_sql_direct(
             "7. Si mencionan 'bolívares' o 'Bs' filtra c_currency_id = 205.\n"
             "8. Si mencionan 'dólares', 'USD' o 'divisas' filtra c_currency_id IN (100,1000000,1000003,1000006,1000008,1000009,1000011,1000013,1000017).\n"
             "9. Para empleados activos SIEMPRE usa lve_empleadosactivos (NO hr_employee).\n"
-            "10. Para 'sueldo promedio' o 'cuánto gana' usa AVG(total) de lve_empleadosactivos (total = sueldo+bonos).\n"
+            "10. Para 'sueldo promedio' genérico usa `AVG(v.sueldo)` (rápido, sueldo base). "
+            "Solo usá `AVG(v.total)` si el usuario pide EXPLÍCITAMENTE 'devengado', "
+            "'con bonos' o 'total real' (es más lento — la columna `total` se calcula per-row "
+            "y puede tirar timeout).\n"
             "11. Para 'cumpleaños' o 'cumplen años' usa EXTRACT(MONTH FROM birthday) en lve_empleadosactivos. NUNCA respondas NO_SQL para cumpleaños.\n"
             "12. Para fechas usá siempre rangos `dateXX >= 'YYYY-MM-DD' AND dateXX < 'YYYY-MM-DD'` (NO EXTRACT en filtros salvo birthday). Esto evita timeouts por falta de índice.\n"
     )
