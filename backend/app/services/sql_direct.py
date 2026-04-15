@@ -491,6 +491,41 @@ WHERE bp.name ILIKE '%Geovanna%'
 GROUP BY c.name
 ORDER BY monto_bs DESC
 LIMIT 500
+
+-- Control vacacional (vacaciones pagadas/disfrutadas en un período).
+-- NO intentar calcular "días acumulados LOTT" con joins complejos contra
+-- múltiples tablas y funciones fecha — eso da timeout (>30s). En su lugar
+-- listar los movimientos de nómina con concepto ILIKE '%vacacion%':
+SELECT bp.name AS empleado,
+       bp.taxid AS cedula,
+       j.name AS cargo,
+       c.name AS concepto,
+       m.validfrom::date AS periodo_desde,
+       m.validto::date AS periodo_hasta,
+       m.qty AS dias,
+       m.amount AS monto_bs
+FROM adempiere.hr_movement m
+JOIN adempiere.hr_concept c ON m.hr_concept_id = c.hr_concept_id
+JOIN adempiere.c_bpartner bp ON m.c_bpartner_id = bp.c_bpartner_id
+LEFT JOIN adempiere.hr_employee e ON e.c_bpartner_id = bp.c_bpartner_id
+LEFT JOIN adempiere.hr_job j ON e.hr_job_id = j.hr_job_id
+JOIN adempiere.ad_org o ON m.ad_org_id = o.ad_org_id
+WHERE c.name ILIKE '%vacacion%'
+  AND m.validfrom >= '2026-04-01' AND m.validfrom < '2026-06-01'
+  AND o.name ILIKE '%INPROA SANTONI%'
+ORDER BY bp.name, m.validfrom
+LIMIT 500
+
+-- Empleados con antigüedad >= N años (usar EXTRACT sobre startdate, NO
+-- tservicio que es texto). Ejemplo para priorización de vacaciones:
+SELECT name, cargo, departamento, startdate::date AS ingreso,
+       EXTRACT(YEAR FROM AGE(CURRENT_DATE, startdate))::int AS anos_servicio
+FROM adempiere.lve_empleadosactivos v
+JOIN adempiere.ad_org o ON v.ad_org_id = o.ad_org_id
+WHERE EXTRACT(YEAR FROM AGE(CURRENT_DATE, startdate)) >= 5
+  AND o.name ILIKE '%INPROA SANTONI%'
+ORDER BY anos_servicio DESC
+LIMIT 500
 """
 
 # Tablas/views permitidas (whitelist)
@@ -590,14 +625,30 @@ def _validate_sql(sql: str) -> tuple[bool, str]:
     #   WITH desglose AS (SELECT ...), otro AS (SELECT ...)
     #   WITH RECURSIVE desglose AS (...)
     cte_names = set()
+    # Caso 1: WITH primer_cte AS (...)
     for m in re.finditer(
         r'\bWITH\s+(?:RECURSIVE\s+)?(\w+)\s+AS\s*\(',
         sql_no_extract, re.IGNORECASE,
     ):
         cte_names.add(m.group(1).lower())
-    # También capturar CTEs encadenados: "), nombre AS ("
+    # Caso 2: CTEs encadenados: "), nombre AS ("
     for m in re.finditer(r'\)\s*,\s*(\w+)\s+AS\s*\(', sql_no_extract, re.IGNORECASE):
         cte_names.add(m.group(1).lower())
+    # Caso 3 (defensivo): cualquier "nombre AS (SELECT ..." que aparezca
+    # después de WITH en la cabecera del query — maneja casos con saltos
+    # de línea inusuales o comas mal puestas que los patrones anteriores
+    # no atrapan. Solo si el SQL empieza con WITH.
+    if sql_no_extract.upper().lstrip().startswith("WITH"):
+        # Extraer el "bloque WITH" (desde WITH hasta el SELECT principal)
+        # Heurística: los CTEs declarados antes del último paréntesis
+        # cerrado que precede al SELECT final.
+        for m in re.finditer(
+            r'(?:^|[,\s])(\w+)\s+AS\s*\(\s*(?:SELECT|WITH)',
+            sql_no_extract, re.IGNORECASE,
+        ):
+            name = m.group(1).lower()
+            if name not in ("with", "select", "recursive", "as", "adempiere"):
+                cte_names.add(name)
 
     # Step 2: Find table references in the cleaned SQL
     table_refs = re.findall(
@@ -971,6 +1022,11 @@ async def process_with_sql_direct(
             "      Si necesitás ordenar por mes/CASE/expresión tras UNION ALL,\n"
             "      calculalo DENTRO del SELECT como columna: `..., CASE mes WHEN 'Enero' THEN 1 ... END AS mes_num FROM ...`\n"
             "      y después usar `ORDER BY mes_num` (columna real, no expresión).\n"
+            "      ⚠️ CRÍTICO: esa columna DEBE aparecer en TODAS las ramas del UNION,\n"
+            "      no solo en una. Si la primera rama tiene `..., 0 AS sort_order, 1 AS mes_num`\n"
+            "      la segunda rama TAMBIÉN tiene que tener esas 2 columnas, aunque sean\n"
+            "      NULL. Si el ORDER BY referencia `mes_num` y solo está en la primera\n"
+            "      rama, PostgreSQL tira 'column mes_num does not exist'.\n"
             "  (b) O en la respuesta, si el SQL no devolvió total explícito, NO lo\n"
             "      muestres. Di 'para ver el total general, regenerame con total'.\n"
             "  (c) Solo muestres totales que VIENEN TEXTUALMENTE del SQL. Los números\n"
