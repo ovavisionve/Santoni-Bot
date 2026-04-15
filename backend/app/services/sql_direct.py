@@ -738,37 +738,38 @@ ORDER BY anos_servicio DESC
 LIMIT 500
 
 -- Análisis de antigüedad de saldos / facturas vencidas (CxC aging):
--- IMPORTANTE sobre SCOPE: la CTE `alloc` pre-agrega pagos por factura y
--- NO tiene visibilidad de `i`. Filtros de org, moneda o fecha van en el
--- OUTER WHERE (después del LEFT JOIN), NUNCA dentro de la CTE.
--- NO uses `i.ad_org_id` ni nada de `i` dentro de la CTE — PostgreSQL tira
--- 'invalid reference to FROM-clause entry for table "i"'.
-WITH alloc AS (
-    SELECT al.c_invoice_id,
-           SUM(COALESCE(al.amount, 0) + COALESCE(al.discountamt, 0) + COALESCE(al.writeoffamt, 0)) AS paid
-    FROM adempiere.c_allocationline al
-    JOIN adempiere.c_allocationhdr ah ON al.c_allocationhdr_id = ah.c_allocationhdr_id
-    WHERE ah.isactive = 'Y' AND ah.docstatus IN ('CO','CL')
-      AND ah.dateacct >= CURRENT_DATE - INTERVAL '3 years'
-    GROUP BY al.c_invoice_id
-)
+-- PATRÓN RECOMENDADO para queries específicas de org/período: SUBQUERY
+-- CORRELACIONADA ESCALAR. Es simple, rápida, y permite referenciar `i`
+-- desde adentro porque el scope DE UN SCALAR SUBQUERY SÍ ve el outer.
+-- Este es el patrón NATURAL para aging — usalo por default.
 SELECT bp.name AS cliente,
        i.documentno AS factura,
        i.dateinvoiced::date AS fecha_emision,
        (i.dateinvoiced + COALESCE(pt.netdays, 30))::date AS fecha_vencimiento,
        i.grandtotal AS monto_factura,
-       COALESCE(alloc.paid, 0) AS monto_pagado,
-       (i.grandtotal - COALESCE(alloc.paid, 0)) AS saldo_abierto,
+       COALESCE((
+           SELECT SUM(COALESCE(al.amount, 0) + COALESCE(al.discountamt, 0) + COALESCE(al.writeoffamt, 0))
+           FROM adempiere.c_allocationline al
+           JOIN adempiere.c_allocationhdr ah ON al.c_allocationhdr_id = ah.c_allocationhdr_id
+           WHERE al.c_invoice_id = i.c_invoice_id  -- correlación OK en scalar subquery
+             AND ah.isactive = 'Y' AND ah.docstatus IN ('CO','CL')
+       ), 0) AS monto_pagado,
+       (i.grandtotal - COALESCE((
+           SELECT SUM(COALESCE(al.amount, 0) + COALESCE(al.discountamt, 0) + COALESCE(al.writeoffamt, 0))
+           FROM adempiere.c_allocationline al
+           JOIN adempiere.c_allocationhdr ah ON al.c_allocationhdr_id = ah.c_allocationhdr_id
+           WHERE al.c_invoice_id = i.c_invoice_id
+             AND ah.isactive = 'Y' AND ah.docstatus IN ('CO','CL')
+       ), 0)) AS saldo_abierto,
        (CURRENT_DATE - (i.dateinvoiced + COALESCE(pt.netdays, 30))) AS dias_vencido
 FROM adempiere.c_invoice i
 JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id
 JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id
+JOIN adempiere.ad_org o ON i.ad_org_id = o.ad_org_id
 LEFT JOIN adempiere.c_paymentterm pt ON i.c_paymentterm_id = pt.c_paymentterm_id
-LEFT JOIN alloc ON alloc.c_invoice_id = i.c_invoice_id
--- TODOS los filtros de c_invoice (i) van acá, NUNCA dentro de la CTE `alloc`:
 WHERE i.issotrx = 'Y' AND i.docstatus IN ('CO','CL') AND i.isactive = 'Y'
   AND dt.docbasetype = 'ARI'
-  AND (i.grandtotal - COALESCE(alloc.paid, 0)) > 0
+  AND o.name ILIKE '%InproMaiz%'  -- filtro org aquí, simple y efectivo
   AND (CURRENT_DATE - (i.dateinvoiced + COALESCE(pt.netdays, 30))) > 60
 ORDER BY dias_vencido DESC
 LIMIT 500
@@ -1350,30 +1351,28 @@ async def process_with_sql_direct(
             "        `c_allocationhdr ah` (tiene dateacct, docstatus, NO tiene amount).\n"
             "    NO: `a.allocatedamt` — no existe en allocation. Usar SUM(al.amount)\n"
             "        agregado desde c_allocationline.\n"
-            "  Para cualquier query de CxC/saldos/vencimiento, ver el ejemplo\n"
-            "  completo `Análisis de antigüedad de saldos` en los ejemplos del\n"
-            "  catálogo (usa WITH alloc AS ... pre-agregado).\n"
+            "  Para queries de CxC/saldos/vencimiento, ver el ejemplo\n"
+            "  `Análisis de antigüedad de saldos` — usa SUBQUERY CORRELACIONADA\n"
+            "  ESCALAR (la forma simple que SÍ puede referenciar `i`).\n"
             "\n"
-            "  ⚠️ SCOPE de CTEs y subqueries — REGLA DE VISIBILIDAD:\n"
-            "  Una CTE (WITH x AS ...) o subquery en FROM/LEFT JOIN tiene scope\n"
-            "  AISLADO. Solo ve las tablas que declara en su propio FROM.\n"
-            "  NO ve las tablas del outer query (i, bp, pt, etc.).\n"
+            "  ⚠️ CORRELACIÓN: qué puede y qué NO puede ver el outer `i`:\n"
             "  \n"
-            "  ERROR TÍPICO: tratar de 'pushear' un filtro dentro de la CTE.\n"
-            "    NO: `WITH alloc AS (SELECT ... FROM c_allocationline al\n"
-            "         WHERE ... AND i.ad_org_id = 1000000)`\n"
-            "    → PostgreSQL: 'invalid reference to FROM-clause entry for table i'\n"
+            "  SÍ puede ver `i` → SCALAR SUBQUERY (aparece en SELECT o WHERE\n"
+            "  como valor único, entre paréntesis):\n"
+            "    (SELECT SUM(...) FROM c_allocationline al\n"
+            "     WHERE al.c_invoice_id = i.c_invoice_id)  ✅ OK\n"
             "  \n"
-            "  PATRÓN CORRECTO: la CTE pre-agrega con sus propias tablas, los\n"
-            "  filtros del outer van en el WHERE externo (después del LEFT JOIN):\n"
-            "    SÍ: `WITH alloc AS (SELECT al.c_invoice_id, SUM(...) ... FROM\n"
-            "         c_allocationline al JOIN c_allocationhdr ah ON ... WHERE\n"
-            "         ah.isactive='Y' GROUP BY al.c_invoice_id)\n"
-            "         SELECT ... FROM c_invoice i LEFT JOIN alloc ON ...\n"
-            "         WHERE i.ad_org_id IN (...) AND i.dateinvoiced >= ...`\n"
+            "  NO puede ver `i` → CTE (WITH ... AS) ni subquery en FROM/JOIN:\n"
+            "    WITH alloc AS (... WHERE i.ad_org_id = X) ❌ ERROR\n"
+            "    LEFT JOIN (SELECT ... WHERE i.ad_org_id = X) ❌ ERROR\n"
+            "    → 'missing FROM-clause entry for table i'\n"
             "  \n"
-            "  Si realmente necesitás correlación, usá subquery CORRELACIONADA\n"
-            "  con EXISTS/NOT EXISTS (NO JOIN), pero generalmente NO hace falta.\n\n"
+            "  REGLA PRÁCTICA: si querés filtrar una agregación POR factura\n"
+            "  específica (ej: saldo pagado de una factura), usá SCALAR SUBQUERY\n"
+            "  correlacionada — es el patrón natural y funciona. Si querés\n"
+            "  pre-agregar para TODAS las facturas de una vez, usá CTE sin\n"
+            "  correlación (la CTE no puede filtrar por org específica; esa\n"
+            "  filtrada la hacés en el outer).\n\n"
             "🎯 REGLA CRÍTICA #7 — NO HAGAS ARITMÉTICA MENTAL (es fuente de errores):\n"
             "Los LLMs cometemos errores sistemáticos al sumar muchos números grandes\n"
             "en texto. Ejemplo real: 28 valores de millones de bolívares → sumé mal\n"
