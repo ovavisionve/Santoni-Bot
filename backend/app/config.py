@@ -63,6 +63,18 @@ class Settings(BaseSettings):
     # flag y SQL Directo usa el proveedor por defecto.
     use_claude_for_sql: bool = True
 
+    # Hybrid fino (15/Abr/2026): cuando está en True, Claude se usa SOLO para
+    # queries "complejas" (agregados financieros, GROUP BY, UNION ALL,
+    # resúmenes con desglose) y DeepSeek/OpenRouter maneja las queries
+    # "simples" (conteos, búsquedas por nombre, cumpleaños).
+    # Ahorro estimado: ~70% de los tokens de Claude, que es ~20x más caro.
+    # Para 200 queries/día, baja el costo mensual de ~$50 (todo Claude con
+    # cache) a ~$15 (Claude solo para el 20% complejo).
+    # Default False para no cambiar comportamiento hasta que el usuario lo
+    # active explícitamente (se activa con USE_CLAUDE_ONLY_FOR_COMPLEX=true).
+    # Requiere use_claude_for_sql=True también — si es False, este flag se ignora.
+    use_claude_only_for_complex: bool = False
+
     # ChromaDB
     chroma_host: str = "chromadb"
     chroma_port: int = 8000

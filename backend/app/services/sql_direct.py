@@ -91,20 +91,143 @@ def _write_audit(
         return None
 
 
-def _create_sql_direct_llm(temperature: float = 0.0, max_tokens: int = 2048):
-    """Create the LLM for SQL Direct (hybrid mode).
+# ─────────────────────────────────────────────────────────────────────
+# Detector de complejidad (para modo híbrido fino)
+# ─────────────────────────────────────────────────────────────────────
 
-    Modo híbrido (14/Abr/2026): si `use_claude_for_sql=True` Y hay API key
-    de Anthropic configurada → fuerza Claude. Claude es ~20-100x más caro
-    que DeepSeek pero mucho más preciso generando SQL sin inventar columnas
-    ni alucinar montos contables. El resto del bot (routing, saludos,
-    follow-ups cortos) sigue usando el proveedor por defecto (openrouter).
+# Palabras que indican query compleja (agregado, multi-tabla, financial).
+# Si la pregunta del usuario contiene alguna de estas, se considera
+# "compleja" y se usa Claude. Sino, DeepSeek maneja la query.
+_COMPLEX_KEYWORDS = frozenset({
+    # Agregados
+    "total", "totales", "suma", "promedio", "ranking", "top ",
+    "resumen", "desglose", "desglosado", "agrupado", "agrupada",
+    # Financial
+    "gasto", "gastos", "ingreso", "ingresos", "devengado", "deducido",
+    "deducción", "deduccion", "utilidad", "balance", "saldo",
+    "cobranza", "cobrado", "facturado", "facturación", "facturacion",
+    "ausentismo", "ausencia",
+    # Desglose por categoría
+    "por zona", "por organización", "por organizacion", "por org",
+    "por departamento", "por cargo", "por tipología", "por tipologia",
+    "por moneda", "por cliente", "por proveedor", "por mes",
+    "por tipo", "por categoria", "por categoría",
+    # Comparaciones
+    "comparar", "comparación", "comparacion", "versus",
+    # Rangos temporales extensos
+    "primer trimestre", "segundo trimestre", "tercer trimestre",
+    "cuarto trimestre", "semestre", "año ", "anual", "acumulado",
+    "histórico", "historico",
+})
+
+# Patrones SIMPLES — si matchea alguno de estos, la query se considera
+# simple SIN evaluar los patrones complejos. Esto evita falsos positivos
+# como "fecha de ingreso" → "ingreso" (palabra ambigua).
+_SIMPLE_PATTERNS = frozenset({
+    "cumpleañeros", "cumpleaños", "cumple año", "cumplen año", "nacidos",
+    "fecha de ingreso", "fecha de nacimiento", "fecha de contratación",
+    "cuántos empleados", "cuantos empleados",
+    "cuántos activos", "cuantos activos",
+    "cuantos trabajadores", "cuántos trabajadores",
+    "quién es", "quien es", "quién cumple", "quien cumple",
+    "dame la fecha", "dime la fecha",
+})
+
+
+def _is_complex_query(message: str, history: list | None = None) -> bool:
+    """Clasifica una query como compleja o simple (heurística).
+
+    Lógica:
+      1. Si matchea un patrón SIMPLE → simple (prioritario, evita falsos positivos)
+      2. Si el historial tiene > 3 turnos → compleja (follow-ups encadenados)
+      3. Si matchea _COMPLEX_KEYWORDS → compleja
+      4. Si menciona ≥ 2 meses → compleja
+      5. Default → simple
+
+    El default "simple" ahorra costo (DeepSeek). Las queries realmente
+    complejas casi siempre tienen alguno de los patrones conocidos.
+    """
+    msg_lower = message.lower()
+
+    # PASO 1: patrones simples tienen prioridad
+    if any(p in msg_lower for p in _SIMPLE_PATTERNS):
+        return False
+
+    # PASO 2: historial largo = contexto complejo
+    if history and len(history) > 6:  # 3 intercambios = 6 mensajes
+        return True
+
+    # PASO 3: keywords complejas
+    if any(kw in msg_lower for kw in _COMPLEX_KEYWORDS):
+        return True
+
+    # PASO 4: rangos temporales (múltiples meses)
+    import re as _re
+    meses = _re.findall(
+        r"\b(enero|febrero|marzo|abril|mayo|junio|julio|"
+        r"agosto|septiembre|octubre|noviembre|diciembre)\b",
+        msg_lower,
+    )
+    if len(meses) >= 2:
+        return True
+
+    # Default: simple (ahorra costo Claude)
+    return False
+
+
+def _create_sql_direct_llm(
+    temperature: float = 0.0,
+    max_tokens: int = 2048,
+    user_message: str = "",
+    history: list | None = None,
+):
+    """Create the LLM for SQL Direct (hybrid mode con opcional fine-grained).
+
+    Modos:
+      1. USE_CLAUDE_FOR_SQL=false
+         → SQL Directo usa el AI_PROVIDER default (OpenRouter/DeepSeek).
+
+      2. USE_CLAUDE_FOR_SQL=true + USE_CLAUDE_ONLY_FOR_COMPLEX=false (default)
+         → Todas las queries de SQL Directo van a Claude (modo actual).
+
+      3. USE_CLAUDE_FOR_SQL=true + USE_CLAUDE_ONLY_FOR_COMPLEX=true
+         → Modo híbrido fino: Claude solo para queries complejas (agregados,
+           financial, follow-ups largos); DeepSeek para simples (cumpleaños,
+           conteos directos, búsquedas por nombre). Ahorro ~70% del costo de
+           Claude manteniendo calidad donde importa.
 
     Fallback: si Claude falla o no está configurada, usa el AI_PROVIDER
     por defecto — SQL Directo sigue funcionando, solo con menor precisión.
     """
     settings = get_settings()
-    if settings.use_claude_for_sql and is_claude_available():
+    claude_available = settings.use_claude_for_sql and is_claude_available()
+
+    # Modo híbrido fino activo: elegir según complejidad
+    if claude_available and settings.use_claude_only_for_complex:
+        is_complex = _is_complex_query(user_message, history)
+        if is_complex:
+            logger.info(
+                "SQL Direct híbrido: Claude (%s) para query compleja: '%s'",
+                settings.anthropic_model, user_message[:60],
+            )
+            return create_llm(
+                temperature=temperature,
+                max_tokens=max_tokens,
+                purpose="sql_direct_complex",
+                provider="anthropic",
+            )
+        logger.info(
+            "SQL Direct híbrido: %s para query simple: '%s'",
+            settings.openrouter_model, user_message[:60],
+        )
+        return create_llm(
+            temperature=temperature,
+            max_tokens=max_tokens,
+            purpose="sql_direct_simple",
+        )
+
+    # Modo Claude completo (todas las queries a Claude)
+    if claude_available:
         logger.debug(
             "SQL Direct: usando Claude (%s) por USE_CLAUDE_FOR_SQL=True",
             settings.anthropic_model,
@@ -115,6 +238,8 @@ def _create_sql_direct_llm(temperature: float = 0.0, max_tokens: int = 2048):
             purpose="sql_direct",
             provider="anthropic",
         )
+
+    # Fallback: provider por defecto
     return create_llm(
         temperature=temperature,
         max_tokens=max_tokens,
@@ -883,7 +1008,15 @@ async def process_with_sql_direct(
     """
     # Hybrid mode: usa Claude para SQL gen + formateo si está configurada.
     # Si Claude no está, cae automáticamente al proveedor por defecto.
-    llm = _create_sql_direct_llm(temperature=0.0, max_tokens=2048)
+    # Pasamos user_message + history para que el modo híbrido fino pueda
+    # decidir si es query compleja (Claude) o simple (DeepSeek).
+    # Si el flag USE_CLAUDE_ONLY_FOR_COMPLEX está en False, se ignoran.
+    llm = _create_sql_direct_llm(
+        temperature=0.0,
+        max_tokens=2048,
+        user_message=message,
+        history=history or [],
+    )
     datetime_ctx = _build_datetime_context()
 
     # Step 1: Ask LLM to generate SQL
@@ -1083,7 +1216,15 @@ async def process_with_sql_direct(
     # que Anthropic reconoce para caching. Si no (fallback a OpenRouter), usamos
     # string plano — OpenRouter ignora cache_control sin romper.
     settings = get_settings()
-    use_cache = settings.use_claude_for_sql and is_claude_available()
+    # use_cache: solo si vamos a usar Anthropic realmente (no OpenRouter).
+    # En modo híbrido fino, la decisión depende de la complejidad de la
+    # query — si Claude NO se va a usar para esta query, no aplicamos
+    # cache_control (OpenRouter lo ignora pero mejor no enviar el header).
+    claude_available = settings.use_claude_for_sql and is_claude_available()
+    if settings.use_claude_only_for_complex:
+        use_cache = claude_available and _is_complex_query(message, history)
+    else:
+        use_cache = claude_available
     if use_cache:
         system_msg = SystemMessage(content=[
             {

@@ -194,6 +194,17 @@ def health_check_detailed(current_user=Depends(get_current_user)):
             "sql_direct_uses": sql_direct_provider,
             "anthropic_model": settings.anthropic_model,
             "anthropic_proxy": bool(settings.anthropic_base_url),
+            "fine_grained": {
+                "enabled": settings.use_claude_only_for_complex,
+                "description": (
+                    "Cuando True, Claude SOLO procesa queries complejas "
+                    "(agregados, financial, follow-ups largos). DeepSeek "
+                    "maneja las simples (cumpleaños, conteos). Ahorro ~70% "
+                    "del costo Claude. Requiere use_claude_for_sql=True."
+                ) if settings.use_claude_only_for_complex else (
+                    "Desactivado: Claude procesa TODAS las queries de SQL Directo."
+                ),
+            },
         },
     }
 
