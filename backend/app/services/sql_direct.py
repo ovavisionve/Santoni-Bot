@@ -476,10 +476,13 @@ movementtype: V+=Recepción, C-=Despacho, M+/M-=Mov. interno, P+/P-=Producción
 
 ## EJEMPLOS de queries comunes:
 
--- Sueldo promedio por organización:
-SELECT AVG(sueldo) AS sueldo_promedio, COUNT(*) AS empleados
-FROM adempiere.lve_empleadosactivos
-WHERE ad_org_id IN (SELECT ad_org_id FROM adempiere.ad_org WHERE name ILIKE '%InproMaiz%')
+-- Sueldo promedio por organización (usar JOIN, es más rápido que subquery):
+-- IMPORTANTE: usar siempre alias `v.` para lve_empleadosactivos cuando hay
+-- JOIN con ad_org (ambas tablas tienen columna `name` → ambigua sin alias).
+SELECT AVG(v.total) AS sueldo_promedio, COUNT(*) AS empleados
+FROM adempiere.lve_empleadosactivos v
+JOIN adempiere.ad_org o ON v.ad_org_id = o.ad_org_id
+WHERE o.name ILIKE '%InproMaiz%'
 LIMIT 500
 
 -- Facturas de venta por moneda y período (CON filtro blacklist de orgs demo):
@@ -675,12 +678,14 @@ ORDER BY categoria, docbasetype
 LIMIT 500
 
 -- Empleados con antigüedad >= N años (usar EXTRACT sobre startdate, NO
--- tservicio que es texto). Ejemplo para priorización de vacaciones:
-SELECT name, cargo, departamento, startdate::date AS ingreso,
-       EXTRACT(YEAR FROM AGE(CURRENT_DATE, startdate))::int AS anos_servicio
+-- tservicio que es texto). CRÍTICO: prefijar TODAS las columnas con `v.`
+-- porque lve_empleadosactivos y ad_org ambas tienen columna `name`.
+-- Sin alias → `column reference "name" is ambiguous` y la query falla.
+SELECT v.name, v.cargo, v.departamento, v.startdate::date AS ingreso,
+       EXTRACT(YEAR FROM AGE(CURRENT_DATE, v.startdate))::int AS anos_servicio
 FROM adempiere.lve_empleadosactivos v
 JOIN adempiere.ad_org o ON v.ad_org_id = o.ad_org_id
-WHERE EXTRACT(YEAR FROM AGE(CURRENT_DATE, startdate)) >= 5
+WHERE EXTRACT(YEAR FROM AGE(CURRENT_DATE, v.startdate)) >= 5
   AND o.name ILIKE '%INPROA SANTONI%'
 ORDER BY anos_servicio DESC
 LIMIT 500
@@ -1222,7 +1227,24 @@ async def process_with_sql_direct(
             "  matcheando TODAS las orgs.\n"
             "  NO: `WHERE ad_org_id = (SELECT ad_org_id FROM ad_org WHERE name ILIKE '%AGROINPROA%')`\n"
             "  SÍ: `WHERE ad_org_id IN (SELECT ad_org_id FROM ad_org WHERE name ILIKE '%AGROINPROA%')`\n"
-            "  Esto aplica a TODAS las queries con filtro de org por ILIKE.\n\n"
+            "  Esto aplica a TODAS las queries con filtro de org por ILIKE.\n"
+            "\n"
+            "  ⚠️ COLUMNA `name` AMBIGUA en lve_empleadosactivos + ad_org:\n"
+            "  AMBAS tablas tienen columna `name` — la de lve_empleadosactivos\n"
+            "  es el nombre del empleado, la de ad_org es el nombre de la org.\n"
+            "  Cuando unís ambas (`JOIN ad_org o ON v.ad_org_id = o.ad_org_id`)\n"
+            "  TODA columna del SELECT, WHERE y ORDER BY debe llevar alias:\n"
+            "    NO: `SELECT name, cargo FROM lve_empleadosactivos JOIN ad_org ...`\n"
+            "    SÍ: `SELECT v.name, v.cargo FROM lve_empleadosactivos v JOIN ad_org o ...`\n"
+            "  La regla aplica para CUALQUIER JOIN donde las 2 tablas compartan\n"
+            "  columnas (name, ad_org_id, isactive, created, etc.).\n"
+            "\n"
+            "  ⚠️ PERFORMANCE en lve_empleadosactivos con AGREGADOS (AVG/SUM/COUNT):\n"
+            "  La view es pesada para agregados con subquery IN. Preferí JOIN\n"
+            "  con ad_org que permite a PostgreSQL pushear el filtro de org:\n"
+            "    LENTO (timeout): `FROM lve_empleadosactivos WHERE ad_org_id IN (SELECT ...)`\n"
+            "    RÁPIDO: `FROM lve_empleadosactivos v JOIN ad_org o ON ... WHERE o.name ILIKE ...`\n"
+            "  El JOIN también evita el problema de CardinalityViolation.\n\n"
             "🎯 REGLA CRÍTICA #7 — NO HAGAS ARITMÉTICA MENTAL (es fuente de errores):\n"
             "Los LLMs cometemos errores sistemáticos al sumar muchos números grandes\n"
             "en texto. Ejemplo real: 28 valores de millones de bolívares → sumé mal\n"
