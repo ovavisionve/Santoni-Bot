@@ -226,7 +226,7 @@ def main():
         out_fp.write("---\n\n")
 
     # Loop por conversaciones
-    stats = {"ok": 0, "error": 0, "total_time": 0.0}
+    stats = {"ok": 0, "error": 0, "sql_direct": 0, "fallback": 0, "total_time": 0.0}
     q_num = 0
     for conv_idx, questions in enumerate(conversations, 1):
         print(f"─── Conversación {conv_idx}/{len(conversations)} ({len(questions)} preguntas) ───")
@@ -247,6 +247,10 @@ def main():
                 stats["ok"] += 1
                 stats["total_time"] += elapsed
                 agent = meta.get("agent_used") or meta.get("agent", "?")
+                if agent == "sql_direct":
+                    stats["sql_direct"] += 1
+                else:
+                    stats["fallback"] += 1
                 # Resumen corto de la respuesta (primera línea no vacía)
                 preview = next(
                     (ln.strip() for ln in response.split("\n") if ln.strip()),
@@ -277,7 +281,12 @@ def main():
     # Resumen
     avg = stats["total_time"] / stats["ok"] if stats["ok"] else 0
     print("=" * 70)
-    print(f"📊 Resumen: {stats['ok']}/{total_questions} OK, {stats['error']} errores")
+    print(f"📊 Resumen: {stats['ok']}/{total_questions} HTTP OK, {stats['error']} errores HTTP")
+    print(f"   🎯 SQL Directo: {stats['sql_direct']} ({100*stats['sql_direct']/max(stats['ok'],1):.1f}%)")
+    print(f"   🔄 Fallback agentes: {stats['fallback']} ({100*stats['fallback']/max(stats['ok'],1):.1f}%)")
+    if stats['fallback'] > stats['sql_direct']:
+        print(f"   ⚠️  Mayoría de queries cayeron al fallback de agentes clásicos.")
+        print(f"   ⚠️  Revisar sql_audit — posible bug en SQL Directo.")
     print(f"   Tiempo total: {stats['total_time']:.1f}s, promedio: {avg:.1f}s/query")
     print()
 
