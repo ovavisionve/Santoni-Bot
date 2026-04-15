@@ -178,7 +178,44 @@ def _detect_function_on_text(error: str) -> tuple[str, str] | None:
     return None
 
 
+def _detect_anthropic_billing(error: str) -> tuple[str, str] | None:
+    """Detecta cuando Anthropic rechaza por falta de crédito."""
+    if "credit balance is too low" in error.lower() or "plans & billing" in error.lower():
+        return (
+            "anthropic_sin_credito",
+            "🔴 CRÍTICO: Anthropic sin crédito. Recargar en console.anthropic.com "
+            "→ Plans & Billing. Mientras tanto, SQL Directo está caído al 100% "
+            "y todas las queries usan fallback de agentes clásicos."
+        )
+    return None
+
+
+def _detect_anthropic_rate_limit(error: str) -> tuple[str, str] | None:
+    """Detecta rate limits de Anthropic."""
+    if "rate_limit" in error.lower() or "429" in error:
+        return (
+            "anthropic_rate_limit",
+            "🟠 Rate limit de Anthropic. Aumentar --delay en batch_test, o "
+            "upgrade a tier superior en console.anthropic.com."
+        )
+    return None
+
+
+def _detect_anthropic_auth(error: str) -> tuple[str, str] | None:
+    """Detecta API key inválida de Anthropic."""
+    if "authentication_error" in error.lower() or "invalid x-api-key" in error.lower():
+        return (
+            "anthropic_key_invalida",
+            "🔴 API key de Anthropic inválida. Revisar ANTHROPIC_API_KEY en .env "
+            "(quizás fue rotada). Actualizar y `docker compose restart backend`."
+        )
+    return None
+
+
 _DETECTORS = [
+    _detect_anthropic_billing,     # Prioridad alta: infraestructura
+    _detect_anthropic_auth,
+    _detect_anthropic_rate_limit,
     _detect_column_not_exist,
     _detect_table_not_whitelisted,
     _detect_table_not_exist,
