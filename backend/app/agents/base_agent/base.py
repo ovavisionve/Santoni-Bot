@@ -1,57 +1,28 @@
-"""
-Base class for all SantoniBot specialized agents.
-Each department agent inherits from this and implements its own
-system prompt, data fetching, and query processing logic.
+"""BaseAgent class — orchestrates system prompt, data fetch, LLM call, and
+hallucination validation for each department agent.
 
 Supports both full-response (process) and streaming (stream) modes.
 """
 
 import logging
-import re
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
-from datetime import datetime
 
-from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from app.config import get_settings
 from app.services.llm_factory import create_llm
 
+from .datetime_ctx import _build_datetime_context
+from .formatting import MAX_TABLE_ROWS, format_summary, format_table
+from .hallucination import HALLUCINATION_REPLACEMENT, detect_hallucination
+from .history_sanitize import clean_corrupted_response, strip_tables_from_history
+
 settings = get_settings()
 logger = logging.getLogger("santonibot.agents")
 
-# Performance limits
-_MAX_TABLE_ROWS = 50
 _MAX_HISTORY_MESSAGES = 40
 _MAX_TOKENS = 4096
-
-# Days of week in Spanish
-_DIAS_SEMANA = {
-    0: "Lunes", 1: "Martes", 2: "Miércoles", 3: "Jueves",
-    4: "Viernes", 5: "Sábado", 6: "Domingo",
-}
-_MESES_ES = {
-    1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril",
-    5: "Mayo", 6: "Junio", 7: "Julio", 8: "Agosto",
-    9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre",
-}
-
-
-def _build_datetime_context() -> str:
-    """Build a context string with the current date/time for the LLM."""
-    now = datetime.now()
-    dia = _DIAS_SEMANA[now.weekday()]
-    mes = _MESES_ES[now.month]
-    return (
-        f"FECHA Y HORA ACTUAL DEL SISTEMA:\n"
-        f"- Hoy es: {dia} {now.day} de {mes} de {now.year}\n"
-        f"- Hora: {now.strftime('%H:%M')} (Venezuela)\n"
-        f"- Mes actual: {mes} {now.year}\n"
-        f"- Año actual: {now.year}\n"
-        f"\nCuando el usuario diga 'actual', 'hoy', 'este mes', 'del mes', 'este año' "
-        f"se refiere a: {mes} {now.year}.\n"
-        f"NUNCA respondas con datos de otra fecha a menos que el usuario lo pida explícitamente.\n"
-    )
 
 
 class BaseAgent(ABC):
@@ -68,35 +39,29 @@ class BaseAgent(ABC):
     @property
     @abstractmethod
     def name(self) -> str:
-        """Agent identifier name."""
         ...
 
     @property
     @abstractmethod
     def display_name(self) -> str:
-        """Human-readable name for the agent."""
         ...
 
     @property
     @abstractmethod
     def department(self) -> str:
-        """Department this agent serves."""
         ...
 
     @property
     @abstractmethod
     def description(self) -> str:
-        """Short description of the agent's capabilities."""
         ...
 
     @abstractmethod
     def get_system_prompt(self) -> str:
-        """Return the system prompt for this agent."""
         ...
 
     @abstractmethod
     def get_sql_context(self) -> str:
-        """Return SQL schema context relevant to this agent."""
         ...
 
     def fetch_data(
@@ -106,18 +71,10 @@ class BaseAgent(ABC):
         salesrep_id: int | None = None,
         history: list[tuple[str, str]] | None = None,
     ) -> str | None:
-        """
-        Fetch relevant data from the database based on the user's message.
-        Override in subclasses to provide department-specific data fetching.
-        history contains recent conversation tuples: (role, content).
-        """
+        """Override in subclasses for department-specific data fetching."""
         return None
 
     def get_capabilities(self) -> str:
-        """Return a description of what this agent CAN and CANNOT do.
-
-        Override in subclasses to declare honest capabilities.
-        """
         return ""
 
     def _build_messages(
@@ -128,16 +85,11 @@ class BaseAgent(ABC):
         salesrep_id: int | None = None,
     ) -> tuple[list, bool]:
         """Build the LLM message list. Returns (messages, has_data)."""
-        # Build datetime context
         datetime_ctx = _build_datetime_context()
 
-        # Build capabilities context
         capabilities = self.get_capabilities()
-        capabilities_block = ""
-        if capabilities:
-            capabilities_block = f"\n\n{capabilities}\n"
+        capabilities_block = f"\n\n{capabilities}\n" if capabilities else ""
 
-        # Enhance system prompt with date, capabilities, and instructions
         enhanced_prompt = (
             self._system_prompt + "\n\n"
             f"{datetime_ctx}"
@@ -163,7 +115,6 @@ class BaseAgent(ABC):
         )
         messages = [SystemMessage(content=enhanced_prompt)]
 
-        # Data Catalog: inject real schema/stats context from iDempiere (optional)
         try:
             from app.services.data_catalog import get_catalog_service
             catalog = get_catalog_service()
@@ -173,7 +124,6 @@ class BaseAgent(ABC):
         except Exception as exc:
             logger.debug("Data catalog unavailable for %s: %s", self.name, exc)
 
-        # RAG: retrieve relevant knowledge-base context (optional)
         try:
             from app.services.rag_service import get_rag_service
             rag = get_rag_service()
@@ -183,18 +133,22 @@ class BaseAgent(ABC):
         except Exception as exc:
             logger.debug("RAG context unavailable for %s: %s", self.name, exc)
 
-        # Fetch real data from the database
         try:
-            from app.utils.sentry_utils import set_agent_context, track_query_performance
+            from app.utils.sentry_utils import (
+                set_agent_context,
+                track_query_performance,
+            )
             set_agent_context(self.name)
             with track_query_performance(self.name, f"{self.name}.fetch_data"):
-                data_context = self.fetch_data(message, org_ids=org_ids, salesrep_id=salesrep_id, history=history)
+                data_context = self.fetch_data(
+                    message, org_ids=org_ids,
+                    salesrep_id=salesrep_id, history=history,
+                )
         except Exception as exc:
             logger.error(
                 "Error in %s.fetch_data: %s: %s",
                 self.name, type(exc).__name__, exc, exc_info=True,
             )
-            # Report to Sentry with agent context
             try:
                 from app.utils.sentry_utils import capture_agent_error
                 capture_agent_error(self.name, exc, {
@@ -211,13 +165,16 @@ class BaseAgent(ABC):
             )
 
         if data_context:
-            # Count actual data rows in tables for enforcement
             data_lines = data_context.split("\n")
             data_row_count = sum(
                 1 for line in data_lines
                 if line.strip().startswith("|")
                 and "---" not in line
-                and not any(h in line.lower() for h in ["nombre", "codigo", "producto", "proveedor", "concepto", "organizacion", "zona", "banco", "moneda", "cargo", "departamento", "tipo", "estado", "factura", "documento"])
+                and not any(h in line.lower() for h in [
+                    "nombre", "codigo", "producto", "proveedor", "concepto",
+                    "organizacion", "zona", "banco", "moneda", "cargo",
+                    "departamento", "tipo", "estado", "factura", "documento",
+                ])
             )
             row_enforcement = ""
             if data_row_count > 0:
@@ -268,146 +225,28 @@ class BaseAgent(ABC):
                 )
             )
 
-        # Add conversation history (limited), cleaning corrupted responses
-        # IMPORTANT: Strip markdown tables from previous responses to prevent
-        # the LLM from recycling/copying data across different queries
         if history:
             for role, content in history[-_MAX_HISTORY_MESSAGES:]:
                 if role == "user":
                     messages.append(HumanMessage(content=content))
                 elif role == "assistant":
-                    clean = self._clean_corrupted_response(content)
-                    clean = self._strip_tables_from_history(clean)
+                    clean = clean_corrupted_response(content)
+                    clean = strip_tables_from_history(clean)
                     messages.append(AIMessage(content=clean))
 
         messages.append(HumanMessage(content=message))
         return messages, data_context is not None
 
-    @staticmethod
-    def _detect_hallucination(response_text: str, has_data: bool) -> bool:
-        """Detect if the LLM likely hallucinated data.
-
-        Returns True if hallucination is detected:
-        - When no data was provided (has_data=False): tables with numbers = hallucination
-        - When data WAS provided (has_data=True): fake invoice/doc numbers = hallucination
-        """
-        # ALWAYS check for fake document numbers (these are never real)
-        fake_docs = re.search(
-            r'(?:FAC|NC|OC|FC|FP)-\d{4,}', response_text
-        )
-        if fake_docs:
-            return True
-
-        # ALWAYS check for fake lote numbers
-        fake_lotes = re.search(
-            r'(?:Lote|LOTE)\s+(?:MA|AR|PR|IN|MZ)-[A-Z]{2,}-\d{3,}', response_text
-        )
-        if fake_lotes:
-            return True
-
-        if has_data:
-            return False
-
-        # No data was provided — check for generated tables
-        table_with_numbers = re.search(
-            r'\|[^|]*\d{1,3}(?:[.,]\d{3})+(?:[.,]\d{2})?[^|]*\|', response_text
-        )
-        if table_with_numbers:
-            return True
-
-        currency_in_table = re.search(
-            r'\|[^|]*(?:Bs\.?|USD|\$)\s*\d+[^|]*\|', response_text
-        )
-        if currency_in_table:
-            return True
-
-        # Check for tables with any numbers > 0 (even without formatting)
-        table_any_number = re.search(
-            r'\|\s*\d+[\d.,]*\s*\|', response_text
-        )
-        if table_any_number:
-            table_rows = re.findall(r'^\|.+\|$', response_text, re.MULTILINE)
-            if len(table_rows) >= 4:
-                return True
-
-        return False
-
-    @staticmethod
-    def _clean_corrupted_response(text: str) -> str:
-        """Detect and clean corrupted LLM responses (e.g. repeated text loops).
-
-        Some LLM responses degenerate into repeating the same phrase/sentence.
-        This pollutes conversation history and causes follow-up hallucinations.
-        """
-        if not text or len(text) < 200:
-            return text
-
-        # Detect repeated phrases: split into sentences and check for excessive repeats
-        sentences = re.split(r'[.!?\n]', text)
-        sentences = [s.strip() for s in sentences if len(s.strip()) > 10]
-
-        if len(sentences) >= 4:
-            from collections import Counter
-            counts = Counter(sentences)
-            most_common_count = counts.most_common(1)[0][1] if counts else 0
-            # If any sentence repeats 3+ times, the response is corrupted
-            if most_common_count >= 3:
-                # Keep only the first ~200 chars + a note
-                truncated = text[:200].rsplit(' ', 1)[0]
-                return (
-                    f"{truncated}...\n\n"
-                    "(Nota: la respuesta anterior se cortó por ser repetitiva. "
-                    "Los datos fueron consultados correctamente.)"
-                )
-
-        return text
-
-    @staticmethod
-    def _strip_tables_from_history(text: str) -> str:
-        """Remove markdown tables from previous responses to prevent data recycling.
-
-        When follow-up queries ask for different months/filters, the LLM tends to
-        copy employee names, IDs, and amounts from previous response tables, generating
-        hallucinated data. Stripping tables forces the LLM to use only fresh query results.
-        """
-        if not text:
-            return text
-
-        lines = text.split('\n')
-        cleaned_lines = []
-        in_table = False
-        table_replaced = False
-
-        for line in lines:
-            stripped = line.strip()
-            # Detect table rows (lines starting with |)
-            if stripped.startswith('|') and '|' in stripped[1:]:
-                if not in_table:
-                    in_table = True
-                    table_replaced = False
-                if not table_replaced:
-                    cleaned_lines.append("*(Se consultaron datos reales — ver respuesta original)*")
-                    table_replaced = True
-                continue  # Skip table row
-            else:
-                if in_table:
-                    in_table = False
-                cleaned_lines.append(line)
-
-        result = '\n'.join(cleaned_lines)
-        # Collapse multiple blank lines
-        result = re.sub(r'\n{3,}', '\n\n', result)
-        return result
-
-    _HALLUCINATION_REPLACEMENT = (
-        "La consulta a iDempiere no arrojó resultados para los filtros aplicados.\n\n"
-        "**¿Qué puedes intentar?**\n"
-        "- Prueba con un período diferente (ej: otro mes o año)\n"
-        "- Reformula la pregunta con más detalle\n"
-        "- Verifica que los datos del período consultado estén cargados en el sistema\n\n"
-        "*Nota: La conexión a iDempiere está activa. Solo muestro datos reales — "
-        "no genero datos estimados ni aproximados.*"
-    )
+    # --- Static helpers kept on the class for backward compat -----------
+    # Tests and other modules call BaseAgent._detect_hallucination,
+    # BaseAgent._format_table, self._format_summary, etc. Re-bind as
+    # staticmethods so public API is preserved after the split.
+    _detect_hallucination = staticmethod(detect_hallucination)
+    _clean_corrupted_response = staticmethod(clean_corrupted_response)
+    _strip_tables_from_history = staticmethod(strip_tables_from_history)
+    _format_table = staticmethod(format_table)
+    _format_summary = staticmethod(format_summary)
+    _HALLUCINATION_REPLACEMENT = HALLUCINATION_REPLACEMENT
 
     async def process(
         self,
@@ -418,13 +257,14 @@ class BaseAgent(ABC):
         salesrep_id: int | None = None,
     ) -> dict:
         """Process a user message and return a complete response."""
-        messages, has_data = self._build_messages(message, history, org_ids, salesrep_id)
+        messages, has_data = self._build_messages(
+            message, history, org_ids, salesrep_id,
+        )
         response = await self.llm.ainvoke(messages)
 
         response_text = response.content
 
-        # Post-response validation: detect hallucination when no data was provided
-        if self._detect_hallucination(response_text, has_data):
+        if detect_hallucination(response_text, has_data):
             logger.warning(
                 "Hallucination detected in %s (has_data=%s). Replacing response.",
                 self.name, has_data,
@@ -439,7 +279,7 @@ class BaseAgent(ABC):
                 )
             except Exception:
                 pass
-            response_text = self._HALLUCINATION_REPLACEMENT
+            response_text = HALLUCINATION_REPLACEMENT
 
         return {
             "response": response_text,
@@ -461,77 +301,26 @@ class BaseAgent(ABC):
         """Stream response tokens for real-time display.
 
         Includes post-stream hallucination detection: accumulates the full
-        response and, if hallucination is detected (no real data but tables
-        with numbers appeared), replaces the entire response.
+        response and, if hallucination is detected, logs for monitoring
+        (tokens can't be un-sent).
         """
-        messages, has_data = self._build_messages(message, history, org_ids, salesrep_id)
-        accumulated = []
+        messages, has_data = self._build_messages(
+            message, history, org_ids, salesrep_id,
+        )
+        accumulated: list[str] = []
         async for chunk in self.llm.astream(messages):
             if chunk.content:
                 accumulated.append(chunk.content)
                 yield chunk.content
 
-        # Post-stream hallucination check
         if not has_data and accumulated:
             full_response = "".join(accumulated)
-            if self._detect_hallucination(full_response, has_data):
+            if detect_hallucination(full_response, has_data):
                 logger.warning(
                     "Hallucination detected in streamed %s (has_data=%s).",
                     self.name, has_data,
                 )
-                # Can't un-send tokens, but log for monitoring
 
-    @staticmethod
-    def _format_table(data: list[dict], columns: list[str] | None = None) -> str:
-        """Format a list of dicts as a markdown table string for LLM context."""
-        if not data:
-            return "La consulta no arrojó resultados para los filtros aplicados."
 
-        cols = columns or list(data[0].keys())
-        header = "| " + " | ".join(str(c).replace("_", " ").title() for c in cols) + " |"
-        separator = "| " + " | ".join("---" for _ in cols) + " |"
-
-        rows = []
-        for row in data[:_MAX_TABLE_ROWS]:
-            values = []
-            for c in cols:
-                v = row.get(c, "")
-                if isinstance(v, float):
-                    values.append(f"{v:,.2f}")
-                else:
-                    values.append(str(v) if v is not None else "-")
-            rows.append("| " + " | ".join(values) + " |")
-
-        table = "\n".join([header, separator] + rows)
-        if len(data) > _MAX_TABLE_ROWS:
-            table += f"\n\n*(Mostrando {_MAX_TABLE_ROWS} de {len(data)} registros)*"
-        return table
-
-    @staticmethod
-    def _format_summary(data: dict, title: str = "") -> str:
-        """Format a summary dict as readable text for LLM context."""
-        lines = []
-        if title:
-            lines.append(f"## {title}")
-
-        for key, value in data.items():
-            if isinstance(value, dict):
-                lines.append(f"\n### {key.replace('_', ' ').title()}")
-                for k, v in value.items():
-                    if isinstance(v, float):
-                        lines.append(f"- {k.replace('_', ' ').title()}: {v:,.2f}")
-                    else:
-                        lines.append(f"- {k.replace('_', ' ').title()}: {v}")
-            elif isinstance(value, list):
-                lines.append(f"\n### {key.replace('_', ' ').title()}")
-                if value and isinstance(value[0], dict):
-                    lines.append(BaseAgent._format_table(value))
-                else:
-                    for item in value[:20]:
-                        lines.append(f"- {item}")
-            elif isinstance(value, float):
-                lines.append(f"- {key.replace('_', ' ').title()}: {value:,.2f}")
-            else:
-                lines.append(f"- {key.replace('_', ' ').title()}: {value}")
-
-        return "\n".join(lines)
+# Re-export for external code that imports from app.agents.base_agent
+__all__ = ["BaseAgent", "MAX_TABLE_ROWS"]
