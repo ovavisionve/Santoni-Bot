@@ -18,38 +18,12 @@ import calendar
 import re
 from datetime import datetime, timedelta
 
-# Mapa de meses en español → número (incluye typos comunes)
+# Mapa de meses en español → número
 MESES_MAP = {
-    "enero": 1, "henero": 1, "enro": 1,
-    "febrero": 2, "frebrero": 2, "febreo": 2, "febero": 2,
-    "marzo": 3, "marxo": 3, "marso": 3,
-    "abril": 4, "abrril": 4,
-    "mayo": 5,
-    "junio": 6,
-    "julio": 7,
-    "agosto": 8, "agosoto": 8,
-    "septiembre": 9, "setiembre": 9, "septimbre": 9,
-    "octubre": 10, "ocutbre": 10, "octube": 10,
-    "noviembre": 11, "nobiembre": 11, "noviember": 11,
-    "diciembre": 12, "diciember": 12, "disiembre": 12,
+    "enero": 1, "febrero": 2, "marzo": 3, "abril": 4,
+    "mayo": 5, "junio": 6, "julio": 7, "agosto": 8,
+    "septiembre": 9, "octubre": 10, "noviembre": 11, "diciembre": 12,
 }
-
-
-def _fuzzy_month(word: str) -> int | None:
-    """Match a word to a month name with 1-char substitution tolerance."""
-    word = word.lower()
-    if word in MESES_MAP:
-        return MESES_MAP[word]
-    # Only canonical month names for fuzzy match (not typo variants)
-    _CANONICAL = {
-        "enero": 1, "febrero": 2, "marzo": 3, "abril": 4,
-        "mayo": 5, "junio": 6, "julio": 7, "agosto": 8,
-        "septiembre": 9, "octubre": 10, "noviembre": 11, "diciembre": 12,
-    }
-    for name, num in _CANONICAL.items():
-        if len(word) == len(name) and sum(a != b for a, b in zip(word, name)) <= 1:
-            return num
-    return None
 
 # Mapa inverso: número → nombre
 MESES_NOMBRES = {v: k.title() for k, v in MESES_MAP.items()}
@@ -60,11 +34,7 @@ _COMPACT_DATE_RE = re.compile(r'\b(\d{6,8})\b')
 
 # Currency detection patterns
 _CURRENCY_VES_RE = re.compile(r'\b(bol[ií]vares?|bs\.?f?|ves)\b', re.IGNORECASE)
-# VENT-400 (10/Abr/2026): agregado "divisa/divisas" porque esalas usó esa
-# palabra en producción y el bot defaulteaba a VES pero el LLM la etiquetaba
-# como USD en la respuesta → supervisor veía bolívares con etiqueta USD.
-# "divisa" en Venezuela es sinónimo común de dólar.
-_CURRENCY_USD_RE = re.compile(r'\b(d[oó]lares?|usd|dol|divisas?)\b', re.IGNORECASE)
+_CURRENCY_USD_RE = re.compile(r'\b(d[oó]lares?|usd|dol)\b', re.IGNORECASE)
 
 # iDempiere c_currency_id values
 # Santoni uses multiple currency entries for dollars (DOL, Dol, DoL, USA, dol, etc.)
@@ -169,37 +139,6 @@ def extract_date_range(message: str) -> tuple[str | None, str | None]:
     if date_from and date_to:
         return date_from, date_to
 
-    # ── "hasta DD/MM/YYYY" pattern (no "desde" or "al") ──
-    # e.g. "ventas de marzo hasta 25/03/2026" → 2026-03-01 al 2026-03-25
-    hasta_match = re.search(r'\bhasta\b', msg)
-    if hasta_match and "desde" not in msg:
-        date_to = _parse_single_date(message[hasta_match.end():])
-        if date_to:
-            # Try to find a month name before "hasta" to set the start date
-            before_hasta = msg[:hasta_match.start()]
-            start_month = None
-            start_year = None
-            for nombre, num in MESES_MAP.items():
-                if nombre in before_hasta:
-                    start_month = num
-                    break
-            if start_month is None:
-                for word in before_hasta.split():
-                    found = _fuzzy_month(word)
-                    if found:
-                        start_month = found
-                        break
-            # Extract year from before "hasta" or use the date_to's year
-            yr_match = re.search(r'20\d{2}', before_hasta)
-            dt_to = datetime.strptime(date_to, "%Y-%m-%d")
-            start_year = int(yr_match.group()) if yr_match else dt_to.year
-            if start_month:
-                date_from = f"{start_year}-{start_month:02d}-01"
-            else:
-                # No month found → assume 1st of the date_to's month
-                date_from = f"{dt_to.year}-{dt_to.month:02d}-01"
-            return date_from, date_to
-
     # ── Single-date / relative-date patterns (no "al" separator) ──
 
     # Single explicit date: "el 24/02/2026", "20/02/2026" → same-day range
@@ -252,19 +191,11 @@ def extract_month_year(message: str) -> tuple[int | None, int]:
             anio = now.year
         return mes, anio
 
-    # Explicit month names (exact match in MESES_MAP)
+    # Explicit month names
     for nombre, num in MESES_MAP.items():
         if nombre in msg:
             mes = num
             break
-
-    # Fuzzy match: check each word against canonical month names
-    if mes is None:
-        for word in msg.split():
-            found = _fuzzy_month(word)
-            if found:
-                mes = found
-                break
 
     return mes, anio
 

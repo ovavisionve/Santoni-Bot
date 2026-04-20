@@ -2,7 +2,6 @@ from app.models.user import User
 from app.models.conversation import Conversation, Message
 from app.models.audit import AuditLog
 from app.models.saved_report import SavedReport
-from app.models.sql_audit import SqlAudit
 from app.models.demo_data import (
     DemoCliente,
     DemoFacturaVenta,
@@ -50,5 +49,4 @@ __all__ = [
     "DemoProductor",
     "DemoCompraProductor",
     "SavedReport",
-    "SqlAudit",
 ]

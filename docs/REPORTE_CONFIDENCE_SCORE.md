@@ -89,30 +89,6 @@ Este endpoint devuelve adicionalmente un resumen con:
 - Cantidad de interacciones con baja confianza
 - Desglose por agente (total y promedio por cada uno)
 
-### Tendencias y veredicto automático (NUEVO):
-
-```
-GET /api/admin/confidence-report/trends?days=30
-```
-
-| Parámetro | Default | Rango | Descripción |
-|-----------|---------|-------|-------------|
-| `days` | 30 | 1 - 180 | Período a analizar |
-
-Este es el endpoint más importante. Devuelve:
-
-- **`veredicto`**: Diagnóstico automático que responde directamente si el problema es del dataset o del umbral
-- **`tendencia_diaria`**: Score promedio por día (para ver si mejora o empeora)
-- **`por_agente`**: Qué agentes tienen peor desempeño
-- **`causas_de_fallo`**: Distribución de causas con porcentajes
-- **`totales.tasa_fallo_pct`**: Porcentaje de interacciones con baja confianza
-
-**Ejemplo de veredicto:**
-```
-"PROBLEMA DE DATASET: 35/50 fallos (70%) son por keywords no reconocidos.
-Se recomienda ampliar el dataset de entrenamiento con las preguntas que fallan."
-```
-
 ---
 
 ## 5. Respuesta a la pregunta del equipo Santoni
