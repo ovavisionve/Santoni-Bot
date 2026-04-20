@@ -7,12 +7,23 @@ hr_payroll + c_bpartner en iDempiere (PostgreSQL 13).
 """
 
 import logging
+import re
 
 from app.agents.base_agent import BaseAgent
 from app.agents.date_utils import (
     extract_date_range,
     extract_month_year,
     build_period_label,
+)
+from app.agents.keywords import (
+    RRHH_EMPLEADOS,
+    RRHH_CARGOS,
+    RRHH_NOMINA,
+    RRHH_AUSENTISMO,
+    RRHH_CUMPLEANOS,
+    RRHH_VACACIONES,
+    RRHH_ROTACION,
+    matches_any,
 )
 
 logger = logging.getLogger("santonibot.agents.rrhh")
@@ -54,6 +65,7 @@ Tu especialidad es la gestión del talento humano y consultas de nómina.
 CAPACIDADES:
 - Listado y resumen de empleados por organización/departamento/cargo
 - Búsqueda de empleados por cargo/puesto (ej: "cuantos obreros integrales", "lista de gerentes")
+- Búsqueda de empleados por nombre o apellido (ej: "quiénes se llaman Eduardo", "empleados de apellido Pérez")
 - Los datos incluyen desglose por cargo (por_cargo) con conteos exactos
 - Cumpleañeros del mes (fecha de cumpleaños de empleados)
 - Consultas de nómina por período (quincenas, mensuales)
@@ -71,8 +83,9 @@ CONTEXTO iDEMPIERE:
 - Movimientos de nómina: hr_movement (hr_process_id, c_bpartner_id, hr_concept_id, amount, qty)
 - Conceptos: hr_concept (value, name, columntype, type)
 - Nóminas definidas: hr_payroll (name, hr_payroll_id)
-- Organizaciones: INPROA SANTONI (444 empleados), InproMaiz (206), Santoni Service (134), AGROPECUARIA R.R. (124), AGA AGRICOLA (91), AGROINPROA (38), INVERSIONES AGA (4)
+- Organizaciones: INPROA SANTONI, InproMaiz, Santoni Service, AGROPECUARIA R.R., AGA AGRICOLA, AGROINPROA, INVERSIONES AGA
 - NOTA: Los conteos de empleados usan DISTINCT por c_bpartner_id ya que hr_employee tiene múltiples registros por persona
+- IMPORTANTE: Los conteos exactos de empleados por organización SOLO están en los datos reales que recibes. NUNCA inventes cifras.
 
 REGLAS:
 - Responde siempre en español, de forma profesional
@@ -105,6 +118,7 @@ IMPORTANTE SOBRE PERÍODOS:
             "CAPACIDADES REALES (lo que SÍ puedo consultar en la base de datos):\n"
             "✅ Resumen de empleados activos por organización, departamento y cargo\n"
             "✅ Búsqueda de empleados por cargo (ej: obreros, choferes, gerentes)\n"
+            "✅ Búsqueda de empleados por nombre o apellido (ej: se llaman Eduardo, apellido Pérez)\n"
             "✅ Empleados que ingresaron en un rango de fechas (filtro por startdate)\n"
             "✅ Cumpleañeros del mes\n"
             "✅ Resumen de nómina por período (totales devengado, deducciones, neto)\n"
@@ -131,22 +145,60 @@ Datos de RRHH en iDempiere:
 - c_bpartner: Datos de empleados (isemployee='Y', name, value)
 """
 
-    # Job title keywords that indicate a cargo-specific query.
-    # When any of these appear, extract the surrounding words as the cargo search term.
-    _CARGO_KEYWORDS = [
-        "obrero", "obreros", "gerente", "gerentes", "analista", "analistas",
-        "supervisor", "supervisora", "supervisores", "coordinador", "coordinadora",
-        "coordinadores", "jefe", "jefa", "jefes", "director", "directora",
-        "directores", "operario", "operarios", "operador", "operadores",
-        "asistente", "asistentes", "auxiliar", "auxiliares", "secretaria",
-        "secretario", "técnico", "tecnicos", "técnicos", "tecnico",
-        "ingeniero", "ingenieros", "ingeniera", "chofer", "choferes",
-        "vigilante", "vigilantes", "electricista", "electricistas",
-        "mecánico", "mecanico", "mecánicos", "mecanicos",
-        "soldador", "soldadores", "almacenista", "almacenistas",
-        "recepcionista", "cajero", "cajera", "contador", "contadora",
-        "administrador", "administradora", "mensajero",
+    _ORG_MAP = [
+        ("inpromaiz", "InproMaiz"),
+        ("inpro maiz", "InproMaiz"),
+        ("inproa santoni", "INPROA SANTONI"),
+        ("inproa", "INPROA SANTONI"),
+        ("santoni service", "Santoni Service"),
+        ("agropecuaria", "AGROPECUARIA"),
+        ("aga agricola", "AGA AGRICOLA"),
+        ("aga agrícola", "AGA AGRICOLA"),
+        ("agroinproa", "AGROINPROA"),
+        ("inversiones aga", "INVERSIONES AGA"),
     ]
+
+    @classmethod
+    def _extract_org_name(cls, msg: str) -> str | None:
+        msg_lower = msg.lower()
+        for kw, val in cls._ORG_MAP:
+            if kw in msg_lower:
+                return val
+        return None
+
+    # Name search trigger phrases
+    _NAME_TRIGGERS = [
+        "se llaman ", "se llama ", "llamados ", "llamado ", "llamada ",
+        "de nombre ", "nombre ", "con nombre ",
+        "apellido ", "con apellido ", "de apellido ",
+    ]
+
+    def _extract_name_search(self, msg: str) -> str | None:
+        """Extract a name/surname search term from the message.
+
+        Detects phrases like 'se llaman Eduardo', 'apellido Pérez',
+        'con nombre María', etc.
+        Returns the search term or None.
+        """
+        msg_lower = msg.lower()
+        for trigger in self._NAME_TRIGGERS:
+            pos = msg_lower.find(trigger)
+            if pos == -1:
+                continue
+            rest = msg[pos + len(trigger):].strip()
+            # Take until common stop words or punctuation
+            for stop in [" en ", " de la ", " del ", " hay", " tiene",
+                         " activo", " trabaj", " cuándo", " cuando", "?", ".", ","]:
+                idx = rest.lower().find(stop)
+                if idx != -1:
+                    rest = rest[:idx]
+            result = rest.strip()
+            if result and len(result) >= 2:
+                return result
+        return None
+
+    # Job title keywords — uses centralized RRHH_CARGOS from keywords.py
+    _CARGO_KEYWORDS = list(RRHH_CARGOS)
 
     def _extract_cargo_search(self, msg: str) -> str | None:
         """Extract job title search term from the message.
@@ -225,7 +277,19 @@ Datos de RRHH en iDempiere:
             mes = None
             anio = None
 
-        # Inherit temporal context from history for follow-ups
+        # Extract organization name from message
+        org_name = self._extract_org_name(message)
+
+        # Detect if user explicitly wants ALL organizations (reset org filter)
+        _ALL_ORGS_PHRASES = [
+            "todas las empresa", "todas las organiz", "todo el grupo",
+            "todos los empleados", "en general", "en total",
+            "todas las filiales", "grupo santoni",
+        ]
+        wants_all_orgs = any(phrase in msg for phrase in _ALL_ORGS_PHRASES)
+
+        # Inherit temporal context and org_name from history for follow-ups
+        _has_explicit_year = bool(re.search(r'20\d{2}', message))
         if not date_from and not date_to and not mes and history:
             for role, content in reversed(history):
                 if role != "user":
@@ -238,6 +302,38 @@ Datos de RRHH en iDempiere:
                 if m:
                     mes, anio = m, a
                     break
+                elif re.search(r'20\d{2}', content):
+                    anio = a
+                    break
+        # Month extracted but no explicit year → inherit year from history
+        # e.g. "¿Y en enero?" after "nómina 2025" → use enero 2025, not 2026
+        elif mes and not _has_explicit_year and not date_from and history:
+            for role, content in reversed(history):
+                if role != "user":
+                    continue
+                yr = re.search(r'20\d{2}', content)
+                if yr:
+                    anio = int(yr.group())
+                    break
+        # Only inherit org_name if user didn't explicitly ask for all orgs
+        # and the current message looks like a follow-up (short, no new topic keywords)
+        if not org_name and not wants_all_orgs and history:
+            # Only inherit org if the message is clearly a follow-up
+            # (doesn't introduce a new broad topic)
+            _NEW_TOPIC_INDICATORS = [
+                "cuántos empleados", "cuantos empleados", "nómina de", "nomina de",
+                "ausentismo", "vacaciones en", "rotación", "rotacion",
+                "cumpleañeros de", "cumplen años en", "cumple años en",
+            ]
+            is_new_topic = any(ind in msg for ind in _NEW_TOPIC_INDICATORS)
+            if not is_new_topic:
+                for role, content in reversed(history):
+                    if role != "user":
+                        continue
+                    o = self._extract_org_name(content)
+                    if o:
+                        org_name = o
+                        break
 
         label = build_period_label(date_from, date_to, mes, anio)
 
@@ -247,12 +343,31 @@ Datos de RRHH en iDempiere:
             # Follow-up with dates but no cargo keyword → check history
             cargo_search = self._extract_cargo_from_history(history)
 
-        try:
-            # Employee summary (always included)
-            summary = build_employee_summary(org_ids=org_ids)
-            sections.append(self._format_summary(summary, "Resumen de Personal"))
+        # Detect name search
+        name_search = self._extract_name_search(message)
 
-            if cargo_search:
+        try:
+            # Employee summary (always included unless searching by name)
+            if not name_search:
+                summary = build_employee_summary(org_ids=org_ids)
+                sections.append(self._format_summary(summary, "Resumen de Personal"))
+
+            if name_search:
+                # Name-specific query: search employees by name/surname
+                data = build_employee_list(
+                    org_ids=org_ids, name_search=name_search,
+                )
+                if data:
+                    sections.append(
+                        f"## Empleados con nombre/apellido '{name_search.upper()}' ({len(data)} encontrados)"
+                    )
+                    sections.append(self._format_table(data))
+                else:
+                    sections.append(
+                        f"## Búsqueda por nombre: '{name_search}'\n"
+                        f"No se encontraron empleados activos con ese nombre o apellido."
+                    )
+            elif cargo_search:
                 # Cargo-specific query: filter employee list by job title
                 date_label = f" (ingresados {label})" if date_from else ""
                 data = build_employee_list(
@@ -271,13 +386,7 @@ Datos de RRHH en iDempiere:
                         f"{' en el período indicado' if date_from else ''}. "
                         f"Revisa la sección 'por_cargo' del resumen para ver los cargos disponibles."
                     )
-            elif any(w in msg for w in [
-                "empleado", "personal", "lista", "cuántos", "cuantos",
-                "trabajador", "trabajadores", "plantilla", "activo", "activos",
-                "ingreso", "ingresos", "ingresaron", "ingresó",
-                "contratación", "contratacion", "contrataciones", "contrataron",
-                "nuevo ingreso", "nuevos ingresos",
-            ]):
+            elif matches_any(msg, RRHH_EMPLEADOS):
                 data = build_employee_list(
                     org_ids=org_ids,
                     date_from=date_from, date_to=date_to,
@@ -287,9 +396,7 @@ Datos de RRHH en iDempiere:
                     sections.append(f"## Lista de Empleados Activos{date_label} ({len(data)} registros)")
                     sections.append(self._format_table(data))
 
-            if any(w in msg for w in [
-                "cumpleaño", "cumpleaños", "cumpleañero", "cumpleañeros",
-            ]):
+            if matches_any(msg, RRHH_CUMPLEANOS):
                 # For birthdays, use mes from the message (or current month if not specified)
                 birthday_mes = mes
                 if birthday_mes is None and not date_from:
@@ -298,9 +405,10 @@ Datos de RRHH en iDempiere:
                 from app.agents.date_utils import MESES_NOMBRES
                 mes_label = MESES_NOMBRES.get(birthday_mes, str(birthday_mes)) if birthday_mes else "Todos los meses"
                 try:
-                    data = build_birthday_list(mes=birthday_mes, org_ids=org_ids)
+                    data = build_birthday_list(mes=birthday_mes, org_ids=org_ids, org_name=org_name)
                     if data:
-                        sections.append(f"## Cumpleañeros de {mes_label} ({len(data)} empleados)")
+                        org_label = f" en {org_name}" if org_name else ""
+                        sections.append(f"## Cumpleañeros de {mes_label}{org_label} — TOTAL EXACTO: {len(data)} empleados")
                         sections.append(self._format_table(data))
                     else:
                         sections.append(
@@ -315,18 +423,17 @@ Datos de RRHH en iDempiere:
                         f"Es posible que el campo de fecha de nacimiento no esté disponible en la base de datos."
                     )
 
-            if any(w in msg for w in ["nómina", "nomina", "salario", "sueldo", "pago"]):
+            if matches_any(msg, RRHH_NOMINA):
                 data = build_payroll_summary(
                     mes=mes, anio=anio, org_ids=org_ids,
                     date_from=date_from, date_to=date_to,
                 )
-                sections.append(self._format_summary(data, f"Resumen de Nómina - {label}"))
+                if self._dict_has_data(data):
+                    sections.append(self._format_summary(data, f"Resumen de Nómina - {label}"))
+                else:
+                    return None
 
-            if any(w in msg for w in [
-                "ausentismo", "ausentimos", "ausencia", "inasistencia",
-                "falta", "faltas", "permiso", "reposo", "incapacidad",
-                "licencia", "asistencia",
-            ]):
+            if matches_any(msg, RRHH_AUSENTISMO):
                 try:
                     data = build_attendance_summary(
                         mes=mes, anio=anio, org_ids=org_ids,
@@ -343,14 +450,12 @@ Datos de RRHH en iDempiere:
                         f"Error: {type(exc).__name__}. Intenta con otro período o consulta específica."
                     )
 
-            if any(w in msg for w in [
-                "vacacion", "vacaciones", "vacacional",
-                "control vacacional", "dias disfrutados",
-            ]):
+            if matches_any(msg, RRHH_VACACIONES):
                 try:
                     data = build_vacation_summary(
                         mes=mes, anio=anio, org_ids=org_ids,
                         date_from=date_from, date_to=date_to,
+                        org_name=org_name,
                     )
                     sections.append(self._format_summary(
                         data, f"Resumen de Vacaciones - {label}",
@@ -363,14 +468,12 @@ Datos de RRHH en iDempiere:
                         f"Error: {type(exc).__name__}. Intenta con otro período o consulta específica."
                     )
 
-            if any(w in msg for w in [
-                "rotación", "rotacion", "baja", "bajas", "egreso", "egresos",
-                "renuncia", "despido", "turnover", "salida", "salidas",
-            ]):
+            if matches_any(msg, RRHH_ROTACION):
                 data = build_turnover_summary(anio=anio, org_ids=org_ids)
-                sections.append(self._format_summary(
-                    data, f"Indicadores de Rotación - Año {anio}",
-                ))
+                if self._dict_has_data(data):
+                    sections.append(self._format_summary(
+                        data, f"Indicadores de Rotación - Año {anio}",
+                    ))
 
         except Exception as exc:
             logger.error("Error consultando datos de RRHH: %s: %s", type(exc).__name__, exc, exc_info=True)

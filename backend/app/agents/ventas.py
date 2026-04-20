@@ -17,11 +17,20 @@ from app.agents.date_utils import (
     build_period_label,
     detect_currency,
 )
+from app.agents.keywords import (
+    VENTAS_CLIENTES,
+    VENTAS_FACTURACION,
+    VENTAS_COBRANZA,
+    VENTAS_CXC,
+    VENTAS_ZONAS,
+    matches_any,
+)
 from app.services.query_service import (
     build_sales_summary,
     build_collection_summary,
     build_top_clients,
     build_overdue_receivables,
+    build_top_delinquent_clients,
 )
 
 
@@ -60,17 +69,17 @@ CAPACIDADES PRINCIPALES:
 8. Cobranza diaria/semanal y comparativo vs metas
 
 CONTEXTO iDEMPIERE:
-- Facturas de venta: c_invoice (issotrx='Y', docstatus IN ('CO','CL')) - 447,386 facturas. CO=completada, CL=cerrada.
+- Facturas de venta: c_invoice (issotrx='Y', docstatus IN ('CO','CL')). CO=completada, CL=cerrada.
 - Líneas de factura: c_invoiceline (m_product_id, qtyinvoiced, linenetamt)
-- Cobros: c_payment (isreceipt='Y', docstatus IN ('CO','CL')) - 798,150 pagos
-- Clientes: c_bpartner (26,070 registros) - campos: ismayorista, isclap, ispublico, codigoventas
+- Cobros: c_payment (isreceipt='Y', docstatus IN ('CO','CL'))
+- Clientes: c_bpartner - campos: ismayorista, isclap, ispublico, codigoventas
 - Zonas: c_salesregion (vinculado via c_bpartner_location, una zona por cliente)
 - Distribuidores: salesrep_id en c_invoice apunta a c_bpartner (son distribuidores/intermediarios, NO vendedores internos)
 - NOTA: Los vendedores internos (Carlos Matias, Lenny Silva, etc.) NO están vinculados a las facturas en iDempiere
 - Monedas: VES (Bolívares, ID 205), USD (Dólares, IDs múltiples)
 - Organizaciones: INPROA SANTONI, AGROINPROA, AGROPECUARIA R.R., Agro Import, INVERSIONES AGA, InproMaiz, AGA AGRICOLA, Santoni Service
 - Campos fiscales: lve_controlnumber, withholdingamt (retenciones IVA)
-- Productos: m_product (40,766 productos), m_product_category
+- Productos: m_product, m_product_category
 
 REGLAS:
 - Responde siempre en español, de forma clara y orientada a la acción
@@ -96,11 +105,11 @@ IMPORTANTE SOBRE PERÍODOS:
 - Si el usuario especificó un rango de fechas, los datos ya vienen filtrados para ese rango exacto
 
 SOBRE MONEDA:
-- Si el usuario pide datos "en dólares", "en USD", "en DOL", los datos ya vienen filtrados SOLO por facturas en esa moneda
-- Si el usuario pide datos "en bolívares", "en BS", "en VES", los datos ya vienen filtrados SOLO por facturas en bolívares
-- Si no se especifica moneda, se muestran TODAS las facturas. Los datos incluyen columna "moneda" (Bs. o USD) para que indiques claramente la moneda de cada monto
-- NUNCA intentes convertir montos entre monedas. Los datos son montos reales facturados en la moneda original
-- La sección "por_moneda" muestra el desglose de totales por moneda
+- Si el usuario pide datos "en dólares", "en USD", "en DOL", los datos ya vienen filtrados SOLO por facturas en esa moneda. La sección "por_moneda" tendrá UNA SOLA fila (USD). Esto es correcto, NO falta nada.
+- Si el usuario pide datos "en bolívares", "en BS", "en VES", los datos ya vienen filtrados SOLO por facturas en bolívares. La sección "por_moneda" tendrá UNA SOLA fila (Bs.). Esto es correcto, NO falta nada.
+- Si no se especifica moneda, se muestran TODAS las facturas y "por_moneda" tendrá DOS filas (Bs. y USD).
+- NUNCA intentes convertir montos entre monedas. Los datos son montos reales facturados en la moneda original.
+- CUANDO VES UNA SOLA MONEDA en "por_moneda", es porque el usuario filtró por esa moneda. NO inventes datos de la otra moneda.
 
 SOBRE DISTRIBUIDORES:
 - La columna "distribuidor" muestra el distribuidor/intermediario asignado a la factura (salesrep_id)
@@ -128,8 +137,8 @@ SOBRE NOTAS DE CRÉDITO:
 - Las notas de crédito (NC) ya están SEPARADAS de las facturas en los datos
 - Los totales de venta muestran: facturas brutas, notas de crédito y venta neta (facturas - NC)
 - En los desgloses por zona, mes y moneda, el campo "total" ya es el neto (facturas - NC)
-- En el top de clientes, el total_facturado ya es neto (restadas las NC del cliente)
-- SIEMPRE presenta la venta neta como el dato principal y menciona las NC como referencia
+- En el top de clientes los datos incluyen: total_facturado (bruto), total_notas_credito (monto NC), y venta_neta (= facturado - NC). Usa SIEMPRE venta_neta como dato principal
+- NUNCA inventes montos de notas de crédito. Los montos EXACTOS ya vienen en el campo total_notas_credito. Solo usa esos valores
 - Ejemplo: "Venta neta: Bs. 1,500,000 (Facturado: Bs. 1,800,000 - NC: Bs. 300,000)"
 - Las cuentas por cobrar vencidas NO incluyen notas de crédito"""
 
@@ -149,7 +158,7 @@ SOBRE NOTAS DE CRÉDITO:
 Datos de ventas de iDempiere:
 - c_invoice: Facturas (issotrx='Y', dateinvoiced, grandtotal, totallines, c_bpartner_id, salesrep_id, docstatus)
 - c_invoiceline: Líneas de factura (m_product_id, qtyinvoiced, linenetamt)
-- c_payment: Pagos/cobros (isreceipt='Y', datetrx, payamt, tendertype, c_bpartner_id)
+- c_payment: Pagos/cobros (isreceipt='Y', datetrx, payamt, tendertype: W=Transferencia, X=Efectivo, K=Cheque, C=Tarjeta Crédito, B=Tarjeta Débito, S=Transferencia Empresas, Z=Dólar Transferencia, Y=Dólar Efectivo, R=Dólar IGTF, E=Euro Efectivo, U=Euro Transferencia, A=Depósito Directo, G=Depósito Bancario, D=Débito Directo, T=Cuenta, P=Impuesto, Q=Giro, c_bpartner_id)
 - c_bpartner: Clientes y vendedores (name, value, ismayorista, isclap, ispublico)
 - c_salesregion: Zonas de venta
 - c_bpartner_location: Ubicación del cliente (c_salesregion_id)
@@ -157,6 +166,27 @@ Datos de ventas de iDempiere:
 """
 
     # ---- Extraction helpers (reused for history) ----
+
+    # Doctype series pattern: "factura(s) B", "documento(s) B", "serie B", etc.
+    _DOCTYPE_RE = re.compile(
+        r'(?:facturas?|documentos?|serie)\s+'
+        r'([A-Za-z])\b',
+        re.IGNORECASE,
+    )
+
+    @classmethod
+    def _extract_doctype(cls, msg: str) -> str | None:
+        """Extract document type series from message.
+
+        Maps user-facing series letters to iDempiere doctype name patterns:
+        - "factura B" → "Invoice B" (matches "AR Invoice B")
+        - "factura V" → "Invoice V" (matches "AR Invoice V")
+        """
+        m = cls._DOCTYPE_RE.search(msg)
+        if m:
+            letter = m.group(1).upper()
+            return f"Invoice {letter}"
+        return None
 
     _ZONES = [
         "portuguesa", "barinas", "lara", "carabobo", "aragua", "zulia",
@@ -177,14 +207,6 @@ Datos de ventas de iDempiere:
         ("agroinproa", "AGROINPROA"),
         ("inversiones aga", "INVERSIONES AGA"),
     ]
-    _QUERY_TYPES = {
-        "top": ["top", "mejor", "ranking", "pareto", "principales"],
-        "cobranza": ["cobran", "cobro", "recauda", "pago"],
-        "vencidas": ["atrasa", "vencid", "pendiente", "deuda", "mora"],
-        "ventas": ["venta", "factur", "ingreso", "volumen"],
-        "region": ["region", "región", "regiones"],
-    }
-
     @classmethod
     def _extract_zona(cls, msg: str) -> str | None:
         msg_lower = msg.lower()
@@ -211,17 +233,25 @@ Datos de ventas de iDempiere:
 
     @classmethod
     def _detect_query_type(cls, msg: str) -> str | None:
+        """Detect query type using centralized keywords."""
         msg_lower = msg.lower()
-        for qtype, kws in cls._QUERY_TYPES.items():
-            if any(w in msg_lower for w in kws):
-                return qtype
+        if matches_any(msg_lower, VENTAS_CLIENTES):
+            return "top"
+        if matches_any(msg_lower, VENTAS_COBRANZA):
+            return "cobranza"
+        if matches_any(msg_lower, VENTAS_CXC):
+            return "vencidas"
+        if matches_any(msg_lower, VENTAS_FACTURACION):
+            return "ventas"
+        if matches_any(msg_lower, VENTAS_ZONAS):
+            return "region"
         return None
 
     def _extract_context_from_history(
         self, history: list[tuple[str, str]],
     ) -> dict:
-        """Extract zona, vendedor, org_name, currency, query_type, and
-        temporal context (date_from, date_to, mes, anio) from history."""
+        """Extract zona, vendedor, org_name, currency, query_type, doctype,
+        and temporal context (date_from, date_to, mes, anio) from history."""
         ctx: dict = {}
         if not history:
             return ctx
@@ -244,6 +274,10 @@ Datos de ventas de iDempiere:
                 c = detect_currency(content)
                 if c:
                     ctx["currency"] = c
+            if "doctype" not in ctx:
+                dt = self._extract_doctype(content)
+                if dt:
+                    ctx["doctype"] = dt
             if "query_type" not in ctx:
                 qt = self._detect_query_type(content)
                 if qt:
@@ -254,12 +288,14 @@ Datos de ventas de iDempiere:
                 if df and dt:
                     ctx["date_from"] = df
                     ctx["date_to"] = dt
-            if "mes" not in ctx and "date_from" not in ctx:
+            if "mes" not in ctx and "date_from" not in ctx and "anio" not in ctx:
                 m, a = extract_month_year(content)
                 if m:
                     ctx["mes"] = m
                     ctx["anio"] = a
-            if len(ctx) >= 8:
+                elif re.search(r'20\d{2}', content):
+                    ctx["anio"] = a
+            if len(ctx) >= 9:
                 break
         return ctx
 
@@ -297,6 +333,7 @@ Datos de ventas de iDempiere:
         vendedor = self._extract_vendedor(message)
         zona = self._extract_zona(message)
         org_name = self._extract_org_name(message)
+        doctype_name = self._extract_doctype(message)
 
         # Follow-up: carry over context from history
         hist_ctx: dict = {}
@@ -310,7 +347,10 @@ Datos de ventas de iDempiere:
             org_name = hist_ctx.get("org_name")
         if not currency_ids:
             currency_ids = hist_ctx.get("currency")
+        if not doctype_name:
+            doctype_name = hist_ctx.get("doctype")
         # Inherit temporal context from history for follow-ups
+        _has_explicit_year = bool(re.search(r'20\d{2}', message))
         if not date_from and not date_to and not mes:
             if hist_ctx.get("date_from"):
                 date_from = hist_ctx["date_from"]
@@ -318,6 +358,12 @@ Datos de ventas de iDempiere:
             elif hist_ctx.get("mes"):
                 mes = hist_ctx["mes"]
                 anio = hist_ctx.get("anio", anio)
+            elif hist_ctx.get("anio"):
+                anio = hist_ctx["anio"]
+        # Month extracted but no explicit year → inherit year from history
+        elif mes and not _has_explicit_year and not date_from:
+            if hist_ctx.get("anio"):
+                anio = hist_ctx["anio"]
 
         label = build_period_label(date_from, date_to, mes, anio)
 
@@ -327,22 +373,25 @@ Datos de ventas de iDempiere:
             query_type = hist_ctx.get("query_type")
 
         try:
-            if query_type == "top" or any(w in msg for w in self._QUERY_TYPES["top"]):
+            if query_type == "top" or matches_any(msg, VENTAS_CLIENTES):
                 limit = 20
                 limit_match = re.search(r'top\s*(\d+)', msg)
                 if limit_match:
                     limit = int(limit_match.group(1))
                 org_label = f" - {org_name}" if org_name else ""
+                # Default to Bs. when no currency specified to avoid mixing Bs+USD
+                top_currency = currency_ids if currency_ids else [205]
                 logger.info(
                     "Top clients query: mes=%s, anio=%s, date_from=%s, date_to=%s, "
                     "zona=%s, vendedor=%s, org_name=%s, org_ids=%s, currency_ids=%s",
-                    mes, anio, date_from, date_to, zona, vendedor, org_name, org_ids, currency_ids,
+                    mes, anio, date_from, date_to, zona, vendedor, org_name, org_ids, top_currency,
                 )
                 data = build_top_clients(
                     limit=limit, zona=zona, vendedor=vendedor, mes=mes, anio=anio,
                     org_ids=org_ids, salesrep_id=salesrep_id,
                     date_from=date_from, date_to=date_to,
-                    currency_ids=currency_ids, org_name=org_name,
+                    currency_ids=top_currency, org_name=org_name,
+                    doctype_name=doctype_name,
                 )
                 logger.info("Top clients result: %d rows", len(data) if isinstance(data, list) else -1)
                 # If specific period returned empty, retry with full year
@@ -352,7 +401,8 @@ Datos de ventas de iDempiere:
                         limit=limit, zona=zona, vendedor=vendedor, mes=None, anio=anio,
                         org_ids=org_ids, salesrep_id=salesrep_id,
                         date_from=None, date_to=None,
-                        currency_ids=currency_ids, org_name=org_name,
+                        currency_ids=top_currency, org_name=org_name,
+                        doctype_name=doctype_name,
                     )
                     logger.info("Fallback result: %d rows", len(data_year) if isinstance(data_year, list) else -1)
                     if not self._is_empty_result(data_year):
@@ -369,7 +419,7 @@ Datos de ventas de iDempiere:
                     sections.append(f"## Top {limit} Clientes por Ventas ({label}{org_label})")
                     sections.append(self._format_table(data))
 
-            if query_type == "cobranza" or any(w in msg for w in self._QUERY_TYPES["cobranza"]):
+            if query_type == "cobranza" or matches_any(msg, VENTAS_COBRANZA):
                 data = build_collection_summary(
                     zona=zona, vendedor=vendedor, mes=mes, anio=anio,
                     org_ids=org_ids, salesrep_id=salesrep_id,
@@ -378,17 +428,23 @@ Datos de ventas de iDempiere:
                 )
                 sections.append(self._format_summary(data, f"Resumen de Cobranza - {label}"))
 
-            if query_type == "vencidas" or any(w in msg for w in self._QUERY_TYPES["vencidas"]):
+            if query_type == "vencidas" or matches_any(msg, VENTAS_CXC):
+                # Use aggregated view (by client) for morosos/deudores questions
+                delinquent_data = build_top_delinquent_clients(org_ids=org_ids, salesrep_id=salesrep_id)
+                sections.append("## Top Clientes Morosos (agregado por cliente)")
+                sections.append(self._format_table(delinquent_data))
+                # Also include individual invoices detail
                 data = build_overdue_receivables(org_ids=org_ids, salesrep_id=salesrep_id)
-                sections.append("## Cuentas por Cobrar Vencidas")
+                sections.append("## Detalle de Facturas Vencidas (top 50)")
                 sections.append(self._format_table(data))
 
-            if query_type == "ventas" or any(w in msg for w in self._QUERY_TYPES["ventas"]) or not sections:
+            if query_type == "ventas" or matches_any(msg, VENTAS_FACTURACION) or not sections:
                 data = build_sales_summary(
                     zona=zona, vendedor=vendedor, mes=mes, anio=anio,
                     org_ids=org_ids, salesrep_id=salesrep_id,
                     date_from=date_from, date_to=date_to,
                     currency_ids=currency_ids, org_name=org_name,
+                    doctype_name=doctype_name,
                 )
                 # If specific period returned empty, retry with full year
                 if self._is_empty_result(data) and (mes or (date_from and date_to)):
@@ -397,6 +453,7 @@ Datos de ventas de iDempiere:
                         org_ids=org_ids, salesrep_id=salesrep_id,
                         date_from=None, date_to=None,
                         currency_ids=currency_ids, org_name=org_name,
+                        doctype_name=doctype_name,
                     )
                     if not self._is_empty_result(data_year):
                         sections.append(
@@ -409,6 +466,22 @@ Datos de ventas de iDempiere:
                 else:
                     sections.append(self._format_summary(data, f"Resumen de Ventas - {label}"))
 
+                # When doctype is specified, also include top clients so the
+                # LLM has real client names (prevents hallucination of clients)
+                if doctype_name and not self._is_empty_result(data):
+                    org_label = f" - {org_name}" if org_name else ""
+                    top_currency = currency_ids if currency_ids else None
+                    top_data = build_top_clients(
+                        limit=20, zona=zona, vendedor=vendedor, mes=mes, anio=anio,
+                        org_ids=org_ids, salesrep_id=salesrep_id,
+                        date_from=date_from, date_to=date_to,
+                        currency_ids=top_currency, org_name=org_name,
+                        doctype_name=doctype_name,
+                    )
+                    if not self._is_empty_result(top_data):
+                        sections.append(f"## Top 20 Clientes — {doctype_name}{org_label} ({label})")
+                        sections.append(self._format_table(top_data))
+
         except Exception as exc:
             logger.error("Error consultando datos de ventas: %s: %s", type(exc).__name__, exc, exc_info=True)
             sections.append(
@@ -417,5 +490,19 @@ Datos de ventas de iDempiere:
                 f"Esto puede deberse a un problema de conexión con iDempiere. "
                 f"Intenta de nuevo en unos momentos."
             )
+
+        # Signal to LLM which currency filter was applied
+        if sections and currency_ids:
+            if currency_ids == [205]:
+                currency_note = (
+                    "⚠️ FILTRO DE MONEDA APLICADO: Los datos están filtrados SOLO por BOLÍVARES (Bs.). "
+                    "NO existe datos de USD en esta consulta. NO inventes ni agregues datos de otra moneda."
+                )
+            else:
+                currency_note = (
+                    "⚠️ FILTRO DE MONEDA APLICADO: Los datos están filtrados SOLO por USD/DÓLARES. "
+                    "NO existe datos de Bs. en esta consulta. NO inventes ni agregues datos de otra moneda."
+                )
+            sections.insert(0, currency_note)
 
         return "\n\n".join(sections) if sections else None

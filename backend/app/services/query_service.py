@@ -427,6 +427,19 @@ def build_overdue_receivables(org_ids: list[int] | None = None, salesrep_id: int
         db.close()
 
 
+def build_top_delinquent_clients(
+    org_ids: list[int] | None = None,
+    salesrep_id: int | None = None,
+    limit: int = 20,
+) -> list[dict]:
+    """Top delinquent clients aggregated by client - routes to iDempiere."""
+    if _is_production():
+        from app.services.idempiere_queries import build_top_delinquent_clients as _prod
+        return _prod(org_ids=org_ids, salesrep_id=salesrep_id, limit=limit)
+    # Demo mode: fall back to individual overdue receivables
+    return build_overdue_receivables(org_ids=org_ids, salesrep_id=salesrep_id)
+
+
 # ---------------------------------------------------------------------------
 # Pre-built queries: PRODUCCION (Production)
 # ---------------------------------------------------------------------------
@@ -437,11 +450,12 @@ def build_production_summary(
     org_ids: list[int] | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    org_name: str | None = None,
 ) -> dict:
     """Production summary - routes to demo or iDempiere."""
     if _is_production():
         from app.services.idempiere_queries import build_production_summary as _prod
-        return _prod(mes=mes, anio=anio, org_ids=org_ids, date_from=date_from, date_to=date_to)
+        return _prod(mes=mes, anio=anio, org_ids=org_ids, date_from=date_from, date_to=date_to, org_name=org_name)
 
     db = SessionLocal()
     try:
@@ -520,14 +534,69 @@ def build_production_orders(
     org_ids: list[int] | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    org_name: str | None = None,
 ) -> list[dict]:
     """Manufacturing orders - routes to demo or iDempiere."""
     if _is_production():
         from app.services.idempiere_queries import build_production_orders as _prod
-        return _prod(mes=mes, anio=anio, org_ids=org_ids, date_from=date_from, date_to=date_to)
+        return _prod(mes=mes, anio=anio, org_ids=org_ids, date_from=date_from, date_to=date_to, org_name=org_name)
 
     # Demo fallback
     return []
+
+
+# ---------------------------------------------------------------------------
+# Pre-built queries: PRODUCCIÓN REAL (m_production)
+# ---------------------------------------------------------------------------
+
+def build_production_runs(
+    mes: int | None = None,
+    anio: int | None = None,
+    org_ids: list[int] | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    org_name: str | None = None,
+    product_search: str | None = None,
+) -> dict:
+    """Production runs - routes to iDempiere."""
+    if _is_production():
+        from app.services.idempiere_queries import build_production_runs as _fn
+        return _fn(
+            mes=mes, anio=anio, org_ids=org_ids,
+            date_from=date_from, date_to=date_to,
+            org_name=org_name, product_search=product_search,
+        )
+    return {"totales": {"total_producciones": 0, "cantidad_total_producida": 0}, "productos_terminados": [], "insumos_consumidos": [], "por_mes": [], "por_organizacion": [], "por_fecha": []}
+
+
+def build_bom_info(
+    product_search: str | None = None,
+    org_ids: list[int] | None = None,
+    org_name: str | None = None,
+) -> dict:
+    """BOM/recipe info - routes to iDempiere."""
+    if _is_production():
+        from app.services.idempiere_queries import build_bom_info as _fn
+        return _fn(product_search=product_search, org_ids=org_ids, org_name=org_name)
+    return {"total_boms": 0, "boms": []}
+
+
+def build_warehouse_movements(
+    mes: int | None = None,
+    anio: int | None = None,
+    org_ids: list[int] | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    org_name: str | None = None,
+) -> dict:
+    """Warehouse movements - routes to iDempiere."""
+    if _is_production():
+        from app.services.idempiere_queries import build_warehouse_movements as _fn
+        return _fn(
+            mes=mes, anio=anio, org_ids=org_ids,
+            date_from=date_from, date_to=date_to, org_name=org_name,
+        )
+    return {"totales": {"total_movimientos": 0}, "por_producto": [], "flujo_almacenes": [], "por_organizacion": [], "documentos_recientes": []}
 
 
 # ---------------------------------------------------------------------------
@@ -838,6 +907,31 @@ def build_financial_summary(
         db.close()
 
 
+def build_cobros_pagos_summary(
+    is_receipt: bool = True,
+    mes: int | None = None,
+    anio: int | None = None,
+    org_ids: list[int] | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> dict:
+    """Cobros/Pagos summary - routes to demo or iDempiere."""
+    if _is_production():
+        from app.services.idempiere_queries import build_cobros_pagos_summary as _prod
+        return _prod(
+            is_receipt=is_receipt, mes=mes, anio=anio,
+            org_ids=org_ids, date_from=date_from, date_to=date_to,
+        )
+    # Demo fallback: return empty structure
+    return {
+        "tipo": "cobros" if is_receipt else "pagos",
+        "total_registros": 0,
+        "por_moneda": [],
+        "por_metodo_pago": [],
+        "top_socios": [],
+    }
+
+
 # ---------------------------------------------------------------------------
 # Pre-built queries: RRHH (Human Resources)
 # ---------------------------------------------------------------------------
@@ -884,17 +978,19 @@ def build_employee_summary(org_ids: list[int] | None = None) -> dict:
 def build_birthday_list(
     mes: int | None = None,
     org_ids: list[int] | None = None,
+    org_name: str | None = None,
 ) -> list[dict]:
     """Birthday list - routes to demo or iDempiere."""
     if _is_production():
         from app.services.idempiere_queries import build_birthday_list as _prod
-        return _prod(mes=mes, org_ids=org_ids)
+        return _prod(mes=mes, org_ids=org_ids, org_name=org_name)
     return []
 
 
 def build_employee_list(
     org_ids: list[int] | None = None,
     cargo_search: str | None = None,
+    name_search: str | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
 ) -> list[dict]:
@@ -903,6 +999,7 @@ def build_employee_list(
         from app.services.idempiere_queries import build_employee_list as _prod
         return _prod(
             org_ids=org_ids, cargo_search=cargo_search,
+            name_search=name_search,
             date_from=date_from, date_to=date_to,
         )
 
@@ -1007,6 +1104,7 @@ def build_vacation_summary(
     org_ids: list[int] | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    org_name: str | None = None,
 ) -> dict:
     """Vacation summary - routes to demo or iDempiere."""
     if _is_production():
@@ -1014,6 +1112,7 @@ def build_vacation_summary(
         return _prod(
             mes=mes, anio=anio, org_ids=org_ids,
             date_from=date_from, date_to=date_to,
+            org_name=org_name,
         )
 
     # Demo fallback
@@ -1140,6 +1239,7 @@ def build_purchase_payment_status(
     org_ids: list[int] | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    currency_ids: list[int] | None = None,
 ) -> dict:
     """Purchase payment status - routes to demo or iDempiere."""
     if _is_production():
@@ -1147,6 +1247,7 @@ def build_purchase_payment_status(
         return _prod(
             mes=mes, anio=anio, org_ids=org_ids,
             date_from=date_from, date_to=date_to,
+            currency_ids=currency_ids,
         )
     return {"resumen_pago": [], "facturas_vencidas": []}
 
@@ -1161,11 +1262,13 @@ def build_accounting_summary(
     org_ids: list[int] | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    currency_ids: list[int] | None = None,
+    account_types: list[str] | None = None,
 ) -> dict:
     """Accounting summary - routes to demo or iDempiere."""
     if _is_production():
         from app.services.idempiere_queries import build_accounting_summary as _prod
-        return _prod(mes=mes, anio=anio, org_ids=org_ids, date_from=date_from, date_to=date_to)
+        return _prod(mes=mes, anio=anio, org_ids=org_ids, date_from=date_from, date_to=date_to, currency_ids=currency_ids, account_types=account_types)
 
     # Demo fallback
     db = SessionLocal()
@@ -1191,6 +1294,33 @@ def build_accounting_summary(
         }
     finally:
         db.close()
+
+
+def build_loan_balances(
+    org_ids: list[int] | None = None,
+    org_name: str | None = None,
+    anio: int | None = None,
+    mes: int | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> dict:
+    """Loan/promissory-note balances - routes to demo or iDempiere."""
+    if _is_production():
+        from app.services.idempiere_queries import build_loan_balances as _prod
+        return _prod(org_ids=org_ids, org_name=org_name, anio=anio, mes=mes, date_from=date_from, date_to=date_to)
+    return {"cuentas": [], "total_obligaciones": 0.0}
+
+
+def search_accounts_by_name(
+    name_search: str,
+    org_ids: list[int] | None = None,
+    limit: int = 10,
+) -> list[dict]:
+    """Search accounting accounts by name - routes to demo or iDempiere."""
+    if _is_production():
+        from app.services.idempiere_queries import search_accounts_by_name as _prod
+        return _prod(name_search=name_search, org_ids=org_ids, limit=limit)
+    return []
 
 
 def build_account_detail(
@@ -1240,6 +1370,7 @@ def build_inventory_stock(
     product_search: str | None = None,
     category_search: str | None = None,
     warehouse_search: str | None = None,
+    org_name: str | None = None,
 ) -> dict:
     """Inventory stock - routes to demo or iDempiere."""
     if _is_production():
@@ -1247,6 +1378,7 @@ def build_inventory_stock(
         return _prod(
             org_ids=org_ids, product_search=product_search,
             category_search=category_search, warehouse_search=warehouse_search,
+            org_name=org_name,
         )
 
     # Demo fallback

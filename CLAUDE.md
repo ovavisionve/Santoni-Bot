@@ -61,7 +61,9 @@ Santoni-Bot/
 │   │   │   ├── export_service.py # Exportación CSV/Excel/PDF
 │   │   │   ├── document_service.py # Análisis de documentos
 │   │   │   ├── audit.py         # Logging de auditoría
-│   │   │   └── cache.py         # Cache de queries
+│   │   │   ├── cache.py         # Cache de queries
+│   │   │   ├── idempiere_permissions.py # Permisos desde roles iDempiere
+│   │   │   └── window_capability_map.py # Mapeo ventanas→agentes (31 capabilities)
 │   │   ├── middleware/          # Auth, seguridad, CORS
 │   │   └── utils/
 │   ├── tests/                   # 150+ tests (pytest)
@@ -78,21 +80,15 @@ Santoni-Bot/
 │   └── package.json
 ├── nginx/                       # Reverse proxy config
 ├── scripts/                     # setup-vm.sh, deploy.sh, backup.sh
-│   └── qa/                      # ← Scripts de QA automatizado
-│       ├── test_infrastructure.sh
-│       ├── test_connectivity.sh
-│       ├── test_agents.sh
-│       ├── test_resilience.sh
-│       └── run_full_qa.sh       # Master script
 ├── coolify/                     # Coolify deployment config
-├── docs/
-│   ├── ESTATUS_PROYECTO.md
-│   ├── DOCUMENTO_TECNICO.md
-│   ├── cuestionario_validacion_agentes.md
+├── docs/                        # Documentación del proyecto
+│   ├── ESTATUS_PROYECTO.md      # Tracking detallado de tareas
+│   ├── DOCUMENTO_TECNICO.md     # Documento técnico completo
+│   ├── cuestionario_validacion_agentes.md # Formularios de validación
 │   └── manuales varios
-├── docker-compose.yml
-├── docker-compose.prod.yml
-├── .env.example
+├── docker-compose.yml           # Desarrollo (5 servicios)
+├── docker-compose.prod.yml      # Override producción
+├── .env.example                 # Template de variables de entorno
 └── CLAUDE.md                    # Este archivo
 ```
 
@@ -111,7 +107,7 @@ docker compose logs backend --tail 50            # Ver logs backend
 docker compose logs frontend --tail 50           # Ver logs frontend
 docker compose down && docker compose up -d      # Reiniciar todo
 
-# Tests unitarios
+# Tests
 cd backend && pytest                             # Tests backend (150+)
 cd frontend && npm test                          # Tests frontend
 
@@ -122,15 +118,6 @@ cd backend && alembic upgrade head               # Aplicar migraciones
 cd /opt/santonibot
 git pull origin main
 docker compose build --no-cache backend frontend && docker compose up -d
-
-# ═══ QA AUTOMATIZADO ═══
-cd /opt/santonibot/scripts/qa
-chmod +x *.sh
-./run_full_qa.sh                                 # QA completo (todas las capas)
-./test_infrastructure.sh                         # Solo infraestructura Docker
-./test_connectivity.sh                           # Solo conectividad DBs
-./test_agents.sh                                 # Solo agentes IA
-./test_resilience.sh                             # Solo resiliencia y edge cases
 ```
 
 ---
@@ -171,17 +158,54 @@ chmod +x *.sh
 ## Organizaciones en iDempiere
 
 El ERP maneja múltiples organizaciones (empresas del grupo):
-- **INPROA SANTONI** (principal)
-- **InproMaiz**
-- Otras subsidiarias
+- **INPROA SANTONI C.A.** (principal — procesadora de arroz)
+- **InproMaiz C.A** (procesadora de maíz)
+- **Santoni Service C.A** (servicios)
+- **AGROPECUARIA R.R. C.A.** (agropecuaria)
+- **AGA AGRICOLA C.A** (agrícola)
+- **AGROINPROA C.A** (agroindustrial)
+- **INVERSIONES AGA C.A** (inversiones)
+- **Agro Import** (importaciones)
 
 Los agentes filtran por organización cuando el usuario lo especifica.
+
+---
+
+## Monedas en iDempiere
+
+**IMPORTANTE**: En iDempiere de Santoni, cada organización registró su propia entrada de moneda USD
+con iso_code diferente. NO son monedas distintas — **todas representan dólares americanos**.
+
+| c_currency_id | iso_code | Organización |
+|---------------|----------|-------------|
+| 205 | VES | Bolívares (todas las organizaciones) |
+| 100 | USD | Dólares (registro base) |
+| (varios) | DOL | INPROA SANTONI |
+| (varios) | DoL | InproMaiz |
+| (varios) | Dol | INVERSIONES AGA |
+| (varios) | USA | AGROINPROA |
+| (varios) | dol | AGROPECUARIA R.R. |
+| (varios) | DLA | Santoni Service |
+| (varios) | Dla | Santoni Service (variante) |
+| (varios) | US. | Otros |
+| (varios) | EUR | Euros (marginal) |
+
+**Cómo se maneja en el código**:
+- `_currency_label()` en `idempiere_queries.py` agrupa TODOS los IDs de dólar en una sola etiqueta "USD"
+  usando `c_currency_id IN (100,1000000,1000003,1000006,1000008,1000009,1000011,1000013,1000017)`
+- `c_currency_id = 205` → "Bs." (VES/Bolívares)
+- Cualquier otro → "Otro"
+- Los agentes NUNCA deben presentar las monedas por iso_code, siempre usar el CASE de `_currency_label`
 
 ---
 
 ## Seguridad
 
 - **RBAC**: Roles (usuario, supervisor, administrador) + departamentos (7)
+- **Permisos iDempiere**: Ventanas asignadas en iDempiere → capabilities → agentes permitidos
+  - `window_capability_map.py`: 31 capabilities mapeadas a 7 agentes
+  - `idempiere_permissions.py`: Consulta roles/ventanas del usuario en iDempiere
+  - Importación masiva de usuarios con `scripts/import_idempiere_users.py`
 - **JWT**: Tokens con expiración configurable
 - **iDempiere read-only**: `SET default_transaction_read_only = ON`
 - **Anonymizer**: Datos sensibles se enmascaran antes de enviar al LLM
@@ -213,15 +237,40 @@ Los agentes filtran por organización cuando el usuario lo especifica.
 
 ---
 
+## Selector de Agentes (reemplaza al Orquestador desde Mar 2026)
+
+El orquestador (clasificador de intención LLM) fue **eliminado** del flujo principal de chat.
+Ahora el usuario selecciona el agente directamente desde pestañas en el UI.
+
+### Flujo actual:
+1. Usuario ve pestañas de agentes según sus permisos (GET `/api/chat/agents`)
+2. Selecciona un agente (ej: "Ventas")
+3. Escribe su pregunta
+4. El campo `agent_name` en `ChatRequest` envía el agente directamente
+5. El backend llama al agente sin pasar por el orquestador
+6. Si `agent_name` no viene (API externa), se usa el orquestador como fallback
+
+### Código relevante:
+- Backend: `chat.py` → `_VALID_AGENTS`, `_AGENT_INFO`, endpoint `GET /api/chat/agents`
+- Frontend: `ChatWindow.tsx` → pestañas de agentes, `page.tsx` → `loadAgents()`
+- API: `api.ts` → `getAgents()`, `sendMessage(content, convId, fileId, agentName)`
+
+### Permisos:
+- El endpoint `/api/chat/agents` filtra agentes por `user.allowed_departments`
+- Si el usuario intenta usar un agente no permitido, retorna 403
+
+---
+
 ## Dataset de Entrenamiento
 
-Se mantiene un dataset de escenarios de entrenamiento/validación para el orchestrator:
-- **356 escenarios** (v2.5) cubriendo los 7 agentes
+Se mantiene un dataset de escenarios de entrenamiento/validación:
+- **Archivo**: `backend/data/training_dataset.json`
+- **356+ escenarios** (v2.5+) cubriendo los 7 agentes
 - Incluye: pregunta, agente esperado, tipo de consulta, follow-ups
 - 78 escenarios de follow-up con herencia de contexto
 - Tipos de error rastreados: routing, herencia temporal, fallback sin datos, errores DB,
   docstatus_incompleto, org_name_no_extraido, no_access_text
-- Usado para medir confidence score y mejorar clasificación
+- Usado para medir confidence score y validación de respuestas
 
 ---
 
@@ -235,35 +284,96 @@ Se crearon cuestionarios para que cada departamento valide las respuestas del bo
 
 ---
 
-## Estado Actual del Proyecto (Marzo 2026)
+## Estado Actual del Proyecto (16/Mar/2026)
 
-### Completado (~91% del alcance Fase 1):
-- Backend core completo (FastAPI, auth, RBAC, API endpoints)
-- 7 agentes IA + orchestrator funcionando con iDempiere real
-- Frontend completo (chat, login, admin panel, exportaciones)
-- Docker/deploy configurado y funcionando en servidor
-- 150+ tests automatizados
-- CI/CD con GitHub Actions
-- Documentación completa
-- Seguridad hardened
+### Branch de desarrollo: `claude/general-session-YZXaU`
+### Tag de seguridad: `pre-keywords-integration` → commit `69575e4` (estado antes de keywords.py)
+### HEAD actual: `d7d8130` (incluye fix compras productores: outliers + deduplicación)
 
-### Trabajo reciente (Feb-Mar 2026):
-- **Datos históricos locales (10/Mar 2026)**: Sistema para cachear datos de iDempiere pre-marzo 2026 en DB local
-- Conexión exitosa a iDempiere real (queries de nómina, ventas, compras)
-- Follow-ups inteligentes con herencia de contexto temporal
-- Confidence score + dataset de 355 escenarios (v2.5)
-- Separación de compras por moneda (VES/USD)
-- Inventario desde m_storageonhand
-- Corrección de múltiples bugs reportados por usuarios reales
-- Script de pruebas en vivo (65 preguntas, 7 agentes)
-- **Fix crítico (Mar 2026)**: Herencia temporal + manejo de errores en los 7 agentes
-- **Expansión compras_insumos (10/Mar 2026)**
-- **Fix docstatus + org_name en compras (11/Mar 2026)**
+### Estado de Validación por Agente (verificado contra `docs/DATOS_VERIFICACION_IDEMPIERE.md` del 13/Mar)
 
-### Pendiente para cierre Fase 1:
-- Mapeo completo de todas las tablas iDempiere (algunas queries aún en ajuste)
-- Tests E2E ← **CUBIERTO POR PROTOCOLO QA**
-- Script de migración datos demo → datos reales
+| Agente | Estado | Verificado | Resultado | Notas |
+|--------|--------|------------|-----------|-------|
+| **Ventas** | ✅ Funcional | Sí | Datos correctos | Top clientes, facturación, cobranza, CxC vencidas |
+| **Finanzas** | ✅ Funcional | Sí | Datos correctos | Saldos bancarios 100% exactos, CxC top morosos exactos |
+| **RRHH** | ✅ Funcional | Sí | Datos correctos | 702 empleados exacto, nómina enero exacta |
+| **Producción** | ✅ Funcional | Sí | Datos plausibles | Proporciones ene vs año cuadran (~40-47%) |
+| **Contabilidad** | ✅ Funcional | Sí | Datos correctos | build_accounting_summary y build_account_detail usan IdempiereSession() directo (fix ya aplicado) |
+| **Compras Insumos** | ⚠️ Parcial | Parcial | Datos correctos, LLM a veces alucina | Anti-hallucination: skip LLM cuando no hay datos (16/Mar) |
+| **Compras Productores** | ✅ Funcional | Sí | Datos correctos | Fix qtyordered=1: MAIZ BLANCO ahora aparece (16/Mar) |
+
+---
+
+### BUG CRÍTICO: Contabilidad devuelve 0 movimientos — ✅ RESUELTO
+
+**Estado**: Resuelto. `build_accounting_summary` y `build_account_detail` ya usan
+`IdempiereSession()` directo (Opción A implementada). Verificado en código el 16/Mar/2026.
+
+---
+
+### Estado de la DB LOCAL (schema `adempiere` en PostgreSQL 16)
+
+| Tabla | Filas | Rango fechas | Estado |
+|-------|-------|-------------|--------|
+| c_invoice | 449,740 | hasta 2026-02-28 | ✅ OK |
+| c_payment | 802,311 | hasta 2026-02-28 | ✅ OK |
+| c_order | 278,870 | hasta 2026-02-28 | ✅ OK |
+| **fact_acct** | **2,800,000** | **2014-06-01 a 2021-09-30** | **❌ INCOMPLETO** — falta 2022-2026 |
+| hr_movement | ? | columna validfrom no existe | ⚠️ Error de esquema |
+| m_inout | ? | No verificado | ⚠️ |
+| m_production | ? | No verificado | ⚠️ |
+
+---
+
+### Problemas conocidos en Compras Insumos (pendiente de fix)
+
+1. **"Top 10 productos" sin filtro de producto**: Los códigos de producto que muestra el LLM
+   a veces son inventados (PMX-VIT-0022, AG-FERT-1120). La query `build_supply_purchases`
+   retorna datos reales pero el LLM los reinterpreta/inventa detalles.
+
+2. **"Órdenes de compra pendientes"**: `build_pending_purchase_orders` incluía `docstatus IN ('DR','IP','CO')`
+   — las CO son completadas, no pendientes. **Fix aplicado en commit 69575e4**: ahora solo DR/IP.
+
+3. **"Comparación de precios entre proveedores"**: El LLM inventa proveedores que no existen
+   (EMPAQUES DEL CARIBE, FLEXOPACK VENEZUELA). Probablemente `build_supplier_price_comparison`
+   retorna datos reales pero el LLM los ignora y fabrica.
+
+4. **"Facturas pagadas vs pendientes"**: Routing confuso — "pendientes" matcheaba con
+   `_ORDER_KEYWORDS` y ruteaba a órdenes de compra en vez de estado de pago.
+   **Fix aplicado en commit 69575e4**: `is_payment` ahora se evalúa antes que `is_orders`.
+
+5. **"Compras en dólares del 2025"**: El LLM dice 1,892 facturas / $8.7M cuando el dato real
+   es 14,056 facturas / $33.7M. La query probablemente retorna datos correctos pero el LLM
+   los resume incorrectamente. Causa posible: `_format_summary` muestra listas anidadas
+   (como `por_moneda`) como blob JSON ilegible para el LLM.
+
+6. **"Proveedores que venden azúcar"**: El LLM inventa proveedores inexistentes
+   ("ALIMENTOS AGRÍCOLAS SANTA FE", "DISTRIBUIDORA LA ESTRELLA").
+
+### Correcciones en Compras Productores
+
+1. **Exclusión de empresas internas**: `_add_exclude_internal_orgs_filter()` con 8 empresas del grupo.
+2. **Filtro `codigoproductor` eliminado**: Se mantiene solo en `build_registered_producers`.
+3. **Filtro `ol.qtyordered > 1`**: ~~Excluye líneas de resumen/total~~ **ELIMINADO** (16/Mar). Muchas compras agrícolas externas (especialmente maíz) usan qtyordered=1 como registro de pago. Ahora se usa `CASE WHEN qtyordered > 1 THEN qtyordered ELSE 0 END` para el peso, y se incluyen TODAS las órdenes para conteo y montos. `build_producer_price_analysis` mantiene el filtro qtyordered>1 porque necesita qty real para calcular Bs/kg.
+4. **Deduplicación de productores**: LATERAL subquery + GROUP BY `bp.c_bpartner_id`.
+5. **Diagnóstico detallado**: Ver `DATOS_VERIFICACION_IDEMPIERE.md` §19.
+
+### Módulo de Keywords (`backend/app/agents/keywords.py`) — commit d6eb13f
+
+Se creó un módulo centralizado con 2,200+ keywords en 63 frozensets para detectar
+el tipo de consulta del usuario (inventario, órdenes pendientes, comparación de precios, etc.).
+Integrado en los 7 agentes. Si causa problemas, revertir con:
+```bash
+git reset --hard pre-keywords-integration  # Vuelve a commit 69575e4
+```
+
+### Pendiente:
+- ~~**URGENTE**: Fix contabilidad~~ ✅ Resuelto (IdempiereSession directo)
+- ~~**ALTO**: Compras productores~~ ✅ Resuelto (qtyordered=1, MAIZ BLANCO aparece)
+- ~~**ALTO**: Anti-hallucination streaming~~ ✅ Resuelto (skip LLM cuando no hay datos)
+- **MEDIO**: Compras insumos — LLM a veces ignora datos reales en streaming (mitigado con skip-LLM sin datos)
+- Mapeo completo de tablas iDempiere
+- Tests E2E
 - Sentry (monitoreo de errores)
 - WhatsApp (Fase 2, post-lanzamiento)
 
@@ -274,7 +384,9 @@ Se crearon cuestionarios para que cada departamento valide las respuestas del bo
 Todos los 7 agentes implementan estos 3 patrones de forma consistente:
 
 ### 1. Herencia de contexto temporal en follow-ups
+Cuando un follow-up no incluye período (mes/fecha), el agente busca en el historial:
 ```python
+# En fetch_data(), después de extract_date_range/extract_month_year:
 if not date_from and not date_to and not mes and history:
     for role, content in reversed(history):
         if role != "user": continue
@@ -289,6 +401,7 @@ if not date_from and not date_to and not mes and history:
 ```
 
 ### 2. Fallback de período vacío (ventas)
+Cuando un período específico no tiene datos, se intenta con el año completo:
 ```python
 if self._is_empty_result(data) and (mes or (date_from and date_to)):
     data_year = build_top_clients(mes=None, anio=anio, ...)
@@ -305,8 +418,12 @@ if self._is_empty_result(data) and (mes or (date_from and date_to)):
 
 ## Datos Históricos Locales (implementado Mar 2026)
 
+Para evitar depender de iDempiere para consultas de datos anteriores a marzo 2026,
+se implementó un sistema de caché local:
+
 ### Arquitectura
 - **Schema `adempiere`** en la DB local de SantoniBot (PostgreSQL 16) con las mismas tablas
+- Las queries SQL existentes funcionan **sin cambios** porque usan `adempiere.tabla`
 - Routing automático: `_get_session()` en `idempiere_queries.py` decide qué DB usar
 
 ### Flujo de datos
@@ -316,11 +433,89 @@ Consulta del usuario → Agente extrae fechas → _get_session(date_from, date_t
   → Si fecha >= 2026-03-01 o sin fecha → iDempiere en vivo (IdempiereSession)
 ```
 
+### Tablas copiadas
+- **Referencia** (copia completa): ad_org, c_bpartner, m_product, c_currency, hr_employee, etc.
+- **Transaccionales** (filtradas por fecha < corte): c_invoice, c_payment, c_order, etc.
+- **Snapshots** (estado actual): m_storageonhand, c_bankaccount
+- **⚠️ fact_acct**: Solo tiene datos 2014-2021. NO tiene datos 2022-2026.
+  Esto rompe contabilidad para cualquier consulta post-2021. Ver sección "BUG CRÍTICO" arriba.
+
+### Comandos
+```bash
+# 1. Aplicar migración (crea schema + tablas)
+docker compose exec backend alembic upgrade head
+
+# 2. Extraer datos de iDempiere
+docker compose exec backend python scripts/extract_historical_data.py
+
+# 3. Activar en .env
+HISTORICAL_DATA_ENABLED=true
+HISTORICAL_DATA_CUTOFF=2026-03-01
+
+# 4. Reiniciar
+docker compose restart backend
+```
+
 ### Configuración (.env)
 ```
 HISTORICAL_DATA_ENABLED=false   # Activar después de extraer datos
 HISTORICAL_DATA_CUTOFF=2026-03-01  # Fecha de corte
 ```
+
+### Funciones sin fecha (siempre van a iDempiere)
+- `build_overdue_receivables` - cuentas por cobrar actuales
+- `build_employee_summary` - plantilla actual
+- `build_inventory_stock` - stock actual (usa `IdempiereSession()` directo)
+- `build_registered_producers` - productores registrados
+- `build_producer_pending_payments` - pagos pendientes actuales
+
+### ⚠️ Funciones que DEBERÍAN ir a iDempiere pero van a DB local (BUG)
+- `build_accounting_summary` - usa `_get_session()` → DB local tiene fact_acct solo hasta 2021
+- `build_account_detail` - mismo problema
+- **Fix necesario**: Cambiar a `IdempiereSession()` directo, igual que `build_inventory_stock`
+
+---
+
+## Auditoría de Agentes (13/Mar 2026)
+
+Auditoría completa de los 7 agentes + orchestrator + base_agent.
+
+### Resumen por Agente
+
+| Agente | Queries | Herencia temporal | Anti-alucinación | Error handling | org_name | Moneda |
+|--------|---------|-------------------|------------------|----------------|----------|--------|
+| Ventas | 4 funciones | ✅ Completa | ✅ Fuerte | ✅ try/except | ✅ | ✅ VES/USD |
+| Finanzas | 2 funciones | ✅ Completa | ✅ Fuerte | ✅ try/except | ❌ No extrae | N/A (separado en query) |
+| Contabilidad | 2 funciones | ✅ Completa + cuenta | ✅ + zero-movement | ✅ try/except | ❌ | ✅ currency_ids |
+| RRHH | 7 funciones | ✅ Completa + cargo | ✅ Fuerte | ✅ try/except anidados | ❌ | N/A |
+| Producción | 3 funciones | ✅ Completa | ✅ Fuerte | ✅ try/except | ❌ No extrae | N/A |
+| Compras Insumos | 6 funciones | ✅ Completa | ✅ Fuerte | ✅ try/except | ✅ _extract_org_name | ✅ _detect_currency |
+| Compras Productores | 4 funciones | ✅ Completa + producto | ✅ Fuerte | ✅ try/except anidados | ✅ _extract_org_name | ✅ detect_currency |
+
+### Funciones de Query por Agente
+
+- **Ventas**: `build_top_clients`, `build_sales_summary`, `build_collection_summary`, `build_overdue_receivables`
+- **Finanzas**: `build_financial_summary`, `build_overdue_receivables`
+- **Contabilidad**: `build_accounting_summary`, `build_account_detail`
+- **RRHH**: `build_employee_summary`, `build_employee_list`, `build_birthday_list`, `build_payroll_summary`, `build_attendance_summary`, `build_turnover_summary`, `build_vacation_summary`
+- **Producción**: `build_production_summary`, `build_production_orders`, `build_inventory_stock`
+- **Compras Insumos**: `build_supply_purchases`, `build_product_purchase_history`, `build_inventory_stock`, `build_pending_purchase_orders`, `build_supplier_price_comparison`, `build_purchase_payment_status`
+- **Compras Productores**: `build_producer_purchases`, `build_registered_producers`, `build_producer_pending_payments`, `build_producer_price_analysis`
+
+### Hallazgos Conocidos (no críticos)
+
+1. **`build_inventory_stock`** usa `IdempiereSession()` directo en vez de `_get_session()` — intencional porque inventario es siempre dato actual, nunca histórico
+2. **Streaming**: La detección de alucinación post-stream solo logea, no puede reemplazar tokens ya enviados
+3. **Conteo de filas** en `base_agent.py`: El filtro de headers es heurístico (busca palabras como "nombre", "codigo"); puede fallar si esas palabras aparecen en datos
+4. **`_region_case_sql()`** en ventas: Usa string interpolation pero con datos hardcodeados (no es inyección SQL, pero no es parameterizado)
+5. **Currency IDs hardcodeados**: 9 IDs para USD en `date_utils.py` y `compras_insumos.py` — si Santoni agrega nuevos, requiere actualización manual
+
+### Routing del Orchestrator (orden de prioridad)
+
+1. Greetings → `general` (si < 60 chars)
+2. Código contable (`\d\.\d{2}\.\d{2}`) → `contabilidad`
+3. Keywords en orden: `compras_productores` → `produccion` → `compras_insumos` → `contabilidad` → `finanzas` → `ventas` → `rrhh`
+4. Fallback: `last_agent` (follow-up) → keywords genéricos → `general`
 
 ---
 
@@ -331,133 +526,3 @@ HISTORICAL_DATA_CUTOFF=2026-03-01  # Fecha de corte
 - **SQL**: Queries parametrizadas, nunca concatenación de strings
 - **Agentes**: Heredan de `base_agent.py`, implementan `fetch_data()` y `format_response()`
 - **Frontend**: Componentes funcionales React, hooks personalizados, Tailwind para estilos
-
----
-
-# ══════════════════════════════════════════════════════════════════
-# PROTOCOLO DE QA Y CIERRE DE PROYECTO
-# ══════════════════════════════════════════════════════════════════
-
-## Objetivo del QA
-Validar TODAS las capas del sistema de forma sistemática para identificar fallas pendientes,
-corregirlas, y cerrar la Fase 1. Cada capa tiene un script bash en `scripts/qa/`.
-
-## Criterios de Evaluación
-- ✅ **PASS**: Resultado esperado sin errores
-- ⚠️ **WARN**: Funciona con degradación (latencia alta, datos incompletos)
-- ❌ **FAIL**: Error, timeout, resultado incorrecto, crash
-
-## Ejecución Rápida
-```bash
-cd /opt/santonibot/scripts/qa && chmod +x *.sh
-./run_full_qa.sh              # Todo
-./test_infrastructure.sh      # Solo Capa 1
-./test_connectivity.sh        # Solo Capa 2
-./test_agents.sh              # Solo Capa 3
-./test_resilience.sh          # Solo Capa 5
-```
-
----
-
-### CAPA 1: Infraestructura Docker
-**Script:** `scripts/qa/test_infrastructure.sh`
-
-| Test | Criterio PASS | Criterio FAIL |
-|------|--------------|---------------|
-| 5 servicios running | Todos "Up" | Cualquiera "Exit" o ausente |
-| RAM backend | < 2GB | > 2GB sostenido |
-| CPU servidor | < 80% | > 80% sostenido |
-| Disco libre | > 5GB | < 5GB |
-| Errores en logs (30min) | 0 ERROR/CRITICAL | Cualquier Traceback |
-| Puertos (8000,3000,5432,80) | Todos abiertos | Cualquiera cerrado |
-| Reinicios recientes | 0 en últimas 2h | Reinicios inesperados |
-
----
-
-### CAPA 2: Conectividad de Datos
-**Script:** `scripts/qa/test_connectivity.sh`
-
-| Test | Criterio PASS | Criterio FAIL |
-|------|--------------|---------------|
-| DB local PostgreSQL 16 | Conexión OK | Connection refused |
-| iDempiere 192.168.1.73:5432 | Conexión read-only OK | Timeout / auth error |
-| Schema adempiere local | Existe con tablas | No existe |
-| Registros en tablas clave | > 0 en c_invoice, c_bpartner | 0 registros = datos no cargados |
-| Routing histórico (2025) | Usa DB local | Usa iDempiere (error config) |
-| Routing actual (2026) | Usa iDempiere | Usa DB local (error config) |
-| Latencia query simple | < 2s | > 2s |
-| API keys configuradas | No vacías | Vacías o placeholder |
-| Alembic migraciones | head = current | Migraciones pendientes |
-| ChromaDB | Responde en :8000 | No responde |
-
----
-
-### CAPA 3: Agentes IA (CORE — el test más importante)
-**Script:** `scripts/qa/test_agents.sh`
-
-**Preguntas de prueba:**
-
-| Agente | Pregunta | Respuesta esperada contiene |
-|--------|----------|-----------------------------|
-| Ventas | "Top 10 clientes por facturación en 2025" | Tabla con nombres y montos |
-| Ventas follow-up | "¿Y en dólares?" | Hereda 2025, muestra USD |
-| Finanzas | "Saldos bancarios actuales" | Tabla con bancos y saldos |
-| Contabilidad | "Balance general diciembre 2025" | Activos, pasivos, patrimonio |
-| RRHH | "Cuántos empleados activos hay" | Número > 0 |
-| Producción | "Órdenes de producción enero 2026" | Lista de órdenes o "no hay datos" |
-| Compras Insumos | "Compras de empaque en 2025" | Montos por proveedor |
-| Compras Insumos org | "Compras de empaque en INPROA SANTONI" | Filtrado por org |
-| Compras Productores | "Productores registrados" | Lista de productores |
-
-**Criterios por respuesta:**
-
-| Métrica | PASS | WARN | FAIL |
-|---------|------|------|------|
-| Latencia | < 10s | 10-30s | > 30s |
-| "no tengo acceso" | Ausente | - | Presente |
-| Datos numéricos | Presentes | - | Ausentes cuando se esperan |
-| Confidence score | Presente | - | Ausente |
-| Error/Traceback | Ausente | - | Presente |
-
----
-
-### CAPA 4: Frontend + Auth (manual + curl)
-Checklist manual en navegador + validación automatizada de endpoints auth.
-
----
-
-### CAPA 5: Resiliencia y Edge Cases
-**Script:** `scripts/qa/test_resilience.sh`
-
-| Test | Input | Resultado esperado |
-|------|-------|--------------------|
-| Mensaje sin sentido | "asdfghjkl" | Respuesta amigable, no crash |
-| Inyección SQL | "'; DROP TABLE users;--" | Bloqueado, sin ejecución |
-| Mensaje vacío | "" | Respuesta controlada |
-| Mensaje largo | 5000+ chars | No crash, manejo controlado |
-| Rate limit | 31 requests/min | Request #31 → HTTP 429 |
-| Concurrencia | 5 requests simultáneos | Respuestas correctas sin mezcla |
-| Período sin datos | "ventas marzo 2020" | Fallback o mensaje informativo |
-
----
-
-### Bugs Conocidos (verificar en cada QA para evitar regresiones)
-
-| Bug | Fix date | Verificación |
-|-----|----------|-------------|
-| docstatus='CO' excluía facturas pagadas | 11/Mar/2026 | Query con facturas pagadas → resultados |
-| "no tengo acceso" en capabilities | 10/Mar/2026 | Ningún agente dice "no tengo acceso" |
-| org_name no se extraía en compras | 11/Mar/2026 | "compras en INPROA SANTONI" filtra OK |
-| Herencia temporal rota | Mar/2026 | Follow-up sin fecha hereda período |
-| Latencia severa | Mar/2026 | Ningún agente > 30s consistente |
-
----
-
-### Procedimiento de Cierre
-
-1. `./run_full_qa.sh` → genera `qa_report_FECHA.txt`
-2. Corregir cada ❌ FAIL con commit documentado
-3. Re-testear capa afectada
-4. Actualizar `docs/ESTATUS_PROYECTO.md`
-5. `git tag v1.0-qa-passed`
-6. Backup DB + presentar reporte al cliente

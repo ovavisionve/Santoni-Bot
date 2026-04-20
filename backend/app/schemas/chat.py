@@ -6,6 +6,7 @@ class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=5000)
     conversation_id: int | None = None
     file_id: str | None = None
+    agent_name: str | None = None  # Direct agent selection (bypasses orchestrator)
 
 
 class ChatResponse(BaseModel):

@@ -8,10 +8,17 @@ m_product en iDempiere (PostgreSQL 13).
 """
 
 import logging
+import re
 
 from app.agents.base_agent import BaseAgent
 
 logger = logging.getLogger("santonibot.agents.compras_productores")
+from app.agents.keywords import (
+    PRODUCTORES_GENERAL,
+    PRODUCTORES_PAGOS,
+    PRODUCTORES_COMPRAS,
+    matches_any,
+)
 from app.agents.date_utils import (
     extract_date_range,
     extract_month_year,
@@ -58,7 +65,7 @@ CAPACIDADES:
 - Productores registrados
 
 CONTEXTO iDEMPIERE:
-- Órdenes de compra: c_order (issotrx='N', docstatus IN ('CO','CL')) - 277,538 órdenes. CO=completada, CL=cerrada.
+- Órdenes de compra: c_order (issotrx='N', docstatus IN ('CO','CL')). CO=completada, CL=cerrada.
 - Líneas de orden: c_orderline (m_product_id, qtyordered, priceactual, linenetamt)
 - Productores: c_bpartner (isagricultor='Y', codigoproductor, codigocompras)
 - Productos: m_product (arroz paddy acondicionado, maíz blanco de consumo)
@@ -181,10 +188,11 @@ Datos de compras a productores en iDempiere:
                 return val
         return None
 
-    _SECTION_KEYWORDS: dict[str, list[str]] = {
-        "productores": ["productor", "registrad", "cuántos", "cuantos"],
-        "pendientes": ["pago", "pendiente", "deuda", "deb"],
-        "precios": ["precio", "costo", "valor"],
+    # Section detection — uses centralized keyword sets from keywords.py
+    _SECTION_KW_MAP = {
+        "productores": PRODUCTORES_GENERAL,
+        "pendientes": PRODUCTORES_PAGOS,
+        "precios": PRODUCTORES_COMPRAS,
     }
 
     def _extract_context_from_history(
@@ -203,8 +211,8 @@ Datos de compras a productores en iDempiere:
                     ctx["producto"] = prod
             msg = content.lower()
             if "sections" not in ctx:
-                for section, kws in self._SECTION_KEYWORDS.items():
-                    if any(w in msg for w in kws):
+                for section, kws in self._SECTION_KW_MAP.items():
+                    if matches_any(msg, kws):
                         ctx["sections"] = section
                         break
             # Inherit temporal context from history
@@ -213,10 +221,13 @@ Datos de compras a productores en iDempiere:
                 if df and dt:
                     ctx["date_from"] = df
                     ctx["date_to"] = dt
-            if "mes" not in ctx and "date_from" not in ctx:
+            if "mes" not in ctx and "date_from" not in ctx and "anio" not in ctx:
                 m, a = extract_month_year(content)
                 if m:
                     ctx["mes"] = m
+                    ctx["anio"] = a
+                elif re.search(r'20\d{2}', content):
+                    # Year-only mention (e.g. "compras 2025") — inherit year
                     ctx["anio"] = a
             if len(ctx) >= 5:
                 break
@@ -239,7 +250,7 @@ Datos de compras a productores en iDempiere:
         # Follow-up: carry over context from history
         hist_ctx: dict = {}
         if history and (not producto or not any(
-            any(w in msg for w in kws) for kws in self._SECTION_KEYWORDS.values()
+            matches_any(msg, kws) for kws in self._SECTION_KW_MAP.values()
         )):
             hist_ctx = self._extract_context_from_history(history)
 
@@ -247,6 +258,7 @@ Datos de compras a productores en iDempiere:
             producto = hist_ctx.get("producto")
 
         # Inherit temporal context from history for follow-ups
+        _has_explicit_year = bool(re.search(r'20\d{2}', message))
         if not date_from and not date_to and not mes:
             if hist_ctx.get("date_from"):
                 date_from = hist_ctx["date_from"]
@@ -254,7 +266,17 @@ Datos de compras a productores en iDempiere:
             elif hist_ctx.get("mes"):
                 mes = hist_ctx["mes"]
                 anio = hist_ctx.get("anio", anio)
+            elif hist_ctx.get("anio"):
+                anio = hist_ctx["anio"]
+        # Month extracted but no explicit year → inherit year from history
+        # e.g. "¿Y en enero?" after "compras 2025" → use enero 2025, not 2026
+        elif mes and not _has_explicit_year and not date_from:
+            if hist_ctx.get("anio"):
+                logger.info("[YEAR-FIX] Heredando año %s del historial (mes=%s del mensaje actual)", hist_ctx["anio"], mes)
+                anio = hist_ctx["anio"]
 
+        logger.info("[TEMPORAL] mes=%s, anio=%s, date_from=%s, date_to=%s, explicit_year=%s, hist_ctx=%s",
+                    mes, anio, date_from, date_to, _has_explicit_year, hist_ctx)
         label = build_period_label(date_from, date_to, mes, anio)
 
         # Extract organization name from message (e.g. "en INPROA SANTONI", "de inpromaiz")
@@ -284,11 +306,13 @@ Datos de compras a productores en iDempiere:
                 producto=producto, mes=mes, anio=anio, org_ids=org_ids,
                 date_from=date_from, date_to=date_to, org_name=org_name,
             )
+            if not self._dict_has_data(summary):
+                return None
             sections.append(self._format_summary(summary, f"Compras a Productores - {label}"))
 
-            include_productores = any(w in msg for w in self._SECTION_KEYWORDS["productores"])
-            include_pendientes = any(w in msg for w in self._SECTION_KEYWORDS["pendientes"])
-            include_precios = any(w in msg for w in self._SECTION_KEYWORDS["precios"])
+            include_productores = matches_any(msg, PRODUCTORES_GENERAL)
+            include_pendientes = matches_any(msg, PRODUCTORES_PAGOS)
+            include_precios = matches_any(msg, PRODUCTORES_COMPRAS)
 
             # If follow-up has no section keywords, carry over from history
             if not include_productores and not include_pendientes and not include_precios:

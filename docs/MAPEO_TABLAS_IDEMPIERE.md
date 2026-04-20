@@ -289,13 +289,29 @@ Las zonas de `c_salesregion` se agrupan en regiones via un CASE SQL generado por
 
 #### Tipos de pago (tendertype en c_payment)
 
-| Codigo | Significado |
-|--------|-------------|
-| `X` | Transferencia |
-| `C` | Cheque |
-| `K` | Efectivo |
-| `D` | Deposito |
-| `T` | Tarjeta |
+Verificado contra `ad_ref_list` (C_Payment Tender Type) en iDempiere el 14/Mar/2026:
+
+| Codigo | Significado | Volumen 2025 |
+|--------|-------------|-------------|
+| `W` | Transferencia (Wire Transfer) | 42,770 recibos (81%) |
+| `X` | Efectivo (Cash) | 5,195 recibos |
+| `S` | Transferencia Empresas | 2,275 recibos |
+| `T` | Cuenta (Account) | 1,101 recibos |
+| `Y` | Dólar Efectivo | 1,057 recibos |
+| `Z` | Dólar Transferencia | 434 recibos |
+| `D` | Débito Directo (Direct Debit) | 73 recibos |
+| `K` | Cheque (Check) | 3 recibos |
+| `B` | Tarjeta de Débito | 2 recibos |
+| `R` | Dólar IGTF | 1 recibo |
+| `E` | Euro Efectivo | 1 recibo |
+| `U` | Euro Transferencia | 1 recibo |
+| `A` | Depósito Directo (Direct Deposit) | - |
+| `C` | Tarjeta de Crédito (Credit Card) | - |
+| `G` | Depósito Bancario | - |
+| `I` | Débito Directo ITF | - |
+| `J` | Comisión Bancaria | - |
+| `P` | Impuesto | - |
+| `Q` | Giro | - |
 
 ---
 

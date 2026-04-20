@@ -21,7 +21,7 @@ settings = get_settings()
 logger = logging.getLogger("santonibot.agents")
 
 # Performance limits
-_MAX_TABLE_ROWS = 50
+_MAX_TABLE_ROWS = 100
 _MAX_HISTORY_MESSAGES = 40
 _MAX_TOKENS = 4096
 
@@ -126,8 +126,8 @@ class BaseAgent(ABC):
         history: list[tuple[str, str]] | None = None,
         org_ids: list[int] | None = None,
         salesrep_id: int | None = None,
-    ) -> tuple[list, bool]:
-        """Build the LLM message list. Returns (messages, has_data)."""
+    ) -> tuple[list, bool, str | None]:
+        """Build the LLM message list. Returns (messages, has_data, data_context)."""
         # Build datetime context
         datetime_ctx = _build_datetime_context()
 
@@ -160,6 +160,15 @@ class BaseAgent(ABC):
             "- PROHIBIDO copiar nombres o datos del historial de conversación para responder una nueva consulta.\n"
             "- Cada respuesta debe basarse EXCLUSIVAMENTE en los 'DATOS REALES' proporcionados para ESA consulta.\n"
             "- Si los datos muestran 5 empleados, tu tabla debe tener EXACTAMENTE 5 filas, ni más ni menos.\n"
+            "\nREGLAS DE CONTEO Y TOTALES (CRÍTICAS):\n"
+            "- Cuando los datos incluyen 'TOTAL EXACTO: N', debes usar ESE número como total. NO lo recalcules ni lo cambies.\n"
+            "- Cuando los datos incluyen 'Total Empleados: N' o 'Total Producciones: N', copia ESE número exacto.\n"
+            "- PROHIBIDO inventar totales, promedios o estadísticas que no estén en los datos.\n"
+            "- Si cuentas filas en una tabla, el resultado DEBE coincidir con el total indicado en el encabezado.\n"
+            "- Si los datos dicen 'Total Monto: 575.030.358,59', NO escribas un número diferente.\n"
+            "- NUNCA digas 'Empleados activos: 1.057' si los datos dicen 'Total Empleados: 702'.\n"
+            "- PROHIBIDO inventar 'Total deducciones: 0' si los datos muestran deducciones.\n"
+            "- Los únicos números que puedes usar son los que aparecen LITERALMENTE en los datos.\n"
         )
         messages = [SystemMessage(content=enhanced_prompt)]
 
@@ -239,6 +248,9 @@ class BaseAgent(ABC):
                         "- Si falta información que el usuario pidió, di 'no se encontraron datos' y sugiere alternativas.\n"
                         "- PROHIBIDO inventar nombres de personas, empresas, facturas, lotes o buques.\n"
                         "- PROHIBIDO mostrar porcentajes de humedad, proteína o impureza si NO aparecen en los datos.\n"
+                        "- CUANDO RESUMAS: copia los totales EXACTOS de los datos. Si dice 'Total Empleados: 702', "
+                        "  tu resumen debe decir 702, NO otro número.\n"
+                        "- CUANDO CUENTES filas de una tabla: el conteo debe coincidir con lo indicado en el encabezado.\n"
                         "══════════════════════════════════════════════════════\n\n"
                         f"{data_context}"
                     )
@@ -281,15 +293,59 @@ class BaseAgent(ABC):
                     messages.append(AIMessage(content=clean))
 
         messages.append(HumanMessage(content=message))
-        return messages, data_context is not None
+        return messages, data_context is not None, data_context
+
+    # Phrases that indicate the LLM is refusing to use provided data
+    _NO_ACCESS_PHRASES = [
+        "no tengo acceso",
+        "no puedo acceder",
+        "no dispongo",
+        "no tengo acceso directo",
+        "no cuento con acceso",
+        "no tengo la capacidad",
+        "no puedo consultar",
+        "mis capacidades están limitadas",
+        "no tengo información",
+    ]
 
     @staticmethod
-    def _detect_hallucination(response_text: str, has_data: bool) -> bool:
+    def _extract_data_fingerprints(data_context: str) -> set[str]:
+        """Extract key numeric fingerprints from data context for validation.
+
+        Pulls out significant numbers (>= 4 digits) that appear in the data.
+        These are used to verify the LLM response uses real data, not invented.
+        """
+        if not data_context:
+            return set()
+        # Extract formatted numbers with thousands separators: 1,234,567.89
+        numbers = re.findall(r'\d{1,3}(?:,\d{3})+(?:\.\d+)?', data_context)
+        # Also extract large plain numbers (>= 1000)
+        plain = re.findall(r'(?<!\d)\d{4,}(?:\.\d+)?(?!\d)', data_context)
+        fingerprints = set()
+        for n in numbers + plain:
+            # Normalize: remove commas
+            clean = n.replace(",", "")
+            try:
+                val = float(clean)
+                if val >= 1000:
+                    fingerprints.add(clean)
+            except ValueError:
+                pass
+        return fingerprints
+
+    @staticmethod
+    def _detect_hallucination(
+        response_text: str,
+        has_data: bool,
+        data_context: str | None = None,
+    ) -> bool:
         """Detect if the LLM likely hallucinated data.
 
         Returns True if hallucination is detected:
         - When no data was provided (has_data=False): tables with numbers = hallucination
         - When data WAS provided (has_data=True): fake invoice/doc numbers = hallucination
+        - ALWAYS: "no tengo acceso" phrases when data WAS provided = hallucination
+        - When data WAS provided: response numbers don't match data = hallucination
         """
         # ALWAYS check for fake document numbers (these are never real)
         fake_docs = re.search(
@@ -305,7 +361,64 @@ class BaseAgent(ABC):
         if fake_lotes:
             return True
 
+        # When data WAS provided, detect "no tengo acceso" refusal
         if has_data:
+            response_lower = response_text.lower()
+            for phrase in BaseAgent._NO_ACCESS_PHRASES:
+                if phrase in response_lower:
+                    return True
+
+            # NEW: Cross-reference check — verify LLM used real numbers
+            # Extract significant numbers from the response tables
+            if data_context:
+                data_fps = BaseAgent._extract_data_fingerprints(data_context)
+                if data_fps:
+                    # Extract numbers from response tables only
+                    response_table_lines = [
+                        line for line in response_text.split("\n")
+                        if line.strip().startswith("|") and "---" not in line
+                    ]
+                    if len(response_table_lines) >= 3:  # header + separator + data
+                        response_table_text = "\n".join(response_table_lines)
+                        # Get numbers from response tables
+                        resp_nums = re.findall(
+                            r'\d{1,3}(?:[.,]\d{3})+(?:[.,]\d+)?',
+                            response_table_text,
+                        )
+                        if resp_nums:
+                            # Normalize response numbers (handle both . and , as thousands sep)
+                            resp_clean = set()
+                            for n in resp_nums:
+                                # Venezuelan format: 1.234.567,89 → 1234567.89
+                                if "," in n and "." in n:
+                                    clean = n.replace(".", "").replace(",", ".")
+                                else:
+                                    clean = n.replace(",", "")
+                                try:
+                                    val = float(clean)
+                                    if val >= 1000:
+                                        resp_clean.add(f"{val:.0f}")
+                                except ValueError:
+                                    pass
+
+                            # Normalize data fingerprints the same way
+                            data_clean = set()
+                            for fp in data_fps:
+                                try:
+                                    data_clean.add(f"{float(fp):.0f}")
+                                except ValueError:
+                                    pass
+
+                            # If response has significant numbers in tables but
+                            # NONE match any data fingerprint → hallucination
+                            if resp_clean and data_clean and not resp_clean & data_clean:
+                                logger.warning(
+                                    "Fingerprint mismatch: response numbers %s "
+                                    "don't overlap with data numbers %s",
+                                    list(resp_clean)[:5], list(data_clean)[:5],
+                                )
+                                return True
+
             return False
 
         # No data was provided — check for generated tables
@@ -399,6 +512,26 @@ class BaseAgent(ABC):
         result = re.sub(r'\n{3,}', '\n\n', result)
         return result
 
+    @staticmethod
+    def _dict_has_data(d: dict) -> bool:
+        """Check if a query result dict has any meaningful data rows.
+
+        Returns False if all list values are empty and all numeric totals are 0.
+        This prevents the LLM from receiving 'has_data=True' with empty tables,
+        which causes it to hallucinate data to fill the void.
+        """
+        for v in d.values():
+            if isinstance(v, list) and len(v) > 0:
+                return True
+            if isinstance(v, dict):
+                # Check nested totals
+                for nv in v.values():
+                    if isinstance(nv, (int, float)) and nv > 0:
+                        return True
+                    if isinstance(nv, list) and len(nv) > 0:
+                        return True
+        return False
+
     _HALLUCINATION_REPLACEMENT = (
         "La consulta a iDempiere no arrojó resultados para los filtros aplicados.\n\n"
         "**¿Qué puedes intentar?**\n"
@@ -418,13 +551,30 @@ class BaseAgent(ABC):
         salesrep_id: int | None = None,
     ) -> dict:
         """Process a user message and return a complete response."""
-        messages, has_data = self._build_messages(message, history, org_ids, salesrep_id)
+        messages, has_data, data_context = self._build_messages(message, history, org_ids, salesrep_id)
+
+        # When no data was found, skip the LLM entirely to prevent hallucination.
+        # This avoids wasting an LLM call that would just fabricate data.
+        if not has_data:
+            logger.info(
+                "No data for %s — returning fixed message (skip LLM in process)",
+                self.name,
+            )
+            return {
+                "response": self._HALLUCINATION_REPLACEMENT,
+                "agent_used": self.name,
+                "metadata": {
+                    "department": self.department,
+                    "has_data": False,
+                },
+            }
+
         response = await self.llm.ainvoke(messages)
 
         response_text = response.content
 
-        # Post-response validation: detect hallucination when no data was provided
-        if self._detect_hallucination(response_text, has_data):
+        # Post-response validation: detect hallucination
+        if self._detect_hallucination(response_text, has_data, data_context):
             logger.warning(
                 "Hallucination detected in %s (has_data=%s). Replacing response.",
                 self.name, has_data,
@@ -439,7 +589,32 @@ class BaseAgent(ABC):
                 )
             except Exception:
                 pass
-            response_text = self._HALLUCINATION_REPLACEMENT
+            if has_data:
+                # LLM refused to use real data or invented numbers — re-invoke with stronger prompt
+                logger.info("Re-invoking %s with anti-hallucination prompt", self.name)
+                retry_msg = SystemMessage(content=(
+                    "⚠️ TU RESPUESTA ANTERIOR FUE RECHAZADA porque contenía datos inventados "
+                    "o dijiste 'no tengo acceso'. ESTO ES INCORRECTO.\n"
+                    "Los datos reales YA fueron consultados y están disponibles arriba en "
+                    "'DATOS REALES DE LA BASE DE DATOS'.\n"
+                    "DEBES usar EXCLUSIVAMENTE esos datos para responder.\n"
+                    "NUNCA inventes nombres de proveedores, clientes, productos ni montos.\n"
+                    "NUNCA digas que no tienes acceso.\n"
+                    "Los ÚNICOS números que puedes usar son los que aparecen LITERALMENTE en los datos.\n"
+                    "Genera la respuesta ahora usando EXCLUSIVAMENTE los datos proporcionados."
+                ))
+                messages.append(retry_msg)
+                messages.append(HumanMessage(content=message))
+                try:
+                    retry_response = await self.llm.ainvoke(messages)
+                    response_text = retry_response.content
+                    # Check again - if still hallucinating, use fallback
+                    if self._detect_hallucination(response_text, has_data, data_context):
+                        response_text = self._HALLUCINATION_REPLACEMENT
+                except Exception:
+                    response_text = self._HALLUCINATION_REPLACEMENT
+            else:
+                response_text = self._HALLUCINATION_REPLACEMENT
 
         return {
             "response": response_text,
@@ -464,7 +639,19 @@ class BaseAgent(ABC):
         response and, if hallucination is detected (no real data but tables
         with numbers appeared), replaces the entire response.
         """
-        messages, has_data = self._build_messages(message, history, org_ids, salesrep_id)
+        messages, has_data, data_context = self._build_messages(message, history, org_ids, salesrep_id)
+
+        # When no data was found, skip the LLM entirely to prevent hallucination.
+        # In streaming mode we can't un-send tokens, so the safest approach is to
+        # never invoke the LLM and yield a deterministic "no results" message.
+        if not has_data:
+            logger.info(
+                "No data for %s — returning fixed message (skip LLM in stream)",
+                self.name,
+            )
+            yield self._HALLUCINATION_REPLACEMENT
+            return
+
         accumulated = []
         async for chunk in self.llm.astream(messages):
             if chunk.content:
@@ -472,14 +659,15 @@ class BaseAgent(ABC):
                 yield chunk.content
 
         # Post-stream hallucination check
-        if not has_data and accumulated:
+        if accumulated:
             full_response = "".join(accumulated)
-            if self._detect_hallucination(full_response, has_data):
+            if self._detect_hallucination(full_response, has_data, data_context):
                 logger.warning(
                     "Hallucination detected in streamed %s (has_data=%s).",
                     self.name, has_data,
                 )
-                # Can't un-send tokens, but log for monitoring
+                # Can't un-send tokens in streaming mode, but log for monitoring.
+                # The chat.py save logic will record this for audit review.
 
     @staticmethod
     def _format_table(data: list[dict], columns: list[str] | None = None) -> str:
@@ -518,12 +706,16 @@ class BaseAgent(ABC):
             if isinstance(value, dict):
                 lines.append(f"\n### {key.replace('_', ' ').title()}")
                 for k, v in value.items():
-                    if isinstance(v, float):
+                    if isinstance(v, list) and v and isinstance(v[0], dict):
+                        # Nested list of dicts inside a dict — render as table
+                        lines.append(f"\n#### {k.replace('_', ' ').title()} [{len(v)} registros exactos]")
+                        lines.append(BaseAgent._format_table(v))
+                    elif isinstance(v, float):
                         lines.append(f"- {k.replace('_', ' ').title()}: {v:,.2f}")
                     else:
                         lines.append(f"- {k.replace('_', ' ').title()}: {v}")
             elif isinstance(value, list):
-                lines.append(f"\n### {key.replace('_', ' ').title()}")
+                lines.append(f"\n### {key.replace('_', ' ').title()} [{len(value)} registros exactos]")
                 if value and isinstance(value[0], dict):
                     lines.append(BaseAgent._format_table(value))
                 else:

@@ -68,8 +68,8 @@ CONTEXTO iDEMPIERE:
 - Facturas de compra: c_invoice (issotrx='N', docstatus IN ('CO','CL')) - CO=completada, CL=cerrada (pagada). Ambos estados son válidos.
 - Órdenes de compra: c_order (issotrx='N') - órdenes pendientes, en proceso y completadas
 - Líneas de factura: c_invoiceline (m_product_id, qtyinvoiced, linenetamt)
-- Proveedores: c_bpartner (isvendor='Y') - 26,070 socios de negocio
-- Productos: m_product (40,766 productos) con m_product_category
+- Proveedores: c_bpartner (isvendor='Y')
+- Productos: m_product con m_product_category
 - Monedas en iDempiere (Santoni usa múltiples códigos de moneda):
   * VES (ID 205) - Bolívares Soberanos (todas las organizaciones)
   * DOL (ID 1000000) - Dólares en INPROA SANTONI
@@ -91,11 +91,12 @@ REGLAS:
 - PROHIBIDO decir "no tengo acceso", "no puedo acceder", "no dispongo" o "no tengo acceso directo". TÚ TIENES ACCESO COMPLETO a la base de datos de Santoni y los datos se consultan automáticamente. Si los datos están vacíos, di "No se encontraron datos para ese filtro". NUNCA culpes a problemas de acceso — la conexión SIEMPRE está activa.
 - Si la pregunta es ambigua, personal o usa palabras como "mi", "yo", "me", NO adivines. Pide al usuario que reformule especificando: la organización, producto, proveedor, período u otros datos necesarios.
 - En follow-ups como "dame el inventario de ese producto", los datos YA fueron consultados automáticamente. Presenta los datos que recibes, no inventes excusas.
-- IMPORTANTE SOBRE MONEDAS: Los datos ya vienen filtrados por moneda.
-  * Por defecto se muestran datos en Bolívares (VES).
-  * Si el campo "moneda" dice "USD", los datos son en dólares.
-  * Si dice "Todas las monedas (mixto)", aclara que los montos mezclan VES y USD.
-  * NUNCA intentes convertir entre monedas. Cada moneda se consulta por separado.
+- IMPORTANTE SOBRE MONEDAS: Los datos se separan automáticamente por moneda.
+  * Por defecto se muestran TODAS las monedas (Bs. y USD por separado).
+  * Si el usuario pide "en dólares" o "en bolívares", los datos vienen filtrados a esa moneda.
+  * La columna "moneda" indica si cada fila es en "Bs." o "USD".
+  * NUNCA sumes montos de monedas diferentes. Presenta cada moneda por separado.
+  * NUNCA intentes convertir entre monedas.
 
 CONTEXTO:
 - Responsables: Onofrio Gueccia, Jorge Chahine
@@ -154,56 +155,18 @@ Datos de compras de insumos en iDempiere:
 
     # Currency IDs in Santoni's iDempiere
     _VES_IDS = [205]
-    _USD_IDS = [1000000, 1000003, 1000006, 1000008, 1000011, 1000013, 1000017]
+    _USD_IDS = [100, 1000000, 1000003, 1000006, 1000008, 1000009, 1000011, 1000013, 1000017]
 
-    # Keywords that indicate the user wants USD
-    _USD_KEYWORDS = [
-        "dólares", "dolares", "dólar", "dolar", "usd", "dol",
-        "en dólares", "en dolares", "en dólar", "en dolar",
-        "en usd", "en dol", "moneda dol", "moneda usd",
-        "moneda dólar", "moneda dolares",
-    ]
+    from app.agents.keywords import MONEDA_USD as _USD_KW_SET
+    from app.agents.keywords import MONEDA_VES as _VES_KW_SET
 
-    # Keywords that indicate the user wants VES
-    _VES_KEYWORDS = [
-        "bolívares", "bolivares", "bolívar", "bolivar", "ves",
-        "en bolívares", "en bolivares", "en ves",
-        "moneda ves", "moneda bolivar", "moneda bolívares",
-    ]
-
-    # Words that indicate a general query (not a specific product search)
-    _GENERAL_KEYWORDS = [
-        "resumen", "total", "proveedor", "proveedores", "mensual",
-        "principales", "inventario", "stock", "existencia", "almacén",
-        "almacen", "todos los insumos",
-        "cuánto se", "cuanto se", "cuánto factur", "cuanto factur",
-    ]
-
-    # Keywords that indicate an inventory/stock query
-    _INVENTORY_KEYWORDS = [
-        "inventario", "stock", "existencia", "existencias",
-        "almacén", "almacen", "almacenes",
-        "disponible", "disponibilidad", "disponibles",
-        "cuánto hay", "cuanto hay", "cuánto queda", "cuanto queda",
-        "cuánto tenemos", "cuanto tenemos",
-        "en almacén", "en almacen", "en bodega",
-    ]
-
-    # Keywords that indicate pending purchase orders query
-    _ORDER_KEYWORDS = [
-        "orden", "órdenes", "ordenes", "orden de compra", "órdenes de compra",
-        "ordenes de compra", "pendiente", "pendientes",
-        "por recibir", "por recepcionar", "por recepción", "por recepcion",
-        "solicitado", "solicitados", "pedido", "pedidos",
-    ]
-
-    # Keywords that indicate price comparison query
-    _PRICE_COMPARE_KEYWORDS = [
-        "comparar precio", "comparación de precio", "comparacion de precio",
-        "mejor precio", "precio más bajo", "precio mas bajo",
-        "quién vende más barato", "quien vende mas barato",
-        "proveedores que venden", "alternativas de proveedor",
-    ]
+    # Import centralized keyword sets for query type detection
+    from app.agents.keywords import (
+        COMPRAS_GENERAL as _GENERAL_KW_SET,
+        COMPRAS_INVENTARIO as _INVENTORY_KW_SET,
+        COMPRAS_ORDENES as _ORDER_KW_SET,
+        COMPRAS_PRECIOS as _PRICE_COMPARE_KW_SET,
+    )
 
     # Organization name mapping (keyword → iDempiere org name)
     _ORG_MAP = [
@@ -227,13 +190,7 @@ Datos de compras de insumos en iDempiere:
                 return val
         return None
 
-    # Keywords that indicate payment status query
-    _PAYMENT_KEYWORDS = [
-        "estado de pago", "pagada", "pagadas", "pendiente de pago",
-        "por pagar", "facturas pagadas", "facturas pendientes",
-        "facturas vencidas", "vencida", "vencidas", "morosidad",
-        "cuentas por pagar", "deuda", "adeudado",
-    ]
+    from app.agents.keywords import COMPRAS_PAGOS as _PAYMENT_KW_SET
 
     def _extract_product_search(self, message: str) -> str | None:
         """Extract product code or name from user message.
@@ -268,7 +225,7 @@ Datos de compras de insumos en iDempiere:
 
         # "producto X" or "producto: X"
         prod_match = re.search(
-            r'producto[:\s]+(.+?)(?:\s+(?:en|del|desde|este)\b|\s*[?]|$)',
+            r'producto[:\s]+(.+?)(?:\s+(?:en|del|desde|este)\b|\s+\d{4}\b|\s*[?]|$)',
             msg_lower,
         )
         if prod_match and len(prod_match.group(1).strip()) >= 3:
@@ -277,13 +234,13 @@ Datos de compras de insumos en iDempiere:
         # "compras de {product}" / "historial de compras de {product}"
         compras_match = re.search(
             r'(?:compras?\s+de|historial\s+de(?:\s+compras?\s+de)?)\s+'
-            r'(.+?)(?:\s+(?:en|del|desde|este|el|último|ultima)\b|\s*[?]|$)',
+            r'(.+?)(?:\s+(?:en|del|desde|este|el|último|ultima)\b|\s+\d{4}\b|\s*[?]|$)',
             msg_lower,
         )
         if compras_match:
             product = compras_match.group(1).strip()
             product = re.sub(
-                r'\s+(?:del?|en|este|el|[úu]ltimo|ultima|trimestre|semestre|mes|año)\s*$',
+                r'(?:\s+(?:del?|en|este|el|[úu]ltimo|ultima|trimestre|semestre|mes|año)|\s+\d{4})\s*$',
                 '', product,
             )
             # Skip generic terms
@@ -302,14 +259,26 @@ Datos de compras de insumos en iDempiere:
             if len(product) >= 3:
                 return product
 
+        # "comparación de precios de X entre proveedores" — must come BEFORE generic "precio de X"
+        compare_match = re.search(
+            r'comparaci[oó]n\s+de\s+precios?\s+de\s+'
+            r'(.+?)(?:\s+entre\s+proveedores?|\s+(?:en|del|desde|este)\b|\s+\d{4}\b|\s*[?]|$)',
+            msg_lower,
+        )
+        if compare_match:
+            product = compare_match.group(1).strip()
+            if len(product) >= 3:
+                return product
+
         # "precio(s) de (las últimas N compras de) {product}"
         precio_match = re.search(
             r'precios?\s+de(?:\s+las?\s+[úu]ltim[ao]s?\s+\d+\s+compras?\s+de)?\s+'
-            r'(.+?)(?:\s+(?:en|del|desde|este|el)\b|\s*[?]|$)',
+            r'(.+?)(?:\s+(?:en|del|desde|este|el)\b|\s+\d{4}\b|\s*[?]|$)',
             msg_lower,
         )
         if precio_match:
             product = precio_match.group(1).strip()
+            product = re.sub(r'\s+\d{4}\s*$', '', product)
             if len(product) >= 3:
                 return product
 
@@ -337,7 +306,7 @@ Datos de compras de insumos en iDempiere:
         # "proveedores (que) venden X"
         prov_match = re.search(
             r'proveedores?\s+(?:que\s+)?venden\s+'
-            r'(.+?)(?:\s+(?:en|del|desde|este)\b|\s*[?]|$)',
+            r'(.+?)(?:\s+(?:en|del|desde|este)\b|\s+\d{4}\b|\s*[?]|$)',
             msg_lower,
         )
         if prov_match:
@@ -405,11 +374,11 @@ Datos de compras de insumos en iDempiere:
         msg_lower = message.lower()
 
         # Check current message for USD keywords
-        if any(kw in msg_lower for kw in self._USD_KEYWORDS):
+        if any(kw in msg_lower for kw in self._USD_KW_SET):
             return self._USD_IDS
 
         # Check current message for VES keywords
-        if any(kw in msg_lower for kw in self._VES_KEYWORDS):
+        if any(kw in msg_lower for kw in self._VES_KW_SET):
             return self._VES_IDS
 
         # Check history for currency context (follow-ups)
@@ -417,9 +386,9 @@ Datos de compras de insumos en iDempiere:
             for role, content in reversed(history):
                 if role == "user":
                     content_lower = content.lower()
-                    if any(kw in content_lower for kw in self._USD_KEYWORDS):
+                    if any(kw in content_lower for kw in self._USD_KW_SET):
                         return self._USD_IDS
-                    if any(kw in content_lower for kw in self._VES_KEYWORDS):
+                    if any(kw in content_lower for kw in self._VES_KW_SET):
                         return self._VES_IDS
                     # Stop at first user message that doesn't mention currency
                     break
@@ -434,6 +403,10 @@ Datos de compras de insumos en iDempiere:
         # Extract dates from current message
         date_from, date_to = extract_date_range(message)
         mes, anio = extract_month_year(message)
+        # Track if user explicitly mentioned a year/month or if it's just the default
+        _has_explicit_year = bool(re.search(r'20\d{2}', message))
+        _has_explicit_month = mes is not None
+        has_explicit_period = _has_explicit_year or _has_explicit_month or bool(date_from)
         if date_from and date_to:
             mes = None
             anio = None
@@ -450,6 +423,12 @@ Datos de compras de insumos en iDempiere:
                 if date_from and date_to:
                     mes = None
                     anio = None
+        # Month extracted but no explicit year → inherit year from history
+        # e.g. "¿Y en enero?" after "compras 2025" → use enero 2025, not 2026
+        elif mes is not None and not _has_explicit_year and date_from is None and history:
+            _, _, _, h_anio = self._extract_dates_from_history(history)
+            if h_anio is not None:
+                anio = h_anio
 
         label = build_period_label(date_from, date_to, mes, anio)
 
@@ -464,20 +443,32 @@ Datos de compras de insumos en iDempiere:
                     org_name = o
                     break
 
-        # Detect currency preference
-        currency_ids = self._detect_currency(message, history)
+        # Detect currency preference.
+        # Only inherit currency from history for true follow-ups (short messages
+        # like "y en dólares?"), not for new standalone queries.
+        _broad_query_kw = {"compras", "resumen", "total", "facturas", "estado de pago",
+                           "órdenes", "ordenes", "pendientes", "pagadas", "top",
+                           "proveedores", "proveedor", "inventario", "stock"}
+        _is_broad_query = any(w in msg for w in _broad_query_kw)
+        _use_history_for_currency = not has_explicit_period and not _is_broad_query
+        currency_ids = self._detect_currency(
+            message, history if _use_history_for_currency else None
+        )
 
         # Check if user is searching for a specific product
         product_search = self._extract_product_search(message)
-        # Follow-up: if no product in current message, check history
+        # Follow-up: inherit product from history ONLY if the current message
+        # looks like a true follow-up (no explicit period, no broad query keywords).
+        # e.g. "y en dólares?" → inherit; "compras en dólares del 2025" → don't.
         if not product_search and history:
-            product_search = self._extract_product_from_history(history)
+            if not has_explicit_period and not _is_broad_query:
+                product_search = self._extract_product_from_history(history)
 
-        # Detect query type
-        is_inventory = any(w in msg for w in self._INVENTORY_KEYWORDS)
-        is_orders = any(w in msg for w in self._ORDER_KEYWORDS)
-        is_price_compare = any(w in msg for w in self._PRICE_COMPARE_KEYWORDS)
-        is_payment = any(w in msg for w in self._PAYMENT_KEYWORDS)
+        # Detect query type using centralized keyword sets
+        is_inventory = any(w in msg for w in self._INVENTORY_KW_SET)
+        is_orders = any(w in msg for w in self._ORDER_KW_SET)
+        is_price_compare = any(w in msg for w in self._PRICE_COMPARE_KW_SET)
+        is_payment = any(w in msg for w in self._PAYMENT_KW_SET)
 
         product_found = False
 
@@ -487,10 +478,42 @@ Datos de compras de insumos en iDempiere:
                     org_ids=org_ids,
                     product_search=product_search,
                 )
+                if not self._dict_has_data(inv_data):
+                    return None
                 filter_label = f" - '{product_search}'" if product_search else ""
                 sections.append(self._format_summary(
                     inv_data, f"Inventario / Stock Actual{filter_label}",
                 ))
+                product_found = True
+
+            elif is_payment:
+                payment_data = build_purchase_payment_status(
+                    mes=mes, anio=anio, org_ids=org_ids,
+                    date_from=date_from, date_to=date_to,
+                    currency_ids=currency_ids,
+                )
+                if not self._dict_has_data(payment_data):
+                    return None
+
+                # Build explicit totals for payment status
+                resumen = payment_data.get("resumen_pago", [])
+                payment_lines = [f"## Estado de Pago de Facturas de Compra - {label}"]
+                total_facs = sum(r.get("facturas", 0) for r in resumen)
+                payment_lines.append(f"\nTOTAL EXACTO DE FACTURAS: {total_facs}")
+                for r in resumen:
+                    payment_lines.append(
+                        f"- {r['estado_pago']} ({r['moneda']}): "
+                        f"{r['facturas']} facturas, monto: {r['total']:,.2f}"
+                    )
+                sections.append("\n".join(payment_lines))
+
+                # Add overdue detail
+                vencidas = payment_data.get("facturas_vencidas", [])
+                if vencidas:
+                    sections.append(
+                        f"\n### Facturas Vencidas Sin Pagar [{len(vencidas)} registros exactos]"
+                    )
+                    sections.append(self._format_table(vencidas))
                 product_found = True
 
             elif is_orders:
@@ -500,38 +523,62 @@ Datos de compras de insumos en iDempiere:
                     currency_ids=currency_ids,
                     product_search=product_search,
                 )
-                sections.append(self._format_summary(
-                    orders_data, f"Órdenes de Compra - {label}",
-                ))
-                product_found = True
+                if not self._dict_has_data(orders_data):
+                    return None
 
-            elif is_payment:
-                payment_data = build_purchase_payment_status(
-                    mes=mes, anio=anio, org_ids=org_ids,
-                    date_from=date_from, date_to=date_to,
+                # Build explicit totals for pending orders
+                totals_info = orders_data.get("totales", {})
+                por_moneda = totals_info.get("por_moneda", [])
+                total_ordenes = totals_info.get("total_ordenes", 0)
+                order_lines = [f"## Órdenes de Compra Pendientes (DR/IP) - {label}"]
+                order_lines.append(f"\nTOTAL EXACTO DE ÓRDENES PENDIENTES: {total_ordenes}")
+                for pm in por_moneda:
+                    order_lines.append(
+                        f"- {pm['moneda']}: {pm['total_ordenes']} órdenes, "
+                        f"monto total: {pm['total_monto']:,.2f}"
+                    )
+                order_lines.append(
+                    "\n⚠️ SOLO presenta los proveedores, documentos y montos que aparecen "
+                    "en las tablas siguientes. NO inventes nombres de proveedores, "
+                    "números de orden (ORD-xxx) ni descripciones de productos."
                 )
-                sections.append(self._format_summary(
-                    payment_data, f"Estado de Pago de Facturas de Compra - {label}",
-                ))
+                sections.append("\n".join(order_lines))
+
+                # Add status, supplier, and detail tables
+                for detail_key in ("por_estado", "por_proveedor", "detalle_ordenes"):
+                    detail_data = orders_data.get(detail_key, [])
+                    if detail_data:
+                        sections.append(
+                            f"\n### {detail_key.replace('_', ' ').title()} "
+                            f"[{len(detail_data)} registros exactos — NO agregues otros]"
+                        )
+                        sections.append(self._format_table(detail_data))
                 product_found = True
 
             elif is_price_compare and product_search:
+                # For price comparison, only filter by date if user explicitly
+                # specified a period.  Otherwise show ALL historical data so
+                # the user can see every supplier that has ever sold this product.
+                cmp_anio = anio if has_explicit_period else None
+                cmp_df = date_from if has_explicit_period else None
+                cmp_dt = date_to if has_explicit_period else None
                 compare_data = build_supplier_price_comparison(
                     product_search=product_search,
-                    org_ids=org_ids, anio=anio,
-                    date_from=date_from, date_to=date_to,
+                    org_ids=org_ids, anio=cmp_anio,
+                    date_from=cmp_df, date_to=cmp_dt,
                     org_name=org_name,
                 )
                 if compare_data:
                     product_found = True
+                    period_note = f" - {label}" if has_explicit_period else " - Todo el historial"
                     sections.append(
-                        f"## Comparación de Precios - '{product_search}' ({len(compare_data)} proveedores)"
+                        f"## Comparación de Precios - '{product_search}'{period_note} ({len(compare_data)} proveedores)"
                     )
                     sections.append(self._format_table(compare_data))
                 else:
                     sections.append(
                         f"## Comparación de Precios - '{product_search}'\n"
-                        f"No se encontraron datos de precios para '{product_search}' en el período {label}."
+                        f"No se encontraron datos de precios para '{product_search}'."
                     )
 
             elif product_search:
@@ -540,16 +587,22 @@ Datos de compras de insumos en iDempiere:
                     is_supplier_query = any(w in msg for w in ["proveedores", "proveedor", "quien vende", "quién vende"])
 
                     if is_supplier_query:
+                        # Supplier queries ("quién vende X") should show ALL
+                        # historical suppliers unless user specified a period.
+                        sup_anio = anio if has_explicit_period else None
+                        sup_df = date_from if has_explicit_period else None
+                        sup_dt = date_to if has_explicit_period else None
                         compare_data = build_supplier_price_comparison(
                             product_search=product_search,
-                            org_ids=org_ids, anio=anio,
-                            date_from=date_from, date_to=date_to,
+                            org_ids=org_ids, anio=sup_anio,
+                            date_from=sup_df, date_to=sup_dt,
                             org_name=org_name,
                         )
                         if compare_data:
                             product_found = True
+                            period_note = f" - {label}" if has_explicit_period else " - Todo el historial"
                             sections.append(
-                                f"## Proveedores de '{product_search}' ({len(compare_data)} proveedores)"
+                                f"## Proveedores de '{product_search}'{period_note} ({len(compare_data)} proveedores)"
                             )
                             sections.append(self._format_table(compare_data))
 
@@ -599,7 +652,33 @@ Datos de compras de insumos en iDempiere:
                     date_from=date_from, date_to=date_to,
                     currency_ids=currency_ids,
                 )
-                sections.append(self._format_summary(summary, f"Resumen de Compras de Insumos - {label}"))
+                # Check if there's actually data — if total_facturas==0, return None
+                # so base_agent activates anti-hallucination for empty results
+                total_facturas = summary.get("totales", {}).get("total_facturas", 0)
+                if total_facturas == 0:
+                    return None
+
+                # Build explicit totals header so LLM can't misread nested data
+                totals_info = summary.get("totales", {})
+                por_moneda = totals_info.get("por_moneda", [])
+                totals_lines = [f"## Resumen de Compras de Insumos - {label}"]
+                totals_lines.append(f"\nTOTAL EXACTO DE FACTURAS: {total_facturas}")
+                for pm in por_moneda:
+                    totals_lines.append(
+                        f"- {pm['moneda']}: {pm['total_facturas']} facturas, "
+                        f"monto total: {pm['total_monto']:,.2f}"
+                    )
+                sections.append("\n".join(totals_lines))
+
+                # Add detail tables
+                for detail_key in ("por_proveedor", "por_mes", "por_producto"):
+                    detail_data = summary.get(detail_key, [])
+                    if detail_data:
+                        sections.append(
+                            f"\n### {detail_key.replace('_', ' ').title()} "
+                            f"[{len(detail_data)} registros exactos]"
+                        )
+                        sections.append(self._format_table(detail_data))
 
         except Exception as exc:
             logger.error("Error consultando datos de compras de insumos: %s: %s", type(exc).__name__, exc, exc_info=True)

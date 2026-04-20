@@ -49,7 +49,7 @@ class Settings(BaseSettings):
     openrouter_model: str = "google/gemini-2.0-flash-001"
     openrouter_providers: str = ""  # Comma-separated provider names (e.g., "NovitaAI,AtlasCloud")
     anthropic_api_key: str = ""
-    anthropic_model: str = "claude-3-5-sonnet-20241022"
+    anthropic_model: str = "claude-sonnet-4-20250514"
     anthropic_base_url: str = ""  # Proxy URL for Claude API (e.g., Cloudflare Worker)
 
     # ChromaDB

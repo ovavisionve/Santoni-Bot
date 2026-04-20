@@ -7,6 +7,7 @@ Fuente de datos: c_bankaccount, c_payment, c_invoice en iDempiere (PostgreSQL 13
 """
 
 import logging
+import re
 
 from app.agents.base_agent import BaseAgent
 from app.agents.date_utils import (
@@ -14,9 +15,12 @@ from app.agents.date_utils import (
     extract_month_year,
     build_period_label,
 )
+from app.agents.keywords import FINANZAS_CXC, matches_any
 from app.services.query_service import (
     build_financial_summary,
     build_overdue_receivables,
+    build_cobros_pagos_summary,
+    build_loan_balances,
 )
 
 logger = logging.getLogger("santonibot.agents.finanzas")
@@ -55,10 +59,10 @@ CAPACIDADES:
 
 CONTEXTO iDEMPIERE:
 - Cuentas bancarias: c_bankaccount (saldo actual, tipo, moneda) + c_bank
-- Cobros recibidos: c_payment (isreceipt='Y', docstatus IN ('CO','CL')) - 798,150 pagos. CO=completado, CL=cerrado.
+- Cobros recibidos: c_payment (isreceipt='Y', docstatus IN ('CO','CL')). CO=completado, CL=cerrado.
 - Facturas por cobrar: c_invoice (issotrx='Y', ispaid='N') con c_paymentterm (días de crédito)
 - Facturas por pagar: c_invoice (issotrx='N', ispaid='N')
-- Clientes/proveedores: c_bpartner (26,070 registros)
+- Clientes/proveedores: c_bpartner
 - Monedas: VES (Bolívares, ID 205), USD (Dólares, ID 100)
 - Organizaciones: INPROA SANTONI, AGROINPROA, AGROPECUARIA R.R., Agro Import, INVERSIONES AGA, InproMaiz, AGA AGRICOLA, Santoni Service
 - Campos fiscales venezolanos: lve_controlnumber, withholdingamt, lve_factfiscal
@@ -83,7 +87,7 @@ REGLAS:
 - Indica el período o fecha de los datos
 - Los datos que recibes son REALES de la base de datos de Santoni
 - NUNCA inventes datos. Si no hay datos para un filtro, informa claramente
-- PROHIBIDO decir "no tengo acceso", "no puedo acceder", "no dispongo" o "no tengo acceso directo". TÚ TIENES ACCESO COMPLETO a la base de datos de Santoni y los datos se consultan automáticamente. Si no hay datos para una consulta específica (ej: préstamos, flujo de caja proyectado), di "No se encontraron datos para esa consulta" y sugiere consultas alternativas que SÍ puedes hacer.
+- PROHIBIDO decir "no tengo acceso", "no puedo acceder", "no dispongo" o "no tengo acceso directo". TÚ TIENES ACCESO COMPLETO a la base de datos de Santoni y los datos se consultan automáticamente. Si no hay datos para una consulta específica, di "No se encontraron datos para esa consulta" y sugiere UNA consulta alternativa que SÍ puedas hacer (no múltiples alternativas).
 - Si la pregunta es ambigua, personal o usa palabras como "mi", "yo", "me" (ej: "mi cuenta", "mis pagos"), NO adivines. Pide al usuario que reformule especificando: la organización, cuenta, período u otros datos necesarios.
 
 FORMATOS DE FECHA SOPORTADOS:
@@ -104,7 +108,10 @@ IMPORTANTE SOBRE PERÍODOS:
             "✅ Saldos bancarios actuales por banco, cuenta, moneda y organización\n"
             "✅ Cuentas por cobrar pendientes (facturas de venta no pagadas) con días de atraso\n"
             "✅ Cuentas por pagar pendientes (facturas de compra no pagadas)\n"
+            "✅ Cobros recibidos por período, moneda y método de pago\n"
+            "✅ Pagos emitidos por período, moneda y método de pago\n"
             "✅ Resumen financiero general (bancos + CxC + CxP)\n"
+            "✅ Saldos de préstamos bancarios, pagarés y obligaciones bancarias por organización\n"
             "\n❌ NO puedo consultar: presupuestos, flujo de caja proyectado o indicadores financieros calculados. "
             "Redirige al usuario al departamento correspondiente."
         )
@@ -114,13 +121,60 @@ IMPORTANTE SOBRE PERÍODOS:
 Datos financieros de iDempiere:
 - c_bankaccount: Cuentas bancarias (accountno, currentbalance, bankaccounttype, c_currency_id)
 - c_bank: Bancos (name)
-- c_payment: Pagos (isreceipt, datetrx, payamt, tendertype=X/C/K/D/T, docstatus)
+- c_payment: Pagos (isreceipt, datetrx, payamt, tendertype: W=Transferencia, X=Efectivo, K=Cheque, C=Tarjeta Crédito, B=Tarjeta Débito, S=Transferencia Empresas, Z=Dólar Transferencia, Y=Dólar Efectivo, docstatus)
 - c_invoice: Facturas por cobrar (issotrx='Y', ispaid='N') y por pagar (issotrx='N', ispaid='N')
 - c_paymentterm: Términos de pago (netdays)
 - c_allocationline: Asignación de pagos a facturas
 """
 
-    _RECEIVABLES_KEYWORDS = ["cobrar", "morosidad", "vencid", "atras"]
+    # Keywords for cobros/pagos detection
+    # NOTE: "cobrar" excluded (conflicts with "cuentas por cobrar"),
+    #       "pagar" excluded (conflicts with "cuentas por pagar")
+    _COBROS_KW = frozenset({
+        "cobro", "cobros", "cobrado", "cobranza", "cobranzas",
+        "recibido", "recibidos", "recaudado", "recaudación", "recaudacion",
+        "recibos",
+        "cuánto se ha cobrado", "cuanto se ha cobrado",
+        "cuánto hemos cobrado", "cuanto hemos cobrado",
+    })
+    _PAGOS_KW = frozenset({
+        "pago", "pagos", "pagado", "desembolso", "desembolsos",
+        "emitido", "emitidos", "egreso", "egresos",
+        "cuánto se ha pagado", "cuanto se ha pagado",
+        "cuánto hemos pagado", "cuanto hemos pagado",
+    })
+    _LOANS_KW = frozenset({
+        "préstamo", "prestamo", "préstamos", "prestamos",
+        "pagaré", "pagare", "pagarés", "pagares",
+        "compromiso bancario", "compromisos bancarios",
+        "crédito bancario", "credito bancario",
+        "créditos bancarios", "creditos bancarios",
+        "obligación bancaria", "obligacion bancaria",
+        "obligaciones bancarias",
+        "deuda bancaria", "deudas bancarias",
+        "arrendamiento financiero",
+    })
+
+    _ORG_MAP = [
+        ("inpromaiz", "InproMaiz"),
+        ("inpro maiz", "InproMaiz"),
+        ("inproa santoni", "INPROA SANTONI"),
+        ("inproa", "INPROA SANTONI"),
+        ("santoni service", "Santoni Service"),
+        ("agropecuaria", "AGROPECUARIA"),
+        ("aga agricola", "AGA AGRICOLA"),
+        ("aga agrícola", "AGA AGRICOLA"),
+        ("agroinproa", "AGROINPROA"),
+        ("inversiones aga", "INVERSIONES AGA"),
+    ]
+
+    @classmethod
+    def _extract_org_name(cls, msg: str) -> str | None:
+        msg_lower = msg.lower()
+        for kw, val in cls._ORG_MAP:
+            if kw in msg_lower:
+                return val
+        return None
 
     # -- helpers for currency-aware bank formatting --
     _BANK_COLUMNS = ["banco", "numero_cuenta", "tipo", "organizacion", "saldo"]
@@ -218,7 +272,115 @@ Datos financieros de iDempiere:
                         lines.append(f"  - **{item['moneda']}**: {item['facturas']} vencidas por {sym} {item['total']:,.2f}")
                 else:
                     lines.append(f"- Total vencido: {ap.get('total_vencido', 0):,.2f}")
+            top_proveedores = ap.get("top_proveedores_vencidos", [])
+            if top_proveedores:
+                lines.append("\n### Top Proveedores con Mayor Deuda Vencida")
+                lines.append("| # | Proveedor | Moneda | Facturas | Total Adeudado |")
+                lines.append("|---|-----------|--------|----------|----------------|")
+                for i, p in enumerate(top_proveedores, 1):
+                    sym = "Bs." if p["moneda"] == "Bs." else "$" if p["moneda"] == "USD" else p["moneda"]
+                    lines.append(f"| {i} | {p['proveedor']} | {p['moneda']} | {p['facturas']} | {sym} {p['total_adeudado']:,.2f} |")
 
+        # --- Top morosos (receivables) ---
+        top_morosos = ar.get("top_clientes_morosos", []) if ar else []
+        if top_morosos:
+            lines.append("\n### Top Clientes Morosos (Mayor Deuda Vencida)")
+            lines.append("| # | Cliente | Moneda | Facturas | Total Adeudado |")
+            lines.append("|---|---------|--------|----------|----------------|")
+            for i, c in enumerate(top_morosos, 1):
+                sym = "Bs." if c["moneda"] == "Bs." else "$" if c["moneda"] == "USD" else c["moneda"]
+                lines.append(f"| {i} | {c['cliente']} | {c['moneda']} | {c['facturas']} | {sym} {c['total_adeudado']:,.2f} |")
+
+        return "\n".join(lines)
+
+    @staticmethod
+    def _format_cobros_pagos(data: dict, label: str) -> str:
+        """Format cobros/pagos data as explicit markdown."""
+        tipo = data.get("tipo", "cobros")
+        titulo = "Cobros Recibidos" if tipo == "cobros" else "Pagos Emitidos"
+        lines = [f"## {titulo} - {label}"]
+
+        por_moneda = data.get("por_moneda", [])
+        if not por_moneda:
+            lines.append(f"\nNo se encontraron {tipo} para el período {label}.")
+            return "\n".join(lines)
+
+        lines.append(f"\n**Total registros:** {data.get('total_registros', 0):,}")
+
+        # Totals by currency
+        lines.append("\n### Resumen por Moneda")
+        lines.append("| Moneda | Cantidad | Total |")
+        lines.append("|--------|----------|-------|")
+        for m in por_moneda:
+            sym = "Bs." if m["moneda"] == "Bs." else "$" if m["moneda"] == "USD" else m["moneda"]
+            lines.append(f"| {m['moneda']} | {m['cantidad']:,} | {sym} {m['total']:,.2f} |")
+
+        # Monthly breakdown (when available for annual/wide-range queries)
+        _MONTH_NAMES = {
+            1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril",
+            5: "Mayo", 6: "Junio", 7: "Julio", 8: "Agosto",
+            9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre",
+        }
+        por_mes = data.get("por_mes", [])
+        if por_mes:
+            lines.append(f"\n### Desglose Mensual")
+            lines.append("| Mes | Moneda | Cantidad | Total |")
+            lines.append("|-----|--------|----------|-------|")
+            for m in por_mes:
+                sym = "Bs." if m["moneda"] == "Bs." else "$" if m["moneda"] == "USD" else m["moneda"]
+                mes_name = _MONTH_NAMES.get(m["mes"], str(m["mes"]))
+                lines.append(f"| {mes_name} {m['anio']} | {m['moneda']} | {m['cantidad']:,} | {sym} {m['total']:,.2f} |")
+
+        # By payment method
+        por_metodo = data.get("por_metodo_pago", [])
+        if por_metodo:
+            lines.append(f"\n### Por Método de Pago")
+            lines.append("| Método | Moneda | Cantidad | Total |")
+            lines.append("|--------|--------|----------|-------|")
+            for m in por_metodo[:20]:
+                sym = "Bs." if m["moneda"] == "Bs." else "$" if m["moneda"] == "USD" else m["moneda"]
+                lines.append(f"| {m['metodo_pago']} | {m['moneda']} | {m['cantidad']:,} | {sym} {m['total']:,.2f} |")
+
+        # Top business partners
+        top = data.get("top_socios", [])
+        if top:
+            bp_label = "Clientes" if tipo == "cobros" else "Proveedores"
+            lines.append(f"\n### Top {bp_label}")
+            lines.append(f"| # | {bp_label[:-1]} | Moneda | Cantidad | Total |")
+            lines.append("|---|----------|--------|----------|-------|")
+            for i, s in enumerate(top[:20], 1):
+                sym = "Bs." if s["moneda"] == "Bs." else "$" if s["moneda"] == "USD" else s["moneda"]
+                lines.append(f"| {i} | {s['nombre']} | {s['moneda']} | {s['cantidad']:,} | {sym} {s['total']:,.2f} |")
+
+        # Anti-hallucination: explicitly state what data is NOT available
+        if not por_mes:
+            lines.append(
+                "\n⚠️ NOTA: No se dispone de desglose mensual para esta consulta. "
+                "NO inventes un desglose por meses. Presenta SOLO los totales y tablas mostrados arriba."
+            )
+
+        return "\n".join(lines)
+
+    @staticmethod
+    def _format_loan_balances(data: dict, label: str, org_label: str = "") -> str:
+        """Format loan/promissory note balances as explicit markdown."""
+        lines = [f"## Obligaciones Bancarias{org_label} — {label}"]
+        cuentas = data.get("cuentas", [])
+        if not cuentas or all(c["saldo"] == 0 and c["movimientos"] == 0 for c in cuentas):
+            lines.append("\nNo se encontraron saldos en cuentas de préstamos/pagarés para los filtros indicados.")
+            return "\n".join(lines)
+
+        lines.append("\n| Código | Cuenta | Saldo (Bs.) | Movimientos | Último Mov. |")
+        lines.append("|--------|--------|------------:|:-----------:|:-----------:|")
+        for c in cuentas:
+            ult = c["ultimo_mov"][:10] if c["ultimo_mov"] else "—"
+            lines.append(
+                f"| {c['codigo']} | {c['cuenta']} | {c['saldo']:,.2f} | "
+                f"{c['movimientos']:,} | {ult} |"
+            )
+        total = data.get("total_obligaciones", 0.0)
+        lines.append(f"\n**Total obligaciones bancarias: Bs. {total:,.2f}**")
+        lines.append("\n*Nota: Saldo positivo = deuda vigente (naturaleza crédito para cuentas de pasivo).*")
         return "\n".join(lines)
 
     def fetch_data(self, message: str, org_ids: list[int] | None = None, salesrep_id: int | None = None, history: list[tuple[str, str]] | None = None) -> str | None:
@@ -233,6 +395,7 @@ Datos financieros de iDempiere:
             anio = None
 
         # Inherit temporal context from history for follow-ups
+        _has_explicit_year = bool(re.search(r'20\d{2}', message))
         if not date_from and not date_to and not mes and history:
             for role, content in reversed(history):
                 if role != "user":
@@ -245,30 +408,99 @@ Datos financieros de iDempiere:
                 if m:
                     mes, anio = m, a
                     break
+                elif re.search(r'20\d{2}', content):
+                    anio = a
+                    break
+        # Month extracted but no explicit year → inherit year from history
+        # e.g. "¿Y en enero?" after "finanzas 2025" → use enero 2025, not 2026
+        elif mes and not _has_explicit_year and not date_from and history:
+            for role, content in reversed(history):
+                if role != "user":
+                    continue
+                yr = re.search(r'20\d{2}', content)
+                if yr:
+                    anio = int(yr.group())
+                    break
 
         label = build_period_label(date_from, date_to, mes, anio)
 
-        try:
-            summary = build_financial_summary(
-                mes=mes, anio=anio, org_ids=org_ids,
-                date_from=date_from, date_to=date_to,
-            )
-            sections.append(self._format_financial_summary(summary, label))
+        # Detect if user is asking specifically about cobros or pagos
+        is_cobros = matches_any(msg, self._COBROS_KW)
+        is_pagos = matches_any(msg, self._PAGOS_KW)
+        is_loans = matches_any(msg, self._LOANS_KW)
 
-            include_receivables = any(w in msg for w in self._RECEIVABLES_KEYWORDS)
-            # Follow-up: carry over receivables section from history
-            if not include_receivables and history:
-                for role, content in reversed(history):
-                    if role == "user" and any(
-                        w in content.lower() for w in self._RECEIVABLES_KEYWORDS
-                    ):
-                        include_receivables = True
+        # Extract org_name from message or history
+        org_name = self._extract_org_name(message)
+        if not org_name and history:
+            for role, content in reversed(history):
+                if role == "user":
+                    o = self._extract_org_name(content)
+                    if o:
+                        org_name = o
                         break
 
-            if include_receivables:
-                data = build_overdue_receivables(org_ids=org_ids)
-                sections.append("## Cuentas por Cobrar Vencidas")
-                sections.append(self._format_table(data))
+        # Inherit cobros/pagos/loans context from history (follow-ups)
+        if not is_cobros and not is_pagos and not is_loans and history:
+            for role, content in reversed(history):
+                if role != "user":
+                    continue
+                c = content.lower()
+                if matches_any(c, self._LOANS_KW):
+                    is_loans = True
+                    break
+                if matches_any(c, self._COBROS_KW):
+                    is_cobros = True
+                    break
+                if matches_any(c, self._PAGOS_KW):
+                    is_pagos = True
+                    break
+
+        try:
+            # If asking about loans/pagarés/compromisos bancarios
+            if is_loans:
+                org_label = f" - {org_name}" if org_name else ""
+                loan_data = build_loan_balances(
+                    org_ids=org_ids, org_name=org_name,
+                    anio=anio, mes=mes,
+                    date_from=date_from, date_to=date_to,
+                )
+                sections.append(self._format_loan_balances(loan_data, label, org_label))
+            # If asking about cobros or pagos, use the dedicated function
+            elif is_cobros or is_pagos:
+                if is_cobros:
+                    cobros_data = build_cobros_pagos_summary(
+                        is_receipt=True, mes=mes, anio=anio,
+                        org_ids=org_ids, date_from=date_from, date_to=date_to,
+                    )
+                    sections.append(self._format_cobros_pagos(cobros_data, label))
+                if is_pagos:
+                    pagos_data = build_cobros_pagos_summary(
+                        is_receipt=False, mes=mes, anio=anio,
+                        org_ids=org_ids, date_from=date_from, date_to=date_to,
+                    )
+                    sections.append(self._format_cobros_pagos(pagos_data, label))
+            else:
+                # General financial summary (banks + CxC + CxP)
+                summary = build_financial_summary(
+                    mes=mes, anio=anio, org_ids=org_ids,
+                    date_from=date_from, date_to=date_to,
+                )
+                if not self._dict_has_data(summary):
+                    return None
+                sections.append(self._format_financial_summary(summary, label))
+
+                include_receivables = matches_any(msg, FINANZAS_CXC)
+                # Follow-up: carry over receivables section from history
+                if not include_receivables and history:
+                    for role, content in reversed(history):
+                        if role == "user" and matches_any(content.lower(), FINANZAS_CXC):
+                            include_receivables = True
+                            break
+
+                if include_receivables:
+                    data = build_overdue_receivables(org_ids=org_ids)
+                    sections.append("## Cuentas por Cobrar Vencidas")
+                    sections.append(self._format_table(data))
 
         except Exception as exc:
             logger.error("Error consultando datos financieros: %s: %s", type(exc).__name__, exc, exc_info=True)

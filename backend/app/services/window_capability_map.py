@@ -280,15 +280,31 @@ _reg(Capability(
 # ─── PRODUCCION ───────────────────────────────────────────────
 
 _reg(Capability(
+    id="produccion_runs",
+    agent="produccion",
+    query_function="build_production_runs",
+    display_name="Producciones reales",
+    keywords=(
+        "producción", "produccion", "producido", "producidos",
+        "producciones", "fabricó", "fabricado", "fabricar",
+        "fabricación", "fabricacion", "manufactura",
+        "cantidad producida", "volumen de producción",
+        "producto terminado", "productos terminados",
+        "insumo consumido", "insumos consumidos",
+    ),
+    tables=("m_production", "m_productionline", "m_product", "ad_org"),
+))
+
+_reg(Capability(
     id="produccion_resumen",
     agent="produccion",
     query_function="build_production_summary",
-    display_name="Resumen de producción",
+    display_name="Movimientos de inventario",
     keywords=(
-        "producción", "produccion", "producido", "producidos",
+        "recepción", "recepcion", "recepciones",
+        "despacho", "despachos",
+        "movimiento de inventario", "movimientos de inventario",
         "desperdicios", "desperdicio", "merma", "mermas",
-        "rendimiento", "eficiencia",
-        "cantidad producida", "volumen de producción",
     ),
     tables=("m_inout", "m_inoutline", "m_product", "ad_org"),
 ))
@@ -297,13 +313,40 @@ _reg(Capability(
     id="produccion_ordenes",
     agent="produccion",
     query_function="build_production_orders",
-    display_name="Órdenes de producción",
+    display_name="Documentos de movimiento",
     keywords=(
-        "orden de producción", "ordenes de produccion",
-        "órdenes de producción", "orden producción",
-        "op", "orden de trabajo",
+        "documento", "documentos de movimiento",
+        "últimos movimientos", "movimientos recientes",
     ),
     tables=("m_inout", "ad_org", "c_bpartner"),
+))
+
+_reg(Capability(
+    id="produccion_bom",
+    agent="produccion",
+    query_function="build_bom_info",
+    display_name="Recetas / BOMs",
+    keywords=(
+        "receta", "recetas", "bom", "bill of material",
+        "ingrediente", "ingredientes", "componente", "componentes",
+        "fórmula", "formula", "composición", "composicion",
+        "qué lleva", "de qué está hecho", "cómo se hace",
+    ),
+    tables=("pp_product_bom", "pp_product_bomline", "m_product", "c_uom"),
+))
+
+_reg(Capability(
+    id="produccion_movimientos_almacen",
+    agent="produccion",
+    query_function="build_warehouse_movements",
+    display_name="Movimientos entre almacenes",
+    keywords=(
+        "traslado", "traslados", "transferencia", "transferencias",
+        "movimiento interno", "movimientos internos",
+        "entre almacenes", "entre silos",
+        "mover", "trasladar",
+    ),
+    tables=("m_movement", "m_movementline", "m_locator", "m_warehouse", "m_product"),
 ))
 
 _reg(Capability(
@@ -546,9 +589,21 @@ WINDOW_CAPABILITY_MAP: list[tuple[str, list[str]]] = [
     ("hr job", ["rrhh_lista_empleados"]),
 
     # ─── Producción ───
-    ("producción", ["produccion_resumen", "produccion_ordenes"]),
-    ("produccion", ["produccion_resumen", "produccion_ordenes"]),
-    ("production", ["produccion_resumen", "produccion_ordenes"]),
+    ("producción", ["produccion_runs", "produccion_resumen"]),
+    ("produccion", ["produccion_runs", "produccion_resumen"]),
+    ("production", ["produccion_runs", "produccion_resumen"]),
+    ("fabricación", ["produccion_runs"]),
+    ("manufactura", ["produccion_runs"]),
+    ("producto terminado", ["produccion_runs"]),
+    ("receta", ["produccion_bom"]),
+    ("bom", ["produccion_bom"]),
+    ("ingrediente", ["produccion_bom"]),
+    ("componente", ["produccion_bom"]),
+    ("traslado", ["produccion_movimientos_almacen"]),
+    ("transferencia", ["produccion_movimientos_almacen"]),
+    ("movimiento interno", ["produccion_movimientos_almacen"]),
+    ("entre almacenes", ["produccion_movimientos_almacen"]),
+    ("entre silos", ["produccion_movimientos_almacen"]),
     ("inventario", ["produccion_inventario", "compras_insumos_inventario"]),
     ("inventory", ["produccion_inventario", "compras_insumos_inventario"]),
     ("almacén", ["produccion_inventario"]),

@@ -16,7 +16,7 @@ from app.agents.date_utils import (
     build_period_label,
     detect_currency,
 )
-from app.services.query_service import build_accounting_summary, build_account_detail
+from app.services.query_service import build_accounting_summary, build_account_detail, search_accounts_by_name
 
 logger = logging.getLogger("santonibot.agents.contabilidad")
 
@@ -58,8 +58,8 @@ CAPACIDADES:
 - Comparativas entre períodos contables
 
 CONTEXTO iDEMPIERE:
-- Los datos provienen de fact_acct (7.7 millones de asientos contables) y c_elementvalue (plan de cuentas)
-- Tipos de cuenta: A=Activo (1054 cuentas), E=Gasto (1626), L=Pasivo (494), O=Patrimonio (116), R=Ingreso (266)
+- Los datos provienen de fact_acct y c_elementvalue (plan de cuentas)
+- Tipos de cuenta: A=Activo, E=Gasto, L=Pasivo, O=Patrimonio, R=Ingreso
 - Monedas: VES (Bolívares, ID 205), USD (Dólares, ID 100)
 - Organizaciones: INPROA SANTONI, AGROINPROA, AGROPECUARIA R.R., Agro Import, INVERSIONES AGA, InproMaiz, AGA AGRICOLA, Santoni Service
 
@@ -72,6 +72,18 @@ REGLAS:
 - Si recibes un error indicando que la cuenta no fue encontrada, informa al usuario
 - PROHIBIDO decir "no tengo acceso", "no puedo acceder", "no dispongo" o "no tengo acceso directo". TÚ TIENES ACCESO COMPLETO a la base de datos de Santoni y los datos se consultan automáticamente. Si no hay datos para una consulta, di "No se encontraron datos" y sugiere consultas alternativas.
 - Si la pregunta es ambigua, personal o usa palabras como "mi", "yo", "me", NO adivines. Pide al usuario que reformule especificando: la organización, cuenta contable, período u otros datos necesarios.
+
+PROHIBICIONES ABSOLUTAS:
+- NUNCA muestres código SQL al usuario. Las consultas se ejecutan automáticamente.
+- NUNCA digas "necesito ejecutar una consulta" o "debo ejecutar". Los datos ya están ejecutados y los recibes automáticamente.
+- NUNCA propongas "consultas alternativas" con código SQL. Si necesitas filtrar distinto, dile al usuario qué dato adicional necesitas (ej: "Indícame el código de cuenta específico").
+- NUNCA muestres placeholders como "$X.XXX,XX" o "[ID de organización]". Los datos reales ya vienen en las tablas que recibes.
+
+SOBRE MONEDAS EN CONTABILIDAD:
+- Si el usuario pide datos "en dólares", "en DOL", "en USD", los datos ya vienen filtrados por moneda USD. Presenta los saldos como "$" o "USD".
+- Si el usuario pide datos "en bolívares", "en Bs", "en VES", los datos ya vienen filtrados por moneda VES. Presenta los saldos como "Bs.".
+- Si no especifica moneda, los datos vienen en TODAS las monedas CONSOLIDADAS. Indícalo en la presentación.
+- NUNCA digas "no se encontraron desgloses por moneda" ni "se requiere consulta específica con filtro de moneda". El filtro ya se aplica automáticamente cuando el usuario especifica la moneda.
 
 IMPORTANTE - CASO DE 0 MOVIMIENTOS:
 - Si los datos muestran movimientos=0, NO digas "no tengo información". La cuenta SÍ existe.
@@ -154,6 +166,68 @@ Se pueden consultar cuentas específicas por código (ej: 2.01.01.10) con rango 
         ]
         return "\n".join(lines)
 
+    # Account names users might search by (mapped to search terms)
+    _ACCOUNT_NAME_PATTERNS = [
+        (r'caja\s+chica', 'caja chica'),
+        (r'caja\s+general', 'caja general'),
+        (r'cuentas?\s+por\s+cobrar', 'cuentas por cobrar'),
+        (r'cuentas?\s+por\s+pagar', 'cuentas por pagar'),
+        (r'bancos?\s+nacionales?', 'banco nacional'),
+        (r'banco\s+de\s+venezuela', 'banco venezuela'),
+        (r'banesco', 'banesco'),
+        (r'banco\s+provincial', 'provincial'),
+        (r'mercantil', 'mercantil'),
+        (r'pagar[eé]s?', 'pagare'),
+        (r'pr[eé]stamos?\s+bancarios?', 'prestamo bancario'),
+        (r'arrendamiento\s+financiero', 'arrendamiento financiero'),
+        (r'gastos?\s+(?:de\s+)?personal', 'gasto personal'),
+        (r'depreciaci[oó]n', 'depreciacion'),
+        (r'capital\s+social', 'capital social'),
+        (r'utilidad(?:es)?(?:\s+retenidas)?', 'utilidad'),
+        (r'inventarios?', 'inventario'),
+        (r'impuestos?', 'impuesto'),
+        (r'iva', 'iva'),
+        (r'islr', 'islr'),
+        (r'retenciones?', 'retencion'),
+        (r'ingresos?\s+(?:por\s+)?ventas?', 'ingreso venta'),
+        (r'costos?\s+(?:de\s+)?ventas?', 'costo venta'),
+        (r'saldo\s+(?:de\s+la?\s+)?cuenta\s+(.+?)(?:\s+de\s+|\s+al\s+|\s*$)', None),  # generic
+    ]
+
+    @classmethod
+    def _extract_account_name(cls, msg: str) -> str | None:
+        """Extract account name search term from user message."""
+        msg_lower = msg.lower()
+        for pattern, search_term in cls._ACCOUNT_NAME_PATTERNS:
+            m = re.search(pattern, msg_lower)
+            if m:
+                if search_term is None and m.lastindex:
+                    # Generic pattern with capture group
+                    return m.group(1).strip()
+                return search_term
+        return None
+
+    # Detect if user wants only a specific account type
+    _ACCOUNT_TYPE_PATTERNS = [
+        (r'gastos?\b', ['E']),
+        (r'egresos?\b', ['E']),
+        (r'ingresos?\b', ['R']),
+        (r'activos?\b', ['A']),
+        (r'pasivos?\b', ['L']),
+        (r'patrimonio', ['O']),
+        (r'estado\s+de\s+resultados', ['R', 'E']),
+        (r'kpi\s+(?:de\s+)?gastos?', ['E']),
+    ]
+
+    @classmethod
+    def _detect_account_types(cls, msg: str) -> list[str] | None:
+        """Detect account type filter from user message."""
+        msg_lower = msg.lower()
+        for pattern, types in cls._ACCOUNT_TYPE_PATTERNS:
+            if re.search(pattern, msg_lower):
+                return types
+        return None
+
     @staticmethod
     def _extract_account_from_history(
         history: list[tuple[str, str]],
@@ -183,7 +257,93 @@ Se pueden consultar cuentas específicas por código (ej: 2.01.01.10) con rango 
             m, a = extract_month_year(content)
             if m is not None:
                 return None, None, m, a
+            elif re.search(r'20\d{2}', content):
+                return None, None, None, a
         return None, None, None, None
+
+    @staticmethod
+    def _format_account_detail(detail: dict) -> str:
+        """Format account detail as explicit markdown."""
+        code = detail.get("cuenta_codigo", "")
+        name = detail.get("cuenta_nombre", "")
+        acct_type = detail.get("tipo_cuenta", "")
+        nature = detail.get("naturaleza", "")
+        period = detail.get("periodo", "")
+        currency = detail.get("moneda", "VES")
+        movs = detail.get("movimientos", 0)
+
+        lines = [
+            f"## Cuenta {code} — {name}",
+            f"- **Tipo:** {acct_type} | **Naturaleza:** {nature} | **Moneda:** {currency}",
+            f"- **Período:** {period}",
+            "",
+            f"| Concepto | Monto ({currency}) |",
+            "|---|---:|",
+            f"| Saldo Inicial | {detail.get('saldo_inicial', 0):,.2f} |",
+            f"| Movimientos | {movs:,} |",
+            f"| Total Debe | {detail.get('total_debe', 0):,.2f} |",
+            f"| Total Haber | {detail.get('total_haber', 0):,.2f} |",
+            f"| **Saldo Final** | **{detail.get('saldo_final', 0):,.2f}** |",
+        ]
+
+        daily = detail.get("detalle_diario", [])
+        if daily:
+            lines.append(f"\n### Detalle diario ({len(daily)} días con movimiento)")
+            lines.append("| Fecha | Asientos | Debe | Haber | Saldo |")
+            lines.append("|-------|--------:|-----:|------:|------:|")
+            for row in daily:
+                lines.append(
+                    f"| {row['fecha']} | {row['asientos']:,} | "
+                    f"{row['debe']:,.2f} | {row['haber']:,.2f} | {row['saldo']:,.2f} |"
+                )
+
+        return "\n".join(lines)
+
+    @staticmethod
+    def _format_accounting_summary(data: dict, label: str) -> str:
+        """Format accounting summary as explicit markdown so the LLM doesn't omit data."""
+        lines = [f"## Resumen Contable — {label}"]
+
+        # Totals
+        totals = data.get("totales", {})
+        lines.append(f"\n**Total asientos:** {totals.get('total_asientos', 0):,}")
+        lines.append(f"**Total debe:** {totals.get('total_debe', 0):,.2f}")
+        lines.append(f"**Total haber:** {totals.get('total_haber', 0):,.2f}")
+
+        # By account type
+        by_type = data.get("por_tipo_cuenta", [])
+        if by_type:
+            lines.append("\n### Movimientos por tipo de cuenta")
+            lines.append("| Tipo | Debe | Haber | Saldo |")
+            lines.append("|------|-----:|------:|------:|")
+            for row in by_type:
+                lines.append(
+                    f"| {row['tipo_cuenta']} | {row['debe']:,.2f} | "
+                    f"{row['haber']:,.2f} | {row['saldo']:,.2f} |"
+                )
+
+        # Balance
+        balance = data.get("balance", [])
+        if balance:
+            lines.append("\n### Balance")
+            lines.append("| Tipo | Saldo |")
+            lines.append("|------|------:|")
+            for row in balance:
+                lines.append(f"| {row['tipo']} | {row['saldo']:,.2f} |")
+
+        # Top accounts — THIS is what was being lost by the LLM
+        top = data.get("cuentas_con_mayor_movimiento", [])
+        if top:
+            lines.append(f"\n### Top {len(top)} cuentas con mayor movimiento")
+            lines.append("| # | Código | Cuenta | Debe | Haber |")
+            lines.append("|---|--------|--------|-----:|------:|")
+            for i, row in enumerate(top, 1):
+                lines.append(
+                    f"| {i} | {row['codigo']} | {row['cuenta'][:50]} | "
+                    f"{row['debe']:,.2f} | {row['haber']:,.2f} |"
+                )
+
+        return "\n".join(lines)
 
     def fetch_data(self, message: str, org_ids: list[int] | None = None, salesrep_id: int | None = None, history: list[tuple[str, str]] | None = None) -> str | None:
         sections = []
@@ -202,9 +362,38 @@ Se pueden consultar cuentas específicas por código (ej: 2.01.01.10) con rango 
         account_match = _ACCOUNT_CODE_RE.search(message)
         account_code = account_match.group(1) if account_match else None
 
-        # Follow-up: if no account code in current message, check history
-        if not account_code and history:
+        # Follow-up: if no account code in current message, check history.
+        # BUT don't inherit account code if the message is a general query
+        # (balance general, top cuentas, estado de resultados, etc.)
+        _summary_kw = {
+            "balance", "balance general", "estado de resultados",
+            "top cuentas", "resumen", "resumen contable",
+            "libro diario", "libro mayor", "asientos",
+            "estado de situación", "estado de situacion",
+        }
+        _is_summary_query = any(kw in message.lower() for kw in _summary_kw)
+        if not account_code and history and not _is_summary_query:
             account_code = self._extract_account_from_history(history)
+
+        # If no account code found and not a summary query, try searching by name
+        # e.g. "caja chica", "bancos nacionales", "cuentas por cobrar"
+        if not account_code and not _is_summary_query:
+            account_name_search = self._extract_account_name(message)
+            if account_name_search:
+                matches = search_accounts_by_name(account_name_search, org_ids=org_ids)
+                if matches:
+                    if len(matches) == 1:
+                        # Exact single match → use it directly
+                        account_code = matches[0]["codigo"]
+                    else:
+                        # Multiple matches → show list and let user pick
+                        lines = [f"Se encontraron {len(matches)} cuentas que coinciden con **\"{account_name_search}\"**:\n"]
+                        lines.append("| # | Código | Cuenta | Tipo |")
+                        lines.append("|---|--------|--------|------|")
+                        for i, m in enumerate(matches, 1):
+                            lines.append(f"| {i} | {m['codigo']} | {m['cuenta']} | {m['tipo']} |")
+                        lines.append("\nIndica el **código de cuenta** (ej: 1.01.01.01) para ver el detalle de movimientos.")
+                        return "\n".join(lines)
 
         try:
             if account_code:
@@ -213,12 +402,20 @@ Se pueden consultar cuentas específicas por código (ej: 2.01.01.10) con rango 
                 mes, anio = extract_month_year(message) if not (date_from and date_to) else (None, None)
 
                 # Inherit temporal context from history for follow-ups
+                _has_explicit_year = bool(re.search(r'20\d{2}', message))
                 if not date_from and not date_to and not mes and history:
                     h_df, h_dt, h_mes, h_anio = self._extract_dates_from_history(history)
                     if h_df:
                         date_from, date_to = h_df, h_dt
                     elif h_mes is not None:
                         mes, anio = h_mes, h_anio
+                    elif h_anio:
+                        anio = h_anio
+                # Month extracted but no explicit year → inherit year from history
+                elif mes and not _has_explicit_year and not date_from and history:
+                    _, _, _, h_anio = self._extract_dates_from_history(history)
+                    if h_anio:
+                        anio = h_anio
 
                 if date_from and date_to:
                     detail = build_account_detail(
@@ -245,18 +442,31 @@ Se pueden consultar cuentas específicas por código (ej: 2.01.01.10) con rango 
                     if detail.get("movimientos", 0) == 0:
                         sections.append(self._format_zero_movement(detail))
                     else:
-                        sections.append(self._format_summary(detail, f"Cuenta {account_code}"))
+                        sections.append(self._format_account_detail(detail))
             else:
                 # General accounting summary (no specific account)
                 date_from, date_to = extract_date_range(message)
                 mes, anio = None, None
+
+                # Detect account type filter (e.g. "gastos", "ingresos")
+                account_types = self._detect_account_types(message)
+                if not account_types and history:
+                    for role, content in reversed(history):
+                        if role == "user":
+                            at = self._detect_account_types(content)
+                            if at:
+                                account_types = at
+                                break
+
                 if date_from and date_to:
                     summary = build_accounting_summary(
                         date_from=date_from, date_to=date_to, org_ids=org_ids,
+                        currency_ids=currency_ids, account_types=account_types,
                     )
                     label = build_period_label(date_from=date_from, date_to=date_to)
                 else:
                     mes, anio = extract_month_year(message)
+                    _has_explicit_year2 = bool(re.search(r'20\d{2}', message))
                     # Inherit temporal context from history for follow-ups
                     if not mes and history:
                         h_df, h_dt, h_mes, h_anio = self._extract_dates_from_history(history)
@@ -264,15 +474,35 @@ Se pueden consultar cuentas específicas por código (ej: 2.01.01.10) con rango 
                             date_from, date_to = h_df, h_dt
                         elif h_mes is not None:
                             mes, anio = h_mes, h_anio
+                        elif h_anio:
+                            anio = h_anio
+                    # Month extracted but no explicit year → inherit year from history
+                    elif mes and not _has_explicit_year2 and history:
+                        _, _, _, h_anio = self._extract_dates_from_history(history)
+                        if h_anio:
+                            anio = h_anio
                     if date_from and date_to:
                         summary = build_accounting_summary(
                             date_from=date_from, date_to=date_to, org_ids=org_ids,
+                            currency_ids=currency_ids, account_types=account_types,
                         )
                         label = build_period_label(date_from=date_from, date_to=date_to)
                     else:
-                        summary = build_accounting_summary(mes=mes, anio=anio, org_ids=org_ids)
+                        summary = build_accounting_summary(
+                            mes=mes, anio=anio, org_ids=org_ids,
+                            currency_ids=currency_ids, account_types=account_types,
+                        )
                         label = build_period_label(mes=mes, anio=anio)
-                sections.append(self._format_summary(summary, f"Resumen Contable - {label}"))
+
+                # Add account type label to header
+                _type_labels = {'E': 'Gastos', 'R': 'Ingresos', 'A': 'Activos', 'L': 'Pasivos', 'O': 'Patrimonio'}
+                if account_types:
+                    type_names = [_type_labels.get(t, t) for t in account_types]
+                    label = f"{' y '.join(type_names)} — {label}"
+
+                if not self._dict_has_data(summary):
+                    return None
+                sections.append(self._format_accounting_summary(summary, label))
 
         except Exception as exc:
             logger.error("Error consultando datos contables: %s: %s", type(exc).__name__, exc, exc_info=True)

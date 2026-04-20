@@ -180,6 +180,36 @@ def _add_org_name_filter(
         params["org_name_filter"] = f"%{org_name}%"
 
 
+# Internal Santoni group organizations that should be excluded from
+# producer purchase analysis.  They have codigoproductor set in iDempiere
+# (self-purchases / internal transfers) but are not real external producers.
+_INTERNAL_ORG_NAMES = [
+    "inproa santoni",
+    "inpromaiz",
+    "santoni service",
+    "agropecuaria r.r",
+    "aga agricola",
+    "agroinproa",
+    "inversiones aga",
+    "agro import",
+]
+
+
+def _add_exclude_internal_orgs_filter(
+    conditions: list[str],
+    params: dict,
+    table_alias: str = "bp",
+) -> None:
+    """Exclude internal Santoni group organizations from producer queries.
+
+    Uses ILIKE with partial match because iDempiere names may include
+    suffixes like ', C.A.' or variations in punctuation.
+    """
+    for i, name in enumerate(_INTERNAL_ORG_NAMES):
+        conditions.append(f"LOWER({table_alias}.name) NOT LIKE :_intorg_{i}")
+        params[f"_intorg_{i}"] = f"%{name}%"
+
+
 def _add_currency_filter(
     conditions: list[str],
     params: dict,
@@ -261,11 +291,18 @@ def _add_product_search_filter(
     - If 3+ words: at least 2 must match (OR groups)
     With accent normalization and de-pluralization.
     """
-    # Product code: exact substring match
+    # Product code: exact substring match (standard codes like REP-LAMI-0037)
     if re.search(r'[A-Za-z]{2,}-[A-Za-z]{2,}-\d+', product_search):
         params[f"{prefix}_search"] = f"%{product_search}%"
         conditions.append(
             f"(p.name ILIKE :{prefix}_search OR p.value ILIKE :{prefix}_search)"
+        )
+        return
+    # Short/numeric codes with dashes (e.g. "01-0", "-9010", "HBL-920")
+    if re.search(r'^-?\d+[-\d]*$|^[A-Za-z]+-\d+', product_search.strip()):
+        params[f"{prefix}_search"] = f"%{product_search.strip()}%"
+        conditions.append(
+            f"(p.value ILIKE :{prefix}_search OR p.name ILIKE :{prefix}_search)"
         )
         return
 
@@ -420,6 +457,7 @@ def build_sales_summary(
     date_to: str | None = None,
     currency_ids: list[int] | None = None,
     org_name: str | None = None,
+    doctype_name: str | None = None,
 ) -> dict:
     """Sales summary from iDempiere c_invoice (issotrx='Y').
 
@@ -446,6 +484,9 @@ def build_sales_summary(
         if zona:
             conditions.append("COALESCE(cz.zona_name, '') ILIKE :zona")
             params["zona"] = f"%{zona}%"
+        if doctype_name:
+            conditions.append("dt.name ILIKE :doctype_name")
+            params["doctype_name"] = f"%{doctype_name}%"
 
         where = " AND ".join(conditions)
 
@@ -566,10 +607,11 @@ def build_sales_summary(
             for r in db.execute(by_distributor_q, params).fetchall()
         ]
 
-        # By month - net of credit notes
+        # By month - net of credit notes (include year for cross-year ranges)
         by_month_q = text(
             f"{zone_cte}"
-            f"SELECT EXTRACT(MONTH FROM i.dateinvoiced)::int AS mes, "
+            f"SELECT EXTRACT(YEAR FROM i.dateinvoiced)::int AS anio, "
+            f"EXTRACT(MONTH FROM i.dateinvoiced)::int AS mes, "
             f"SUM(CASE WHEN dt.docbasetype = 'ARI' THEN 1 ELSE 0 END) AS facturas, "
             f"SUM(CASE WHEN dt.docbasetype = 'ARC' THEN 1 ELSE 0 END) AS notas_credito, "
             f"COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal "
@@ -577,10 +619,11 @@ def build_sales_summary(
             f"FROM adempiere.c_invoice i "
             f"{joins}"
             f"WHERE {where} "
-            f"GROUP BY EXTRACT(MONTH FROM i.dateinvoiced) ORDER BY mes"
+            f"GROUP BY EXTRACT(YEAR FROM i.dateinvoiced), EXTRACT(MONTH FROM i.dateinvoiced) "
+            f"ORDER BY anio, mes"
         )
         by_month = [
-            {"mes": r[0], "facturas": r[1], "notas_credito": r[2], "total": float(r[3])}
+            {"anio": r[0], "mes": r[1], "facturas": r[2], "notas_credito": r[3], "total": float(r[4])}
             for r in db.execute(by_month_q, params).fetchall()
         ]
 
@@ -670,13 +713,28 @@ def build_collection_summary(
         }
 
         # By tender type (payment method)
+        # Mapping from iDempiere ad_ref_list (C_Payment Tender Type)
         by_method_q = text(
             f"SELECT CASE p.tendertype "
-            f"  WHEN 'X' THEN 'Transferencia' "
-            f"  WHEN 'C' THEN 'Cheque' "
-            f"  WHEN 'K' THEN 'Efectivo' "
-            f"  WHEN 'D' THEN 'Depósito' "
-            f"  WHEN 'T' THEN 'Tarjeta' "
+            f"  WHEN 'A' THEN 'Depósito Directo' "
+            f"  WHEN 'B' THEN 'Tarjeta de Débito' "
+            f"  WHEN 'C' THEN 'Tarjeta de Crédito' "
+            f"  WHEN 'D' THEN 'Débito Directo' "
+            f"  WHEN 'E' THEN 'Euro Efectivo' "
+            f"  WHEN 'G' THEN 'Depósito Bancario' "
+            f"  WHEN 'I' THEN 'Débito Directo ITF' "
+            f"  WHEN 'J' THEN 'Comisión Bancaria' "
+            f"  WHEN 'K' THEN 'Cheque' "
+            f"  WHEN 'P' THEN 'Impuesto' "
+            f"  WHEN 'Q' THEN 'Giro' "
+            f"  WHEN 'R' THEN 'Dólar IGTF' "
+            f"  WHEN 'S' THEN 'Transferencia Empresas' "
+            f"  WHEN 'T' THEN 'Cuenta' "
+            f"  WHEN 'U' THEN 'Euro Transferencia' "
+            f"  WHEN 'W' THEN 'Transferencia' "
+            f"  WHEN 'X' THEN 'Efectivo' "
+            f"  WHEN 'Y' THEN 'Dólar Efectivo' "
+            f"  WHEN 'Z' THEN 'Dólar Transferencia' "
             f"  ELSE p.tendertype END AS metodo_pago, "
             f"COUNT(*) AS recibos, "
             f"COALESCE(SUM(p.payamt), 0) AS total "
@@ -725,6 +783,7 @@ def build_top_clients(
     date_to: str | None = None,
     currency_ids: list[int] | None = None,
     org_name: str | None = None,
+    doctype_name: str | None = None,
 ) -> list[dict]:
     """Top clients by net invoiced amount from iDempiere.
 
@@ -747,6 +806,9 @@ def build_top_clients(
         _add_salesrep_filter(conditions, params, salesrep_id, "i")
         _add_currency_filter(conditions, params, currency_ids, "i")
         _add_date_filter(conditions, params, date_from, date_to, mes, anio, "i.dateinvoiced")
+        if doctype_name:
+            conditions.append("dt.name ILIKE :doctype_name")
+            params["doctype_name"] = f"%{doctype_name}%"
 
         where = " AND ".join(conditions)
 
@@ -761,27 +823,24 @@ def build_top_clients(
             "ORDER BY bpl.c_bpartner_id, bpl.c_bpartner_location_id DESC) "
         )
 
-        cur_label = _currency_label("i")
         q = text(
             f"{zone_cte}"
             f"SELECT bp.value AS codigo, bp.name AS nombre, "
-            f"COALESCE(cz.zona_name, 'Sin Zona') AS zona, "
-            f"COALESCE(sr.name, 'Sin Distribuidor') AS distribuidor, "
-            f"COALESCE(bpg.name, 'Sin Tipología') AS tipologia, "
-            f"{cur_label} AS moneda, "
+            f"MIN(COALESCE(cz.zona_name, 'Sin Zona')) AS zona, "
             f"SUM(CASE WHEN dt.docbasetype = 'ARI' THEN 1 ELSE 0 END) AS facturas, "
             f"SUM(CASE WHEN dt.docbasetype = 'ARC' THEN 1 ELSE 0 END) AS notas_credito, "
+            f"COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal ELSE 0 END), 0) AS total_facturado, "
+            f"COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARC' THEN i.grandtotal ELSE 0 END), 0) AS total_notas_credito, "
             f"COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal "
-            f"WHEN dt.docbasetype = 'ARC' THEN -i.grandtotal ELSE 0 END), 0) AS total_facturado "
+            f"WHEN dt.docbasetype = 'ARC' THEN -i.grandtotal ELSE 0 END), 0) AS venta_neta "
             f"FROM adempiere.c_invoice i "
             f"JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id "
-            f"LEFT JOIN adempiere.c_bpartner sr ON i.salesrep_id = sr.c_bpartner_id "
             f"LEFT JOIN client_zone cz ON bp.c_bpartner_id = cz.c_bpartner_id "
             f"LEFT JOIN adempiere.c_bp_group bpg ON bp.c_bp_group_id = bpg.c_bp_group_id "
             f"JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id "
             f"WHERE {where} "
-            f"GROUP BY bp.value, bp.name, cz.zona_name, sr.name, bpg.name, {cur_label} "
-            f"ORDER BY total_facturado DESC "
+            f"GROUP BY bp.value, bp.name "
+            f"ORDER BY venta_neta DESC "
             f"LIMIT :limit"
         )
         logger.info("build_top_clients SQL WHERE: %s | params: %s", where, {k: v for k, v in params.items() if k != "limit"})
@@ -792,12 +851,11 @@ def build_top_clients(
                 "codigo": r[0],
                 "nombre": r[1],
                 "zona": r[2],
-                "distribuidor": r[3],
-                "tipologia": r[4],
-                "moneda": r[5],
-                "facturas": r[6],
-                "notas_credito": r[7],
-                "total_facturado": float(r[8]),
+                "facturas": r[3],
+                "notas_credito": r[4],
+                "total_facturado": float(r[5]),
+                "total_notas_credito": float(r[6]),
+                "venta_neta": float(r[7]),
             }
             for r in rows
         ]
@@ -879,6 +937,82 @@ def build_overdue_receivables(
         db.close()
 
 
+def build_top_delinquent_clients(
+    org_ids: list[int] | None = None,
+    salesrep_id: int | None = None,
+    limit: int = 20,
+) -> list[dict]:
+    """Top delinquent clients aggregated by client (sum of overdue invoices).
+
+    Groups overdue invoices by c_bpartner, sums grandtotal, counts invoices,
+    and returns max days overdue per client. Filters to last 3 years, amounts > 100.
+    """
+    db = IdempiereSession()
+    try:
+        org_clause = ""
+        params: dict = {}
+        if org_ids:
+            placeholders = ", ".join(f":org_{i}" for i in range(len(org_ids)))
+            org_clause = f"AND i.ad_org_id IN ({placeholders}) "
+            for i, org_id in enumerate(org_ids):
+                params[f"org_{i}"] = org_id
+        salesrep_clause = ""
+        if salesrep_id:
+            salesrep_clause = "AND i.salesrep_id = :salesrep_id "
+            params["salesrep_id"] = salesrep_id
+
+        params["limit"] = limit
+
+        q = text(
+            "WITH client_zone AS ("
+            "SELECT DISTINCT ON (bpl.c_bpartner_id) "
+            "bpl.c_bpartner_id, sreg.name AS zona_name "
+            "FROM adempiere.c_bpartner_location bpl "
+            "LEFT JOIN adempiere.c_salesregion sreg "
+            "ON bpl.c_salesregion_id = sreg.c_salesregion_id "
+            "WHERE bpl.isactive = 'Y' "
+            "ORDER BY bpl.c_bpartner_id, bpl.c_bpartner_location_id DESC) "
+            "SELECT bp.name AS cliente, "
+            "COALESCE(cz.zona_name, '') AS zona, "
+            "SUM(i.grandtotal) AS total_adeudado, "
+            "COUNT(*) AS num_facturas, "
+            "MAX(CURRENT_DATE - (i.dateinvoiced + "
+            "  CASE WHEN COALESCE(pterm.netdays, 0) = 0 THEN 30 ELSE pterm.netdays END"
+            ")) AS max_dias_vencido, "
+            f"{_currency_label('i')} AS moneda "
+            "FROM adempiere.c_invoice i "
+            "JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id "
+            "LEFT JOIN client_zone cz ON bp.c_bpartner_id = cz.c_bpartner_id "
+            "LEFT JOIN adempiere.c_paymentterm pterm ON i.c_paymentterm_id = pterm.c_paymentterm_id "
+            "JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id "
+            "WHERE i.issotrx = 'Y' AND i.docstatus IN ('CO', 'CL') AND i.ispaid = 'N' "
+            "AND i.isactive = 'Y' "
+            "AND dt.docbasetype = 'ARI' "
+            "AND i.dateinvoiced >= (CURRENT_DATE - INTERVAL '3 years') "
+            "AND i.grandtotal > 100 "
+            f"{org_clause}"
+            f"{salesrep_clause}"
+            "AND (i.dateinvoiced + CASE WHEN COALESCE(pterm.netdays, 0) = 0 THEN 30 ELSE pterm.netdays END) < CURRENT_DATE "
+            f"GROUP BY bp.name, cz.zona_name, {_currency_label('i')} "
+            "ORDER BY total_adeudado DESC "
+            "LIMIT :limit"
+        )
+        rows = db.execute(q, params).fetchall()
+        return [
+            {
+                "cliente": r[0],
+                "zona": r[1],
+                "total_adeudado": float(r[2]),
+                "num_facturas": r[3],
+                "max_dias_vencido": r[4],
+                "moneda": r[5],
+            }
+            for r in rows
+        ]
+    finally:
+        db.close()
+
+
 # ---------------------------------------------------------------------------
 # FINANZAS (Finance)
 # ---------------------------------------------------------------------------
@@ -901,13 +1035,21 @@ def build_financial_summary(
         bank_params: dict = {}
         _add_org_filter(bank_conditions, bank_params, org_ids, "ba")
         bank_where = " AND ".join(bank_conditions)
+        # Group all USD iso_codes (DOL, DoL, Dol, USA, dol, DLA, Dla, US.)
+        # into a single 'USD' label, same as _currency_label but for banks.
+        bank_currency = (
+            "CASE WHEN ba.c_currency_id = 205 THEN 'VES' "
+            "WHEN ba.c_currency_id IN "
+            "(100,1000000,1000003,1000006,1000008,1000009,1000011,1000013,1000017) "
+            "THEN 'USD' ELSE 'Otro' END"
+        )
         bank_q = text(
             f"SELECT b.name AS banco, ba.accountno AS numero_cuenta, "
             f"CASE WHEN ba.bankaccounttype = 'C' THEN 'Corriente' "
             f"     WHEN ba.bankaccounttype = 'S' THEN 'Ahorro' "
             f"     WHEN ba.bankaccounttype = 'I' THEN 'Inversión' "
             f"     ELSE ba.bankaccounttype END AS tipo, "
-            f"COALESCE(c.iso_code, 'VES') AS moneda, "
+            f"{bank_currency} AS moneda, "
             f"ba.currentbalance AS saldo, "
             f"o.name AS organizacion "
             f"FROM adempiere.c_bankaccount ba "
@@ -915,7 +1057,7 @@ def build_financial_summary(
             f"LEFT JOIN adempiere.c_currency c ON ba.c_currency_id = c.c_currency_id "
             f"LEFT JOIN adempiere.ad_org o ON ba.ad_org_id = o.ad_org_id "
             f"WHERE {bank_where} "
-            f"ORDER BY c.iso_code, b.name"
+            f"ORDER BY moneda, b.name"
         )
         banks = [
             {
@@ -1057,6 +1199,57 @@ def build_financial_summary(
             for r in overdue_ap_rows
         ]
 
+        # Top 10 suppliers with highest overdue payables
+        top_ap_conds = [
+            "i.issotrx = 'N'",
+            "i.docstatus IN ('CO', 'CL')",
+            "i.ispaid = 'N'",
+            "i.isactive = 'Y'",
+            "(i.dateinvoiced + CASE WHEN COALESCE(pt.netdays, 0) = 0 THEN 30 ELSE pt.netdays END) < CURRENT_DATE",
+        ]
+        top_ap_params: dict = {}
+        _add_org_filter(top_ap_conds, top_ap_params, org_ids, "i")
+        top_ap_where = " AND ".join(top_ap_conds)
+        top_ap_q = text(
+            f"SELECT bp.name AS proveedor, "
+            f"{cur_label} AS moneda, "
+            f"COUNT(*) AS facturas, "
+            f"COALESCE(SUM(i.grandtotal), 0) AS total_adeudado "
+            f"FROM adempiere.c_invoice i "
+            f"JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id "
+            f"LEFT JOIN adempiere.c_paymentterm pt ON i.c_paymentterm_id = pt.c_paymentterm_id "
+            f"WHERE {top_ap_where} "
+            f"GROUP BY bp.name, {cur_label} "
+            f"ORDER BY total_adeudado DESC LIMIT 10"
+        )
+        top_ap_rows = db.execute(top_ap_q, top_ap_params).fetchall()
+        payables["top_proveedores_vencidos"] = [
+            {"proveedor": r[0], "moneda": r[1], "facturas": r[2], "total_adeudado": float(r[3])}
+            for r in top_ap_rows
+        ]
+
+        # Top 10 clients with highest overdue receivables
+        top_ar_conds = list(overdue_conds)  # reuse same conditions
+        top_ar_params = dict(overdue_params)
+        top_ar_where = " AND ".join(top_ar_conds)
+        top_ar_q = text(
+            f"SELECT bp.name AS cliente, "
+            f"{cur_label} AS moneda, "
+            f"COUNT(*) AS facturas, "
+            f"COALESCE(SUM(i.grandtotal), 0) AS total_adeudado "
+            f"FROM adempiere.c_invoice i "
+            f"JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id "
+            f"LEFT JOIN adempiere.c_paymentterm pt ON i.c_paymentterm_id = pt.c_paymentterm_id "
+            f"WHERE {top_ar_where} "
+            f"GROUP BY bp.name, {cur_label} "
+            f"ORDER BY total_adeudado DESC LIMIT 10"
+        )
+        top_ar_rows = db.execute(top_ar_q, top_ar_params).fetchall()
+        receivables["top_clientes_morosos"] = [
+            {"cliente": r[0], "moneda": r[1], "facturas": r[2], "total_adeudado": float(r[3])}
+            for r in top_ar_rows
+        ]
+
         return {
             "anio": anio,
             "mes": mes,
@@ -1069,6 +1262,136 @@ def build_financial_summary(
             "cuentas_por_cobrar": receivables,
             "cuentas_por_pagar": payables,
         }
+    finally:
+        db.close()
+
+
+def build_cobros_pagos_summary(
+    is_receipt: bool = True,
+    mes: int | None = None,
+    anio: int | None = None,
+    org_ids: list[int] | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> dict:
+    """Cobros recibidos (is_receipt=True) or pagos emitidos (is_receipt=False).
+
+    Returns totals, breakdown by currency, by payment method, and top 30
+    business partners — all with proper VES/USD currency separation.
+    """
+    if date_from and date_to:
+        mes = None
+    db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
+    cur_label = _currency_label("p")
+    try:
+        receipt_flag = "'Y'" if is_receipt else "'N'"
+        conditions = [
+            f"p.isreceipt = {receipt_flag}",
+            "p.docstatus IN ('CO', 'CL')",
+            "p.isactive = 'Y'",
+        ]
+        params: dict = {}
+        _add_org_filter(conditions, params, org_ids, "p")
+        _add_date_filter(conditions, params, date_from, date_to, mes, anio, "p.datetrx")
+
+        where = " AND ".join(conditions)
+
+        # Totals by currency
+        totals_q = text(
+            f"SELECT {cur_label} AS moneda, "
+            f"COUNT(*) AS cantidad, "
+            f"COALESCE(SUM(p.payamt), 0) AS total "
+            f"FROM adempiere.c_payment p WHERE {where} "
+            f"GROUP BY {cur_label} ORDER BY total DESC"
+        )
+        totals_rows = db.execute(totals_q, params).fetchall()
+        por_moneda = [
+            {"moneda": r[0], "cantidad": r[1], "total": float(r[2])}
+            for r in totals_rows
+        ]
+
+        # By payment method + currency
+        method_q = text(
+            f"SELECT CASE p.tendertype "
+            f"  WHEN 'A' THEN 'Depósito Directo' "
+            f"  WHEN 'B' THEN 'Tarjeta de Débito' "
+            f"  WHEN 'C' THEN 'Tarjeta de Crédito' "
+            f"  WHEN 'D' THEN 'Débito Directo' "
+            f"  WHEN 'K' THEN 'Cheque' "
+            f"  WHEN 'S' THEN 'Transferencia Empresas' "
+            f"  WHEN 'W' THEN 'Transferencia' "
+            f"  WHEN 'X' THEN 'Efectivo' "
+            f"  WHEN 'Y' THEN 'Dólar Efectivo' "
+            f"  WHEN 'Z' THEN 'Dólar Transferencia' "
+            f"  ELSE p.tendertype END AS metodo_pago, "
+            f"{cur_label} AS moneda, "
+            f"COUNT(*) AS cantidad, "
+            f"COALESCE(SUM(p.payamt), 0) AS total "
+            f"FROM adempiere.c_payment p WHERE {where} "
+            f"GROUP BY p.tendertype, {cur_label} ORDER BY total DESC"
+        )
+        por_metodo = [
+            {"metodo_pago": r[0], "moneda": r[1], "cantidad": r[2], "total": float(r[3])}
+            for r in db.execute(method_q, params).fetchall()
+        ]
+
+        # Top 30 business partners by amount + currency
+        bp_q = text(
+            f"SELECT bp.name, "
+            f"{cur_label} AS moneda, "
+            f"COUNT(*) AS cantidad, "
+            f"COALESCE(SUM(p.payamt), 0) AS total "
+            f"FROM adempiere.c_payment p "
+            f"JOIN adempiere.c_bpartner bp ON p.c_bpartner_id = bp.c_bpartner_id "
+            f"WHERE {where} "
+            f"GROUP BY bp.name, {cur_label} ORDER BY total DESC LIMIT 30"
+        )
+        top_socios = [
+            {"nombre": r[0], "moneda": r[1], "cantidad": r[2], "total": float(r[3])}
+            for r in db.execute(bp_q, params).fetchall()
+        ]
+
+        # Monthly breakdown when querying a full year (or date range > 1 month)
+        por_mes: list[dict] = []
+        is_annual = anio and not mes and not date_from and not date_to
+        is_wide_range = False
+        if date_from and date_to:
+            from datetime import datetime as _dt
+            try:
+                d0 = _dt.strptime(date_from, "%Y-%m-%d")
+                d1 = _dt.strptime(date_to, "%Y-%m-%d")
+                is_wide_range = (d1 - d0).days > 45
+            except ValueError:
+                pass
+        if is_annual or is_wide_range:
+            month_q = text(
+                f"SELECT EXTRACT(MONTH FROM p.datetrx)::int AS mes, "
+                f"EXTRACT(YEAR FROM p.datetrx)::int AS anio_val, "
+                f"{cur_label} AS moneda, "
+                f"COUNT(*) AS cantidad, "
+                f"COALESCE(SUM(p.payamt), 0) AS total "
+                f"FROM adempiere.c_payment p WHERE {where} "
+                f"GROUP BY mes, anio_val, {cur_label} "
+                f"ORDER BY anio_val, mes, moneda"
+            )
+            por_mes = [
+                {
+                    "mes": r[0], "anio": r[1], "moneda": r[2],
+                    "cantidad": r[3], "total": float(r[4]),
+                }
+                for r in db.execute(month_q, params).fetchall()
+            ]
+
+        result = {
+            "tipo": "cobros" if is_receipt else "pagos",
+            "total_registros": sum(m["cantidad"] for m in por_moneda),
+            "por_moneda": por_moneda,
+            "por_metodo_pago": por_metodo,
+            "top_socios": top_socios,
+        }
+        if por_mes:
+            result["por_mes"] = por_mes
+        return result
     finally:
         db.close()
 
@@ -1087,33 +1410,34 @@ def build_employee_summary(org_ids: list[int] | None = None) -> dict:
     """
     db = IdempiereSession()
     try:
-        # Overall counts (unique employees)
-        conditions = ["1=1"]
+        # Overall counts (unique employees) — only active
+        conditions = ["e.isactive = 'Y'", "bp.isactive = 'Y'"]
         params: dict = {}
         _add_org_filter(conditions, params, org_ids, "e")
         where = " AND ".join(conditions)
+        bp_join = "JOIN adempiere.c_bpartner bp ON e.c_bpartner_id = bp.c_bpartner_id"
 
         totals_q = text(
             f"SELECT "
-            f"COUNT(DISTINCT e.c_bpartner_id) AS total, "
-            f"COUNT(DISTINCT CASE WHEN e.isactive = 'Y' THEN e.c_bpartner_id END) AS activos, "
-            f"COUNT(DISTINCT CASE WHEN e.isactive = 'N' THEN e.c_bpartner_id END) AS inactivos "
+            f"COUNT(DISTINCT e.c_bpartner_id) AS total "
             f"FROM adempiere.hr_employee e "
+            f"{bp_join} "
             f"WHERE {where}"
         )
         row = db.execute(totals_q, params).fetchone()
         totals = {
             "total": row[0] if row else 0,
-            "activos": row[1] if row else 0,
-            "inactivos": row[2] if row else 0,
+            "activos": row[0] if row else 0,
+            "inactivos": 0,
         }
 
         # By organization (unique employees per org)
         by_org_q = text(
             f"SELECT COALESCE(o.name, 'Sin Organización') AS organizacion, "
             f"COUNT(DISTINCT e.c_bpartner_id) AS total, "
-            f"COUNT(DISTINCT CASE WHEN e.isactive = 'Y' THEN e.c_bpartner_id END) AS activos "
+            f"COUNT(DISTINCT e.c_bpartner_id) AS activos "
             f"FROM adempiere.hr_employee e "
+            f"{bp_join} "
             f"LEFT JOIN adempiere.ad_org o ON e.ad_org_id = o.ad_org_id "
             f"WHERE {where} "
             f"GROUP BY o.name ORDER BY total DESC"
@@ -1127,8 +1451,9 @@ def build_employee_summary(org_ids: list[int] | None = None) -> dict:
         by_dept_q = text(
             f"SELECT COALESCE(d.name, 'Sin Departamento') AS departamento, "
             f"COUNT(DISTINCT e.c_bpartner_id) AS total, "
-            f"COUNT(DISTINCT CASE WHEN e.isactive = 'Y' THEN e.c_bpartner_id END) AS activos "
+            f"COUNT(DISTINCT e.c_bpartner_id) AS activos "
             f"FROM adempiere.hr_employee e "
+            f"{bp_join} "
             f"LEFT JOIN adempiere.hr_department d ON e.hr_department_id = d.hr_department_id "
             f"WHERE {where} "
             f"GROUP BY d.name ORDER BY total DESC LIMIT 20"
@@ -1142,8 +1467,9 @@ def build_employee_summary(org_ids: list[int] | None = None) -> dict:
         by_job_q = text(
             f"SELECT COALESCE(j.name, 'Sin Cargo') AS cargo, "
             f"COUNT(DISTINCT e.c_bpartner_id) AS total, "
-            f"COUNT(DISTINCT CASE WHEN e.isactive = 'Y' THEN e.c_bpartner_id END) AS activos "
+            f"COUNT(DISTINCT e.c_bpartner_id) AS activos "
             f"FROM adempiere.hr_employee e "
+            f"{bp_join} "
             f"LEFT JOIN adempiere.hr_job j ON e.hr_job_id = j.hr_job_id "
             f"WHERE {where} "
             f"GROUP BY j.name ORDER BY total DESC LIMIT 30"
@@ -1166,6 +1492,7 @@ def build_employee_summary(org_ids: list[int] | None = None) -> dict:
 def build_employee_list(
     org_ids: list[int] | None = None,
     cargo_search: str | None = None,
+    name_search: str | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
 ) -> list[dict]:
@@ -1176,13 +1503,23 @@ def build_employee_list(
     Joins hr_department and hr_job for richer employee info.
 
     If cargo_search is provided, filters by job title using ILIKE.
+    If name_search is provided, filters by employee name using ILIKE.
     If date_from/date_to provided, filters by startdate (fecha de ingreso).
     """
     db = _get_session(date_from=date_from, date_to=date_to)
     try:
-        conditions = ["e.isactive = 'Y'"]
+        conditions = ["e.isactive = 'Y'", "bp.isactive = 'Y'"]
         params: dict = {}
         _add_org_filter(conditions, params, org_ids, "e")
+
+        if name_search:
+            # Split into words and require ALL words to appear in the name
+            # e.g. "Eduardo Pérez" → bp.name ILIKE '%Eduardo%' AND bp.name ILIKE '%Pérez%'
+            words = name_search.strip().split()
+            for i, word in enumerate(words):
+                key = f"name_w{i}"
+                conditions.append(f"bp.name ILIKE :{key}")
+                params[key] = f"%{word}%"
 
         if cargo_search:
             # Split into words and require ALL words to appear (handles plural/singular)
@@ -1236,8 +1573,8 @@ def build_employee_list(
             for r in rows
         ]
         results.sort(key=lambda x: x["nombre"])
-        # When filtering by cargo, allow more results; otherwise cap at 100
-        limit = 200 if cargo_search else 100
+        # When filtering by cargo or name, allow more results; otherwise cap at 100
+        limit = 200 if (cargo_search or name_search) else 100
         return results[:limit]
     finally:
         db.close()
@@ -1246,6 +1583,7 @@ def build_employee_list(
 def build_birthday_list(
     mes: int | None = None,
     org_ids: list[int] | None = None,
+    org_name: str | None = None,
 ) -> list[dict]:
     """List employees whose birthday falls in the given month.
 
@@ -1253,9 +1591,10 @@ def build_birthday_list(
     """
     db = _get_session(mes=mes)
     try:
-        conditions = ["e.isactive = 'Y'", "bday.birthday IS NOT NULL"]
+        conditions = ["e.isactive = 'Y'", "bp.isactive = 'Y'", "bday.birthday IS NOT NULL"]
         params: dict = {}
         _add_org_filter(conditions, params, org_ids, "e")
+        _add_org_name_filter(conditions, params, org_name, "e")
 
         if mes:
             conditions.append("EXTRACT(MONTH FROM bday.birthday) = :mes")
@@ -1326,14 +1665,17 @@ def build_payroll_summary(
         _add_date_filter(conditions, params, date_from, date_to, mes, anio, "hp.dateacct")
         where = " AND ".join(conditions)
 
-        # Process summary
+        # Process summary — use hr_concept.type to distinguish earnings ('E') vs deductions ('D')
+        # In iDempiere, all hr_movement.amount values are positive; the concept type
+        # determines whether it's an earning or deduction.
         totals_q = text(
             f"SELECT COUNT(DISTINCT hp.hr_process_id) AS total_procesos, "
             f"COUNT(DISTINCT hm.c_bpartner_id) AS empleados_procesados, "
-            f"COALESCE(SUM(CASE WHEN hm.amount > 0 THEN hm.amount ELSE 0 END), 0) AS total_devengado, "
-            f"COALESCE(SUM(CASE WHEN hm.amount < 0 THEN ABS(hm.amount) ELSE 0 END), 0) AS total_deducciones "
+            f"COALESCE(SUM(CASE WHEN hc.type = 'E' THEN ABS(hm.amount) ELSE 0 END), 0) AS total_devengado, "
+            f"COALESCE(SUM(CASE WHEN hc.type = 'D' THEN ABS(hm.amount) ELSE 0 END), 0) AS total_deducciones "
             f"FROM adempiere.hr_process hp "
             f"LEFT JOIN adempiere.hr_movement hm ON hp.hr_process_id = hm.hr_process_id "
+            f"LEFT JOIN adempiere.hr_concept hc ON hm.hr_concept_id = hc.hr_concept_id "
             f"WHERE {where}"
         )
         row = db.execute(totals_q, params).fetchone()
@@ -1470,6 +1812,8 @@ def build_attendance_summary(
         ]
 
         # Total active employees for rate calculation
+        # Must JOIN c_bpartner to check bp.isactive = 'Y' (same as build_employee_summary)
+        # Without this join, hr_employee alone returns ~1057 instead of 702
         emp_conditions = ["1=1"]
         emp_params: dict = {}
         _add_org_filter(emp_conditions, emp_params, org_ids, "e")
@@ -1477,7 +1821,8 @@ def build_attendance_summary(
         emp_q = text(
             f"SELECT COUNT(DISTINCT e.c_bpartner_id) "
             f"FROM adempiere.hr_employee e "
-            f"WHERE e.isactive = 'Y' AND {emp_where}"
+            f"JOIN adempiere.c_bpartner bp ON e.c_bpartner_id = bp.c_bpartner_id "
+            f"WHERE e.isactive = 'Y' AND bp.isactive = 'Y' AND {emp_where}"
         )
         emp_row = db.execute(emp_q, emp_params).fetchone()
         total_activos = emp_row[0] if emp_row else 0
@@ -1486,10 +1831,12 @@ def build_attendance_summary(
         tasa = (total_afectados / total_activos * 100) if total_activos else 0
 
         total_ocurrencias = sum(c["ocurrencias"] for c in by_concept)
+        total_monto_bs = sum(c["monto_bs"] for c in by_concept)
         totals = {
             "empleados_activos": total_activos,
             "empleados_con_ausencias": total_afectados,
             "total_ocurrencias": total_ocurrencias,
+            "total_monto_bs": total_monto_bs,
             "tasa_ausentismo_pct": round(tasa, 2),
             "conceptos_encontrados": len(by_concept),
             "nota_horas": "No se dispone de horas-hombre en el sistema de nómina. Los datos se expresan en ocurrencias y monto (Bs.).",
@@ -1589,6 +1936,7 @@ def build_vacation_summary(
     org_ids: list[int] | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    org_name: str | None = None,
 ) -> dict:
     """Vacation data from hr_movement concepts containing 'vacacion' or 'bono vacacional'."""
     db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
@@ -1601,8 +1949,14 @@ def build_vacation_summary(
         _add_org_filter(conditions, params, org_ids, "hm")
         _add_date_filter(conditions, params, date_from, date_to, mes, anio, "hp.dateacct")
 
+        # Filter by org_name if provided
+        if org_name:
+            conditions.append("UPPER(o.name) LIKE :org_name_filter")
+            params["org_name_filter"] = f"%{org_name.upper()}%"
+
         # Filter concepts related to vacations
-        vacation_terms = ["%vacacion%", "%bono vacacional%", "%dias disfrut%"]
+        # Use unaccent-safe patterns: 'vacacion' matches both 'vacacion' and 'vacación'
+        vacation_terms = ["%vacacion%", "%vacaci_n%", "%bono vacacional%", "%dias disfrut%"]
         like_clauses = " OR ".join(
             f"LOWER(hc.name) LIKE :vac_{i}" for i in range(len(vacation_terms))
         )
@@ -1612,6 +1966,9 @@ def build_vacation_summary(
 
         where = " AND ".join(conditions)
 
+        # Optional org JOIN (needed when org_name filter is used)
+        org_join = "LEFT JOIN adempiere.ad_org o ON hm.ad_org_id = o.ad_org_id " if org_name else ""
+
         # Totals
         totals_q = text(
             f"SELECT COUNT(DISTINCT hm.c_bpartner_id) AS total_empleados, "
@@ -1620,6 +1977,7 @@ def build_vacation_summary(
             f"FROM adempiere.hr_movement hm "
             f"JOIN adempiere.hr_process hp ON hp.hr_process_id = hm.hr_process_id "
             f"JOIN adempiere.hr_concept hc ON hm.hr_concept_id = hc.hr_concept_id "
+            f"{org_join}"
             f"WHERE {where}"
         )
         row = db.execute(totals_q, params).fetchone()
@@ -1644,6 +2002,7 @@ def build_vacation_summary(
             f"FROM adempiere.hr_movement hm "
             f"JOIN adempiere.hr_process hp ON hp.hr_process_id = hm.hr_process_id "
             f"JOIN adempiere.hr_concept hc ON hm.hr_concept_id = hc.hr_concept_id "
+            f"{org_join}"
             f"WHERE {where} "
             f"GROUP BY hc.name ORDER BY monto DESC"
         )
@@ -1689,6 +2048,7 @@ def build_vacation_summary(
             f"JOIN adempiere.hr_process hp ON hp.hr_process_id = hm.hr_process_id "
             f"JOIN adempiere.hr_concept hc ON hm.hr_concept_id = hc.hr_concept_id "
             f"JOIN adempiere.c_bpartner bp ON hm.c_bpartner_id = bp.c_bpartner_id "
+            f"{org_join}"
             f"WHERE {where} "
             f"GROUP BY bp.name, hc.name ORDER BY monto DESC LIMIT 30"
         )
@@ -1721,8 +2081,11 @@ def build_production_summary(
     org_ids: list[int] | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    org_name: str | None = None,
 ) -> dict:
     """Production/inventory movement summary from iDempiere m_inout.
+
+    Always uses live iDempiere — local DB has incomplete m_inout data.
 
     Santoni does not use the Manufacturing module (pp_order is empty).
     Instead, production activity is tracked via material movements:
@@ -1731,11 +2094,13 @@ def build_production_summary(
     - M+/M- = Internal inventory movements
     - P+/P- = Production receipts (rare)
     """
-    db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
+    db = IdempiereSession()  # Always live — local DB has incomplete m_inout
     try:
         conditions = ["io.isactive = 'Y'", "io.docstatus IN ('CO', 'CL')"]
         params: dict = {}
-        _add_org_filter(conditions, params, org_ids, "io")
+        _add_org_name_filter(conditions, params, org_name, "io")
+        if not org_name:
+            _add_org_filter(conditions, params, org_ids, "io")
         _add_date_filter(conditions, params, date_from, date_to, mes, anio, "io.movementdate")
         where = " AND ".join(conditions)
 
@@ -1780,17 +2145,19 @@ def build_production_summary(
             for r in db.execute(by_product_q, params).fetchall()
         ]
 
-        # By month
+        # By month (include year for cross-year ranges)
         by_month_q = text(
-            f"SELECT EXTRACT(MONTH FROM io.movementdate)::int AS mes, "
+            f"SELECT EXTRACT(YEAR FROM io.movementdate)::int AS anio, "
+            f"EXTRACT(MONTH FROM io.movementdate)::int AS mes, "
             f"COUNT(*) AS movimientos, "
             f"SUM(CASE WHEN io.movementtype = 'V+' THEN 1 ELSE 0 END) AS recepciones, "
             f"SUM(CASE WHEN io.movementtype = 'C-' THEN 1 ELSE 0 END) AS despachos "
             f"FROM adempiere.m_inout io WHERE {where} "
-            f"GROUP BY EXTRACT(MONTH FROM io.movementdate) ORDER BY mes"
+            f"GROUP BY EXTRACT(YEAR FROM io.movementdate), EXTRACT(MONTH FROM io.movementdate) "
+            f"ORDER BY anio, mes"
         )
         by_month = [
-            {"mes": r[0], "movimientos": r[1], "recepciones": r[2], "despachos": r[3]}
+            {"anio": r[0], "mes": r[1], "movimientos": r[2], "recepciones": r[3], "despachos": r[4]}
             for r in db.execute(by_month_q, params).fetchall()
         ]
 
@@ -1810,6 +2177,25 @@ def build_production_summary(
             for r in db.execute(by_org_q, params).fetchall()
         ]
 
+        # By date (daily breakdown — prevents LLM from inventing dates)
+        by_date_q = text(
+            f"SELECT io.movementdate::date AS fecha, "
+            f"COUNT(*) AS movimientos, "
+            f"SUM(CASE WHEN io.movementtype = 'V+' THEN 1 ELSE 0 END) AS recepciones, "
+            f"SUM(CASE WHEN io.movementtype = 'C-' THEN 1 ELSE 0 END) AS despachos "
+            f"FROM adempiere.m_inout io WHERE {where} "
+            f"GROUP BY io.movementdate::date ORDER BY fecha DESC LIMIT 31"
+        )
+        by_date = [
+            {
+                "fecha": str(r[0]),
+                "movimientos": r[1],
+                "recepciones": r[2],
+                "despachos": r[3],
+            }
+            for r in db.execute(by_date_q, params).fetchall()
+        ]
+
         return {
             "anio": anio,
             "mes": mes,
@@ -1817,6 +2203,7 @@ def build_production_summary(
             "por_producto": by_product,
             "por_mes": by_month,
             "por_organizacion": by_org,
+            "por_fecha": by_date,
         }
     finally:
         db.close()
@@ -1828,13 +2215,16 @@ def build_production_orders(
     org_ids: list[int] | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    org_name: str | None = None,
 ) -> list[dict]:
     """Recent material movement documents from iDempiere m_inout."""
-    db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
+    db = IdempiereSession()  # Always live — local DB has incomplete m_inout
     try:
         conditions = ["io.isactive = 'Y'", "io.docstatus IN ('CO', 'CL')"]
         params: dict = {}
-        _add_org_filter(conditions, params, org_ids, "io")
+        _add_org_name_filter(conditions, params, org_name, "io")
+        if not org_name:
+            _add_org_filter(conditions, params, org_ids, "io")
         _add_date_filter(conditions, params, date_from, date_to, mes, anio, "io.movementdate")
         where = " AND ".join(conditions)
 
@@ -1850,11 +2240,18 @@ def build_production_orders(
             f"  WHEN 'P-' THEN 'Producción -' "
             f"  ELSE io.movementtype END AS tipo, "
             f"org.name AS organizacion, "
-            f"COALESCE(bp.name, '') AS socio_negocio "
+            f"COALESCE(bp.name, '') AS socio_negocio, "
+            f"STRING_AGG(DISTINCT p.name, ', ' ORDER BY p.name) AS productos, "
+            f"SUM(ABS(iol.movementqty)) AS cantidad_total, "
+            f"MIN(u.name) AS unidad "
             f"FROM adempiere.m_inout io "
             f"JOIN adempiere.ad_org org ON io.ad_org_id = org.ad_org_id "
             f"LEFT JOIN adempiere.c_bpartner bp ON io.c_bpartner_id = bp.c_bpartner_id "
+            f"LEFT JOIN adempiere.m_inoutline iol ON io.m_inout_id = iol.m_inout_id "
+            f"LEFT JOIN adempiere.m_product p ON iol.m_product_id = p.m_product_id "
+            f"LEFT JOIN adempiere.c_uom u ON iol.c_uom_id = u.c_uom_id "
             f"WHERE {where} "
+            f"GROUP BY io.documentno, io.movementdate, io.movementtype, org.name, bp.name "
             f"ORDER BY io.movementdate DESC LIMIT 50"
         )
         return [
@@ -1864,9 +2261,381 @@ def build_production_orders(
                 "tipo": r[2],
                 "organizacion": r[3] or "",
                 "socio_negocio": r[4] or "",
+                "productos": r[5] or "",
+                "cantidad": float(r[6]) if r[6] else 0.0,
+                "unidad": r[7] or "",
             }
             for r in db.execute(q, params).fetchall()
         ]
+    finally:
+        db.close()
+
+
+# ---------------------------------------------------------------------------
+# PRODUCCIÓN REAL (m_production + m_productionline)
+# ---------------------------------------------------------------------------
+
+
+def build_production_runs(
+    mes: int | None = None,
+    anio: int | None = None,
+    org_ids: list[int] | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    org_name: str | None = None,
+    product_search: str | None = None,
+) -> dict:
+    """Production runs from m_production + m_productionline.
+
+    Each production has lines: one 'header' line (isendproduct='Y', qty positive)
+    for the finished product, and component lines (isendproduct='N', qty negative)
+    for consumed raw materials.
+
+    NOTE: m_production.productionqty is NEGATIVE in Santoni's iDempiere.
+    Always use m_productionline.movementqty for real quantities.
+    """
+    db = IdempiereSession()  # Always live — local DB has incomplete m_production (only 32 vs 5,919+ records)
+    try:
+        conditions = ["pr.isactive = 'Y'", "pr.docstatus IN ('CO', 'CL')"]
+        params: dict = {}
+        _add_org_name_filter(conditions, params, org_name, "pr")
+        if not org_name:
+            _add_org_filter(conditions, params, org_ids, "pr")
+        _add_date_filter(conditions, params, date_from, date_to, mes, anio, "pr.movementdate")
+        if product_search:
+            prod_conds: list[str] = []
+            _add_product_search_filter(prod_conds, params, product_search, prefix="prprod")
+            if prod_conds:
+                conditions.append(
+                    f"pr.m_production_id IN ("
+                    f"SELECT prl2.m_production_id FROM adempiere.m_productionline prl2 "
+                    f"JOIN adempiere.m_product p ON prl2.m_product_id = p.m_product_id "
+                    f"WHERE {prod_conds[0]})"
+                )
+        where = " AND ".join(conditions)
+
+        # 1. Totals — simple JOIN, no nested subqueries
+        totals_q = text(
+            f"SELECT COUNT(DISTINCT pr.m_production_id) AS total_producciones, "
+            f"COALESCE(SUM(CASE WHEN prl.isendproduct = 'Y' AND prl.movementqty > 0 "
+            f"  THEN prl.movementqty ELSE 0 END), 0) AS qty_terminada, "
+            f"COALESCE(SUM(CASE WHEN prl.isendproduct = 'N' OR prl.movementqty < 0 "
+            f"  THEN ABS(prl.movementqty) ELSE 0 END), 0) AS qty_consumida "
+            f"FROM adempiere.m_production pr "
+            f"JOIN adempiere.m_productionline prl ON pr.m_production_id = prl.m_production_id "
+            f"WHERE {where}"
+        )
+        row = db.execute(totals_q, params).fetchone()
+        totals = {
+            "total_producciones": row[0] if row else 0,
+            "cantidad_producto_terminado": float(row[1]) if row else 0.0,
+            "cantidad_insumos_consumidos": float(row[2]) if row else 0.0,
+        }
+
+        # 2. Top finished products (isendproduct = 'Y', qty > 0)
+        by_product_q = text(
+            f"SELECT p.name AS producto, "
+            f"COUNT(DISTINCT pr.m_production_id) AS producciones, "
+            f"COALESCE(SUM(prl.movementqty), 0) AS qty_producida "
+            f"FROM adempiere.m_production pr "
+            f"JOIN adempiere.m_productionline prl ON pr.m_production_id = prl.m_production_id "
+            f"JOIN adempiere.m_product p ON prl.m_product_id = p.m_product_id "
+            f"WHERE {where} AND prl.isendproduct = 'Y' AND prl.movementqty > 0 "
+            f"GROUP BY p.name ORDER BY qty_producida DESC LIMIT 20"
+        )
+        by_product = [
+            {
+                "producto": r[0],
+                "producciones": r[1],
+                "cantidad_producida": float(r[2]),
+            }
+            for r in db.execute(by_product_q, params).fetchall()
+        ]
+
+        # 3. Top consumed raw materials (isendproduct = 'N' or qty < 0)
+        by_insumo_q = text(
+            f"SELECT p.name AS insumo, "
+            f"COALESCE(SUM(ABS(prl.movementqty)), 0) AS qty_consumida "
+            f"FROM adempiere.m_production pr "
+            f"JOIN adempiere.m_productionline prl ON pr.m_production_id = prl.m_production_id "
+            f"JOIN adempiere.m_product p ON prl.m_product_id = p.m_product_id "
+            f"WHERE {where} AND (prl.isendproduct = 'N' OR prl.movementqty < 0) "
+            f"GROUP BY p.name ORDER BY qty_consumida DESC LIMIT 20"
+        )
+        by_insumo = [
+            {
+                "insumo": r[0],
+                "cantidad_consumida": float(r[1]),
+            }
+            for r in db.execute(by_insumo_q, params).fetchall()
+        ]
+
+        # 4. By month (qty from finished products in productionline, include year for cross-year ranges)
+        by_month_q = text(
+            f"SELECT EXTRACT(YEAR FROM pr.movementdate)::int AS anio, "
+            f"EXTRACT(MONTH FROM pr.movementdate)::int AS mes, "
+            f"COUNT(DISTINCT pr.m_production_id) AS producciones, "
+            f"COALESCE(SUM(CASE WHEN prl.isendproduct = 'Y' AND prl.movementqty > 0 "
+            f"  THEN prl.movementqty ELSE 0 END), 0) AS qty_terminada, "
+            f"COALESCE(SUM(CASE WHEN prl.isendproduct = 'N' OR prl.movementqty < 0 "
+            f"  THEN ABS(prl.movementqty) ELSE 0 END), 0) AS qty_consumida "
+            f"FROM adempiere.m_production pr "
+            f"JOIN adempiere.m_productionline prl ON pr.m_production_id = prl.m_production_id "
+            f"WHERE {where} "
+            f"GROUP BY EXTRACT(YEAR FROM pr.movementdate), EXTRACT(MONTH FROM pr.movementdate) "
+            f"ORDER BY anio, mes"
+        )
+        by_month = [
+            {"anio": r[0], "mes": r[1], "producciones": r[2],
+             "cantidad_terminada": float(r[3]), "cantidad_consumida": float(r[4])}
+            for r in db.execute(by_month_q, params).fetchall()
+        ]
+
+        # 5. By organization (qty from finished products in productionline)
+        by_org_q = text(
+            f"SELECT org.name AS organizacion, "
+            f"COUNT(DISTINCT pr.m_production_id) AS producciones, "
+            f"COALESCE(SUM(CASE WHEN prl.isendproduct = 'Y' AND prl.movementqty > 0 "
+            f"  THEN prl.movementqty ELSE 0 END), 0) AS qty_terminada, "
+            f"COALESCE(SUM(CASE WHEN prl.isendproduct = 'N' OR prl.movementqty < 0 "
+            f"  THEN ABS(prl.movementqty) ELSE 0 END), 0) AS qty_consumida "
+            f"FROM adempiere.m_production pr "
+            f"JOIN adempiere.m_productionline prl ON pr.m_production_id = prl.m_production_id "
+            f"JOIN adempiere.ad_org org ON pr.ad_org_id = org.ad_org_id "
+            f"WHERE {where} "
+            f"GROUP BY org.name ORDER BY producciones DESC"
+        )
+        by_org = [
+            {"organizacion": r[0], "producciones": r[1],
+             "cantidad_terminada": float(r[2]), "cantidad_consumida": float(r[3])}
+            for r in db.execute(by_org_q, params).fetchall()
+        ]
+
+        # 6. Daily breakdown (anti-hallucination, qty from productionline)
+        by_date_q = text(
+            f"SELECT pr.movementdate::date AS fecha, "
+            f"COUNT(DISTINCT pr.m_production_id) AS producciones, "
+            f"COALESCE(SUM(CASE WHEN prl.isendproduct = 'Y' AND prl.movementqty > 0 "
+            f"  THEN prl.movementqty ELSE 0 END), 0) AS qty_terminada "
+            f"FROM adempiere.m_production pr "
+            f"JOIN adempiere.m_productionline prl ON pr.m_production_id = prl.m_production_id "
+            f"WHERE {where} "
+            f"GROUP BY pr.movementdate::date ORDER BY fecha DESC LIMIT 31"
+        )
+        by_date = [
+            {"fecha": str(r[0]), "producciones": r[1], "cantidad_terminada": float(r[2])}
+            for r in db.execute(by_date_q, params).fetchall()
+        ]
+
+        return {
+            "anio": anio,
+            "mes": mes,
+            "totales": totals,
+            "productos_terminados": by_product,
+            "insumos_consumidos": by_insumo,
+            "por_mes": by_month,
+            "por_organizacion": by_org,
+            "por_fecha": by_date,
+        }
+    finally:
+        db.close()
+
+
+def build_bom_info(
+    product_search: str | None = None,
+    org_ids: list[int] | None = None,
+    org_name: str | None = None,
+) -> dict:
+    """Bill of Materials (BOM) / recipes from pp_product_bom + pp_product_bomline.
+
+    229 BOMs defined in Santoni (Arroz Santoni, Harina, Choco Toni, etc.)
+    Always queries live iDempiere (BOMs are reference data, not temporal).
+    """
+    db = IdempiereSession()
+    try:
+        conditions = ["b.isactive = 'Y'"]
+        params: dict = {}
+        _add_org_name_filter(conditions, params, org_name, "b")
+        if not org_name:
+            _add_org_filter(conditions, params, org_ids, "b")
+        if product_search:
+            _add_product_search_filter(conditions, params, product_search, prefix="bomprod")
+        where = " AND ".join(conditions)
+
+        # List BOMs with line counts
+        bom_q = text(
+            f"SELECT b.pp_product_bom_id, b.name AS bom_nombre, "
+            f"p.name AS producto, org.name AS organizacion, "
+            f"(SELECT COUNT(*) FROM adempiere.pp_product_bomline bl "
+            f" WHERE bl.pp_product_bom_id = b.pp_product_bom_id) AS num_componentes "
+            f"FROM adempiere.pp_product_bom b "
+            f"JOIN adempiere.m_product p ON b.m_product_id = p.m_product_id "
+            f"JOIN adempiere.ad_org org ON b.ad_org_id = org.ad_org_id "
+            f"WHERE {where} "
+            f"ORDER BY b.name LIMIT 30"
+        )
+        boms = []
+        for r in db.execute(bom_q, params).fetchall():
+            bom_id = r[0]
+            bom_entry = {
+                "bom_nombre": r[1],
+                "producto": r[2],
+                "organizacion": r[3],
+                "num_componentes": r[4],
+            }
+
+            # Get components for this BOM
+            comp_q = text(
+                "SELECT p.name AS componente, "
+                "bl.qtybom AS cantidad, "
+                "COALESCE(u.name, '-') AS unidad, "
+                "bl.componenttype "
+                "FROM adempiere.pp_product_bomline bl "
+                "JOIN adempiere.m_product p ON bl.m_product_id = p.m_product_id "
+                "LEFT JOIN adempiere.c_uom u ON bl.c_uom_id = u.c_uom_id "
+                "WHERE bl.pp_product_bom_id = :bom_id AND bl.isactive = 'Y' "
+                "ORDER BY bl.line"
+            )
+            components = [
+                {
+                    "componente": c[0],
+                    "cantidad": float(c[1]) if c[1] else 0,
+                    "unidad": c[2],
+                    "tipo": c[3] or "CO",
+                }
+                for c in db.execute(comp_q, {"bom_id": bom_id}).fetchall()
+            ]
+            bom_entry["componentes"] = components
+            boms.append(bom_entry)
+
+        return {
+            "total_boms": len(boms),
+            "boms": boms,
+        }
+    finally:
+        db.close()
+
+
+def build_warehouse_movements(
+    mes: int | None = None,
+    anio: int | None = None,
+    org_ids: list[int] | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    org_name: str | None = None,
+) -> dict:
+    """Internal warehouse movements from m_movement + m_movementline.
+
+    6,014+ completed movements in Santoni (transfers between warehouses/silos).
+    """
+    db = IdempiereSession()  # Always live — local DB has incomplete m_movement
+    try:
+        conditions = ["mv.isactive = 'Y'", "mv.docstatus IN ('CO', 'CL')"]
+        params: dict = {}
+        _add_org_name_filter(conditions, params, org_name, "mv")
+        if not org_name:
+            _add_org_filter(conditions, params, org_ids, "mv")
+        _add_date_filter(conditions, params, date_from, date_to, mes, anio, "mv.movementdate")
+        where = " AND ".join(conditions)
+
+        # 1. Totals
+        totals_q = text(
+            f"SELECT COUNT(*) AS total_movimientos "
+            f"FROM adempiere.m_movement mv WHERE {where}"
+        )
+        row = db.execute(totals_q, params).fetchone()
+        totals = {
+            "total_movimientos": row[0] if row else 0,
+        }
+
+        # 2. Top products moved
+        by_product_q = text(
+            f"SELECT p.name AS producto, "
+            f"SUM(ABS(ml.movementqty)) AS qty_movida, "
+            f"COUNT(DISTINCT mv.m_movement_id) AS movimientos "
+            f"FROM adempiere.m_movement mv "
+            f"JOIN adempiere.m_movementline ml ON mv.m_movement_id = ml.m_movement_id "
+            f"JOIN adempiere.m_product p ON ml.m_product_id = p.m_product_id "
+            f"WHERE {where} "
+            f"GROUP BY p.name ORDER BY qty_movida DESC LIMIT 20"
+        )
+        by_product = [
+            {
+                "producto": r[0],
+                "cantidad_movida": float(r[1]),
+                "movimientos": r[2],
+            }
+            for r in db.execute(by_product_q, params).fetchall()
+        ]
+
+        # 3. Movement flow: origin warehouse → destination warehouse
+        by_warehouse_q = text(
+            f"SELECT w_from.name AS almacen_origen, "
+            f"w_to.name AS almacen_destino, "
+            f"COUNT(DISTINCT mv.m_movement_id) AS movimientos, "
+            f"SUM(ABS(ml.movementqty)) AS qty_total "
+            f"FROM adempiere.m_movement mv "
+            f"JOIN adempiere.m_movementline ml ON mv.m_movement_id = ml.m_movement_id "
+            f"JOIN adempiere.m_locator l_from ON ml.m_locator_id = l_from.m_locator_id "
+            f"JOIN adempiere.m_warehouse w_from ON l_from.m_warehouse_id = w_from.m_warehouse_id "
+            f"JOIN adempiere.m_locator l_to ON ml.m_locatorto_id = l_to.m_locator_id "
+            f"JOIN adempiere.m_warehouse w_to ON l_to.m_warehouse_id = w_to.m_warehouse_id "
+            f"WHERE {where} "
+            f"GROUP BY w_from.name, w_to.name ORDER BY qty_total DESC LIMIT 15"
+        )
+        by_warehouse = [
+            {
+                "almacen_origen": r[0],
+                "almacen_destino": r[1],
+                "movimientos": r[2],
+                "cantidad_total": float(r[3]),
+            }
+            for r in db.execute(by_warehouse_q, params).fetchall()
+        ]
+
+        # 4. By organization
+        by_org_q = text(
+            f"SELECT org.name AS organizacion, "
+            f"COUNT(*) AS movimientos "
+            f"FROM adempiere.m_movement mv "
+            f"JOIN adempiere.ad_org org ON mv.ad_org_id = org.ad_org_id "
+            f"WHERE {where} "
+            f"GROUP BY org.name ORDER BY movimientos DESC"
+        )
+        by_org = [
+            {"organizacion": r[0], "movimientos": r[1]}
+            for r in db.execute(by_org_q, params).fetchall()
+        ]
+
+        # 5. Recent documents
+        docs_q = text(
+            f"SELECT mv.documentno, mv.movementdate::date AS fecha, "
+            f"COALESCE(mv.description, '') AS descripcion, "
+            f"org.name AS organizacion "
+            f"FROM adempiere.m_movement mv "
+            f"JOIN adempiere.ad_org org ON mv.ad_org_id = org.ad_org_id "
+            f"WHERE {where} "
+            f"ORDER BY mv.movementdate DESC LIMIT 20"
+        )
+        docs = [
+            {
+                "documento": r[0],
+                "fecha": str(r[1]),
+                "descripcion": r[2],
+                "organizacion": r[3],
+            }
+            for r in db.execute(docs_q, params).fetchall()
+        ]
+
+        return {
+            "anio": anio,
+            "mes": mes,
+            "totales": totals,
+            "por_producto": by_product,
+            "flujo_almacenes": by_warehouse,
+            "por_organizacion": by_org,
+            "documentos_recientes": docs,
+        }
     finally:
         db.close()
 
@@ -1891,26 +2660,36 @@ def build_producer_purchases(
             "o.issotrx = 'N'",
             "o.docstatus IN ('CO', 'CL')",
             "o.isactive = 'Y'",
+            # NOTE: No filter on ol.qtyordered here — many agricultural
+            # purchases (especially maíz) use qtyordered=1 as a payment
+            # record where priceactual=total amount.  We include ALL orders
+            # for accurate counts/amounts but use a CASE expression for peso
+            # to avoid counting qty=1 as 1 kg.
         ]
         params: dict = {}
+        _add_exclude_internal_orgs_filter(conditions, params, "bp")
         _add_org_filter(conditions, params, org_ids, "o")
         _add_org_name_filter(conditions, params, org_name, "o")
         _add_date_filter(conditions, params, date_from, date_to, mes, anio, "o.dateordered")
 
         if producto:
-            conditions.append("LOWER(p.name) LIKE :producto")
-            params["producto"] = f"%{producto.lower()}%"
+            _add_product_search_filter(conditions, params, producto, prefix="pprod")
 
         where = " AND ".join(conditions)
+
+        # Expression that yields real kg when available, 0 when qty=1
+        # (payment/settlement records use qtyordered=1 with priceactual=total)
+        _peso_expr = "CASE WHEN ol.qtyordered > 1 THEN ol.qtyordered ELSE 0 END"
 
         # Totals
         totals_q = text(
             f"SELECT COUNT(DISTINCT o.c_order_id) AS total_guias, "
-            f"COALESCE(SUM(ol.qtyordered), 0) AS total_peso_neto_kg, "
+            f"COALESCE(SUM({_peso_expr}), 0) AS total_peso_neto_kg, "
             f"COALESCE(SUM(ol.linenetamt), 0) AS total_monto "
             f"FROM adempiere.c_order o "
             f"JOIN adempiere.c_orderline ol ON o.c_order_id = ol.c_order_id "
             f"JOIN adempiere.m_product p ON ol.m_product_id = p.m_product_id "
+            f"JOIN adempiere.c_bpartner bp ON o.c_bpartner_id = bp.c_bpartner_id "
             f"WHERE {where}"
         )
         row = db.execute(totals_q, params).fetchone()
@@ -1920,15 +2699,16 @@ def build_producer_purchases(
             "total_monto": float(row[2]) if row else 0.0,
         }
 
-        # By product (no humedad/impureza — not available in c_order standard fields)
+        # By product
         by_product_q = text(
             f"SELECT p.name AS producto, "
             f"COUNT(DISTINCT o.c_order_id) AS guias, "
-            f"COALESCE(SUM(ol.qtyordered), 0) AS peso_neto_kg, "
+            f"COALESCE(SUM({_peso_expr}), 0) AS peso_neto_kg, "
             f"COALESCE(SUM(ol.linenetamt), 0) AS monto_total "
             f"FROM adempiere.c_order o "
             f"JOIN adempiere.c_orderline ol ON o.c_order_id = ol.c_order_id "
             f"JOIN adempiere.m_product p ON ol.m_product_id = p.m_product_id "
+            f"JOIN adempiere.c_bpartner bp ON o.c_bpartner_id = bp.c_bpartner_id "
             f"WHERE {where} "
             f"GROUP BY p.name ORDER BY monto_total DESC"
         )
@@ -1942,19 +2722,32 @@ def build_producer_purchases(
             for r in db.execute(by_product_q, params).fetchall()
         ]
 
-        # By producer (top 20)
+        # By producer (top 20) with location data.
+        # Use a subquery to pick ONE location per producer (the first active
+        # one) so that producers with multiple addresses are not duplicated.
         by_producer_q = text(
             f"SELECT bp.name AS nombre, "
-            f"'' AS estado, '' AS municipio, "
+            f"COALESCE(loc_data.estado, '') AS estado, "
+            f"COALESCE(loc_data.municipio, '') AS municipio, "
             f"COUNT(DISTINCT o.c_order_id) AS guias, "
-            f"COALESCE(SUM(ol.qtyordered), 0) AS peso_neto_kg, "
+            f"COALESCE(SUM({_peso_expr}), 0) AS peso_neto_kg, "
             f"COALESCE(SUM(ol.linenetamt), 0) AS monto_total "
             f"FROM adempiere.c_order o "
             f"JOIN adempiere.c_orderline ol ON o.c_order_id = ol.c_order_id "
             f"JOIN adempiere.m_product p ON ol.m_product_id = p.m_product_id "
             f"JOIN adempiere.c_bpartner bp ON o.c_bpartner_id = bp.c_bpartner_id "
+            f"LEFT JOIN LATERAL ("
+            f"  SELECT COALESCE(r.name, '') AS estado, "
+            f"         COALESCE(c.name, l.city, '') AS municipio "
+            f"  FROM adempiere.c_bpartner_location bl "
+            f"  JOIN adempiere.c_location l ON bl.c_location_id = l.c_location_id "
+            f"  LEFT JOIN adempiere.c_city c ON l.c_city_id = c.c_city_id "
+            f"  LEFT JOIN adempiere.c_region r ON l.c_region_id = r.c_region_id "
+            f"  WHERE bl.c_bpartner_id = bp.c_bpartner_id AND bl.isactive = 'Y' "
+            f"  LIMIT 1"
+            f") loc_data ON TRUE "
             f"WHERE {where} "
-            f"GROUP BY bp.name "
+            f"GROUP BY bp.c_bpartner_id, bp.name, loc_data.estado, loc_data.municipio "
             f"ORDER BY monto_total DESC LIMIT 20"
         )
         by_producer = [
@@ -1981,26 +2774,47 @@ def build_producer_purchases(
 
 
 def build_registered_producers(org_ids: list[int] | None = None) -> list[dict]:
-    """Registered producers (vendors) from iDempiere c_bpartner."""
+    """Registered agricultural producers from iDempiere c_bpartner.
+
+    Filters by codigoproductor IS NOT NULL (Santoni's custom field that
+    identifies agricultural producers) instead of just isvendor='Y' which
+    would return all 26,000+ vendors.
+    Also joins to location tables for estado/municipio data.
+    """
     db = IdempiereSession()
     try:
         conditions = [
             "bp.isactive = 'Y'",
             "bp.isvendor = 'Y'",
+            "bp.codigoproductor IS NOT NULL",
+            "bp.codigoproductor != ''",
         ]
         params: dict = {}
+        _add_org_filter(conditions, params, org_ids, "bp")
 
         q = text(
-            f"SELECT bp.name AS productor, bp.value AS codigo, "
-            f"COALESCE(bpl.city, '') AS ciudad "
+            f"SELECT DISTINCT ON (bp.c_bpartner_id) "
+            f"bp.name AS productor, "
+            f"COALESCE(bp.codigoproductor, bp.value) AS codigo, "
+            f"COALESCE(ci.name, loc.city, '') AS ciudad, "
+            f"COALESCE(reg.name, '') AS estado "
             f"FROM adempiere.c_bpartner bp "
             f"LEFT JOIN adempiere.c_bpartner_location bpl "
             f"  ON bp.c_bpartner_id = bpl.c_bpartner_id AND bpl.isactive = 'Y' "
+            f"LEFT JOIN adempiere.c_location loc "
+            f"  ON bpl.c_location_id = loc.c_location_id "
+            f"LEFT JOIN adempiere.c_city ci ON loc.c_city_id = ci.c_city_id "
+            f"LEFT JOIN adempiere.c_region reg ON loc.c_region_id = reg.c_region_id "
             f"WHERE {' AND '.join(conditions)} "
-            f"ORDER BY bp.name LIMIT 50"
+            f"ORDER BY bp.c_bpartner_id, bp.name LIMIT 100"
         )
         return [
-            {"productor": r[0], "codigo": r[1], "ciudad": r[2]}
+            {
+                "productor": r[0],
+                "codigo": r[1],
+                "ciudad": r[2],
+                "estado": r[3],
+            }
             for r in db.execute(q, params).fetchall()
         ]
     finally:
@@ -2029,12 +2843,12 @@ def build_producer_pending_payments(
             "i.dateinvoiced >= (CURRENT_DATE - INTERVAL '2 years')",
         ]
         params: dict = {}
+        _add_exclude_internal_orgs_filter(conditions, params, "bp")
         _add_org_filter(conditions, params, org_ids, "i")
         _add_currency_filter(conditions, params, currency_ids, "i")
 
         if producto:
-            conditions.append("LOWER(p.name) LIKE :producto")
-            params["producto"] = f"%{producto.lower()}%"
+            _add_product_search_filter(conditions, params, producto, prefix="pend_prod")
 
         if producer_name:
             conditions.append("LOWER(bp.name) LIKE :producer_name")
@@ -2075,15 +2889,24 @@ def build_producer_price_analysis(
     date_from: str | None = None,
     date_to: str | None = None,
 ) -> list[dict]:
-    """Price analysis per product for producer purchases from iDempiere."""
+    """Price analysis per product for producer purchases from iDempiere.
+
+    Only considers orders with qtyordered > 1 because orders with qty=1
+    are payment/settlement records where priceactual = total amount, not
+    a meaningful per-kg price.
+    """
     db = _get_session(date_from=date_from, date_to=date_to, anio=anio)
     try:
         conditions = [
             "o.issotrx = 'N'",
             "o.docstatus IN ('CO', 'CL')",
             "o.isactive = 'Y'",
+            # Keep qtyordered > 1 for price analysis: qty=1 orders have
+            # priceactual = total_amount (not a real per-unit price).
+            "ol.qtyordered > 1",
         ]
         params: dict = {}
+        _add_exclude_internal_orgs_filter(conditions, params, "bp")
         _add_org_filter(conditions, params, org_ids, "o")
         _add_date_filter(conditions, params, date_from, date_to, None, anio, "o.dateordered")
 
@@ -2092,12 +2915,13 @@ def build_producer_price_analysis(
         q = text(
             f"SELECT p.name AS producto, "
             f"MIN(ol.priceactual) AS precio_min, "
-            f"AVG(ol.priceactual) AS precio_promedio, "
+            f"COALESCE(SUM(ol.linenetamt) / NULLIF(SUM(ol.qtyordered), 0), 0) AS precio_promedio, "
             f"MAX(ol.priceactual) AS precio_max, "
             f"COUNT(DISTINCT o.c_order_id) AS compras "
             f"FROM adempiere.c_order o "
             f"JOIN adempiere.c_orderline ol ON o.c_order_id = ol.c_order_id "
             f"JOIN adempiere.m_product p ON ol.m_product_id = p.m_product_id "
+            f"JOIN adempiere.c_bpartner bp ON o.c_bpartner_id = bp.c_bpartner_id "
             f"WHERE {where} "
             f"GROUP BY p.name ORDER BY compras DESC LIMIT 20"
         )
@@ -2127,7 +2951,11 @@ def build_supply_purchases(
     date_to: str | None = None,
     currency_ids: list[int] | None = None,
 ) -> dict:
-    """Supply purchases from iDempiere: purchase invoices (issotrx='N')."""
+    """Supply purchases from iDempiere: purchase invoices (issotrx='N').
+
+    When no currency filter is specified, separates results by currency
+    to avoid mixing VES and USD in totals and rankings.
+    """
     db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
     try:
         conditions = [
@@ -2140,69 +2968,83 @@ def build_supply_purchases(
         _add_date_filter(conditions, params, date_from, date_to, mes, anio, "i.dateinvoiced")
         _add_currency_filter(conditions, params, currency_ids, "i")
 
+        cur_label = _currency_label("i")
         where = " AND ".join(conditions)
 
-        # Totals
+        # Totals separated by currency
         totals_q = text(
-            f"SELECT COUNT(DISTINCT i.c_invoice_id) AS total_ordenes, "
+            f"SELECT {cur_label} AS moneda, "
+            f"COUNT(DISTINCT i.c_invoice_id) AS total_facturas, "
             f"COALESCE(SUM(i.grandtotal), 0) AS total_monto "
-            f"FROM adempiere.c_invoice i WHERE {where}"
+            f"FROM adempiere.c_invoice i WHERE {where} "
+            f"GROUP BY {cur_label} ORDER BY total_monto DESC"
         )
-        row = db.execute(totals_q, params).fetchone()
+        totals_rows = db.execute(totals_q, params).fetchall()
+        totales_por_moneda = [
+            {"moneda": r[0], "total_facturas": r[1], "total_monto": float(r[2])}
+            for r in totals_rows
+        ]
         totals = {
-            "total_ordenes": row[0] if row else 0,
-            "total_monto": float(row[1]) if row else 0.0,
+            "total_facturas": sum(r["total_facturas"] for r in totales_por_moneda),
+            "total_monto_mixto": sum(r["total_monto"] for r in totales_por_moneda),
+            "por_moneda": totales_por_moneda,
         }
 
-        # By supplier (top 20)
+        # By supplier (top 20) — include currency column
         by_supplier_q = text(
             f"SELECT bp.name AS proveedor, "
+            f"{cur_label} AS moneda, "
             f"COUNT(DISTINCT i.c_invoice_id) AS facturas, "
             f"COALESCE(SUM(i.grandtotal), 0) AS total "
             f"FROM adempiere.c_invoice i "
             f"JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id "
             f"WHERE {where} "
-            f"GROUP BY bp.name ORDER BY total DESC LIMIT 20"
+            f"GROUP BY bp.name, {cur_label} ORDER BY total DESC LIMIT 20"
         )
         by_supplier = [
-            {"proveedor": r[0], "facturas": r[1], "total": float(r[2])}
+            {"proveedor": r[0], "moneda": r[1], "facturas": r[2], "total": float(r[3])}
             for r in db.execute(by_supplier_q, params).fetchall()
         ]
 
-        # By month
+        # By month — include currency column
         by_month_q = text(
-            f"SELECT EXTRACT(MONTH FROM i.dateinvoiced)::int AS mes, "
+            f"SELECT EXTRACT(YEAR FROM i.dateinvoiced)::int AS anio, "
+            f"EXTRACT(MONTH FROM i.dateinvoiced)::int AS mes, "
+            f"{cur_label} AS moneda, "
             f"COUNT(DISTINCT i.c_invoice_id) AS facturas, "
             f"COALESCE(SUM(i.grandtotal), 0) AS total "
             f"FROM adempiere.c_invoice i WHERE {where} "
-            f"GROUP BY EXTRACT(MONTH FROM i.dateinvoiced) ORDER BY mes"
+            f"GROUP BY EXTRACT(YEAR FROM i.dateinvoiced), "
+            f"EXTRACT(MONTH FROM i.dateinvoiced), {cur_label} "
+            f"ORDER BY anio, mes, moneda"
         )
         by_month = [
-            {"mes": r[0], "facturas": r[1], "total": float(r[2])}
+            {"anio": r[0], "mes": r[1], "moneda": r[2], "facturas": r[3], "total": float(r[4])}
             for r in db.execute(by_month_q, params).fetchall()
         ]
 
-        # By product category (top items purchased)
+        # By product (top 20) — include currency column
         by_product_q = text(
             f"SELECT p.value AS codigo, p.name AS producto, "
+            f"{cur_label} AS moneda, "
             f"COALESCE(SUM(il.linenetamt), 0) AS total "
             f"FROM adempiere.c_invoice i "
             f"JOIN adempiere.c_invoiceline il ON i.c_invoice_id = il.c_invoice_id "
             f"JOIN adempiere.m_product p ON il.m_product_id = p.m_product_id "
             f"WHERE {where} "
-            f"GROUP BY p.value, p.name ORDER BY total DESC LIMIT 20"
+            f"GROUP BY p.value, p.name, {cur_label} ORDER BY total DESC LIMIT 20"
         )
         by_product = [
-            {"codigo": r[0], "producto": r[1], "total": float(r[2])}
+            {"codigo": r[0], "producto": r[1], "moneda": r[2], "total": float(r[3])}
             for r in db.execute(by_product_q, params).fetchall()
         ]
 
         # Determine currency label for the agent
         if currency_ids:
             _VES = [205]
-            currency_label = "USD" if currency_ids != _VES else "VES"
+            currency_label = "USD" if currency_ids != _VES else "Bs."
         else:
-            currency_label = "Todas las monedas (mixto)"
+            currency_label = "Todas las monedas (separado por Bs. y USD)"
 
         return {
             "anio": anio,
@@ -2248,13 +3090,15 @@ def build_product_purchase_history(
 
         where = " AND ".join(conditions)
 
+        cur_label = _currency_label("i")
         q = text(
             f"SELECT p.value AS codigo_producto, p.name AS producto, "
             f"bp.name AS proveedor, i.documentno AS factura, "
             f"i.dateinvoiced AS fecha, "
             f"il.qtyinvoiced AS cantidad, "
             f"il.priceactual AS precio_unitario, "
-            f"il.linenetamt AS total_linea "
+            f"il.linenetamt AS total_linea, "
+            f"{cur_label} AS moneda "
             f"FROM adempiere.c_invoice i "
             f"JOIN adempiere.c_invoiceline il ON i.c_invoice_id = il.c_invoice_id "
             f"JOIN adempiere.m_product p ON il.m_product_id = p.m_product_id "
@@ -2274,6 +3118,7 @@ def build_product_purchase_history(
                 "cantidad": float(r[5]),
                 "precio_unitario": float(r[6]),
                 "total_linea": float(r[7]),
+                "moneda": r[8],
             }
             for r in rows
         ]
@@ -2292,15 +3137,15 @@ def build_pending_purchase_orders(
 ) -> dict:
     """Pending purchase orders from iDempiere c_order (issotrx='N').
 
-    Includes orders in progress (docstatus IN ('DR','IP','CO') that have
-    not been fully invoiced/received).
+    Only includes orders NOT yet completed: drafts (DR) and in-progress (IP).
+    CO (completed) orders are NOT pending — they have already been processed.
     """
     db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
     try:
         conditions = [
             "o.issotrx = 'N'",
             "o.isactive = 'Y'",
-            "o.docstatus IN ('DR', 'IP', 'CO')",
+            "o.docstatus IN ('DR', 'IP')",
         ]
         params: dict = {}
         _add_org_filter(conditions, params, org_ids, "o")
@@ -2316,50 +3161,59 @@ def build_pending_purchase_orders(
             )
             params["po_prod"] = f"%{product_search}%"
 
+        cur_label = _currency_label("o")
         where = " AND ".join(conditions)
 
-        # Totals
+        # Totals separated by currency
         totals_q = text(
-            f"SELECT COUNT(DISTINCT o.c_order_id) AS total_ordenes, "
+            f"SELECT {cur_label} AS moneda, "
+            f"COUNT(DISTINCT o.c_order_id) AS total_ordenes, "
             f"COALESCE(SUM(o.grandtotal), 0) AS total_monto "
-            f"FROM adempiere.c_order o WHERE {where}"
+            f"FROM adempiere.c_order o WHERE {where} "
+            f"GROUP BY {cur_label} ORDER BY total_monto DESC"
         )
-        row = db.execute(totals_q, params).fetchone()
+        totals_rows = db.execute(totals_q, params).fetchall()
+        totales_por_moneda = [
+            {"moneda": r[0], "total_ordenes": r[1], "total_monto": float(r[2])}
+            for r in totals_rows
+        ]
         totals = {
-            "total_ordenes": row[0] if row else 0,
-            "total_monto": float(row[1]) if row else 0.0,
+            "total_ordenes": sum(r["total_ordenes"] for r in totales_por_moneda),
+            "total_monto_mixto": sum(r["total_monto"] for r in totales_por_moneda),
+            "por_moneda": totales_por_moneda,
         }
 
-        # By status
+        # By status — include currency
         by_status_q = text(
             f"SELECT "
             f"CASE o.docstatus "
             f"  WHEN 'DR' THEN 'Borrador' "
             f"  WHEN 'IP' THEN 'En Proceso' "
-            f"  WHEN 'CO' THEN 'Completada' "
             f"  ELSE o.docstatus END AS estado, "
+            f"{cur_label} AS moneda, "
             f"COUNT(DISTINCT o.c_order_id) AS ordenes, "
             f"COALESCE(SUM(o.grandtotal), 0) AS total "
             f"FROM adempiere.c_order o WHERE {where} "
-            f"GROUP BY o.docstatus ORDER BY total DESC"
+            f"GROUP BY o.docstatus, {cur_label} ORDER BY total DESC"
         )
         by_status = [
-            {"estado": r[0], "ordenes": r[1], "total": float(r[2])}
+            {"estado": r[0], "moneda": r[1], "ordenes": r[2], "total": float(r[3])}
             for r in db.execute(by_status_q, params).fetchall()
         ]
 
-        # By supplier (top 20)
+        # By supplier (top 20) — include currency
         by_supplier_q = text(
             f"SELECT bp.name AS proveedor, "
+            f"{cur_label} AS moneda, "
             f"COUNT(DISTINCT o.c_order_id) AS ordenes, "
             f"COALESCE(SUM(o.grandtotal), 0) AS total "
             f"FROM adempiere.c_order o "
             f"JOIN adempiere.c_bpartner bp ON o.c_bpartner_id = bp.c_bpartner_id "
             f"WHERE {where} "
-            f"GROUP BY bp.name ORDER BY total DESC LIMIT 20"
+            f"GROUP BY bp.name, {cur_label} ORDER BY total DESC LIMIT 20"
         )
         by_supplier = [
-            {"proveedor": r[0], "ordenes": r[1], "total": float(r[2])}
+            {"proveedor": r[0], "moneda": r[1], "ordenes": r[2], "total": float(r[3])}
             for r in db.execute(by_supplier_q, params).fetchall()
         ]
 
@@ -2370,10 +3224,10 @@ def build_pending_purchase_orders(
             f"CASE o.docstatus "
             f"  WHEN 'DR' THEN 'Borrador' "
             f"  WHEN 'IP' THEN 'En Proceso' "
-            f"  WHEN 'CO' THEN 'Completada' "
             f"  ELSE o.docstatus END AS estado, "
             f"o.grandtotal, "
-            f"COALESCE(org.name, '') AS organizacion "
+            f"COALESCE(org.name, '') AS organizacion, "
+            f"{cur_label} AS moneda "
             f"FROM adempiere.c_order o "
             f"JOIN adempiere.c_bpartner bp ON o.c_bpartner_id = bp.c_bpartner_id "
             f"LEFT JOIN adempiere.ad_org org ON o.ad_org_id = org.ad_org_id "
@@ -2388,6 +3242,7 @@ def build_pending_purchase_orders(
                 "estado": r[3],
                 "monto": float(r[4]) if r[4] else 0.0,
                 "organizacion": r[5],
+                "moneda": r[6],
             }
             for r in db.execute(detail_q, params).fetchall()
         ]
@@ -2431,9 +3286,11 @@ def build_supplier_price_comparison(
 
         where = " AND ".join(conditions)
 
+        cur_label = _currency_label("i")
         q = text(
             f"SELECT bp.name AS proveedor, "
             f"p.name AS producto, "
+            f"{cur_label} AS moneda, "
             f"COUNT(*) AS compras, "
             f"MIN(il.priceactual) AS precio_minimo, "
             f"AVG(il.priceactual) AS precio_promedio, "
@@ -2445,8 +3302,8 @@ def build_supplier_price_comparison(
             f"JOIN adempiere.m_product p ON il.m_product_id = p.m_product_id "
             f"JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id "
             f"WHERE {where} "
-            f"GROUP BY bp.name, p.name "
-            f"ORDER BY precio_promedio ASC "
+            f"GROUP BY bp.name, p.name, {cur_label} "
+            f"ORDER BY moneda, precio_promedio ASC "
             f"LIMIT 30"
         )
         rows = db.execute(q, params).fetchall()
@@ -2454,12 +3311,13 @@ def build_supplier_price_comparison(
             {
                 "proveedor": r[0],
                 "producto": r[1],
-                "compras": r[2],
-                "precio_minimo": float(r[3]) if r[3] else 0.0,
-                "precio_promedio": float(r[4]) if r[4] else 0.0,
-                "precio_maximo": float(r[5]) if r[5] else 0.0,
-                "ultima_compra": r[6].isoformat() if r[6] else None,
-                "cantidad_total": float(r[7]) if r[7] else 0.0,
+                "moneda": r[2],
+                "compras": r[3],
+                "precio_minimo": float(r[4]) if r[4] else 0.0,
+                "precio_promedio": float(r[5]) if r[5] else 0.0,
+                "precio_maximo": float(r[6]) if r[6] else 0.0,
+                "ultima_compra": r[7].isoformat() if r[7] else None,
+                "cantidad_total": float(r[8]) if r[8] else 0.0,
             }
             for r in rows
         ]
@@ -2473,6 +3331,7 @@ def build_purchase_payment_status(
     org_ids: list[int] | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    currency_ids: list[int] | None = None,
 ) -> dict:
     """Purchase invoice payment status from iDempiere.
 
@@ -2488,20 +3347,23 @@ def build_purchase_payment_status(
         params: dict = {}
         _add_org_filter(conditions, params, org_ids, "i")
         _add_date_filter(conditions, params, date_from, date_to, mes, anio, "i.dateinvoiced")
+        _add_currency_filter(conditions, params, currency_ids, "i")
 
+        cur_label = _currency_label("i")
         where = " AND ".join(conditions)
 
         q = text(
             f"SELECT "
             f"CASE WHEN i.ispaid = 'Y' THEN 'Pagada' ELSE 'Pendiente' END AS estado_pago, "
+            f"{cur_label} AS moneda, "
             f"COUNT(*) AS facturas, "
             f"COALESCE(SUM(i.grandtotal), 0) AS total "
             f"FROM adempiere.c_invoice i WHERE {where} "
-            f"GROUP BY i.ispaid ORDER BY total DESC"
+            f"GROUP BY i.ispaid, {cur_label} ORDER BY total DESC"
         )
         rows = db.execute(q, params).fetchall()
         summary = [
-            {"estado_pago": r[0], "facturas": r[1], "total": float(r[2])}
+            {"estado_pago": r[0], "moneda": r[1], "facturas": r[2], "total": float(r[3])}
             for r in rows
         ]
 
@@ -2518,7 +3380,8 @@ def build_purchase_payment_status(
         overdue_q = text(
             f"SELECT bp.name AS proveedor, "
             f"i.documentno, i.dateinvoiced, i.grandtotal, "
-            f"CURRENT_DATE - i.dateinvoiced AS dias "
+            f"CURRENT_DATE - i.dateinvoiced AS dias, "
+            f"{cur_label} AS moneda "
             f"FROM adempiere.c_invoice i "
             f"JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id "
             f"WHERE {overdue_where} "
@@ -2531,6 +3394,7 @@ def build_purchase_payment_status(
                 "fecha": r[2].isoformat() if r[2] else None,
                 "monto": float(r[3]) if r[3] else 0.0,
                 "dias_desde_factura": r[4],
+                "moneda": r[5],
             }
             for r in db.execute(overdue_q, params).fetchall()
         ]
@@ -2553,25 +3417,46 @@ def build_accounting_summary(
     org_ids: list[int] | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    currency_ids: list[int] | None = None,
+    account_types: list[str] | None = None,
 ) -> dict:
-    """Accounting summary from iDempiere fact_acct (posted accounting facts)."""
-    db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
+    """Accounting summary from iDempiere fact_acct (posted accounting facts).
+
+    Parameters:
+        account_types: Filter by c_elementvalue.accounttype, e.g. ['E'] for expenses,
+                       ['R'] for income, ['A'] for assets, ['L'] for liabilities.
+    """
+    # Always use iDempiere live — local DB fact_acct only has data up to 2021
+    db = IdempiereSession()
     try:
         conditions = [
             "fa.isactive = 'Y'",
         ]
         params: dict = {}
         _add_org_filter(conditions, params, org_ids, "fa")
+        _add_currency_filter(conditions, params, currency_ids, "fa")
         _add_date_filter(conditions, params, date_from, date_to, mes, anio, "fa.dateacct")
+
+        # Account type filter — handled per-query below (each has its own ev JOIN alias)
+        _acct_type_cond = ""
+        if account_types:
+            placeholders = ", ".join(f":accttype_{i}" for i in range(len(account_types)))
+            for i, at in enumerate(account_types):
+                params[f"accttype_{i}"] = at
+            _acct_type_cond = f" AND ev.accounttype IN ({placeholders})"
 
         where = " AND ".join(conditions)
 
-        # Totals
+        # Totals (needs ev JOIN when filtering by account type)
+        _totals_join = (
+            "JOIN adempiere.c_elementvalue ev ON fa.account_id = ev.c_elementvalue_id "
+            if account_types else ""
+        )
         totals_q = text(
             f"SELECT COUNT(*) AS total_asientos, "
             f"COALESCE(SUM(fa.amtacctdr), 0) AS total_debe, "
             f"COALESCE(SUM(fa.amtacctcr), 0) AS total_haber "
-            f"FROM adempiere.fact_acct fa WHERE {where}"
+            f"FROM adempiere.fact_acct fa {_totals_join}WHERE {where}{_acct_type_cond}"
         )
         row = db.execute(totals_q, params).fetchone()
         totals = {
@@ -2595,7 +3480,7 @@ def build_accounting_summary(
             f"COALESCE(SUM(fa.amtacctdr), 0) - COALESCE(SUM(fa.amtacctcr), 0) AS saldo "
             f"FROM adempiere.fact_acct fa "
             f"JOIN adempiere.c_elementvalue ev ON fa.account_id = ev.c_elementvalue_id "
-            f"WHERE {where} "
+            f"WHERE {where}{_acct_type_cond} "
             f"GROUP BY ev.accounttype ORDER BY ev.accounttype"
         )
         by_account_type = [
@@ -2604,37 +3489,41 @@ def build_accounting_summary(
         ]
 
         # Balance: Assets, Liabilities, Equity
-        # Use correct sign convention: A=debit-normal, L/O=credit-normal
-        balance_conds = [
-            "ev.accounttype IN ('A', 'L', 'O')",
-            "fa.isactive = 'Y'",
-        ]
-        balance_params: dict = {}
-        _add_org_filter(balance_conds, balance_params, org_ids, "fa")
-        if anio:
-            balance_conds.append("EXTRACT(YEAR FROM fa.dateacct) <= :anio")
-            balance_params["anio"] = anio
+        # Skip when filtering only expenses/income (balance is A/L/O only)
+        balance = []
+        _balance_types = {'A', 'L', 'O'}
+        if not account_types or _balance_types.intersection(account_types):
+            balance_conds = [
+                "ev.accounttype IN ('A', 'L', 'O')",
+                "fa.isactive = 'Y'",
+            ]
+            balance_params: dict = {}
+            _add_org_filter(balance_conds, balance_params, org_ids, "fa")
+            _add_currency_filter(balance_conds, balance_params, currency_ids, "fa")
+            if anio:
+                balance_conds.append("EXTRACT(YEAR FROM fa.dateacct) <= :anio")
+                balance_params["anio"] = anio
 
-        balance_where = " AND ".join(balance_conds)
-        balance_q = text(
-            f"SELECT CASE "
-            f"  WHEN ev.accounttype = 'A' THEN 'Activo' "
-            f"  WHEN ev.accounttype = 'L' THEN 'Pasivo' "
-            f"  WHEN ev.accounttype = 'O' THEN 'Patrimonio' "
-            f"  END AS tipo, "
-            f"CASE "
-            f"  WHEN ev.accounttype = 'A' THEN COALESCE(SUM(fa.amtacctdr - fa.amtacctcr), 0) "
-            f"  ELSE COALESCE(SUM(fa.amtacctcr - fa.amtacctdr), 0) "
-            f"END AS saldo "
-            f"FROM adempiere.fact_acct fa "
-            f"JOIN adempiere.c_elementvalue ev ON fa.account_id = ev.c_elementvalue_id "
-            f"WHERE {balance_where} "
-            f"GROUP BY ev.accounttype ORDER BY ev.accounttype"
-        )
-        balance = [
-            {"tipo": r[0], "saldo": float(r[1])}
-            for r in db.execute(balance_q, balance_params).fetchall()
-        ]
+            balance_where = " AND ".join(balance_conds)
+            balance_q = text(
+                f"SELECT CASE "
+                f"  WHEN ev.accounttype = 'A' THEN 'Activo' "
+                f"  WHEN ev.accounttype = 'L' THEN 'Pasivo' "
+                f"  WHEN ev.accounttype = 'O' THEN 'Patrimonio' "
+                f"  END AS tipo, "
+                f"CASE "
+                f"  WHEN ev.accounttype = 'A' THEN COALESCE(SUM(fa.amtacctdr - fa.amtacctcr), 0) "
+                f"  ELSE COALESCE(SUM(fa.amtacctcr - fa.amtacctdr), 0) "
+                f"END AS saldo "
+                f"FROM adempiere.fact_acct fa "
+                f"JOIN adempiere.c_elementvalue ev ON fa.account_id = ev.c_elementvalue_id "
+                f"WHERE {balance_where} "
+                f"GROUP BY ev.accounttype ORDER BY ev.accounttype"
+            )
+            balance = [
+                {"tipo": r[0], "saldo": float(r[1])}
+                for r in db.execute(balance_q, balance_params).fetchall()
+            ]
 
         # Top accounts by movement (current period)
         top_accounts_q = text(
@@ -2643,7 +3532,7 @@ def build_accounting_summary(
             f"COALESCE(SUM(fa.amtacctcr), 0) AS haber "
             f"FROM adempiere.fact_acct fa "
             f"JOIN adempiere.c_elementvalue ev ON fa.account_id = ev.c_elementvalue_id "
-            f"WHERE {where} "
+            f"WHERE {where}{_acct_type_cond} "
             f"GROUP BY ev.value, ev.name "
             f"ORDER BY (COALESCE(SUM(fa.amtacctdr), 0) + COALESCE(SUM(fa.amtacctcr), 0)) DESC "
             f"LIMIT 20"
@@ -2661,6 +3550,158 @@ def build_accounting_summary(
             "balance": balance,
             "cuentas_con_mayor_movimiento": top_accounts,
         }
+    finally:
+        db.close()
+
+
+# ──────────────────────────────────────────────────────────────────
+#  PRÉSTAMOS / PAGARÉS / OBLIGACIONES BANCARIAS
+# ──────────────────────────────────────────────────────────────────
+
+# Cuentas contables de préstamos y pagarés en el plan de Santoni
+_LOAN_ACCOUNTS = {
+    "2.01.01.01": "PAGARE CORTO PLAZO",
+    "2.01.04.01": "PRESTAMOS BANCARIOS CORTO PLAZO",
+    "2.02.01.01": "PAGARE LARGO PLAZO",
+    "2.02.02.01": "PRESTAMOS BANCARIOS LARGO PLAZO",
+    "2.02.03.01": "ARRENDAMIENTO FINANCIERO",
+}
+
+
+def build_loan_balances(
+    org_ids: list[int] | None = None,
+    org_name: str | None = None,
+    anio: int | None = None,
+    mes: int | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> dict:
+    """Query loan/promissory-note account balances from fact_acct.
+
+    Returns current balances (credit-normal) for accounts
+    2.01.01.01, 2.01.04.01, 2.02.01.01, 2.02.02.01, 2.02.03.01.
+    """
+    db = IdempiereSession()
+    try:
+        codes = list(_LOAN_ACCOUNTS.keys())
+        placeholders = ", ".join(f":code_{i}" for i in range(len(codes)))
+        params: dict = {}
+        for i, c in enumerate(codes):
+            params[f"code_{i}"] = c
+
+        # Build optional filters
+        extra_conds = []
+        _add_org_filter(extra_conds, params, org_ids, "fa")
+        _add_org_name_filter(extra_conds, params, org_name, "fa")
+
+        # Date filter: if specific period requested, show balance UP TO that date
+        if date_from and date_to:
+            extra_conds.append("fa.dateacct <= :dt_end")
+            params["dt_end"] = date_to
+        elif mes and anio:
+            from calendar import monthrange
+            last_day = monthrange(anio, mes)[1]
+            extra_conds.append(f"fa.dateacct <= :dt_end")
+            params["dt_end"] = f"{anio}-{mes:02d}-{last_day:02d}"
+        elif anio:
+            extra_conds.append("fa.dateacct <= :dt_end")
+            params["dt_end"] = f"{anio}-12-31"
+
+        extra_where = (" AND " + " AND ".join(extra_conds)) if extra_conds else ""
+
+        # Query: credit-normal accounts → saldo = haber - debe
+        q = text(
+            f"SELECT ev.value AS codigo, ev.name AS cuenta, "
+            f"COALESCE(SUM(fa.amtacctcr - fa.amtacctdr), 0) AS saldo, "
+            f"COUNT(*) AS movimientos, "
+            f"MIN(fa.dateacct) AS primer_mov, "
+            f"MAX(fa.dateacct) AS ultimo_mov "
+            f"FROM adempiere.fact_acct fa "
+            f"JOIN adempiere.c_elementvalue ev ON fa.account_id = ev.c_elementvalue_id "
+            f"WHERE ev.value IN ({placeholders}) "
+            f"AND fa.isactive = 'Y'"
+            f"{extra_where} "
+            f"GROUP BY ev.value, ev.name "
+            f"ORDER BY ev.value"
+        )
+        rows = db.execute(q, params).fetchall()
+
+        cuentas = []
+        total = 0.0
+        for r in rows:
+            saldo = float(r[2])
+            total += saldo
+            cuentas.append({
+                "codigo": r[0],
+                "cuenta": r[1],
+                "saldo": saldo,
+                "movimientos": r[3],
+                "primer_mov": str(r[4]) if r[4] else None,
+                "ultimo_mov": str(r[5]) if r[5] else None,
+            })
+
+        # Add accounts with zero balance that had no movements
+        found_codes = {c["codigo"] for c in cuentas}
+        for code, name in _LOAN_ACCOUNTS.items():
+            if code not in found_codes:
+                cuentas.append({
+                    "codigo": code,
+                    "cuenta": name,
+                    "saldo": 0.0,
+                    "movimientos": 0,
+                    "primer_mov": None,
+                    "ultimo_mov": None,
+                })
+        cuentas.sort(key=lambda x: x["codigo"])
+
+        return {
+            "cuentas": cuentas,
+            "total_obligaciones": total,
+        }
+    finally:
+        db.close()
+
+
+def search_accounts_by_name(
+    name_search: str,
+    org_ids: list[int] | None = None,
+    limit: int = 10,
+) -> list[dict]:
+    """Search accounting accounts (c_elementvalue) by name.
+
+    Useful when user asks about 'caja chica', 'bancos', etc.
+    without knowing the account code.
+    """
+    db = IdempiereSession()
+    try:
+        words = [w for w in name_search.lower().split() if len(w) >= 2]
+        if not words:
+            return []
+        word_conds = []
+        params: dict = {"limit": limit}
+        for i, w in enumerate(words):
+            pk = f"w{i}"
+            params[pk] = f"%{w}%"
+            word_conds.append(f"LOWER(ev.name) ILIKE :{pk}")
+        name_filter = " AND ".join(word_conds)
+
+        q = text(
+            f"SELECT ev.value AS codigo, ev.name AS cuenta, "
+            f"CASE ev.accounttype "
+            f"  WHEN 'A' THEN 'Activo' WHEN 'L' THEN 'Pasivo' "
+            f"  WHEN 'O' THEN 'Patrimonio' WHEN 'R' THEN 'Ingreso' "
+            f"  WHEN 'E' THEN 'Gasto' WHEN 'M' THEN 'Memo' "
+            f"  ELSE ev.accounttype END AS tipo "
+            f"FROM adempiere.c_elementvalue ev "
+            f"WHERE ev.isactive = 'Y' AND ev.issummary = 'N' "
+            f"AND {name_filter} "
+            f"ORDER BY ev.value "
+            f"LIMIT :limit"
+        )
+        return [
+            {"codigo": r[0], "cuenta": r[1], "tipo": r[2]}
+            for r in db.execute(q, params).fetchall()
+        ]
     finally:
         db.close()
 
@@ -2691,7 +3732,8 @@ def build_account_detail(
     - Debit-normal accounts (A=Activo, E=Gasto): saldo = debe - haber
     - Credit-normal accounts (L=Pasivo, O=Patrimonio, R=Ingreso): saldo = haber - debe
     """
-    db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
+    # Always use iDempiere live — local DB fact_acct only has data up to 2021
+    db = IdempiereSession()
     try:
         # 1. Find the account by code
         acct_q = text(
@@ -2885,6 +3927,7 @@ def build_inventory_stock(
     product_search: str | None = None,
     category_search: str | None = None,
     warehouse_search: str | None = None,
+    org_name: str | None = None,
 ) -> dict:
     """Inventory stock from iDempiere m_storageonhand.
 
@@ -2901,7 +3944,9 @@ def build_inventory_stock(
         params: dict = {}
 
         # Org filter on warehouse org
-        if org_ids:
+        if org_name:
+            _add_org_name_filter(conditions, params, org_name, "w")
+        elif org_ids:
             placeholders = ", ".join(f":org_{i}" for i in range(len(org_ids)))
             conditions.append(f"w.ad_org_id IN ({placeholders})")
             for i, org_id in enumerate(org_ids):
