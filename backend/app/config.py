@@ -49,31 +49,8 @@ class Settings(BaseSettings):
     openrouter_model: str = "google/gemini-2.0-flash-001"
     openrouter_providers: str = ""  # Comma-separated provider names (e.g., "NovitaAI,AtlasCloud")
     anthropic_api_key: str = ""
-    anthropic_model: str = "claude-sonnet-4-5"  # Sonnet 4.5 (estable). Cambiar a "claude-sonnet-4-6" o "claude-opus-4-6" para más precisión.
+    anthropic_model: str = "claude-3-5-sonnet-20241022"
     anthropic_base_url: str = ""  # Proxy URL for Claude API (e.g., Cloudflare Worker)
-
-    # Hybrid mode (14/Abr/2026): usar Claude SOLO para SQL Directo (generación
-    # de SQL + formateo de resultados), manteniendo el resto del bot en
-    # OpenRouter/DeepSeek para queries simples y clasificación.
-    # Razón: DeepSeek alucina con tablas grandes de datos contables; Claude
-    # es mucho más preciso para generar SQL correcto y formatear números
-    # sin inventar datos. El ~70% del tráfico del bot (routing, saludos,
-    # follow-ups cortos) sigue en el proveedor barato.
-    # Requiere: anthropic_api_key configurada. Si está vacía, se ignora este
-    # flag y SQL Directo usa el proveedor por defecto.
-    use_claude_for_sql: bool = True
-
-    # Hybrid fino (15/Abr/2026): cuando está en True, Claude se usa SOLO para
-    # queries "complejas" (agregados financieros, GROUP BY, UNION ALL,
-    # resúmenes con desglose) y DeepSeek/OpenRouter maneja las queries
-    # "simples" (conteos, búsquedas por nombre, cumpleaños).
-    # Ahorro estimado: ~70% de los tokens de Claude, que es ~20x más caro.
-    # Para 200 queries/día, baja el costo mensual de ~$50 (todo Claude con
-    # cache) a ~$15 (Claude solo para el 20% complejo).
-    # Default False para no cambiar comportamiento hasta que el usuario lo
-    # active explícitamente (se activa con USE_CLAUDE_ONLY_FOR_COMPLEX=true).
-    # Requiere use_claude_for_sql=True también — si es False, este flag se ignora.
-    use_claude_only_for_complex: bool = False
 
     # ChromaDB
     chroma_host: str = "chromadb"

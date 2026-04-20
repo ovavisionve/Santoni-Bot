@@ -109,10 +109,10 @@ def main():
         "   Bot dijo: 1.145.119.859,51 VES",
         """
         SELECT COUNT(DISTINCT i.c_invoice_id) AS total_facturas,
-               COALESCE(SUM(i.totallines), 0) AS total_monto
+               COALESCE(SUM(i.grandtotal), 0) AS total_monto
         FROM adempiere.c_invoice i
         WHERE i.issotrx = 'N'
-          AND i.docstatus IN ('CO', 'CL')
+          AND i.docstatus = 'CO'
           AND i.isactive = 'Y'
           AND EXTRACT(YEAR FROM i.dateinvoiced) = 2026
           AND EXTRACT(MONTH FROM i.dateinvoiced) = 2
@@ -124,11 +124,11 @@ def main():
         """
         SELECT c.iso_code, c.c_currency_id,
                COUNT(DISTINCT i.c_invoice_id) AS facturas,
-               COALESCE(SUM(i.totallines), 0) AS total
+               COALESCE(SUM(i.grandtotal), 0) AS total
         FROM adempiere.c_invoice i
         JOIN adempiere.c_currency c ON i.c_currency_id = c.c_currency_id
         WHERE i.issotrx = 'N'
-          AND i.docstatus IN ('CO', 'CL')
+          AND i.docstatus = 'CO'
           AND i.isactive = 'Y'
           AND EXTRACT(YEAR FROM i.dateinvoiced) = 2026
           AND EXTRACT(MONTH FROM i.dateinvoiced) = 2
@@ -141,10 +141,10 @@ def main():
         "1c. Solo VES (c_currency_id=205) - febrero 2026",
         """
         SELECT COUNT(DISTINCT i.c_invoice_id) AS facturas,
-               COALESCE(SUM(i.totallines), 0) AS total_ves
+               COALESCE(SUM(i.grandtotal), 0) AS total_ves
         FROM adempiere.c_invoice i
         WHERE i.issotrx = 'N'
-          AND i.docstatus IN ('CO', 'CL')
+          AND i.docstatus = 'CO'
           AND i.isactive = 'Y'
           AND EXTRACT(YEAR FROM i.dateinvoiced) = 2026
           AND EXTRACT(MONTH FROM i.dateinvoiced) = 2
@@ -156,10 +156,10 @@ def main():
         "1d. Solo DÓLARES (todos los IDs USD) - febrero 2026",
         """
         SELECT COUNT(DISTINCT i.c_invoice_id) AS facturas,
-               COALESCE(SUM(i.totallines), 0) AS total_usd
+               COALESCE(SUM(i.grandtotal), 0) AS total_usd
         FROM adempiere.c_invoice i
         WHERE i.issotrx = 'N'
-          AND i.docstatus IN ('CO', 'CL')
+          AND i.docstatus = 'CO'
           AND i.isactive = 'Y'
           AND EXTRACT(YEAR FROM i.dateinvoiced) = 2026
           AND EXTRACT(MONTH FROM i.dateinvoiced) = 2
@@ -175,10 +175,10 @@ def main():
         "   Bot dijo: 1.180 órdenes",
         """
         SELECT COUNT(DISTINCT i.c_invoice_id) AS total_facturas,
-               COALESCE(SUM(i.totallines), 0) AS total_monto
+               COALESCE(SUM(i.grandtotal), 0) AS total_monto
         FROM adempiere.c_invoice i
         WHERE i.issotrx = 'N'
-          AND i.docstatus IN ('CO', 'CL')
+          AND i.docstatus = 'CO'
           AND i.isactive = 'Y'
           AND EXTRACT(YEAR FROM i.dateinvoiced) = 2026
           AND EXTRACT(MONTH FROM i.dateinvoiced) = 2
@@ -242,7 +242,7 @@ def main():
         JOIN adempiere.c_invoiceline il ON i.c_invoice_id = il.c_invoice_id
         JOIN adempiere.m_product p ON il.m_product_id = p.m_product_id
         JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id
-        WHERE i.issotrx = 'N' AND i.docstatus IN ('CO', 'CL') AND i.isactive = 'Y'
+        WHERE i.issotrx = 'N' AND i.docstatus = 'CO' AND i.isactive = 'Y'
           AND (p.name ILIKE '%%lamina%%' OR p.value ILIKE '%%lamina%%')
           AND EXTRACT(YEAR FROM i.dateinvoiced) = 2026
         ORDER BY i.dateinvoiced DESC
@@ -267,7 +267,7 @@ def main():
         JOIN adempiere.c_invoiceline il ON i.c_invoice_id = il.c_invoice_id
         JOIN adempiere.m_product p ON il.m_product_id = p.m_product_id
         JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id
-        WHERE i.issotrx = 'N' AND i.docstatus IN ('CO', 'CL') AND i.isactive = 'Y'
+        WHERE i.issotrx = 'N' AND i.docstatus = 'CO' AND i.isactive = 'Y'
           AND (p.value ILIKE '%%REP-LAMI-0037%%')
         ORDER BY i.dateinvoiced DESC
         LIMIT 10
@@ -290,7 +290,7 @@ def main():
         JOIN adempiere.c_invoiceline il ON i.c_invoice_id = il.c_invoice_id
         JOIN adempiere.m_product p ON il.m_product_id = p.m_product_id
         JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id
-        WHERE i.issotrx = 'N' AND i.docstatus IN ('CO', 'CL') AND i.isactive = 'Y'
+        WHERE i.issotrx = 'N' AND i.docstatus = 'CO' AND i.isactive = 'Y'
           AND (p.value ILIKE '%%REP-TUER-0115%%')
         ORDER BY i.dateinvoiced DESC
         LIMIT 5
@@ -313,7 +313,7 @@ def main():
         JOIN adempiere.c_invoiceline il ON i.c_invoice_id = il.c_invoice_id
         JOIN adempiere.m_product p ON il.m_product_id = p.m_product_id
         JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id
-        WHERE i.issotrx = 'N' AND i.docstatus IN ('CO', 'CL') AND i.isactive = 'Y'
+        WHERE i.issotrx = 'N' AND i.docstatus = 'CO' AND i.isactive = 'Y'
           AND (p.name ILIKE '%%gasoil%%' OR p.value ILIKE '%%gasoil%%')
           AND i.dateinvoiced >= '2026-01-01'
           AND i.dateinvoiced <= '2026-02-23'
@@ -329,12 +329,12 @@ def main():
         SELECT o.name AS organizacion,
                c.iso_code, c.c_currency_id,
                COUNT(DISTINCT i.c_invoice_id) AS facturas,
-               COALESCE(SUM(i.totallines), 0) AS total
+               COALESCE(SUM(i.grandtotal), 0) AS total
         FROM adempiere.c_invoice i
         JOIN adempiere.c_currency c ON i.c_currency_id = c.c_currency_id
         JOIN adempiere.ad_org o ON i.ad_org_id = o.ad_org_id
         WHERE i.issotrx = 'N'
-          AND i.docstatus IN ('CO', 'CL')
+          AND i.docstatus = 'CO'
           AND i.isactive = 'Y'
           AND EXTRACT(YEAR FROM i.dateinvoiced) = 2026
           AND EXTRACT(MONTH FROM i.dateinvoiced) = 2
