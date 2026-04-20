@@ -55,12 +55,24 @@ def _get_idempiere_kpis(department: str, org_ids: list[int] | None) -> dict:
             kpis["ventas_mes"] = {"valor": float(row[0]) if row else 0, "facturas": row[1] if row else 0}
 
             # Overdue receivables
+            # PERF-100 (14/Abr/2026): reemplazar invoiceopen() con LEFT JOIN
+            # agregado para ~100x speedup (invoiceopen es VOLATILE PL/pgSQL).
             row = db.execute(text(f"""
-                SELECT COALESCE(SUM(invoiceopen(i.c_invoice_id, 0)), 0) as total,
+                SELECT COALESCE(SUM(i.grandtotal - COALESCE(alloc.paid, 0)), 0) as total,
                        COUNT(i.c_invoice_id) as count
                 FROM adempiere.c_invoice i
-                WHERE i.issotrx = 'Y' AND i.ispaid = 'N' AND i.docstatus = 'CO'
+                LEFT JOIN (
+                    SELECT al.c_invoice_id,
+                           SUM(COALESCE(al.amount, 0) + COALESCE(al.discountamt, 0) + COALESCE(al.writeoffamt, 0)) AS paid
+                    FROM adempiere.c_allocationline al
+                    JOIN adempiere.c_allocationhdr ah ON al.c_allocationhdr_id = ah.c_allocationhdr_id
+                    WHERE ah.isactive = 'Y' AND ah.docstatus IN ('CO', 'CL')
+                    AND ah.dateacct >= (CURRENT_DATE - INTERVAL '3 years')
+                    GROUP BY al.c_invoice_id
+                ) alloc ON alloc.c_invoice_id = i.c_invoice_id
+                WHERE i.issotrx = 'Y' AND i.docstatus IN ('CO', 'CL') AND i.isactive = 'Y'
                 AND i.dateinvoiced < CURRENT_DATE - INTERVAL '30 days'
+                AND (i.grandtotal - COALESCE(alloc.paid, 0)) > 0
                 {org_filter}
             """)).fetchone()
             kpis["cxc_vencidas"] = {"valor": float(row[0]) if row else 0, "facturas": row[1] if row else 0}
@@ -89,12 +101,23 @@ def _get_idempiere_kpis(department: str, org_ids: list[int] | None) -> dict:
             kpis["cuentas_bancarias"] = row[0] if row else 0
 
             # Payables total
+            # PERF-100: reemplazar invoiceopen() con LEFT JOIN agregado
             row = db.execute(text(f"""
-                SELECT COALESCE(SUM(invoiceopen(i.c_invoice_id, 0)), 0) as total,
+                SELECT COALESCE(SUM(i.grandtotal - COALESCE(alloc.paid, 0)), 0) as total,
                        COUNT(i.c_invoice_id) as count
                 FROM adempiere.c_invoice i
-                WHERE i.issotrx = 'N' AND i.ispaid = 'N' AND i.docstatus = 'CO'
-                {org_filter.replace('i.ad_org_id', 'i.ad_org_id')}
+                LEFT JOIN (
+                    SELECT al.c_invoice_id,
+                           SUM(COALESCE(al.amount, 0) + COALESCE(al.discountamt, 0) + COALESCE(al.writeoffamt, 0)) AS paid
+                    FROM adempiere.c_allocationline al
+                    JOIN adempiere.c_allocationhdr ah ON al.c_allocationhdr_id = ah.c_allocationhdr_id
+                    WHERE ah.isactive = 'Y' AND ah.docstatus IN ('CO', 'CL')
+                    AND ah.dateacct >= (CURRENT_DATE - INTERVAL '3 years')
+                    GROUP BY al.c_invoice_id
+                ) alloc ON alloc.c_invoice_id = i.c_invoice_id
+                WHERE i.issotrx = 'N' AND i.docstatus IN ('CO', 'CL') AND i.isactive = 'Y'
+                AND (i.grandtotal - COALESCE(alloc.paid, 0)) > 0
+                {org_filter}
             """)).fetchone()
             kpis["cxp_pendientes"] = {"valor": float(row[0]) if row else 0, "facturas": row[1] if row else 0}
 
@@ -234,13 +257,24 @@ def get_alerts(
                 org_filter = f" AND i.ad_org_id IN ({','.join(str(x) for x in org_ids)})"
 
             # Alert: Overdue receivables (for ventas, finanzas)
+            # PERF-100: reemplazar invoiceopen() con LEFT JOIN agregado
             if any(d in departments for d in ["ventas", "finanzas"]):
                 row = db.execute(text(f"""
-                    SELECT COALESCE(SUM(invoiceopen(i.c_invoice_id, 0)), 0),
+                    SELECT COALESCE(SUM(i.grandtotal - COALESCE(alloc.paid, 0)), 0),
                            COUNT(i.c_invoice_id)
                     FROM adempiere.c_invoice i
-                    WHERE i.issotrx = 'Y' AND i.ispaid = 'N' AND i.docstatus = 'CO'
+                    LEFT JOIN (
+                        SELECT al.c_invoice_id,
+                               SUM(COALESCE(al.amount, 0) + COALESCE(al.discountamt, 0) + COALESCE(al.writeoffamt, 0)) AS paid
+                        FROM adempiere.c_allocationline al
+                        JOIN adempiere.c_allocationhdr ah ON al.c_allocationhdr_id = ah.c_allocationhdr_id
+                        WHERE ah.isactive = 'Y' AND ah.docstatus IN ('CO', 'CL')
+                        AND ah.dateacct >= (CURRENT_DATE - INTERVAL '3 years')
+                        GROUP BY al.c_invoice_id
+                    ) alloc ON alloc.c_invoice_id = i.c_invoice_id
+                    WHERE i.issotrx = 'Y' AND i.docstatus IN ('CO', 'CL') AND i.isactive = 'Y'
                     AND i.dateinvoiced < CURRENT_DATE - INTERVAL '30 days'
+                    AND (i.grandtotal - COALESCE(alloc.paid, 0)) > 0
                     {org_filter}
                 """)).fetchone()
                 if row and row[1] > 0:
@@ -254,13 +288,24 @@ def get_alerts(
                     })
 
             # Alert: Overdue payables (for finanzas, compras)
+            # PERF-100: reemplazar invoiceopen() con LEFT JOIN agregado
             if any(d in departments for d in ["finanzas", "compras_insumos", "compras_productores"]):
                 row = db.execute(text(f"""
-                    SELECT COALESCE(SUM(invoiceopen(i.c_invoice_id, 0)), 0),
+                    SELECT COALESCE(SUM(i.grandtotal - COALESCE(alloc.paid, 0)), 0),
                            COUNT(i.c_invoice_id)
                     FROM adempiere.c_invoice i
-                    WHERE i.issotrx = 'N' AND i.ispaid = 'N' AND i.docstatus = 'CO'
+                    LEFT JOIN (
+                        SELECT al.c_invoice_id,
+                               SUM(COALESCE(al.amount, 0) + COALESCE(al.discountamt, 0) + COALESCE(al.writeoffamt, 0)) AS paid
+                        FROM adempiere.c_allocationline al
+                        JOIN adempiere.c_allocationhdr ah ON al.c_allocationhdr_id = ah.c_allocationhdr_id
+                        WHERE ah.isactive = 'Y' AND ah.docstatus IN ('CO', 'CL')
+                        AND ah.dateacct >= (CURRENT_DATE - INTERVAL '3 years')
+                        GROUP BY al.c_invoice_id
+                    ) alloc ON alloc.c_invoice_id = i.c_invoice_id
+                    WHERE i.issotrx = 'N' AND i.docstatus IN ('CO', 'CL') AND i.isactive = 'Y'
                     AND i.dateinvoiced < CURRENT_DATE - INTERVAL '30 days'
+                    AND (i.grandtotal - COALESCE(alloc.paid, 0)) > 0
                     {org_filter}
                 """)).fetchone()
                 if row and row[1] > 0:

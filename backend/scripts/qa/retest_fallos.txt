@@ -1,0 +1,9 @@
+# Re-test targeted — solo las preguntas que fallaron en la última corrida
+# Sirve para validar fixes macro sin gastar tokens en queries que ya funcionan.
+# Eliminar este archivo cuando los fixes hayan sido validados.
+
+# Patrón 1: query_timeout en agregados sobre lve_empleadosactivos
+Sueldo promedio en InproMaiz
+
+# Patrón 2: AmbiguousColumn "name" al unir lve_empleadosactivos+ad_org
+Empleados con antigüedad mayor a 5 años en INPROA SANTONI
