@@ -49,8 +49,19 @@ class Settings(BaseSettings):
     openrouter_model: str = "google/gemini-2.0-flash-001"
     openrouter_providers: str = ""  # Comma-separated provider names (e.g., "NovitaAI,AtlasCloud")
     anthropic_api_key: str = ""
-    anthropic_model: str = "claude-sonnet-4-20250514"
+    anthropic_model: str = "claude-sonnet-4-5"  # Sonnet 4.5 (estable). Cambiar a "claude-sonnet-4-6" o "claude-opus-4-6" para más precisión.
     anthropic_base_url: str = ""  # Proxy URL for Claude API (e.g., Cloudflare Worker)
+
+    # SQL Directo — provider toggle (14/Abr/2026).
+    # Cuando True + anthropic_api_key configurada, la generación SQL + formateo
+    # usan Claude (más preciso con tablas contables). Cuando False, SQL Directo
+    # usa el proveedor por defecto (OpenRouter/DeepSeek/Groq según ai_provider).
+    use_claude_for_sql: bool = True
+
+    # Hybrid fino (15/Abr/2026): cuando True, Claude solo para queries complejas
+    # (agregados, GROUP BY, UNION ALL); DeepSeek maneja las simples. Requiere
+    # use_claude_for_sql=True. Default False.
+    use_claude_only_for_complex: bool = False
 
     # ChromaDB
     chroma_host: str = "chromadb"
