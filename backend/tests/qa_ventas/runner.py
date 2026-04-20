@@ -74,6 +74,11 @@ def print_case_result(i: int, total: int, case: TestCase, report: CompareReport,
         got = _fmt_val(check.closest_found) if check.closest_found is not None else "—"
         print(f"      {status}  {check.label}: esperado={exp}, más cercano={got}  [{check.note}]")
 
+    # Preview de la respuesta del bot (primeros 400 chars) si hay algún FAIL
+    if not report.passed:
+        preview = report.bot_response[:400].replace("\n", " ")
+        print(f"   {Colors.YELLOW}Bot dijo:{Colors.RESET} {preview}...")
+
 
 def build_markdown(reports: list[tuple[TestCase, CompareReport, dict, str, float]]) -> str:
     """Genera el reporte markdown completo."""
@@ -149,8 +154,8 @@ def main():
     parser.add_argument("--base-url", default="http://localhost:8000")
     parser.add_argument("--username", default=None)
     parser.add_argument("--password", default=None)
-    parser.add_argument("--report-dir", default="/app/docs",
-                        help="Directorio donde guardar el reporte markdown")
+    parser.add_argument("--report-dir", default="/tmp",
+                        help="Directorio donde guardar el reporte markdown (default /tmp)")
     parser.add_argument("--case", type=int, default=None,
                         help="Correr solo el caso N (1-indexed)")
     args = parser.parse_args()

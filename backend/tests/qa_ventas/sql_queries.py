@@ -183,8 +183,9 @@ def collection_month(mes: int, anio: int, org_name: str | None = None) -> dict[s
 def overdue_receivables_totals(org_name: str | None = None) -> dict[str, Any]:
     """Total de cuentas por cobrar vencidas por moneda.
 
-    Considera facturas con días desde emisión > 30 y grandtotal > 0.
-    Aproximación simple — el bot usa lógica más sofisticada con allocations.
+    Usa la misma lógica que `build_overdue_receivables`:
+    facturas con `ispaid='N'`, `dateinvoiced` en últimos 3 años,
+    grandtotal > 100, y vencidas (fecha_venc = dateinvoiced + netdays < hoy).
     """
     org_clause = ""
     params: dict = {}
@@ -200,16 +201,19 @@ def overdue_receivables_totals(org_name: str | None = None) -> dict[str, Any]:
                 ELSE 'OTRO'
             END AS moneda,
             COUNT(*) AS facturas,
-            COALESCE(SUM(i.grandtotal - COALESCE(i.totalpaid, 0)), 0) AS total_vencido
+            COALESCE(SUM(i.grandtotal), 0) AS total_vencido
         FROM adempiere.c_invoice i
         JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id
         JOIN adempiere.ad_org o ON i.ad_org_id = o.ad_org_id
+        LEFT JOIN adempiere.c_paymentterm pterm ON i.c_paymentterm_id = pterm.c_paymentterm_id
         WHERE i.issotrx = 'Y'
           AND i.docstatus IN ('CO', 'CL')
+          AND i.ispaid = 'N'
           AND i.isactive = 'Y'
           AND dt.docbasetype = 'ARI'
-          AND (i.dateinvoiced + INTERVAL '30 days') < CURRENT_DATE
-          AND COALESCE(i.grandtotal - COALESCE(i.totalpaid, 0), 0) > 0
+          AND i.dateinvoiced >= (CURRENT_DATE - INTERVAL '3 years')
+          AND i.grandtotal > 100
+          AND (i.dateinvoiced + CASE WHEN COALESCE(pterm.netdays, 0) = 0 THEN 30 ELSE pterm.netdays END) < CURRENT_DATE
           AND i.ad_org_id NOT IN {DEMO_ORGS}
           {org_clause}
         GROUP BY moneda
