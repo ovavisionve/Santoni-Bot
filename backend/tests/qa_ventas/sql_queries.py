@@ -226,6 +226,48 @@ def overdue_receivables_totals(org_name: str | None = None) -> dict[str, Any]:
         db.close()
 
 
+def top_overdue_clients(limit: int = 5) -> dict[str, Any]:
+    """Top N morosos (clientes con más deuda vencida).
+
+    Misma lógica que overdue_receivables_totals pero agrupado por cliente.
+    Retorna top_clients con nombre + total adeudado.
+    """
+    sql = text(f"""
+        SELECT
+            bp.name AS cliente,
+            COUNT(*) AS facturas,
+            COALESCE(SUM(i.grandtotal), 0) AS total_adeudado
+        FROM adempiere.c_invoice i
+        JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id
+        JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id
+        LEFT JOIN adempiere.c_paymentterm pterm ON i.c_paymentterm_id = pterm.c_paymentterm_id
+        WHERE i.issotrx = 'Y'
+          AND i.docstatus IN ('CO', 'CL')
+          AND i.ispaid = 'N'
+          AND i.isactive = 'Y'
+          AND dt.docbasetype = 'ARI'
+          AND i.dateinvoiced >= (CURRENT_DATE - INTERVAL '3 years')
+          AND i.grandtotal > 100
+          AND (i.dateinvoiced + CASE WHEN COALESCE(pterm.netdays, 0) = 0 THEN 30 ELSE pterm.netdays END) < CURRENT_DATE
+        GROUP BY bp.name
+        ORDER BY total_adeudado DESC
+        LIMIT :limit
+    """)
+
+    db = IdempiereSession()
+    try:
+        rows = db.execute(sql, {"limit": limit}).fetchall()
+        return {
+            "label": f"Top {limit} morosos",
+            "top_clients": [
+                {"cliente": r[0], "facturas": r[1], "total_adeudado": float(r[2])}
+                for r in rows
+            ],
+        }
+    finally:
+        db.close()
+
+
 def total_sales_year(anio: int, org_name: str | None = None) -> dict[str, Any]:
     """Total de ventas del año entero, separado por moneda."""
     org_clause = ""
