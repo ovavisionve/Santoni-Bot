@@ -1,21 +1,20 @@
 """
 Queries SQL de verificación contra iDempiere (read-only) para el agente Ventas.
 
-Cada función ejecuta una query directa sobre `adempiere.c_invoice` y retorna
-un dict con totales que después se comparan con la respuesta del bot.
+Basadas en la referencia autoritativa de Geovanna Antonieta Quintero Timaure
+(ver `docs/SCHEMA_IDEMPIERE_VENTAS.md`). Reglas clave:
 
-Conexión: usa las credenciales de `app.database.IdempiereSession` o las
-variables de entorno IDEMPIERE_DB_*. Siempre en modo read-only.
+  - Ventas: `issotrx='Y'` en c_invoice / c_order
+  - Moneda: c_currency_id=205 es Bs., cualquier otro ID en USD_IDS es USD
+  - Vendedor: salesrep_id → ad_user (no c_bpartner)
+  - Cobros: c_payment con `isreceipt='Y'`
+  - Totales: `docstatus IN ('CO','CL')` (completed o closed)
+  - Notas de crédito: `docbasetype='ARC'` (restar para neto)
 
-Uso típico:
-    from tests.qa_ventas.sql_queries import (
-        total_sales_month,
-        top_clients_year,
-        collection_month,
-        overdue_receivables,
-    )
-
-    total = total_sales_month(mes=2, anio=2026)  # {"ves": 1234567, "usd": 890123}
+IMPORTANTE: para que la comparación bot-vs-SQL sea justa, estas queries
+usan el MISMO scope que el bot (sin excluir "demo orgs"). Si en el futuro
+se descubre que ciertos ad_org_id son basura, agregarlos al filtro aquí
+Y en el bot a la vez.
 """
 
 from datetime import date
@@ -28,9 +27,6 @@ from app.database import IdempiereSession
 # Monedas en iDempiere Santoni
 VES_IDS = (205,)
 USD_IDS = (100, 1000000, 1000003, 1000006, 1000008, 1000009, 1000011, 1000013, 1000017)
-
-# Organizaciones demo (a excluir de totales reales)
-DEMO_ORGS = (0, 11, 12, 13, 14, 15, 16)
 
 
 def _month_range(mes: int, anio: int) -> tuple[date, date]:
@@ -74,7 +70,7 @@ def total_sales_month(mes: int, anio: int, org_name: str | None = None) -> dict[
           AND dt.docbasetype = 'ARI'
           AND i.dateinvoiced >= :start
           AND i.dateinvoiced < :end
-          AND i.ad_org_id NOT IN {DEMO_ORGS}
+
           {org_clause}
         GROUP BY moneda
     """)
@@ -115,7 +111,7 @@ def top_clients_year(anio: int, limit: int = 20, org_name: str | None = None) ->
           AND i.isactive = 'Y'
           AND dt.docbasetype = 'ARI'
           AND EXTRACT(YEAR FROM i.dateinvoiced) = :anio
-          AND i.ad_org_id NOT IN {DEMO_ORGS}
+
           {org_clause}
         GROUP BY bp.name
         ORDER BY total DESC
@@ -164,7 +160,7 @@ def collection_month(mes: int, anio: int, org_name: str | None = None) -> dict[s
           AND p.isactive = 'Y'
           AND p.datetrx >= :start
           AND p.datetrx < :end
-          AND p.ad_org_id NOT IN {DEMO_ORGS}
+
           {org_clause}
         GROUP BY moneda
     """)
@@ -214,7 +210,7 @@ def overdue_receivables_totals(org_name: str | None = None) -> dict[str, Any]:
           AND i.dateinvoiced >= (CURRENT_DATE - INTERVAL '3 years')
           AND i.grandtotal > 100
           AND (i.dateinvoiced + CASE WHEN COALESCE(pterm.netdays, 0) = 0 THEN 30 ELSE pterm.netdays END) < CURRENT_DATE
-          AND i.ad_org_id NOT IN {DEMO_ORGS}
+
           {org_clause}
         GROUP BY moneda
     """)
@@ -255,7 +251,7 @@ def total_sales_year(anio: int, org_name: str | None = None) -> dict[str, Any]:
           AND i.isactive = 'Y'
           AND dt.docbasetype = 'ARI'
           AND EXTRACT(YEAR FROM i.dateinvoiced) = :anio
-          AND i.ad_org_id NOT IN {DEMO_ORGS}
+
           {org_clause}
         GROUP BY moneda
     """)
