@@ -24,14 +24,19 @@ interface ChatMessageProps {
   onEdit?: (content: string) => void;
 }
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-
 function downloadExport(messageId: number, format: string) {
   const token = localStorage.getItem("santonibot_token");
-  if (!token) return;
+  if (!token) {
+    alert("Sesión expirada. Por favor, inicia sesión de nuevo.");
+    return;
+  }
 
-  const url = `${API_BASE}/api/export/message/${messageId}?format=${format}`;
-  fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+  // Use relative URL to go through nginx (same origin)
+  const url = `/api/export/message/${messageId}?format=${format}`;
+  fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+    credentials: "same-origin",
+  })
     .then(async (res) => {
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -47,7 +52,12 @@ function downloadExport(messageId: number, format: string) {
       a.click();
       URL.revokeObjectURL(a.href);
     })
-    .catch((err) => alert(`Error al exportar: ${err.message}`));
+    .catch((err) => {
+      const msg = err.message === "Failed to fetch"
+        ? "No se pudo conectar al servidor. Verifica tu conexión."
+        : err.message;
+      alert(`Error al exportar: ${msg}`);
+    });
 }
 
 function getRelativeTime(dateStr: string): string {

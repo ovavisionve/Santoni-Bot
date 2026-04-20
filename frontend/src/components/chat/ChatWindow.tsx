@@ -6,10 +6,20 @@ import ChatMessage from "./ChatMessage";
 import { Send, Menu, Keyboard, Paperclip, X, FileText, LayoutDashboard, Settings } from "lucide-react";
 import Link from "next/link";
 
+interface AgentInfo {
+  name: string;
+  display_name: string;
+  icon: string;
+  description: string;
+}
+
 interface ChatWindowProps {
   messages: Message[];
   user: User;
   isLoading: boolean;
+  agents: AgentInfo[];
+  selectedAgent: string | null;
+  onSelectAgent: (agentName: string) => void;
   onSendMessage: (content: string, file?: File) => Promise<void>;
   onToggleSidebar: () => void;
 }
@@ -84,6 +94,9 @@ export default function ChatWindow({
   messages,
   user,
   isLoading,
+  agents,
+  selectedAgent,
+  onSelectAgent,
   onSendMessage,
   onToggleSidebar,
 }: ChatWindowProps) {
@@ -150,7 +163,13 @@ export default function ChatWindow({
   };
 
   const suggestions =
-    DEPARTMENT_SUGGESTIONS[user.department] || DEFAULT_SUGGESTIONS;
+    (selectedAgent && DEPARTMENT_SUGGESTIONS[selectedAgent])
+      || DEPARTMENT_SUGGESTIONS[user.department]
+      || DEFAULT_SUGGESTIONS;
+
+  const activeAgentLabel = selectedAgent
+    ? agents.find(a => a.name === selectedAgent)?.display_name || selectedAgent
+    : null;
 
   const isBusy = sending || isLoading;
   const charCount = input.length;
@@ -194,6 +213,35 @@ export default function ChatWindow({
         </div>
       </div>
 
+      {/* Agent Selector — always visible */}
+      <div className="border-b border-gray-200 bg-gray-50 px-4 py-2 shrink-0">
+        {agents.length > 0 ? (
+          <div className="flex items-center gap-1.5 overflow-x-auto hide-scrollbar">
+            <span className="text-xs text-gray-400 font-medium mr-1 shrink-0">Agente:</span>
+            {agents.map((agent) => (
+              <button
+                key={agent.name}
+                onClick={() => onSelectAgent(agent.name)}
+                className={`
+                  px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all
+                  ${selectedAgent === agent.name
+                    ? "bg-santoni-600 text-white shadow-sm"
+                    : "bg-white text-gray-600 hover:bg-santoni-50 hover:text-santoni-700 border border-gray-200"
+                  }
+                `}
+                title={agent.description}
+              >
+                {agent.display_name}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-amber-600 font-medium">
+            Cargando agentes disponibles...
+          </p>
+        )}
+      </div>
+
       {/* Messages */}
       <div className="flex-1 overflow-y-auto chat-scroll p-4 space-y-4">
         {messages.length === 0 && (
@@ -206,8 +254,9 @@ export default function ChatWindow({
                 Bienvenido a SantoniBot
               </h2>
               <p className="text-gray-500 mb-6">
-                Haz una consulta sobre tu departamento. Estas son algunas
-                sugerencias:
+                {activeAgentLabel
+                  ? `Estás consultando: ${activeAgentLabel}. Algunas sugerencias:`
+                  : "Selecciona un agente arriba y haz tu consulta:"}
               </p>
               <div className="grid grid-cols-2 gap-2 text-sm">
                 {suggestions.map((suggestion) => (
@@ -318,11 +367,17 @@ export default function ChatWindow({
               value={input}
               onChange={handleInputChange}
               onKeyDown={handleKeyDown}
-              placeholder={attachedFile ? "Escribe tu consulta sobre el documento..." : "Escribe tu consulta..."}
+              placeholder={
+                !selectedAgent
+                  ? "Selecciona un agente arriba antes de consultar..."
+                  : attachedFile
+                  ? "Escribe tu consulta sobre el documento..."
+                  : "Escribe tu consulta..."
+              }
               rows={1}
               className="input-field resize-none pr-4 max-h-32"
               style={{ minHeight: "44px" }}
-              disabled={isBusy}
+              disabled={isBusy || !selectedAgent}
             />
             {/* Character count */}
             {charCount > 0 && (
@@ -341,9 +396,9 @@ export default function ChatWindow({
           </div>
           <button
             type="submit"
-            disabled={!input.trim() || isBusy}
+            disabled={!input.trim() || isBusy || !selectedAgent}
             className="btn-primary p-3 rounded-xl"
-            title="Enviar mensaje"
+            title={!selectedAgent ? "Selecciona un agente primero" : "Enviar mensaje"}
           >
             {isBusy ? (
               <div className="w-[18px] h-[18px] border-2 border-white border-t-transparent rounded-full animate-spin" />
