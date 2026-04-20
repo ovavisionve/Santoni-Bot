@@ -23,6 +23,7 @@ from datetime import datetime
 
 from .bot_client import BotClient, extract_numbers
 from .comparator import CompareReport
+from .error_classifier import ErrorVerdict, classify_error
 from .test_cases import CASES, TestCase
 
 
@@ -42,8 +43,10 @@ def _fmt_val(v) -> str:
     return str(v)
 
 
-def run_case(client: BotClient, case: TestCase) -> tuple[CompareReport, dict, str, float]:
-    """Corre un caso. Retorna (report, expected, bot_text, elapsed_seconds)."""
+def run_case(
+    client: BotClient, case: TestCase,
+) -> tuple[CompareReport, dict, str, float, ErrorVerdict]:
+    """Corre un caso. Retorna (report, expected, bot_text, elapsed, verdict)."""
     # 1. SQL esperado
     expected = case.fetch_expected()
 
@@ -52,16 +55,30 @@ def run_case(client: BotClient, case: TestCase) -> tuple[CompareReport, dict, st
     bot_response = client.ask(case.question, agent_name="ventas")
     elapsed = time.time() - start
     bot_text = bot_response.get("message", "")
+    agent_used = bot_response.get("agent_used")
 
     # 3. Extraer números y chequear
     numbers = extract_numbers(bot_text)
     checks = case.build_checks(expected, numbers, bot_text)
 
+    # 4. Clasificar el error macro
+    verdict = classify_error(
+        expected=expected,
+        bot_response_text=bot_text,
+        bot_agent_used=agent_used,
+        bot_numbers=numbers,
+        checks=checks,
+        expected_agent="ventas",
+    )
+
     report = CompareReport(test_name=case.name, checks=checks, bot_response=bot_text)
-    return report, expected, bot_text, elapsed
+    return report, expected, bot_text, elapsed, verdict
 
 
-def print_case_result(i: int, total: int, case: TestCase, report: CompareReport, elapsed: float):
+def print_case_result(
+    i: int, total: int, case: TestCase,
+    report: CompareReport, elapsed: float, verdict: ErrorVerdict,
+):
     """Imprime el resultado de un caso en stdout."""
     icon = f"{Colors.GREEN}✅{Colors.RESET}" if report.passed else f"{Colors.RED}❌{Colors.RESET}"
     pct = int(report.pass_rate * 100)
@@ -74,19 +91,30 @@ def print_case_result(i: int, total: int, case: TestCase, report: CompareReport,
         got = _fmt_val(check.closest_found) if check.closest_found is not None else "—"
         print(f"      {status}  {check.label}: esperado={exp}, más cercano={got}  [{check.note}]")
 
-    # Preview de la respuesta del bot (primeros 400 chars) si hay algún FAIL
+    # Veredicto macro del error
     if not report.passed:
-        preview = report.bot_response[:400].replace("\n", " ")
+        color = Colors.YELLOW if verdict.category == "pass" else Colors.RED
+        print(f"   {color}[{verdict.category}]{Colors.RESET} {verdict.explanation}")
+        if verdict.suggested_fix:
+            print(f"   {Colors.CYAN}→ Fix sugerido:{Colors.RESET} {verdict.suggested_fix}")
+        preview = report.bot_response[:300].replace("\n", " ")
         print(f"   {Colors.YELLOW}Bot dijo:{Colors.RESET} {preview}...")
 
 
-def build_markdown(reports: list[tuple[TestCase, CompareReport, dict, str, float]]) -> str:
+def build_markdown(
+    reports: list[tuple[TestCase, CompareReport, dict, str, float, ErrorVerdict]],
+) -> str:
     """Genera el reporte markdown completo."""
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     total_cases = len(reports)
-    passed_cases = sum(1 for _, r, _, _, _ in reports if r.passed)
-    total_checks = sum(len(r.checks) for _, r, _, _, _ in reports)
-    passed_checks = sum(sum(1 for c in r.checks if c.passed) for _, r, _, _, _ in reports)
+    passed_cases = sum(1 for _, r, _, _, _, _ in reports if r.passed)
+    total_checks = sum(len(r.checks) for _, r, _, _, _, _ in reports)
+    passed_checks = sum(sum(1 for c in r.checks if c.passed) for _, r, _, _, _, _ in reports)
+
+    # Agrupar por categoría de error para el resumen
+    by_category: dict[str, list[str]] = {}
+    for case, _report, _expected, _bot_text, _elapsed, verdict in reports:
+        by_category.setdefault(verdict.category, []).append(case.name)
 
     lines = [
         f"# QA Ventas vs iDempiere — {now}",
@@ -94,11 +122,17 @@ def build_markdown(reports: list[tuple[TestCase, CompareReport, dict, str, float
         f"**Casos:** {passed_cases}/{total_cases} pasados",
         f"**Checks individuales:** {passed_checks}/{total_checks} pasados ({100*passed_checks//max(total_checks,1)}%)",
         "",
-        "---",
+        "## Resumen por categoría de error",
         "",
+        "| Categoría | Casos afectados |",
+        "|-----------|-----------------|",
     ]
+    for category, cases in sorted(by_category.items()):
+        cases_str = ", ".join(f"*{c}*" for c in cases)
+        lines.append(f"| `{category}` | {cases_str} |")
+    lines.extend(["", "---", ""])
 
-    for case, report, expected, bot_text, elapsed in reports:
+    for case, report, expected, bot_text, elapsed, verdict in reports:
         status = "✅ PASS" if report.passed else "❌ FAIL"
         pct = int(report.pass_rate * 100)
         lines.extend([
@@ -108,6 +142,12 @@ def build_markdown(reports: list[tuple[TestCase, CompareReport, dict, str, float
             "",
             f"**Tiempo:** {elapsed:.1f}s",
             "",
+            f"**Veredicto:** `{verdict.category}` — {verdict.explanation}",
+            "",
+        ])
+        if verdict.suggested_fix:
+            lines.extend([f"**Fix sugerido:** {verdict.suggested_fix}", ""])
+        lines.extend([
             "### Valores esperados (iDempiere)",
             "",
             "```",
@@ -188,26 +228,35 @@ def main():
             sys.exit(1)
         cases = [CASES[args.case - 1]]
 
-    all_reports: list[tuple[TestCase, CompareReport, dict, str, float]] = []
+    all_reports: list[tuple[TestCase, CompareReport, dict, str, float, ErrorVerdict]] = []
     for i, case in enumerate(cases, 1):
         try:
-            report, expected, bot_text, elapsed = run_case(client, case)
-            print_case_result(i, len(cases), case, report, elapsed)
-            all_reports.append((case, report, expected, bot_text, elapsed))
+            report, expected, bot_text, elapsed, verdict = run_case(client, case)
+            print_case_result(i, len(cases), case, report, elapsed, verdict)
+            all_reports.append((case, report, expected, bot_text, elapsed, verdict))
         except Exception as exc:
             print(f"\n[{i}/{len(cases)}] {Colors.RED}ERROR{Colors.RESET} {case.name}: {exc}")
 
     # Resumen
     total_cases = len(all_reports)
-    passed_cases = sum(1 for _, r, _, _, _ in all_reports if r.passed)
-    total_checks = sum(len(r.checks) for _, r, _, _, _ in all_reports)
-    passed_checks = sum(sum(1 for c in r.checks if c.passed) for _, r, _, _, _ in all_reports)
+    passed_cases = sum(1 for _, r, _, _, _, _ in all_reports if r.passed)
+    total_checks = sum(len(r.checks) for _, r, _, _, _, _ in all_reports)
+    passed_checks = sum(sum(1 for c in r.checks if c.passed) for _, r, _, _, _, _ in all_reports)
+
+    # Agrupar por categoría
+    by_category: dict[str, int] = {}
+    for _, _, _, _, _, v in all_reports:
+        by_category[v.category] = by_category.get(v.category, 0) + 1
 
     print(f"\n{Colors.BOLD}{'=' * 70}")
     print(f"  RESUMEN")
     print(f"  Casos:  {passed_cases}/{total_cases} pasados")
     print(f"  Checks: {passed_checks}/{total_checks} pasados "
           f"({100*passed_checks//max(total_checks,1)}%)")
+    print(f"\n  {Colors.BOLD}Categorías de error:{Colors.RESET}")
+    for category, count in sorted(by_category.items(), key=lambda x: -x[1]):
+        color = Colors.GREEN if category == "pass" else Colors.YELLOW
+        print(f"    {color}{category}{Colors.RESET}: {count} caso(s)")
     print(f"{'=' * 70}{Colors.RESET}\n")
 
     # Guardar reporte markdown
