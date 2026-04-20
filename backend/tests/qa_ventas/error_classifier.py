@@ -51,6 +51,20 @@ _NO_DATA_PHRASES = [
     "no hay información",
 ]
 
+# Frases que el agente emite cuando catchó una excepción en fetch_data
+# (ver ventas.py L485-492). Son el síntoma de un error de Python
+# que el usuario no ve, pero que queda logueado con logger.error.
+_AGENT_CAUGHT_EXCEPTION_PHRASES = [
+    "dificultades para acceder",
+    "dificultades para conectarme",
+    "dificultades para consultar",
+    "problema de conexión con idempiere",
+    "error de conexión con la base de datos",
+    "se produjo un error al consultar",
+    "inténtalo de nuevo en unos minutos",
+    "inténtalo de nuevo en unos momentos",
+]
+
 _VES_TOKENS = {"ves", "bs.", "bolivares", "bolívares", " bs ", " bs,", " bs:", "bolivar", "bolívar"}
 _USD_TOKENS = {"usd", "us$", "$", "dólar", "dolar", "dolares", "dólares"}
 
@@ -101,7 +115,32 @@ def classify_error(
             ),
         )
 
-    # 2. Access denied
+    # 2a. Agent caught exception — el agente catchó una excepción y emitió
+    # un mensaje genérico de "error de conexión". La causa REAL está en
+    # los logs del backend (logger.error en ventas.py fetch_data except).
+    for phrase in _AGENT_CAUGHT_EXCEPTION_PHRASES:
+        if phrase in text_lower:
+            return ErrorVerdict(
+                category="agent_error_caught",
+                explanation=(
+                    f"El agente catchó una excepción y emitió el mensaje genérico "
+                    f"de error de conexión ('{phrase}'). La causa real NO es "
+                    "conexión — es un error Python en la query (ej. columna "
+                    "inexistente, JOIN roto, timeout, tipo de dato)."
+                ),
+                suggested_fix=(
+                    "Revisar logs del backend:\n"
+                    "  docker compose logs backend --tail 300 | "
+                    "grep -B1 -A10 'Error consultando datos'\n"
+                    "La excepción real está ahí. Fijate si es DataError, "
+                    "OperationalError, UndefinedColumn, etc. Si es columna "
+                    "inexistente: verificar query contra "
+                    "docs/SCHEMA_IDEMPIERE_VENTAS.md. Si es timeout: revisar "
+                    "índices en iDempiere o complejidad de JOIN."
+                ),
+            )
+
+    # 2b. Access denied
     for phrase in _ACCESS_DENIED_PHRASES:
         if phrase in text_lower:
             return ErrorVerdict(
