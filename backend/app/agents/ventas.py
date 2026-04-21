@@ -504,6 +504,25 @@ Datos de ventas de iDempiere:
                 sections.append(self._format_table(data))
 
             if query_type == "ventas" or matches_any(msg, VENTAS_FACTURACION) or not sections:
+                # Get SKU product totals first (matches iDempiere KPI report)
+                try:
+                    from app.services.query_service import build_sales_by_product
+                    sku_data = build_sales_by_product(
+                        mes=mes, anio=anio, org_ids=org_ids,
+                        date_from=date_from, date_to=date_to,
+                        currency_ids=currency_ids, org_name=org_name,
+                        only_skus=True, limit=20,
+                    )
+                    if sku_data and sku_data.get("top_productos"):
+                        sku_total = sum(p.get("total_neto", 0) for p in sku_data["top_productos"])
+                        sections.append(
+                            f"## Total Ventas SKU (Productos KPI) - {label}\n"
+                            f"**Total Venta Neta (solo productos SKU):** {sku_total:,.2f}\n"
+                            f"*Este total coincide con el reporte 'Objetivos vs Logros' de iDempiere*"
+                        )
+                except Exception:
+                    pass
+
                 data = build_sales_summary(
                     zona=zona, vendedor=vendedor, mes=mes, anio=anio,
                     org_ids=org_ids, salesrep_id=salesrep_id,
