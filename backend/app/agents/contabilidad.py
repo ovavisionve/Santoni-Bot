@@ -135,8 +135,7 @@ IMPORTANTE SOBRE PERÍODOS:
             "✅ Detalle de cuenta específica por código (ej: 2.01.01.10) con saldo inicial, movimientos y saldo final\n"
             "✅ Desglose diario de movimientos de una cuenta\n"
             "✅ Top cuentas por volumen de movimiento\n"
-            "\n❌ NO puedo consultar: activos fijos, depreciación o reportes de impuestos separados. "
-            "Redirige al usuario al departamento correspondiente."
+            "✅ Activos fijos (cuentas tipo Activo del plan contable)\n"
         )
 
     def get_sql_context(self) -> str:

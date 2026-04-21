@@ -342,6 +342,12 @@ Datos de RRHH en iDempiere:
 
         # Detect cargo/job search (current message, then history fallback)
         cargo_search = self._extract_cargo_search(message)
+        # "Calidad de contratación" is NOT a cargo — it's a hiring metric
+        _not_cargo = ["calidad de contratación", "calidad de contratacion",
+                       "tasa de aceptación", "tasa de aceptacion",
+                       "evaluaciones de desempeño", "evaluaciones de desempeno"]
+        if cargo_search and any(nc in msg for nc in _not_cargo):
+            cargo_search = None
         if not cargo_search and (date_from or mes) and history:
             # Follow-up with dates but no cargo keyword → check history
             cargo_search = self._extract_cargo_from_history(history)
@@ -496,6 +502,19 @@ Datos de RRHH en iDempiere:
                         sections.append(self._format_summary(
                             data, f"Indicadores de Rotación - Año {anio}",
                         ))
+
+            # HR metrics that need special handling (not cargo search)
+            _hr_metrics = ["calidad de contratación", "calidad de contratacion",
+                           "tasa de aceptación", "tasa de aceptacion"]
+            if any(m in msg for m in _hr_metrics):
+                data = build_new_hires(
+                    anio=anio, mes=mes, org_ids=org_ids,
+                    date_from=date_from, date_to=date_to, org_name=org_name,
+                )
+                if self._dict_has_data(data):
+                    sections.append(self._format_summary(
+                        data, f"Indicadores de Contratación - {label}",
+                    ))
 
             # Provisiones / pasivos laborales
             _prov_kw = ["provisión", "provision", "provisiones", "pasivo laboral",
