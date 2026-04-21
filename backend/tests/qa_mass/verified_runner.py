@@ -101,10 +101,11 @@ def _is_usd_question(pregunta: str) -> bool:
 
 
 def _get_por_moneda_total(data: dict, moneda: str = "Bs.") -> float:
-    """Extrae el total de una moneda específica del dict por_moneda."""
+    """Extrae el total de una moneda del dict por_moneda.
+    Prefiere venta_neta (bruto - NC) porque es lo que el bot muestra."""
     for entry in data.get("por_moneda", []):
         if entry.get("moneda") == moneda:
-            return entry.get("total_facturado", entry.get("total", entry.get("venta_neta", 0)))
+            return entry.get("venta_neta", entry.get("total_facturado", entry.get("total", 0)))
     return 0
 
 
@@ -121,11 +122,40 @@ def _get_por_moneda_facturas(data: dict, moneda: str = "Bs.") -> int:
 def _verify_empleados(pregunta, mes, anio, org):
     from app.services.idempiere_queries import build_employee_summary
     data = build_employee_summary(org_ids=None)
-    if isinstance(data, dict):
-        totales = data.get("totales", {})
-        total = totales.get("total", totales.get("activos", 0))
-        if total:
-            return [("total_empleados", total)]
+    if not isinstance(data, dict):
+        return []
+    totales = data.get("totales", {})
+
+    # If question asks for specific org, check org breakdown
+    if org:
+        for entry in data.get("por_organizacion", []):
+            org_name = entry.get("organizacion", "").lower()
+            if org.lower() in org_name:
+                return [("empleados_org", entry.get("total", entry.get("activos", 0)))]
+
+    # If question asks for specific cargo/department, verify name presence instead
+    pregunta_lower = pregunta.lower()
+    cargo_keywords = ["obrero", "chofer", "analista", "gerente", "supervisor", "operador",
+                       "asistente", "coordinador", "jefe", "director", "técnico", "ingeniero"]
+    for kw in cargo_keywords:
+        if kw in pregunta_lower:
+            return [("nombre_cargo", kw)]
+
+    dept_keywords = ["talento", "nómina", "nomina", "administración", "producción",
+                      "logística", "ventas", "compras", "contabilidad", "mantenimiento"]
+    for kw in dept_keywords:
+        if kw in pregunta_lower:
+            return [("nombre_depto", kw)]
+
+    # If asks "buscar empleado apellido X", check name presence
+    m = re.search(r'apellido\s+(\w+)', pregunta_lower)
+    if m:
+        return [("nombre_empleado", m.group(1))]
+
+    # Default: total empleados
+    total = totales.get("total", totales.get("activos", 0))
+    if total:
+        return [("total_empleados", total)]
     return []
 
 
@@ -291,7 +321,7 @@ _CATEGORY_MAP = {
     "rotacion": _verify_rotacion,
     "busqueda_cargo": _verify_empleados,
     "ingresos_personal": _verify_rotacion,
-    "indicadores_rrhh": _verify_empleados,
+    "indicadores_rrhh": _verify_generic,
     "asistencia": _verify_ausentismo,
     # Ventas
     "resumen_ventas": _verify_resumen_ventas,
