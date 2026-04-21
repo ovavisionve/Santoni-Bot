@@ -174,6 +174,10 @@ Datos de RRHH en iDempiere:
         "se llaman ", "se llama ", "llamados ", "llamado ", "llamada ",
         "de nombre ", "nombre ", "con nombre ",
         "apellido ", "con apellido ", "de apellido ",
+        "del trabajador ", "trabajador ", "del empleado ", "empleado ",
+        "datos de ", "información de ", "informacion de ",
+        "fecha de ingreso de ", "fecha de ingreso del ",
+        "buscar ", "buscar a ",
     ]
 
     def _extract_name_search(self, msg: str) -> str | None:
