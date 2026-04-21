@@ -1416,8 +1416,12 @@ def build_employee_summary(
     """
     db = IdempiereSession()
     try:
-        # Overall counts (unique employees) — only active
-        conditions = ["e.isactive = 'Y'", "bp.isactive = 'Y'"]
+        # Overall counts (unique employees) — only active, exclude retired
+        conditions = [
+            "e.isactive = 'Y'",
+            "bp.isactive = 'Y'",
+            "(e.enddate IS NULL OR e.enddate > CURRENT_DATE)",
+        ]
         params: dict = {}
         _add_org_filter(conditions, params, org_ids, "e")
         _add_org_name_filter(conditions, params, org_name, "e")
@@ -1515,7 +1519,8 @@ def build_employee_list(
     """
     db = _get_session(date_from=date_from, date_to=date_to)
     try:
-        conditions = ["e.isactive = 'Y'", "bp.isactive = 'Y'"]
+        conditions = ["e.isactive = 'Y'", "bp.isactive = 'Y'",
+                       "(e.enddate IS NULL OR e.enddate > CURRENT_DATE)"]
         params: dict = {}
         _add_org_filter(conditions, params, org_ids, "e")
 
@@ -1598,7 +1603,12 @@ def build_birthday_list(
     """
     db = _get_session(mes=mes)
     try:
-        conditions = ["e.isactive = 'Y'", "bp.isactive = 'Y'", "bday.birthday IS NOT NULL"]
+        conditions = [
+            "e.isactive = 'Y'",
+            "bp.isactive = 'Y'",
+            "bday.birthday IS NOT NULL",
+            "(e.enddate IS NULL OR e.enddate > CURRENT_DATE)",
+        ]
         params: dict = {}
         _add_org_filter(conditions, params, org_ids, "e")
         _add_org_name_filter(conditions, params, org_name, "e")
