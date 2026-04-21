@@ -991,9 +991,120 @@ WHERE o.issotrx = 'N'            -- compras
 
 ---
 
-*Fase 5: Transformaciones → pendiente*
-*Fase 6: Prompt y LLM → pendiente*
-*Fase 7: Keywords y routing → pendiente*
-*Fase 5: Transformaciones → pendiente*
+## FASE 5: Transformaciones de Datos
+
+Cuando el usuario escribe texto libre, el bot aplica transformaciones
+para que matchee con iDempiere. Cada transformación tiene un PORQUÉ.
+
+### 1. Acentos → sin acentos
+
+**Problema:** iDempiere almacena "RODRIGUEZ", usuario escribe "Rodríguez".
+**Dónde:** `agents/rrhh.py` → `_extract_name_search()` y `_extract_cargo_search()`
+
+```
+ANTES                    DESPUÉS               POR QUÉ
+─────                    ───────               ──────
+Rodríguez             →  Rodriguez             iDempiere no tiene tildes
+mecánico              →  mecanico              hr_job guarda sin tildes
+González              →  Gonzalez              c_bpartner guarda sin tildes
+```
+
+**Mapa:** `á→a, é→e, í→i, ó→o, ú→u, ñ→n` (y mayúsculas)
+
+**⚠️ Solo aplica a:** nombres y cargos en RRHH.
+Productos ya tienen `_normalize_search_word`. Cuentas son números. Orgs matchean por nombre conocido.
+
+### 2. Plurales → singular
+
+**Problema:** Usuario dice "supervisores", iDempiere tiene "SUPERVISOR".
+**Dónde:** `agents/rrhh.py` → `_deplural()` y `idempiere_queries.py` → `_normalize_search_word()`
+
+```
+supervisores → supervisor     (-dores → -dor, consonante + es)
+gerentes     → gerente        (-ntes → -nte, quitar solo s)
+obreros      → obrero         (-os → -o, vocal + s)
+analistas    → analista       (-as → -a, vocal + s)
+choferes     → chofer         (-eres → -er, consonante + es)
+```
+
+**Reglas:** `tes+vocal antes → quitar s` | `es+consonante antes → quitar es` | `s+vocal antes → quitar s`
+
+### 3. Código de cuenta → patrón LIKE
+
+**Problema:** Usuario escribe "1101", iDempiere tiene "1.1.01" o "1.01.01".
+**Dónde:** `agents/contabilidad.py` → `_normalize_account_code()`
+
+```
+1.01.01  →  tal cual  →  WHERE ev.value = '1.01.01'    (exacto)
+1101     →  1%1%01    →  WHERE ev.value LIKE '1%1%01'  (flexible)
+```
+
+### 4. Moneda → IDs de iDempiere
+
+**Problema:** 9 IDs diferentes para USD (cada org registró su propia entrada).
+**Dónde:** `agents/date_utils.py` → `detect_currency()`
+
+```
+"dólares"/"USD"  →  c_currency_id IN (100,1000000,1000003,1000006,1000008,1000009,1000011,1000013,1000017)
+"bolívares"/"Bs" →  c_currency_id = 205
+(nada)           →  sin filtro (todas)
+```
+
+### 5. Fecha texto → rango SQL
+
+**Dónde:** `agents/date_utils.py` → 10 patrones en orden
+
+```
+"enero 2026"                                → mes=1, anio=2026
+"15 de diciembre 2024 al 15 de enero 2025"  → '2024-12-15', '2025-01-15'
+"01/03/2026 al 09/03/2026"                  → '2026-03-01', '2026-03-09'
+"hoy"                                       → fecha_actual, fecha_actual
+"este mes" / "mes actual"                   → primer_dia_mes, hoy
+"mes pasado"                                → mes_anterior completo
+"desde enero 2025 hasta hoy"               → '2025-01-01', hoy
+```
+
+### 6. Organización texto → ILIKE
+
+```
+"INPROA"          →  WHERE ad_org.name ILIKE '%INPROA%'
+"InproMaiz"       →  WHERE ad_org.name ILIKE '%InproMaiz%'
+"santoni service"  →  WHERE ad_org.name ILIKE '%santoni service%'
+```
+
+### 7. Producto texto → búsqueda flexible
+
+```
+"harinas"         →  deplural "harina"  →  WHERE p.name ILIKE '%harina%'
+"REP-LAMI-0037"   →  código exacto      →  WHERE p.value ILIKE '%REP-LAMI-0037%'
+"arroz paddy"     →  AND cada palabra   →  WHERE p.name ILIKE '%arroz%' AND p.name ILIKE '%paddy%'
+```
+
+### 8. Zonas → regiones macro
+
+```
+ANZOATEGUI, SUCRE, MONAGAS  →  Oriente
+APURE, BARINAS, PORTUGUESA  →  Llanos
+CARABOBO, ARAGUA, MIRANDA   →  Centro
+ZULIA, FALCON, LARA          →  Occidente
+```
+
+### Diagrama resumen
+
+```
+TEXTO DEL USUARIO
+       │
+       ├── Acentos ──→ á→a, ñ→n ──→ RRHH
+       ├── Plurales ──→ supervisores→supervisor ──→ RRHH, Productos
+       ├── Cuenta ──→ 1101→1%1%01 ──→ Contabilidad
+       ├── Moneda ──→ "dólares"→9 IDs ──→ Ventas/Compras
+       ├── Fecha ──→ 10 patrones ──→ Todos
+       ├── Org ──→ ILIKE '%INPROA%' ──→ Todos
+       ├── Producto ──→ deplural+ILIKE ──→ Ventas/Compras
+       └── Zona ──→ 50 zonas→5 regiones ──→ Ventas
+```
+
+---
+
 *Fase 6: Prompt y LLM → pendiente*
 *Fase 7: Keywords y routing → pendiente*
