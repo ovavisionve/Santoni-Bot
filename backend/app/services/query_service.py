@@ -1400,3 +1400,37 @@ def build_inventory_stock(
         "por_categoria": [],
         "detalle_productos": [],
     }
+
+
+def build_sales_by_product(
+    mes: int | None = None,
+    anio: int | None = None,
+    org_ids: list[int] | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    currency_ids: list[int] | None = None,
+    org_name: str | None = None,
+    product_search: str | None = None,
+    limit: int = 30,
+) -> dict:
+    """Sales by product - routes to iDempiere."""
+    if _is_production():
+        from app.services.idempiere_queries import build_sales_by_product as _prod
+        return _prod(
+            mes=mes, anio=anio, org_ids=org_ids,
+            date_from=date_from, date_to=date_to,
+            currency_ids=currency_ids, org_name=org_name,
+            product_search=product_search, limit=limit,
+        )
+    return {"top_productos": []}
+
+
+def build_client_status(
+    org_name: str | None = None,
+    anio: int | None = None,
+) -> dict:
+    """Client active/inactive status - routes to iDempiere."""
+    if _is_production():
+        from app.services.idempiere_queries import build_client_status as _prod
+        return _prod(org_name=org_name, anio=anio)
+    return {"por_estado": [], "clientes_con_facturacion_reciente": 0}
