@@ -1106,5 +1106,149 @@ TEXTO DEL USUARIO
 
 ---
 
-*Fase 6: Prompt y LLM → pendiente*
+---
+
+## FASE 6: Prompt y LLM
+
+### Estructura de mensajes enviados al LLM
+
+El LLM recibe una lista de mensajes en este orden exacto:
+
+```
+┌─ 1. SystemMessage: PROMPT DEL AGENTE ───────────────────────┐
+│                                                               │
+│  a) Prompt específico del agente (_system_prompt)             │
+│     "Eres el Agente de RRHH de SantoniBot..."               │
+│     - Qué tablas consulta                                     │
+│     - Qué capacidades tiene                                   │
+│     - Qué formato usar                                        │
+│                                                               │
+│  b) Fecha/hora actual                                         │
+│     "Hoy es martes 21 de abril de 2026, 12:50 VET"          │
+│                                                               │
+│  c) Instrucciones adicionales                                 │
+│     - Follow-ups contextuales                                 │
+│     - Formato venezolano (punto=miles, coma=decimal)         │
+│                                                               │
+│  d) REGLAS ANTI-INVENCIÓN (17 reglas)                        │
+│     - Presenta SOLO datos reales                              │
+│     - NUNCA inventes nombres/montos/facturas                  │
+│     - Copia totales EXACTOS                                   │
+│     - Conteo de filas debe coincidir con encabezado          │
+│                                                               │
+│  e) REGLAS DE CONTEO (7 reglas)                              │
+│     - "Total Empleados: 702" → tu resumen dice 702          │
+│     - PROHIBIDO inventar totales                              │
+└───────────────────────────────────────────────────────────────┘
+
+┌─ 2. SystemMessage: DATA CATALOG (opcional) ──────────────────┐
+│  Esquema de tablas de iDempiere para contexto                │
+│  (generado por data_catalog_service si está activo)          │
+└───────────────────────────────────────────────────────────────┘
+
+┌─ 3. SystemMessage: RAG CONTEXT (opcional) ───────────────────┐
+│  Conocimiento de base vectorial ChromaDB                      │
+│  (si hay documentos indexados relevantes)                    │
+└───────────────────────────────────────────────────────────────┘
+
+┌─ 4. SystemMessage: DATOS REALES ─────────────────────────────┐
+│                                                               │
+│  SI hay datos (has_data = True):                             │
+│  ╔══════════ DATOS REALES DE LA BASE DE DATOS ══════════╗   │
+│  ║ ⚠️ INSTRUCCIÓN CRÍTICA:                              ║   │
+│  ║ - DEBES presentar TODAS las secciones                ║   │
+│  ║ - NO digas "no se encontraron" si hay datos abajo   ║   │
+│  ║ - Lee TODO el bloque antes de responder              ║   │
+│  ║ - SOLO di "no hay datos" si bloque VACÍO            ║   │
+│  ╚══════════════════════════════════════════════════════╝   │
+│                                                               │
+│  ## Resumen de Personal                                       │
+│  ### Totales                                                  │
+│  - Total: 702                                                │
+│  ### Por Organizacion [7 registros]                          │
+│  | Organizacion | Total | Activos |                          │
+│  | INPROA SANTONI | 319 | 319 |                             │
+│  ...                                                          │
+│                                                               │
+│  SI NO hay datos (has_data = False):                         │
+│  ⚠️ INSTRUCCIÓN OBLIGATORIA — NO ARROJÓ RESULTADOS          │
+│  - Informa que no hay registros para ese filtro              │
+│  - Sugiere alternativas                                       │
+│  - NUNCA digas "no tengo acceso"                             │
+│  - SÍ tienes acceso, solo no hay registros                   │
+└───────────────────────────────────────────────────────────────┘
+
+┌─ 5. Historial (máx 20 mensajes) ────────────────────────────┐
+│  HumanMessage: "¿Cuántos empleados hay?"                     │
+│  AIMessage: "Hay 702 empleados activos..." (tablas removidas)│
+│  HumanMessage: "¿Y en INPROA?"                               │
+│  AIMessage: "INPROA tiene 319..." (tablas removidas)         │
+│  ...                                                          │
+│                                                               │
+│  ⚠️ Las tablas markdown se REMUEVEN del historial            │
+│  (para que el LLM no copie datos viejos en respuesta nueva) │
+└───────────────────────────────────────────────────────────────┘
+
+┌─ 6. HumanMessage: PREGUNTA ACTUAL ──────────────────────────┐
+│  "¿Cuántos supervisores tiene la empresa?"                   │
+└───────────────────────────────────────────────────────────────┘
+```
+
+### Post-procesamiento de la respuesta
+
+```
+LLM genera respuesta
+       │
+       ▼
+┌─ detect_hallucination() ─────────────────────────────────────┐
+│  Busca patrones de datos inventados:                          │
+│  - Números de factura falsos: FAC-\d{4,}, NC-\d{4,}         │
+│  - Lotes falsos: Lote MA-XX-\d{3,}                          │
+│  - Tablas con números cuando has_data=False                  │
+│                                                               │
+│  Si detecta → reemplaza toda la respuesta con                │
+│  HALLUCINATION_REPLACEMENT (mensaje seguro)                  │
+└──────────────────────────────────────────────────────────────┘
+```
+
+### Configuración del LLM
+
+**Archivo:** `services/llm_factory.py`
+
+```
+┌─ Proveedor ─────────────────────────────────────────────────┐
+│                                                               │
+│  AI_PROVIDER=openrouter (producción)                         │
+│  → OpenRouter API → DeepSeek Chat v3                         │
+│  → Temperatura: 0.3 (agentes), 0.0 (SQL Direct)            │
+│  → Max tokens: 2048                                          │
+│                                                               │
+│  AI_PROVIDER=groq (alternativa gratuita)                     │
+│  → Groq API → Llama 3.3 70B                                 │
+│                                                               │
+│  AI_PROVIDER=anthropic (documentos/imágenes)                 │
+│  → Claude API → claude-sonnet-4-5                             │
+│                                                               │
+│  SQL Direct:                                                  │
+│  → USE_CLAUDE_FOR_SQL=false → usa AI_PROVIDER default        │
+│  → USE_CLAUDE_FOR_SQL=true → Claude para SQL, default resto  │
+└───────────────────────────────────────────────────────────────┘
+```
+
+### Reglas críticas del prompt (resumen)
+
+| Regla | Propósito | Cuándo se agregó |
+|-------|-----------|------------------|
+| "DEBES presentar TODAS las secciones" | LLM ignoraba ausentismo/nómina detrás de employee summary | 21/Abr/2026 |
+| "NO digas 'no se encontraron' si hay datos" | LLM decía "no hay datos" cuando sí había | 21/Abr/2026 |
+| "Lee TODO el bloque antes de responder" | LLM leía primeras líneas y decidía sin ver el resto | 21/Abr/2026 |
+| "Copia totales EXACTOS" | LLM cambiaba 702 por 1057 | Mar/2026 |
+| "NUNCA inventes nombres" | LLM inventaba clientes/proveedores | Mar/2026 |
+| "PROHIBIDO copiar del historial" | LLM reciclaba datos de pregunta anterior | Mar/2026 |
+| Strip tablas del historial | Evita que LLM copie tabla vieja como respuesta nueva | Mar/2026 |
+| "NUNCA digas 'no tengo acceso'" | LLM decía "no puedo consultar" cuando sí tenía datos | Mar/2026 |
+| Formato venezolano | 1.234.567,89 (punto=miles, coma=decimal) | Feb/2026 |
+
+---
+
 *Fase 7: Keywords y routing → pendiente*
