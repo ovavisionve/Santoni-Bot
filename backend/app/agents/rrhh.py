@@ -210,42 +210,75 @@ Datos de RRHH en iDempiere:
     def _extract_cargo_search(self, msg: str) -> str | None:
         """Extract job title search term from the message.
 
-        Detects cargo keywords and returns a cleaned search term.
-        E.g. 'cuantos obreros integrales hay' → 'obrero integral'
-        E.g. 'lista de analistas de control de calidad' → 'analista de control de calidad'
+        MACRO approach: detects cargo from SENTENCE STRUCTURE, not just
+        keyword list. Patterns:
+          - "cuántos [CARGO] hay/tiene" → extract CARGO
+          - "lista de [CARGO]" → extract CARGO
+          - "quiénes son los [CARGO]" → extract CARGO
+          - "cargo de [X]" / "puesto de [X]" → extract X
 
-        Returns None if the message asks about multiple categories (e.g.
-        'cuantos empleados, cuantos obreros y cuantos gerenciales') because
-        in that case the por_cargo summary is a better answer.
+        This handles ANY cargo without hardcoding — if user asks about
+        "supervisores", "coordinadores", "mecánicos", etc., it works
+        regardless of whether the keyword is in RRHH_CARGOS.
         """
         msg_lower = msg.lower()
 
-        # If the message lists multiple categories, don't extract a single cargo
-        # e.g. "cuantos empleados, cuantos obreros y cuantos gerenciales"
-        cargo_hits = sum(1 for kw in self._CARGO_KEYWORDS if kw in msg_lower)
-        if cargo_hits >= 2:
-            return None
-        # Find which cargo keyword appears
+        # Generic exclusions — these are NOT cargo searches
+        _not_cargo_phrases = [
+            "empleados", "trabajadores", "personal", "departamento",
+            "cumpleaños", "cumple años", "cumplen años",
+            "nómina", "nomina", "vacaciones", "ausentismo",
+        ]
+
+        # Pattern 1: "cuántos/cuantos [CARGO] hay/tiene/tenemos"
+        import re
+        m = re.search(r'cu[áa]nt[oa]s?\s+(.+?)\s+(?:hay|tiene|tenemos|existen|activo)', msg_lower)
+        if m:
+            cargo = m.group(1).strip().rstrip('s')  # de-pluralize basic
+            if cargo and len(cargo) >= 3 and cargo not in _not_cargo_phrases:
+                return cargo
+
+        # Pattern 2: "quiénes son los [CARGO]" / "quienes son los [CARGO]"
+        m = re.search(r'qui[ée]nes\s+son\s+los\s+(.+?)(?:\s+de\s+|\s*\?|$)', msg_lower)
+        if m:
+            cargo = m.group(1).strip()
+            if cargo and len(cargo) >= 3:
+                return cargo
+
+        # Pattern 3: "lista de [CARGO]" / "listado de [CARGO]"
+        m = re.search(r'(?:lista|listado)\s+de\s+(.+?)(?:\s+hay|\s+en\s+|\s*\?|$)', msg_lower)
+        if m:
+            cargo = m.group(1).strip()
+            if cargo and len(cargo) >= 3 and cargo not in _not_cargo_phrases:
+                return cargo
+
+        # Pattern 4: "cargo de [X]" / "puesto de [X]"
+        for trigger in ["cargo de ", "cargo ", "puesto de ", "puesto "]:
+            pos = msg_lower.find(trigger)
+            if pos != -1:
+                rest = msg_lower[pos + len(trigger):].strip()
+                for stop in [" hay", " tiene", " en ", " de la ", " activo", "?"]:
+                    idx = rest.find(stop)
+                    if idx != -1:
+                        rest = rest[:idx]
+                return rest.strip() if rest.strip() else None
+
+        # Pattern 5: Fallback to keyword list (for messages like "obreros de InproMaiz")
         found_kw = None
         kw_pos = -1
         for kw in self._CARGO_KEYWORDS:
             pos = msg_lower.find(kw)
             if pos != -1 and (kw_pos == -1 or pos < kw_pos):
-                found_kw = kw
-                kw_pos = pos
+                # Avoid substring double-match (e.g., "supervisor" inside "supervisores")
+                if found_kw and kw in found_kw or (found_kw and found_kw in kw):
+                    if len(kw) > len(found_kw or ""):
+                        found_kw = kw
+                        kw_pos = pos
+                else:
+                    found_kw = kw
+                    kw_pos = pos
 
         if found_kw is None:
-            # Also check for "cargo" / "puesto" keyword followed by a name
-            for trigger in ["cargo de ", "cargo ", "puesto de ", "puesto "]:
-                pos = msg_lower.find(trigger)
-                if pos != -1:
-                    rest = msg_lower[pos + len(trigger):].strip()
-                    # Take until end or common stop words
-                    for stop in [" hay", " tiene", " en ", " de la ", " activo", "?"]:
-                        idx = rest.find(stop)
-                        if idx != -1:
-                            rest = rest[:idx]
-                    return rest.strip() if rest.strip() else None
             return None
 
         # Extract from keyword position to end, then clean up
