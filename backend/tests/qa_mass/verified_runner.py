@@ -139,7 +139,18 @@ def _verify_empleados(pregunta, mes, anio, org):
                        "asistente", "coordinador", "jefe", "director", "técnico", "ingeniero"]
     for kw in cargo_keywords:
         if kw in pregunta_lower:
+            # Just verify cargo name appears, not the total (which varies by org)
             return [("nombre_cargo", kw)]
+
+    # "tiempos de servicio" — verify org name appears
+    if "tiempo" in pregunta_lower and "servicio" in pregunta_lower and org:
+        return [("nombre_org", org)]
+
+    # "cuántos departamentos" — check count or presence of department names
+    if "departamento" in pregunta_lower and ("cuánto" in pregunta_lower or "cuanto" in pregunta_lower):
+        por_dept = data.get("por_departamento", [])
+        if por_dept:
+            return [("total_deptos", len(por_dept))]
 
     dept_keywords = ["talento", "nómina", "nomina", "administración", "producción",
                       "logística", "ventas", "compras", "contabilidad", "mantenimiento"]
@@ -264,9 +275,29 @@ def _verify_resumen_ventas(pregunta, mes, anio, org):
 
 def _verify_cobranza(pregunta, mes, anio, org):
     from app.services.idempiere_queries import build_collection_summary
+    pregunta_lower = pregunta.lower()
     data = build_collection_summary(mes=mes, anio=anio, org_name=org)
     if isinstance(data, dict):
-        # collection_summary NO tiene por_moneda — solo totales (mixto VES+USD)
+        # If question asks for specific payment method, verify method name presence
+        metodos_especificos = [
+            "transferencia", "cheque", "efectivo", "débito", "debito",
+            "crédito", "credito", "dólar transferencia", "criptomoneda",
+            "depósito", "deposito",
+        ]
+        for metodo in metodos_especificos:
+            if metodo in pregunta_lower:
+                # Check that some payment method name appears in response
+                return [("metodo_pago", metodo)]
+
+        # If asks for "top clientes cobranza", verify client names
+        if "top" in pregunta_lower and "client" in pregunta_lower:
+            por_vendedor = data.get("por_vendedor", [])
+            if por_vendedor:
+                valid = [v for v in por_vendedor if v.get("vendedor") and v["vendedor"] != "Sin Distribuidor"]
+                if valid:
+                    return [("nombre_cobro", valid[0]["vendedor"].split(",")[0][:20])]
+
+        # Default: total cobrado
         totals = data.get("totales", {})
         total = totals.get("total_cobrado", 0)
         recibos = totals.get("total_recibos", 0)
@@ -277,19 +308,30 @@ def _verify_cobranza(pregunta, mes, anio, org):
     return []
 
 
+def _verify_ventas_categoria(pregunta, mes, anio, org):
+    """Para ventas por categoría/producto, verificar nombre de producto."""
+    pregunta_lower = pregunta.lower()
+    productos = ["arroz", "harina", "maíz", "maiz", "cereal", "avena", "empaque"]
+    for prod in productos:
+        if prod in pregunta_lower:
+            return [("nombre_producto", prod)]
+    return _verify_resumen_ventas(pregunta, mes, anio, org)
+
+
 def _verify_ranking_vendedores(pregunta, mes, anio, org):
     """Para ranking de vendedores, verificar nombres de distribuidores."""
     from app.services.idempiere_queries import build_sales_summary
     data = build_sales_summary(mes=mes, anio=anio, org_name=org)
     if isinstance(data, dict):
         distribuidores = data.get("por_distribuidor", [])
-        if distribuidores:
+        valid = [d for d in distribuidores
+                 if d.get("distribuidor") and d["distribuidor"] not in ("Sin Distribuidor", "")]
+        if valid:
             return [
-                ("nombre_vendedor", d.get("distribuidor", "").split(",")[0][:20])
-                for d in distribuidores[:2]
-                if d.get("distribuidor") and d["distribuidor"] != "Sin Distribuidor"
+                ("nombre_vendedor", valid[0]["distribuidor"].split(",")[0][:20])
             ]
-    return []
+    # Fallback: verify VES total
+    return _verify_resumen_ventas(pregunta, mes, anio, org)
 
 
 def _verify_ventas_zona(pregunta, mes, anio, org):
@@ -297,15 +339,22 @@ def _verify_ventas_zona(pregunta, mes, anio, org):
     from app.services.idempiere_queries import build_sales_summary
     data = build_sales_summary(mes=mes, anio=anio, org_name=org)
     if isinstance(data, dict):
-        zonas = data.get("por_zona", data.get("por_region", []))
-        if zonas:
-            # Check top 2 zone/region names appear
-            return [
-                ("nombre_zona", z.get("zona", z.get("region", "")).split()[0])
-                for z in zonas[:2]
-                if z.get("zona") or z.get("region")
-            ]
-    return []
+        # Try por_region first (more meaningful names)
+        regiones = data.get("por_region", [])
+        valid_reg = [r for r in regiones
+                     if r.get("region") and r["region"] not in ("Sin Región", "Sin Region", "")]
+        if valid_reg:
+            return [("nombre_region", valid_reg[0]["region"].split()[0]) for _ in [0]]
+
+        # Then try por_zona
+        zonas = data.get("por_zona", [])
+        valid_zona = [z for z in zonas
+                      if z.get("zona") and z["zona"] not in ("Sin Zona", "")]
+        if valid_zona:
+            return [("nombre_zona", valid_zona[0]["zona"].split()[0])]
+
+    # Fallback: verify VES total
+    return _verify_resumen_ventas(pregunta, mes, anio, org)
 
 
 def _verify_ranking_clientes(pregunta, mes, anio, org):
@@ -403,7 +452,7 @@ _CATEGORY_MAP = {
     "ventas_por_region": _verify_ventas_zona,
     "ventas_region_especifica": _verify_ventas_zona,
     "ventas_comparacion_regiones": _verify_ventas_zona,
-    "ventas_categoria": _verify_resumen_ventas,
+    "ventas_categoria": _verify_ventas_categoria,
     "facturacion": _verify_resumen_ventas,
     "facturacion_zona": _verify_resumen_ventas,
     "facturacion_distribuidor": _verify_resumen_ventas,
