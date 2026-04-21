@@ -940,11 +940,11 @@ def build_cobros_pagos_summary(
 # Pre-built queries: RRHH (Human Resources)
 # ---------------------------------------------------------------------------
 
-def build_employee_summary(org_ids: list[int] | None = None) -> dict:
+def build_employee_summary(org_ids: list[int] | None = None, org_name: str | None = None) -> dict:
     """Employee summary - routes to demo or iDempiere."""
     if _is_production():
         from app.services.idempiere_queries import build_employee_summary as _prod
-        return _prod(org_ids=org_ids)
+        return _prod(org_ids=org_ids, org_name=org_name)
 
     db = SessionLocal()
     try:
@@ -1411,6 +1411,7 @@ def build_sales_by_product(
     currency_ids: list[int] | None = None,
     org_name: str | None = None,
     product_search: str | None = None,
+    only_skus: bool = False,
     limit: int = 30,
 ) -> dict:
     """Sales by product - routes to iDempiere."""
@@ -1434,3 +1435,52 @@ def build_client_status(
         from app.services.idempiere_queries import build_client_status as _prod
         return _prod(org_name=org_name, anio=anio)
     return {"por_estado": [], "clientes_con_facturacion_reciente": 0}
+
+
+def build_new_hires(**kwargs) -> dict:
+    if _is_production():
+        from app.services.idempiere_queries import build_new_hires as _prod
+        return _prod(**kwargs)
+    return {"totales": {"total_ingresos": 0}}
+
+
+def build_payroll_provisions(**kwargs) -> dict:
+    if _is_production():
+        from app.services.idempiere_queries import build_payroll_provisions as _prod
+        return _prod(**kwargs)
+    return {"totales": {"conceptos": 0, "total_monto": 0}}
+
+
+def build_client_visits(**kwargs) -> dict:
+    if _is_production():
+        from app.services.idempiere_queries import build_client_visits as _prod
+        return _prod(**kwargs)
+    return {"totales": {"total_actividades": 0}}
+
+
+def build_daily_attendance(**kwargs) -> dict:
+    if _is_production():
+        from app.services.idempiere_queries import build_daily_attendance as _prod
+        return _prod(**kwargs)
+    return {"totales": {"registros_hoy": 0}}
+
+
+def build_budget_comparison(**kwargs) -> dict:
+    if _is_production():
+        from app.services.idempiere_queries import build_budget_comparison as _prod
+        return _prod(**kwargs)
+    return {"totales": {"total_metas": 0}}
+
+
+def build_production_vs_sales(**kwargs) -> dict:
+    if _is_production():
+        from app.services.idempiere_queries import build_production_vs_sales as _prod
+        return _prod(**kwargs)
+    return {"ventas": {}, "produccion": {}}
+
+
+def build_vacation_expiry(**kwargs) -> dict:
+    if _is_production():
+        from app.services.idempiere_queries import build_vacation_expiry as _prod
+        return _prod(**kwargs)
+    return {"totales": {"total_empleados": 0}, "empleados": []}

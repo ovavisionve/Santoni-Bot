@@ -35,6 +35,10 @@ from app.services.query_service import (
     build_attendance_summary,
     build_turnover_summary,
     build_vacation_summary,
+    build_new_hires,
+    build_payroll_provisions,
+    build_daily_attendance,
+    build_vacation_expiry,
 )
 
 
@@ -171,6 +175,10 @@ Datos de RRHH en iDempiere:
         "se llaman ", "se llama ", "llamados ", "llamado ", "llamada ",
         "de nombre ", "nombre ", "con nombre ",
         "apellido ", "con apellido ", "de apellido ",
+        "del trabajador ", "trabajador ", "del empleado ", "empleado ",
+        "datos de ", "información de ", "informacion de ",
+        "fecha de ingreso de ", "fecha de ingreso del ",
+        "buscar ", "buscar a ",
     ]
 
     def _extract_name_search(self, msg: str) -> str | None:
@@ -194,6 +202,10 @@ Datos de RRHH en iDempiere:
                     rest = rest[:idx]
             result = rest.strip()
             if result and len(result) >= 2:
+                # Remove accents — iDempiere stores names without accents
+                _accent_map = {'á':'a','é':'e','í':'i','ó':'o','ú':'u',
+                               'Á':'A','É':'E','Í':'I','Ó':'O','Ú':'U','ñ':'n','Ñ':'N'}
+                result = ''.join(_accent_map.get(c, c) for c in result)
                 return result
         return None
 
@@ -203,42 +215,89 @@ Datos de RRHH en iDempiere:
     def _extract_cargo_search(self, msg: str) -> str | None:
         """Extract job title search term from the message.
 
-        Detects cargo keywords and returns a cleaned search term.
-        E.g. 'cuantos obreros integrales hay' → 'obrero integral'
-        E.g. 'lista de analistas de control de calidad' → 'analista de control de calidad'
+        MACRO approach: detects cargo from SENTENCE STRUCTURE, not just
+        keyword list. Patterns:
+          - "cuántos [CARGO] hay/tiene" → extract CARGO
+          - "lista de [CARGO]" → extract CARGO
+          - "quiénes son los [CARGO]" → extract CARGO
+          - "cargo de [X]" / "puesto de [X]" → extract X
 
-        Returns None if the message asks about multiple categories (e.g.
-        'cuantos empleados, cuantos obreros y cuantos gerenciales') because
-        in that case the por_cargo summary is a better answer.
+        This handles ANY cargo without hardcoding — if user asks about
+        "supervisores", "coordinadores", "mecánicos", etc., it works
+        regardless of whether the keyword is in RRHH_CARGOS.
         """
         msg_lower = msg.lower()
 
-        # If the message lists multiple categories, don't extract a single cargo
-        # e.g. "cuantos empleados, cuantos obreros y cuantos gerenciales"
-        cargo_hits = sum(1 for kw in self._CARGO_KEYWORDS if kw in msg_lower)
-        if cargo_hits >= 2:
-            return None
-        # Find which cargo keyword appears
+        # Generic exclusions — these are NOT cargo searches
+        _not_cargo_phrases = [
+            "empleados", "trabajadores", "personal", "departamento",
+            "cumpleaños", "cumple años", "cumplen años",
+            "nómina", "nomina", "vacaciones", "ausentismo",
+        ]
+
+        # De-pluralize Spanish: supervisores→supervisor, obreros→obrero
+        def _deplural(word):
+            w = word.strip()
+            # -ntes/-ltes → remove 's' (gerentes→gerente, asistentes→asistente)
+            if len(w) > 4 and w.endswith('tes') and w[-4] in 'nlaei':
+                return w[:-1]
+            # -dores/-tores → remove 'es' (supervisores→supervisor, coordinadores→coordinador)
+            if len(w) > 4 and w.endswith('es') and w[-3] not in 'aeiouáéíóú':
+                return w[:-2]
+            # -os/-as → remove 's' (obreros→obrero, analistas→analista)
+            if len(w) > 3 and w.endswith('s') and w[-2] in 'aeiouáéíóú':
+                return w[:-1]
+            return w
+
+        # Pattern 1: "cuántos/cuantos [CARGO] hay/tiene/tenemos"
+        import re
+        m = re.search(r'cu[áa]nt[oa]s?\s+(.+?)\s+(?:hay|tiene|tenemos|existen|activo)', msg_lower)
+        if m:
+            cargo = _deplural(m.group(1).strip())
+            if cargo and len(cargo) >= 3 and cargo not in _not_cargo_phrases:
+                return cargo
+
+        # Pattern 2: "quiénes son los [CARGO]" / "quienes son los [CARGO]"
+        m = re.search(r'qui[ée]nes\s+son\s+los\s+(.+?)(?:\s+de\s+|\s*\?|$)', msg_lower)
+        if m:
+            cargo = m.group(1).strip()
+            if cargo and len(cargo) >= 3:
+                return cargo
+
+        # Pattern 3: "lista de [CARGO]" / "listado de [CARGO]"
+        m = re.search(r'(?:lista|listado)\s+de\s+(.+?)(?:\s+hay|\s+en\s+|\s*\?|$)', msg_lower)
+        if m:
+            cargo = m.group(1).strip()
+            if cargo and len(cargo) >= 3 and cargo not in _not_cargo_phrases:
+                return cargo
+
+        # Pattern 4: "cargo de [X]" / "puesto de [X]"
+        for trigger in ["cargo de ", "cargo ", "puesto de ", "puesto "]:
+            pos = msg_lower.find(trigger)
+            if pos != -1:
+                rest = msg_lower[pos + len(trigger):].strip()
+                for stop in [" hay", " tiene", " en ", " de la ", " activo", "?"]:
+                    idx = rest.find(stop)
+                    if idx != -1:
+                        rest = rest[:idx]
+                return rest.strip() if rest.strip() else None
+
+        # Pattern 5: Fallback to keyword list (for messages like "obreros de InproMaiz")
         found_kw = None
         kw_pos = -1
         for kw in self._CARGO_KEYWORDS:
             pos = msg_lower.find(kw)
             if pos != -1 and (kw_pos == -1 or pos < kw_pos):
-                found_kw = kw
-                kw_pos = pos
+                # Avoid substring double-match (e.g., "supervisor" inside "supervisores")
+                if found_kw and kw in found_kw or (found_kw and found_kw in kw):
+                    if len(kw) > len(found_kw or ""):
+                        found_kw = kw
+                        kw_pos = pos
+                else:
+                    found_kw = kw
+                    kw_pos = pos
 
         if found_kw is None:
-            # Also check for "cargo" / "puesto" keyword followed by a name
-            for trigger in ["cargo de ", "cargo ", "puesto de ", "puesto "]:
-                pos = msg_lower.find(trigger)
-                if pos != -1:
-                    rest = msg_lower[pos + len(trigger):].strip()
-                    # Take until end or common stop words
-                    for stop in [" hay", " tiene", " en ", " de la ", " activo", "?"]:
-                        idx = rest.find(stop)
-                        if idx != -1:
-                            rest = rest[:idx]
-                    return rest.strip() if rest.strip() else None
             return None
 
         # Extract from keyword position to end, then clean up
@@ -339,6 +398,17 @@ Datos de RRHH en iDempiere:
 
         # Detect cargo/job search (current message, then history fallback)
         cargo_search = self._extract_cargo_search(message)
+        # Strip accents from cargo — iDempiere stores without accents
+        if cargo_search:
+            _acc = {'á':'a','é':'e','í':'i','ó':'o','ú':'u','ñ':'n',
+                    'Á':'A','É':'E','Í':'I','Ó':'O','Ú':'U','Ñ':'N'}
+            cargo_search = ''.join(_acc.get(c, c) for c in cargo_search)
+        # "Calidad de contratación" is NOT a cargo — it's a hiring metric
+        _not_cargo = ["calidad de contratación", "calidad de contratacion",
+                       "tasa de aceptación", "tasa de aceptacion",
+                       "evaluaciones de desempeño", "evaluaciones de desempeno"]
+        if cargo_search and any(nc in msg for nc in _not_cargo):
+            cargo_search = None
         if not cargo_search and (date_from or mes) and history:
             # Follow-up with dates but no cargo keyword → check history
             cargo_search = self._extract_cargo_from_history(history)
@@ -347,9 +417,22 @@ Datos de RRHH en iDempiere:
         name_search = self._extract_name_search(message)
 
         try:
-            # Employee summary (always included unless searching by name)
-            if not name_search:
-                summary = build_employee_summary(org_ids=org_ids)
+            # For specific queries (cumpleaños, ausentismo, nómina, etc.),
+            # put the SPECIFIC data FIRST so the LLM sees it before the
+            # generic employee summary. This prevents the LLM from saying
+            # "no data found" when the birthday/attendance data is buried
+            # after 2000+ chars of employee summary.
+            _is_specific = (
+                matches_any(msg, RRHH_CUMPLEANOS)
+                or matches_any(msg, RRHH_AUSENTISMO)
+                or matches_any(msg, RRHH_NOMINA)
+                or matches_any(msg, RRHH_VACACIONES)
+                or matches_any(msg, RRHH_ROTACION)
+            )
+
+            # Employee summary (included unless name search or specific query goes first)
+            if not name_search and not _is_specific:
+                summary = build_employee_summary(org_ids=org_ids, org_name=org_name)
                 sections.append(self._format_summary(summary, "Resumen de Personal"))
 
             if name_search:
@@ -435,13 +518,18 @@ Datos de RRHH en iDempiere:
 
             if matches_any(msg, RRHH_AUSENTISMO):
                 try:
-                    data = build_attendance_summary(
-                        mes=mes, anio=anio, org_ids=org_ids,
-                        date_from=date_from, date_to=date_to,
-                    )
-                    sections.append(self._format_summary(
-                        data, f"Indicadores de Ausentismo - {label}",
-                    ))
+                    # "asistencias del día de hoy" → daily attendance
+                    if "hoy" in msg or "del día" in msg or "del dia" in msg:
+                        data = build_daily_attendance(org_ids=org_ids, org_name=org_name)
+                        sections.append(self._format_summary(data, "Asistencias del Día"))
+                    else:
+                        data = build_attendance_summary(
+                            mes=mes, anio=anio, org_ids=org_ids,
+                            date_from=date_from, date_to=date_to,
+                        )
+                        sections.append(self._format_summary(
+                            data, f"Indicadores de Ausentismo - {label}",
+                        ))
                 except Exception as exc:
                     logger.error("Error en ausentismo: %s: %s", type(exc).__name__, exc, exc_info=True)
                     sections.append(
@@ -452,14 +540,29 @@ Datos de RRHH en iDempiere:
 
             if matches_any(msg, RRHH_VACACIONES):
                 try:
-                    data = build_vacation_summary(
-                        mes=mes, anio=anio, org_ids=org_ids,
-                        date_from=date_from, date_to=date_to,
-                        org_name=org_name,
-                    )
-                    sections.append(self._format_summary(
-                        data, f"Resumen de Vacaciones - {label}",
-                    ))
+                    # "vacaciones a vencer" / "pendientes a vencer" = by anniversary
+                    _vencer_kw = ["vencer", "vencen", "vencimiento", "pendientes a vencer",
+                                  "por vencer", "próximas a vencer", "proximas a vencer"]
+                    is_expiry = any(kw in msg for kw in _vencer_kw)
+
+                    if is_expiry:
+                        data = build_vacation_expiry(
+                            mes=mes, anio=anio, org_ids=org_ids, org_name=org_name,
+                        )
+                        if data and data.get("empleados"):
+                            sections.append(f"## Vacaciones a Vencer - {label}")
+                            sections.append(self._format_table(data["empleados"]))
+                        else:
+                            sections.append(f"## Vacaciones a Vencer - {label}\nNo se encontraron empleados.")
+                    else:
+                        data = build_vacation_summary(
+                            mes=mes, anio=anio, org_ids=org_ids,
+                            date_from=date_from, date_to=date_to,
+                            org_name=org_name,
+                        )
+                        sections.append(self._format_summary(
+                            data, f"Resumen de Vacaciones - {label}",
+                        ))
                 except Exception as exc:
                     logger.error("Error en vacaciones: %s: %s", type(exc).__name__, exc, exc_info=True)
                     sections.append(
@@ -469,11 +572,57 @@ Datos de RRHH en iDempiere:
                     )
 
             if matches_any(msg, RRHH_ROTACION):
-                data = build_turnover_summary(anio=anio, org_ids=org_ids)
+                # Check if asking about new hires specifically
+                _hire_kw = ["ingresaron", "ingresó", "ingreso", "nuevos ingresos",
+                            "nuevo ingreso", "contrataron", "contratación", "contratados"]
+                is_hires = any(kw in msg for kw in _hire_kw)
+                if is_hires:
+                    data = build_new_hires(
+                        anio=anio, mes=mes, org_ids=org_ids,
+                        date_from=date_from, date_to=date_to, org_name=org_name,
+                    )
+                    if self._dict_has_data(data):
+                        sections.append(self._format_summary(
+                            data, f"Ingresos de Personal - {label}",
+                        ))
+                else:
+                    data = build_turnover_summary(anio=anio, org_ids=org_ids)
+                    if self._dict_has_data(data):
+                        sections.append(self._format_summary(
+                            data, f"Indicadores de Rotación - Año {anio}",
+                        ))
+
+            # HR metrics that need special handling (not cargo search)
+            _hr_metrics = ["calidad de contratación", "calidad de contratacion",
+                           "tasa de aceptación", "tasa de aceptacion"]
+            if any(m in msg for m in _hr_metrics):
+                data = build_new_hires(
+                    anio=anio, mes=mes, org_ids=org_ids,
+                    date_from=date_from, date_to=date_to, org_name=org_name,
+                )
                 if self._dict_has_data(data):
                     sections.append(self._format_summary(
-                        data, f"Indicadores de Rotación - Año {anio}",
+                        data, f"Indicadores de Contratación - {label}",
                     ))
+
+            # Provisiones / pasivos laborales
+            _prov_kw = ["provisión", "provision", "provisiones", "pasivo laboral",
+                        "pasivos laborales", "prestaciones", "antigüedad", "antiguedad",
+                        "fideicomiso"]
+            if any(kw in msg for kw in _prov_kw):
+                data = build_payroll_provisions(
+                    mes=mes, anio=anio, org_ids=org_ids,
+                    date_from=date_from, date_to=date_to,
+                )
+                if self._dict_has_data(data):
+                    sections.append(self._format_summary(
+                        data, f"Provisiones de Pasivos Laborales - {label}",
+                    ))
+
+            # For specific queries, add employee summary at the END (context, not primary)
+            if _is_specific and not name_search:
+                summary = build_employee_summary(org_ids=org_ids, org_name=org_name)
+                sections.append(self._format_summary(summary, "Contexto: Resumen de Personal"))
 
         except Exception as exc:
             logger.error("Error consultando datos de RRHH: %s: %s", type(exc).__name__, exc, exc_info=True)

@@ -503,8 +503,8 @@ def build_sales_summary(
             "ORDER BY bpl.c_bpartner_id, bpl.c_bpartner_location_id DESC) "
         )
         joins = (
-            "LEFT JOIN adempiere.c_bpartner sr "
-            "ON i.salesrep_id = sr.c_bpartner_id "
+            "LEFT JOIN adempiere.ad_user sr "
+            "ON i.salesrep_id = sr.ad_user_id "
             "LEFT JOIN client_zone cz "
             "ON i.c_bpartner_id = cz.c_bpartner_id "
             "JOIN adempiere.c_doctype dt "
@@ -590,10 +590,10 @@ def build_sales_summary(
             for r in db.execute(by_region_q, params).fetchall()
         ]
 
-        # By distributor (salesrep_id tracks distributors, not internal salespeople)
+        # By salesperson (salesrep_id → ad_user = vendedor interno)
         by_distributor_q = text(
             f"{zone_cte}"
-            f"SELECT COALESCE(sr.name, 'Sin Distribuidor') AS distribuidor, "
+            f"SELECT COALESCE(sr.name, 'Sin Vendedor') AS distribuidor, "
             f"SUM(CASE WHEN dt.docbasetype = 'ARI' THEN 1 ELSE 0 END) AS facturas, "
             f"COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal "
             f"WHEN dt.docbasetype = 'ARC' THEN -i.grandtotal ELSE 0 END), 0) AS total "
@@ -904,7 +904,7 @@ def build_overdue_receivables(
             "CURRENT_DATE - (i.dateinvoiced + CASE WHEN COALESCE(pterm.netdays, 0) = 0 THEN 30 ELSE pterm.netdays END) AS dias_vencido "
             "FROM adempiere.c_invoice i "
             "JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id "
-            "LEFT JOIN adempiere.c_bpartner sr ON i.salesrep_id = sr.c_bpartner_id "
+            "LEFT JOIN adempiere.ad_user sr ON i.salesrep_id = sr.ad_user_id "
             "LEFT JOIN client_zone cz ON bp.c_bpartner_id = cz.c_bpartner_id "
             "LEFT JOIN adempiere.c_paymentterm pterm ON i.c_paymentterm_id = pterm.c_paymentterm_id "
             "JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id "
@@ -1400,20 +1400,31 @@ def build_cobros_pagos_summary(
 # RRHH (Human Resources)
 # ---------------------------------------------------------------------------
 
-def build_employee_summary(org_ids: list[int] | None = None) -> dict:
+def build_employee_summary(
+    org_ids: list[int] | None = None,
+    org_name: str | None = None,
+) -> dict:
     """Employee summary from iDempiere hr_employee (with DISTINCT to avoid duplicates).
 
     hr_employee has multiple rows per person (one per payroll period), so we use
     COUNT(DISTINCT e.c_bpartner_id) for accurate counts.  Organization is taken
     from hr_employee.ad_org_id (correctly assigned) instead of c_bpartner.ad_org_id
     (which often points to the wildcard '*' org).
+
+    When org_name is provided, ALL sections (totals, departments, cargos) are
+    filtered to that org — not just the total.
     """
     db = IdempiereSession()
     try:
-        # Overall counts (unique employees) — only active
-        conditions = ["e.isactive = 'Y'", "bp.isactive = 'Y'"]
+        # Overall counts (unique employees) — only active, exclude retired
+        conditions = [
+            "e.isactive = 'Y'",
+            "bp.isactive = 'Y'",
+            "(e.enddate IS NULL OR e.enddate > CURRENT_DATE)",
+        ]
         params: dict = {}
         _add_org_filter(conditions, params, org_ids, "e")
+        _add_org_name_filter(conditions, params, org_name, "e")
         where = " AND ".join(conditions)
         bp_join = "JOIN adempiere.c_bpartner bp ON e.c_bpartner_id = bp.c_bpartner_id"
 
@@ -1508,7 +1519,8 @@ def build_employee_list(
     """
     db = _get_session(date_from=date_from, date_to=date_to)
     try:
-        conditions = ["e.isactive = 'Y'", "bp.isactive = 'Y'"]
+        conditions = ["e.isactive = 'Y'", "bp.isactive = 'Y'",
+                       "(e.enddate IS NULL OR e.enddate > CURRENT_DATE)"]
         params: dict = {}
         _add_org_filter(conditions, params, org_ids, "e")
 
@@ -1591,7 +1603,12 @@ def build_birthday_list(
     """
     db = _get_session(mes=mes)
     try:
-        conditions = ["e.isactive = 'Y'", "bp.isactive = 'Y'", "bday.birthday IS NOT NULL"]
+        conditions = [
+            "e.isactive = 'Y'",
+            "bp.isactive = 'Y'",
+            "bday.birthday IS NOT NULL",
+            "(e.enddate IS NULL OR e.enddate > CURRENT_DATE)",
+        ]
         params: dict = {}
         _add_org_filter(conditions, params, org_ids, "e")
         _add_org_name_filter(conditions, params, org_name, "e")
@@ -3735,13 +3752,23 @@ def build_account_detail(
     # Always use iDempiere live — local DB fact_acct only has data up to 2021
     db = IdempiereSession()
     try:
-        # 1. Find the account by code
-        acct_q = text(
-            "SELECT ev.c_elementvalue_id, ev.value, ev.name, ev.accounttype "
-            "FROM adempiere.c_elementvalue ev "
-            "WHERE ev.value = :code AND ev.isactive = 'Y' "
-            "LIMIT 1"
-        )
+        # 1. Find the account by code (supports exact match and LIKE patterns
+        # from _normalize_account_code which uses % wildcards for compact codes)
+        if '%' in account_code:
+            acct_q = text(
+                "SELECT ev.c_elementvalue_id, ev.value, ev.name, ev.accounttype "
+                "FROM adempiere.c_elementvalue ev "
+                "WHERE ev.value LIKE :code AND ev.isactive = 'Y' "
+                "ORDER BY ev.value "
+                "LIMIT 1"
+            )
+        else:
+            acct_q = text(
+                "SELECT ev.c_elementvalue_id, ev.value, ev.name, ev.accounttype "
+                "FROM adempiere.c_elementvalue ev "
+                "WHERE ev.value = :code AND ev.isactive = 'Y' "
+                "LIMIT 1"
+            )
         acct_row = db.execute(acct_q, {"code": account_code}).fetchone()
         if not acct_row:
             return {
@@ -4072,9 +4099,14 @@ def build_sales_by_product(
     currency_ids: list[int] | None = None,
     org_name: str | None = None,
     product_search: str | None = None,
+    only_skus: bool = False,
     limit: int = 30,
 ) -> dict:
-    """Sales breakdown by product from c_invoiceline."""
+    """Sales breakdown by product from c_invoiceline.
+
+    only_skus: if True, filters m_product_category.iskpi='Y' (KPI products
+    that match the official sales report in iDempiere).
+    """
     db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
     try:
         conditions = [
@@ -4083,6 +4115,8 @@ def build_sales_by_product(
             "i.isactive = 'Y'",
             "dt.docbasetype = 'ARI'",
         ]
+        if only_skus:
+            conditions.append("pc.iskpi = 'Y'")
         params: dict = {"limit": limit}
         _add_org_filter(conditions, params, org_ids, "i")
         _add_org_name_filter(conditions, params, org_name, "i")
@@ -4168,6 +4202,341 @@ def build_client_status(
             "por_estado": [{"estado": r[0], "clientes": r[1]} for r in status_rows],
             "clientes_con_facturacion_reciente": active_row[0] if active_row else 0,
             "anio_referencia": year,
+        }
+    finally:
+        db.close()
+
+
+def build_new_hires(
+    anio: int | None = None,
+    mes: int | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    org_ids: list[int] | None = None,
+    org_name: str | None = None,
+) -> dict:
+    """New hires (employees with startdate in the given period)."""
+    db = IdempiereSession()
+    try:
+        conditions = ["e.isactive = 'Y'", "e.startdate IS NOT NULL"]
+        params: dict = {}
+        _add_org_filter(conditions, params, org_ids, "e")
+        _add_org_name_filter(conditions, params, org_name, "e")
+        _add_date_filter(conditions, params, date_from, date_to, mes, anio, "e.startdate")
+        where = " AND ".join(conditions)
+
+        q = text(
+            f"SELECT o.name AS organizacion, COUNT(DISTINCT e.c_bpartner_id) AS ingresos "
+            f"FROM adempiere.hr_employee e "
+            f"JOIN adempiere.ad_org o ON e.ad_org_id = o.ad_org_id "
+            f"WHERE {where} "
+            f"GROUP BY o.name ORDER BY ingresos DESC"
+        )
+        rows = db.execute(q, params).fetchall()
+        total = sum(r[1] for r in rows)
+        return {
+            "totales": {"total_ingresos": total},
+            "por_organizacion": [{"organizacion": r[0], "ingresos": r[1]} for r in rows],
+        }
+    finally:
+        db.close()
+
+
+def build_payroll_provisions(
+    mes: int | None = None,
+    anio: int | None = None,
+    org_ids: list[int] | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> dict:
+    """Payroll provisions (prestaciones, antigüedad, vacaciones acumuladas)."""
+    db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
+    try:
+        conditions = ["hp.docstatus IN ('CO', 'CL')"]
+        params: dict = {}
+        _add_org_filter(conditions, params, org_ids, "hm")
+        _add_date_filter(conditions, params, date_from, date_to, mes, anio, "hp.dateacct")
+
+        prov_terms = [
+            '%prestacion%', '%antigüedad%', '%antiguedad%',
+            '%provision%', '%pasivo%', '%fideicomiso%',
+            '%bono vacacional%', '%dias disfrut%',
+        ]
+        term_conds = " OR ".join(f"hc.name ILIKE '{t}'" for t in prov_terms)
+        conditions.append(f"({term_conds})")
+        where = " AND ".join(conditions)
+
+        q = text(
+            f"SELECT hc.name AS concepto, "
+            f"COUNT(*) AS movimientos, "
+            f"COALESCE(SUM(hm.amount), 0) AS total "
+            f"FROM adempiere.hr_movement hm "
+            f"JOIN adempiere.hr_process hp ON hm.hr_process_id = hp.hr_process_id "
+            f"JOIN adempiere.hr_concept hc ON hm.hr_concept_id = hc.hr_concept_id "
+            f"WHERE {where} "
+            f"GROUP BY hc.name ORDER BY total DESC"
+        )
+        rows = db.execute(q, params).fetchall()
+        return {
+            "totales": {
+                "conceptos": len(rows),
+                "total_monto": sum(float(r[2]) for r in rows),
+            },
+            "por_concepto": [
+                {"concepto": r[0], "movimientos": r[1], "total": float(r[2])}
+                for r in rows
+            ],
+        }
+    finally:
+        db.close()
+
+
+def build_client_visits(
+    mes: int | None = None,
+    anio: int | None = None,
+    org_ids: list[int] | None = None,
+    org_name: str | None = None,
+) -> dict:
+    """Client visits/activities from c_activity."""
+    db = IdempiereSession()
+    try:
+        conditions = ["a.isactive = 'Y'"]
+        params: dict = {}
+        if mes:
+            conditions.append("EXTRACT(MONTH FROM a.created) = :mes")
+            params["mes"] = mes
+        if anio:
+            conditions.append("EXTRACT(YEAR FROM a.created) = :anio")
+            params["anio"] = anio
+        if org_name:
+            conditions.append("o.name ILIKE :org_name")
+            params["org_name"] = f"%{org_name}%"
+        where = " AND ".join(conditions)
+        q = text(
+            f"SELECT o.name AS organizacion, a.name AS actividad, "
+            f"COUNT(*) AS registros "
+            f"FROM adempiere.c_activity a "
+            f"JOIN adempiere.ad_org o ON a.ad_org_id = o.ad_org_id "
+            f"WHERE {where} "
+            f"GROUP BY o.name, a.name ORDER BY registros DESC LIMIT 20"
+        )
+        rows = db.execute(q, params).fetchall()
+        return {
+            "totales": {"total_actividades": sum(r[2] for r in rows)},
+            "por_actividad": [
+                {"organizacion": r[0], "actividad": r[1], "registros": r[2]}
+                for r in rows
+            ],
+        }
+    finally:
+        db.close()
+
+
+def build_daily_attendance(
+    org_ids: list[int] | None = None,
+    org_name: str | None = None,
+) -> dict:
+    """Daily attendance from btd_effectiveattendance or lve_asistenciatecnic."""
+    db = IdempiereSession()
+    try:
+        # Try btd_effectiveattenda first
+        try:
+            q = text(
+                "SELECT COUNT(*) FROM information_schema.tables "
+                "WHERE table_schema = 'adempiere' AND table_name = 'btd_effectiveattenda'"
+            )
+            has_btd = db.execute(q).fetchone()[0] > 0
+        except Exception:
+            has_btd = False
+
+        if has_btd:
+            org_clause = ""
+            params: dict = {}
+            if org_name:
+                org_clause = "AND o.name ILIKE :org_name "
+                params["org_name"] = f"%{org_name}%"
+            q = text(f"""
+                SELECT o.name AS organizacion, COUNT(*) AS registros,
+                       MIN(ba.created) AS primer_registro,
+                       MAX(ba.created) AS ultimo_registro
+                FROM adempiere.btd_effectiveattenda ba
+                JOIN adempiere.ad_org o ON ba.ad_org_id = o.ad_org_id
+                WHERE ba.isactive = 'Y'
+                  AND ba.created >= CURRENT_DATE
+                  {org_clause}
+                GROUP BY o.name ORDER BY registros DESC
+            """)
+            rows = db.execute(q, params).fetchall()
+            if rows:
+                return {
+                    "totales": {"registros_hoy": sum(r[1] for r in rows)},
+                    "por_organizacion": [
+                        {"organizacion": r[0], "registros": r[1],
+                         "primer_registro": r[2].isoformat() if r[2] else None,
+                         "ultimo_registro": r[3].isoformat() if r[3] else None}
+                        for r in rows
+                    ],
+                }
+
+        return {
+            "totales": {"registros_hoy": 0},
+            "nota": "No se encontraron registros de asistencia para hoy. "
+                    "Los datos de asistencia biométrica pueden tener un retraso en la sincronización.",
+        }
+    finally:
+        db.close()
+
+
+def build_budget_comparison(
+    mes: int | None = None,
+    anio: int | None = None,
+    org_ids: list[int] | None = None,
+) -> dict:
+    """Budget/goals comparison from pa_goal or gl_budget."""
+    db = IdempiereSession()
+    try:
+        # Check if pa_goal has data
+        q = text(
+            "SELECT g.name AS meta, g.measureactual AS actual, "
+            "g.measuretarget AS objetivo, "
+            "CASE WHEN g.measuretarget > 0 "
+            "THEN ROUND((g.measureactual / g.measuretarget * 100)::numeric, 2) "
+            "ELSE 0 END AS cumplimiento_pct "
+            "FROM adempiere.pa_goal g "
+            "WHERE g.isactive = 'Y' "
+            "ORDER BY g.updated DESC LIMIT 20"
+        )
+        rows = db.execute(q).fetchall()
+        if rows:
+            return {
+                "totales": {"total_metas": len(rows)},
+                "metas": [
+                    {"meta": r[0], "actual": float(r[1]) if r[1] else 0,
+                     "objetivo": float(r[2]) if r[2] else 0,
+                     "cumplimiento_pct": float(r[3]) if r[3] else 0}
+                    for r in rows
+                ],
+            }
+        return {
+            "totales": {"total_metas": 0},
+            "nota": "No se encontraron metas/presupuestos configurados en el sistema.",
+        }
+    finally:
+        db.close()
+
+
+def build_production_vs_sales(
+    mes: int | None = None,
+    anio: int | None = None,
+    org_ids: list[int] | None = None,
+) -> dict:
+    """Cross-data: production output vs sales for the same period."""
+    db = IdempiereSession()
+    try:
+        params: dict = {}
+        date_cond = ""
+        if mes and anio:
+            date_cond = "AND EXTRACT(MONTH FROM dateacct) = :mes AND EXTRACT(YEAR FROM dateacct) = :anio "
+            params["mes"] = mes
+            params["anio"] = anio
+        elif anio:
+            date_cond = "AND EXTRACT(YEAR FROM dateacct) = :anio "
+            params["anio"] = anio
+
+        # Sales total
+        sales_q = text(f"""
+            SELECT COUNT(*) AS facturas,
+                   COALESCE(SUM(grandtotal), 0) AS total_ventas
+            FROM adempiere.c_invoice
+            WHERE issotrx = 'Y' AND docstatus IN ('CO','CL') AND isactive = 'Y'
+            {date_cond.replace('dateacct', 'dateinvoiced')}
+        """)
+        sales_row = db.execute(sales_q, params).fetchone()
+
+        # Production total (from m_production or m_inout)
+        prod_q = text(f"""
+            SELECT COUNT(*) AS entregas,
+                   COALESCE(SUM(ABS(ml.movementqty)), 0) AS cantidad_producida
+            FROM adempiere.m_inout mi
+            JOIN adempiere.m_inoutline ml ON mi.m_inout_id = ml.m_inout_id
+            WHERE mi.issotrx = 'N' AND mi.docstatus IN ('CO','CL')
+            {date_cond.replace('dateacct', 'mi.movementdate')}
+        """)
+        prod_row = db.execute(prod_q, params).fetchone()
+
+        return {
+            "ventas": {
+                "facturas": sales_row[0] if sales_row else 0,
+                "total_bs": float(sales_row[1]) if sales_row else 0,
+            },
+            "produccion": {
+                "entregas": prod_row[0] if prod_row else 0,
+                "cantidad_producida": float(prod_row[1]) if prod_row else 0,
+            },
+        }
+    finally:
+        db.close()
+
+
+def build_vacation_expiry(
+    mes: int | None = None,
+    anio: int | None = None,
+    org_ids: list[int] | None = None,
+    org_name: str | None = None,
+) -> dict:
+    """Employees with vacation expiry in the given month.
+
+    'Vacation expiry' = employees whose hire anniversary falls in that month.
+    In Venezuelan labor law, vacations must be taken within the anniversary year.
+    """
+    db = IdempiereSession()
+    try:
+        conditions = [
+            "e.isactive = 'Y'",
+            "bp.isactive = 'Y'",
+            "(e.enddate IS NULL OR e.enddate > CURRENT_DATE)",
+            "e.startdate IS NOT NULL",
+        ]
+        params: dict = {}
+        _add_org_filter(conditions, params, org_ids, "e")
+        _add_org_name_filter(conditions, params, org_name, "e")
+
+        if mes:
+            conditions.append("EXTRACT(MONTH FROM e.startdate) = :mes")
+            params["mes"] = mes
+
+        where = " AND ".join(conditions)
+
+        q = text(
+            f"SELECT DISTINCT ON (e.c_bpartner_id) "
+            f"bp.name AS nombre, "
+            f"e.startdate AS fecha_ingreso, "
+            f"EXTRACT(YEAR FROM age(CURRENT_DATE, e.startdate))::int AS anos_servicio, "
+            f"COALESCE(j.name, 'Sin Cargo') AS cargo, "
+            f"COALESCE(d.name, 'Sin Depto') AS departamento, "
+            f"o.name AS organizacion "
+            f"FROM adempiere.hr_employee e "
+            f"JOIN adempiere.c_bpartner bp ON e.c_bpartner_id = bp.c_bpartner_id "
+            f"JOIN adempiere.ad_org o ON e.ad_org_id = o.ad_org_id "
+            f"LEFT JOIN adempiere.hr_job j ON e.hr_job_id = j.hr_job_id "
+            f"LEFT JOIN adempiere.hr_department d ON e.hr_department_id = d.hr_department_id "
+            f"WHERE {where} "
+            f"ORDER BY e.c_bpartner_id, e.startdate"
+        )
+        rows = db.execute(q, params).fetchall()
+        return {
+            "totales": {"total_empleados": len(rows)},
+            "empleados": [
+                {
+                    "nombre": r[0],
+                    "fecha_ingreso": r[1].isoformat() if r[1] else None,
+                    "anos_servicio": r[2],
+                    "cargo": r[3],
+                    "departamento": r[4],
+                    "organizacion": r[5],
+                }
+                for r in rows
+            ],
         }
     finally:
         db.close()

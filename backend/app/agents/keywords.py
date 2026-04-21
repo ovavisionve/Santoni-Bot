@@ -676,7 +676,7 @@ RRHH_NOMINA = frozenset({
 
 RRHH_AUSENTISMO = frozenset({
     # Ausentismo
-    "ausentismo", "ausencia", "ausencias", "asistencia",
+    "ausentismo", "ausentismos", "ausentimos", "ausencia", "ausencias", "asistencia",
     "inasistencia", "inasistencias",
     "falta", "faltas", "faltó", "falto",
     "no asistió", "no asistio", "no asistieron",
@@ -704,7 +704,7 @@ RRHH_CUMPLEANOS = frozenset({
     "nació", "nacio", "nacieron",
     "quién cumple", "quien cumple",
     "quiénes cumplen", "quienes cumplen",
-    "cumple años", "cumplir años",
+    "cumple años", "cumplen años", "cumplir años",
     "aniversario", "aniversarios",
     "felicitar", "felicitaciones",
     "birthday", "birthdays",
@@ -735,6 +735,8 @@ RRHH_ROTACION = frozenset({
     "nuevo ingreso", "nuevos ingresos",
     "cuántos renunciaron", "cuantos renunciaron",
     "cuántos ingresaron", "cuantos ingresaron",
+    "se fueron", "se han ido", "se fue", "dejaron la empresa",
+    "cuántos salieron", "cuantos salieron",
     "cuántos salieron", "cuantos salieron",
     "índice de rotación", "indice de rotacion",
     "tasa de rotación", "tasa de rotacion",

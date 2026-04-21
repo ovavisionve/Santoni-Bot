@@ -74,8 +74,7 @@ CONTEXTO iDEMPIERE:
 - Cobros: c_payment (isreceipt='Y', docstatus IN ('CO','CL'))
 - Clientes: c_bpartner - campos: ismayorista, isclap, ispublico, codigoventas
 - Zonas: c_salesregion (vinculado via c_bpartner_location, una zona por cliente)
-- Distribuidores: salesrep_id en c_invoice apunta a c_bpartner (son distribuidores/intermediarios, NO vendedores internos)
-- NOTA: Los vendedores internos (Carlos Matias, Lenny Silva, etc.) NO están vinculados a las facturas en iDempiere
+- Vendedores: salesrep_id en c_invoice apunta a ad_user (vendedores/representantes comerciales internos)
 - Monedas: VES (Bolívares, ID 205), USD (Dólares, IDs múltiples)
 - Organizaciones: INPROA SANTONI, AGROINPROA, AGROPECUARIA R.R., Agro Import, INVERSIONES AGA, InproMaiz, AGA AGRICOLA, Santoni Service
 - Campos fiscales: lve_controlnumber, withholdingamt (retenciones IVA)
@@ -235,22 +234,45 @@ Datos de ventas de iDempiere:
     def _detect_query_type(cls, msg: str) -> str | None:
         """Detect query type using centralized keywords."""
         msg_lower = msg.lower()
-        # Product/category queries — check BEFORE general sales
-        _product_kw = {"producto", "productos", "categoría", "categoria", "harina",
-                       "arroz", "maíz", "maiz", "cereal", "avena", "empaque",
-                       "por producto", "por categoría", "por categoria",
-                       "más vendido", "mas vendido", "principales producto"}
-        if any(kw in msg_lower for kw in _product_kw):
-            return "producto"
+        # Vendedores/distribuidores BEFORE clientes (ambos tienen "top")
+        _vendedor_kw = {"vendedor", "vendedores", "distribuidor", "distribuidores",
+                        "representante", "representantes", "salesrep", "rep comercial"}
+        if any(kw in msg_lower for kw in _vendedor_kw):
+            return "vendedores"
+        # Client queries (before product, to avoid "InproMaiz" matching "maiz")
+        if matches_any(msg_lower, VENTAS_CLIENTES):
+            return "top"
         # Client status
         if ("activo" in msg_lower or "inactivo" in msg_lower) and "client" in msg_lower:
             return "cliente_status"
-        if matches_any(msg_lower, VENTAS_CLIENTES):
-            return "top"
+        # Product/category queries — AFTER client check
+        _product_kw = {"producto", "productos", "categoría", "categoria", "harina",
+                       "por producto", "por categoría", "por categoria",
+                       "más vendido", "mas vendido", "principales producto"}
+        # These only match as standalone words, not inside org names
+        _product_standalone = {"arroz", "maíz", "maiz", "cereal", "avena", "empaque"}
+        if any(kw in msg_lower for kw in _product_kw):
+            return "producto"
+        for kw in _product_standalone:
+            if kw in msg_lower and kw not in "inpromaiz":
+                # Verify it's not part of an org name
+                import re as _re
+                if _re.search(rf'\b{kw}\b', msg_lower):
+                    return "producto"
         if matches_any(msg_lower, VENTAS_COBRANZA):
             return "cobranza"
         if matches_any(msg_lower, VENTAS_CXC):
             return "vencidas"
+        # Visitas a clientes
+        if "visita" in msg_lower or "visitas" in msg_lower:
+            return "visitas"
+        # Metas / presupuesto
+        if "meta" in msg_lower or "metas" in msg_lower or "presupuesto" in msg_lower:
+            return "metas"
+        # Vendido vs producido
+        if "produj" in msg_lower or "produjo" in msg_lower or "producción" in msg_lower or "producido" in msg_lower:
+            if "vend" in msg_lower or "venta" in msg_lower:
+                return "ventas_vs_produccion"
         if matches_any(msg_lower, VENTAS_FACTURACION):
             return "ventas"
         if matches_any(msg_lower, VENTAS_ZONAS):
@@ -383,7 +405,18 @@ Datos de ventas de iDempiere:
             query_type = hist_ctx.get("query_type")
 
         try:
-            if query_type == "producto":
+            if query_type == "vendedores":
+                # Top vendedores internos (ad_user via salesrep_id)
+                data = build_sales_summary(
+                    mes=mes, anio=anio, org_ids=org_ids,
+                    date_from=date_from, date_to=date_to,
+                    currency_ids=currency_ids, org_name=org_name,
+                )
+                if isinstance(data, dict) and data.get("por_distribuidor"):
+                    sections.append(f"## Top Vendedores - {label}")
+                    sections.append(self._format_table(data["por_distribuidor"]))
+
+            elif query_type == "producto":
                 from app.services.query_service import build_sales_by_product
                 # Extract product name from question
                 _prod_names = ["harina", "arroz", "maíz", "maiz", "cereal", "avena", "empaque"]
@@ -399,6 +432,21 @@ Datos de ventas de iDempiere:
                     product_search=product_search,
                 )
                 sections.append(self._format_summary(data, f"Ventas por Producto - {label}"))
+
+            elif query_type == "visitas":
+                from app.services.query_service import build_client_visits
+                data = build_client_visits(mes=mes, anio=anio, org_name=org_name)
+                sections.append(self._format_summary(data, f"Visitas a Clientes - {label}"))
+
+            elif query_type == "metas":
+                from app.services.query_service import build_budget_comparison
+                data = build_budget_comparison(mes=mes, anio=anio, org_ids=org_ids)
+                sections.append(self._format_summary(data, f"Metas y Presupuesto - {label}"))
+
+            elif query_type == "ventas_vs_produccion":
+                from app.services.query_service import build_production_vs_sales
+                data = build_production_vs_sales(mes=mes, anio=anio, org_ids=org_ids)
+                sections.append(self._format_summary(data, f"Ventas vs Producción - {label}"))
 
             elif query_type == "cliente_status":
                 from app.services.query_service import build_client_status
@@ -471,6 +519,25 @@ Datos de ventas de iDempiere:
                 sections.append(self._format_table(data))
 
             if query_type == "ventas" or matches_any(msg, VENTAS_FACTURACION) or not sections:
+                # Get SKU product totals first (matches iDempiere KPI report)
+                try:
+                    from app.services.query_service import build_sales_by_product
+                    sku_data = build_sales_by_product(
+                        mes=mes, anio=anio, org_ids=org_ids,
+                        date_from=date_from, date_to=date_to,
+                        currency_ids=currency_ids, org_name=org_name,
+                        only_skus=True, limit=20,
+                    )
+                    if sku_data and sku_data.get("top_productos"):
+                        sku_total = sum(p.get("total_neto", 0) for p in sku_data["top_productos"])
+                        sections.append(
+                            f"## Total Ventas SKU (Productos KPI) - {label}\n"
+                            f"**Total Venta Neta (solo productos SKU):** {sku_total:,.2f}\n"
+                            f"*Este total coincide con el reporte 'Objetivos vs Logros' de iDempiere*"
+                        )
+                except Exception:
+                    pass
+
                 data = build_sales_summary(
                     zona=zona, vendedor=vendedor, mes=mes, anio=anio,
                     org_ids=org_ids, salesrep_id=salesrep_id,
@@ -497,6 +564,21 @@ Datos de ventas de iDempiere:
                         sections.append(self._format_summary(data, f"Resumen de Ventas - {label}"))
                 else:
                     sections.append(self._format_summary(data, f"Resumen de Ventas - {label}"))
+
+                # Add product breakdown (SKU only) for better detail
+                try:
+                    from app.services.query_service import build_sales_by_product
+                    product_data = build_sales_by_product(
+                        mes=mes, anio=anio, org_ids=org_ids,
+                        date_from=date_from, date_to=date_to,
+                        currency_ids=currency_ids, org_name=org_name,
+                        only_skus=True, limit=20,
+                    )
+                    if product_data and product_data.get("top_productos"):
+                        sections.append(f"## Desglose por Producto (SKU) - {label}")
+                        sections.append(self._format_table(product_data["top_productos"]))
+                except Exception:
+                    pass
 
                 # When doctype is specified, also include top clients so the
                 # LLM has real client names (prevents hallucination of clients)
@@ -535,6 +617,15 @@ Datos de ventas de iDempiere:
                     "⚠️ FILTRO DE MONEDA APLICADO: Los datos están filtrados SOLO por USD/DÓLARES. "
                     "NO existe datos de Bs. en esta consulta. NO inventes ni agregues datos de otra moneda."
                 )
+            sections.insert(0, currency_note)
+        elif sections and not currency_ids:
+            # No currency filter → data includes BOTH VES and USD
+            # Tell LLM to present BOTH currencies from por_moneda
+            currency_note = (
+                "⚠️ DATOS EN MÚLTIPLES MONEDAS: Los datos incluyen Bs. (VES) Y USD. "
+                "DEBES presentar los totales SEPARADOS por moneda usando la sección 'por_moneda'. "
+                "NO mezcles montos de Bs. y USD en un solo total. Muestra: 'En Bs.: X / En USD: Y'."
+            )
             sections.insert(0, currency_note)
 
         return "\n\n".join(sections) if sections else None
