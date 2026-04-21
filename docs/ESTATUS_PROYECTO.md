@@ -1,8 +1,8 @@
 # SantoniBot - Estatus del Proyecto
 
-**Fecha:** 16 de marzo 2026
-**Avance general:** ~97% Fase 1 completada
-**Estado:** Sistema desplegado en servidor, conectado a iDempiere real, en fase de validacion con datos reales
+**Fecha:** 21 de abril 2026
+**Avance general:** ~98% Fase 1 completada
+**Estado:** Sistema desplegado en servidor, conectado a iDempiere real, en fase de validacion avanzada con datos reales
 
 ---
 
@@ -32,7 +32,14 @@
 
 ---
 
-## Cambios Recientes (Febrero - Marzo 2026)
+## Cambios Recientes (Febrero - Abril 2026)
+
+### Abril 2026 (21/Abr)
+
+- **Nueva función `build_vacation_expiry`**: RRHH puede responder "vacaciones a vencer en [mes]". Busca empleados cuyo mes de aniversario de ingreso coincide con el mes consultado. Usa `DISTINCT ON (c_bpartner_id)`. Verificado contra reporte iDempiere: ESCORCHE PEREZ, VIZCAYA PEREZ, GALINDEZ RODRIGUEZ y otros 17 — coincidencia exacta con 20 empleados para InproMaiz/mayo.
+- **Investigacion conteo empleados por org**: InproMaiz muestra 109 con hr_employee DISTINCT, 102 con vista `lve_empleadosactivos`, pero real es 94. Pendiente identificar filtro que aplica el reporte de iDempiere (posiblemente excluye aprendices INCES o filtra por tipo de nomina).
+- **Investigacion KPI ventas por producto**: Diferencia 0.2% entre bot (74,979 bultos) y KPI iDempiere (74,822.75). Intento de restar NC resultó peor. Los reportes KPI (`kpi_general`, `kpi_comercial`, `kpi_corte`) usan `GEO_PrecioPromedio.jrxml` (Jasper stored en attachment). Necesita extraer SQL del Jasper para entender la logica exacta.
+- **4 PRs mergeados a main** en este dia (PR #5 al #8), todos desde `feat/sql-direct-deepseek`.
 
 ### Marzo 2026 (semana del 10-16)
 
@@ -71,7 +78,7 @@ Cada agente se valida comparando las respuestas del bot contra consultas SQL dir
 | **Ventas** | 4 funciones | ✅ Completo | ✅ Datos correctos | Top clientes, facturacion, cobranza, CxC vencidas |
 | **Finanzas** | 2 funciones | ✅ Completo | ✅ Datos correctos | Saldos bancarios, CxC, CxP, top morosos/proveedores |
 | **Contabilidad** | 2 funciones | ✅ Previamente | ✅ Funcional | Balance, estado de resultados |
-| **RRHH** | 7 funciones | ✅ Previamente | ✅ Funcional | Empleados, nomina, vacaciones, cumpleaneros |
+| **RRHH** | 8 funciones | ⚠️ Parcial | ⚠️ Conteo org incorrecto | Empleados global OK (702). Por org: 109 vs 94 real en InproMaiz. `build_vacation_expiry` nuevo (21/Abr): vacaciones a vencer verificadas OK |
 | **Produccion** | 3 funciones | ✅ Previamente | ✅ Funcional | Ordenes, inventario |
 | **Compras Insumos** | 6 funciones | 🔄 Pendiente | - | Siguiente en validar |
 | **Compras Productores** | 4 funciones | 🔄 Pendiente | - | Siguiente en validar |
@@ -351,6 +358,8 @@ para que los evaluadores tengan referencia de lo que el bot deberia responder:
 - [ ] Reducir alucinaciones residuales del LLM (embellecimiento menor con stats inventadas)
 
 ### Pendiente tecnico (prioridad media)
+- [ ] **RRHH conteo org**: Identificar filtro que usa iDempiere para llegar a 94 empleados InproMaiz (bot da 109). Probar: excluir aprendices INCES, filtrar por tipo nómina, usar `lve_empleadosactivos` con filtros adicionales.
+- [ ] **KPI ventas por producto**: Extraer SQL de `GEO_PrecioPromedio.jrxml` (attachment en `ad_process`) para entender diferencia 0.2% en bultos vs KPI iDempiere.
 - [ ] Tests E2E (login -> chat -> export)
 - [ ] Integrar Sentry (monitoreo de errores en produccion)
 - [ ] Mapeo completo de tablas iDempiere (algunas queries en ajuste)
