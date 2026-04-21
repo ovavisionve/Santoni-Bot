@@ -197,6 +197,10 @@ Datos de RRHH en iDempiere:
                     rest = rest[:idx]
             result = rest.strip()
             if result and len(result) >= 2:
+                # Remove accents — iDempiere stores names without accents
+                _accent_map = {'á':'a','é':'e','í':'i','ó':'o','ú':'u',
+                               'Á':'A','É':'E','Í':'I','Ó':'O','Ú':'U','ñ':'n','Ñ':'N'}
+                result = ''.join(_accent_map.get(c, c) for c in result)
                 return result
         return None
 
@@ -356,8 +360,19 @@ Datos de RRHH en iDempiere:
         name_search = self._extract_name_search(message)
 
         try:
-            # Employee summary (always included unless searching by name)
-            if not name_search:
+            # For specific queries (cumpleaños, ausentismo, nómina, etc.),
+            # put the SPECIFIC data FIRST so the LLM sees it before the
+            # generic employee summary. This prevents the LLM from saying
+            # "no data found" when the birthday/attendance data is buried
+            # after 2000+ chars of employee summary.
+            _is_specific = (
+                matches_any(msg, RRHH_CUMPLEANOS)
+                or matches_any(msg, RRHH_AUSENTISMO)
+                or matches_any(msg, RRHH_NOMINA)
+            )
+
+            # Employee summary (included unless name search or specific query goes first)
+            if not name_search and not _is_specific:
                 summary = build_employee_summary(org_ids=org_ids)
                 sections.append(self._format_summary(summary, "Resumen de Personal"))
 
@@ -529,6 +544,11 @@ Datos de RRHH en iDempiere:
                     sections.append(self._format_summary(
                         data, f"Provisiones de Pasivos Laborales - {label}",
                     ))
+
+            # For specific queries, add employee summary at the END (context, not primary)
+            if _is_specific and not name_search:
+                summary = build_employee_summary(org_ids=org_ids)
+                sections.append(self._format_summary(summary, "Contexto: Resumen de Personal"))
 
         except Exception as exc:
             logger.error("Error consultando datos de RRHH: %s: %s", type(exc).__name__, exc, exc_info=True)
