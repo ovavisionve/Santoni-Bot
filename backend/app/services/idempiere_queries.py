@@ -3735,13 +3735,23 @@ def build_account_detail(
     # Always use iDempiere live — local DB fact_acct only has data up to 2021
     db = IdempiereSession()
     try:
-        # 1. Find the account by code
-        acct_q = text(
-            "SELECT ev.c_elementvalue_id, ev.value, ev.name, ev.accounttype "
-            "FROM adempiere.c_elementvalue ev "
-            "WHERE ev.value = :code AND ev.isactive = 'Y' "
-            "LIMIT 1"
-        )
+        # 1. Find the account by code (supports exact match and LIKE patterns
+        # from _normalize_account_code which uses % wildcards for compact codes)
+        if '%' in account_code:
+            acct_q = text(
+                "SELECT ev.c_elementvalue_id, ev.value, ev.name, ev.accounttype "
+                "FROM adempiere.c_elementvalue ev "
+                "WHERE ev.value LIKE :code AND ev.isactive = 'Y' "
+                "ORDER BY ev.value "
+                "LIMIT 1"
+            )
+        else:
+            acct_q = text(
+                "SELECT ev.c_elementvalue_id, ev.value, ev.name, ev.accounttype "
+                "FROM adempiere.c_elementvalue ev "
+                "WHERE ev.value = :code AND ev.isactive = 'Y' "
+                "LIMIT 1"
+            )
         acct_row = db.execute(acct_q, {"code": account_code}).fetchone()
         if not acct_row:
             return {

@@ -347,8 +347,19 @@ Datos de RRHH en iDempiere:
         name_search = self._extract_name_search(message)
 
         try:
-            # Employee summary (always included unless searching by name)
-            if not name_search:
+            # Detect specific query types FIRST — only include employee summary
+            # for generic employee questions. When asking about ausentismo, nómina,
+            # vacaciones, cumpleaños, or rotación, the 2000+ chars of employee
+            # summary drowns the actual answer and the LLM ignores the data.
+            _specific_query = (
+                matches_any(msg, RRHH_AUSENTISMO)
+                or matches_any(msg, RRHH_NOMINA)
+                or matches_any(msg, RRHH_VACACIONES)
+                or matches_any(msg, RRHH_CUMPLEANOS)
+                or matches_any(msg, RRHH_ROTACION)
+            )
+
+            if not name_search and not _specific_query:
                 summary = build_employee_summary(org_ids=org_ids)
                 sections.append(self._format_summary(summary, "Resumen de Personal"))
 

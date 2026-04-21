@@ -28,15 +28,19 @@ _ACCOUNT_CODE_COMPACT_RE = re.compile(r'\bcuenta\s+(\d{4,6})\b', re.IGNORECASE)
 
 
 def _normalize_account_code(code: str) -> str:
-    """Convert compact code (1101) to dotted format (1.1.01) for iDempiere search."""
+    """Convert compact code (1101) to a LIKE-friendly pattern for iDempiere.
+
+    iDempiere has inconsistent formats: '1.01.01', '1.1.01', '5.01.01'.
+    Instead of guessing the exact format, return a pattern that matches
+    multiple possible formats using the digits.
+    E.g. '1101' → '1%1%01' which matches '1.1.01', '1.01.01', etc.
+    """
     if '.' in code:
         return code
-    if len(code) == 4:
-        return f"{code[0]}.{code[1:3]}.{code[2:4]}"
-    if len(code) == 5:
-        return f"{code[0]}.{code[1:3]}.{code[3:5]}"
-    if len(code) == 6:
-        return f"{code[0]}.{code[1:3]}.{code[3:5]}.{code[5:6]}"
+    # Build flexible pattern: insert % between digit groups
+    # 1101 → 1.1.01 or 1.01.01 → search with first digit + % + rest
+    if len(code) >= 4:
+        return f"{code[0]}%{code[1]}%{code[2:]}"
     return code
 
 
