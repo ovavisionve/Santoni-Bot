@@ -1434,3 +1434,17 @@ def build_client_status(
         from app.services.idempiere_queries import build_client_status as _prod
         return _prod(org_name=org_name, anio=anio)
     return {"por_estado": [], "clientes_con_facturacion_reciente": 0}
+
+
+def build_new_hires(**kwargs) -> dict:
+    if _is_production():
+        from app.services.idempiere_queries import build_new_hires as _prod
+        return _prod(**kwargs)
+    return {"totales": {"total_ingresos": 0}}
+
+
+def build_payroll_provisions(**kwargs) -> dict:
+    if _is_production():
+        from app.services.idempiere_queries import build_payroll_provisions as _prod
+        return _prod(**kwargs)
+    return {"totales": {"conceptos": 0, "total_monto": 0}}

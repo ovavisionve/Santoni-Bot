@@ -35,6 +35,8 @@ from app.services.query_service import (
     build_attendance_summary,
     build_turnover_summary,
     build_vacation_summary,
+    build_new_hires,
+    build_payroll_provisions,
 )
 
 
@@ -469,10 +471,38 @@ Datos de RRHH en iDempiere:
                     )
 
             if matches_any(msg, RRHH_ROTACION):
-                data = build_turnover_summary(anio=anio, org_ids=org_ids)
+                # Check if asking about new hires specifically
+                _hire_kw = ["ingresaron", "ingresó", "ingreso", "nuevos ingresos",
+                            "nuevo ingreso", "contrataron", "contratación", "contratados"]
+                is_hires = any(kw in msg for kw in _hire_kw)
+                if is_hires:
+                    data = build_new_hires(
+                        anio=anio, mes=mes, org_ids=org_ids,
+                        date_from=date_from, date_to=date_to, org_name=org_name,
+                    )
+                    if self._dict_has_data(data):
+                        sections.append(self._format_summary(
+                            data, f"Ingresos de Personal - {label}",
+                        ))
+                else:
+                    data = build_turnover_summary(anio=anio, org_ids=org_ids)
+                    if self._dict_has_data(data):
+                        sections.append(self._format_summary(
+                            data, f"Indicadores de Rotación - Año {anio}",
+                        ))
+
+            # Provisiones / pasivos laborales
+            _prov_kw = ["provisión", "provision", "provisiones", "pasivo laboral",
+                        "pasivos laborales", "prestaciones", "antigüedad", "antiguedad",
+                        "fideicomiso"]
+            if any(kw in msg for kw in _prov_kw):
+                data = build_payroll_provisions(
+                    mes=mes, anio=anio, org_ids=org_ids,
+                    date_from=date_from, date_to=date_to,
+                )
                 if self._dict_has_data(data):
                     sections.append(self._format_summary(
-                        data, f"Indicadores de Rotación - Año {anio}",
+                        data, f"Provisiones de Pasivos Laborales - {label}",
                     ))
 
         except Exception as exc:

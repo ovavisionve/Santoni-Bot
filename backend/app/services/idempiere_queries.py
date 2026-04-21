@@ -4181,3 +4181,87 @@ def build_client_status(
         }
     finally:
         db.close()
+
+
+def build_new_hires(
+    anio: int | None = None,
+    mes: int | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    org_ids: list[int] | None = None,
+    org_name: str | None = None,
+) -> dict:
+    """New hires (employees with startdate in the given period)."""
+    db = IdempiereSession()
+    try:
+        conditions = ["e.isactive = 'Y'", "e.startdate IS NOT NULL"]
+        params: dict = {}
+        _add_org_filter(conditions, params, org_ids, "e")
+        _add_org_name_filter(conditions, params, org_name, "e")
+        _add_date_filter(conditions, params, date_from, date_to, mes, anio, "e.startdate")
+        where = " AND ".join(conditions)
+
+        q = text(
+            f"SELECT o.name AS organizacion, COUNT(DISTINCT e.c_bpartner_id) AS ingresos "
+            f"FROM adempiere.hr_employee e "
+            f"JOIN adempiere.ad_org o ON e.ad_org_id = o.ad_org_id "
+            f"WHERE {where} "
+            f"GROUP BY o.name ORDER BY ingresos DESC"
+        )
+        rows = db.execute(q, params).fetchall()
+        total = sum(r[1] for r in rows)
+        return {
+            "totales": {"total_ingresos": total},
+            "por_organizacion": [{"organizacion": r[0], "ingresos": r[1]} for r in rows],
+        }
+    finally:
+        db.close()
+
+
+def build_payroll_provisions(
+    mes: int | None = None,
+    anio: int | None = None,
+    org_ids: list[int] | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> dict:
+    """Payroll provisions (prestaciones, antigüedad, vacaciones acumuladas)."""
+    db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
+    try:
+        conditions = ["hp.docstatus IN ('CO', 'CL')"]
+        params: dict = {}
+        _add_org_filter(conditions, params, org_ids, "hm")
+        _add_date_filter(conditions, params, date_from, date_to, mes, anio, "hp.dateacct")
+
+        prov_terms = [
+            '%prestacion%', '%antigüedad%', '%antiguedad%',
+            '%provision%', '%pasivo%', '%fideicomiso%',
+            '%bono vacacional%', '%dias disfrut%',
+        ]
+        term_conds = " OR ".join(f"hc.name ILIKE '{t}'" for t in prov_terms)
+        conditions.append(f"({term_conds})")
+        where = " AND ".join(conditions)
+
+        q = text(
+            f"SELECT hc.name AS concepto, "
+            f"COUNT(*) AS movimientos, "
+            f"COALESCE(SUM(hm.amount), 0) AS total "
+            f"FROM adempiere.hr_movement hm "
+            f"JOIN adempiere.hr_process hp ON hm.hr_process_id = hp.hr_process_id "
+            f"JOIN adempiere.hr_concept hc ON hm.hr_concept_id = hc.hr_concept_id "
+            f"WHERE {where} "
+            f"GROUP BY hc.name ORDER BY total DESC"
+        )
+        rows = db.execute(q, params).fetchall()
+        return {
+            "totales": {
+                "conceptos": len(rows),
+                "total_monto": sum(float(r[2]) for r in rows),
+            },
+            "por_concepto": [
+                {"concepto": r[0], "movimientos": r[1], "total": float(r[2])}
+                for r in rows
+            ],
+        }
+    finally:
+        db.close()
