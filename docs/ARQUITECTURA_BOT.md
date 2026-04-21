@@ -189,7 +189,259 @@ fetch_data() retorna datos?
 
 ---
 
-*Fase 2: Extracción de parámetros → pendiente*
+---
+
+## FASE 2: Extracción de Parámetros
+
+Cada pregunta del usuario se descompone en parámetros que filtran las queries SQL.
+Todo vive en `agents/date_utils.py` + métodos de cada agente.
+
+### Mapa completo de extracción
+
+```
+"¿Cuántos supervisores tiene INPROA SANTONI en enero 2026?"
+     │           │              │              │     │
+     │           │              │              │     └─── anio=2026
+     │           │              │              └───────── mes=1
+     │           │              └──────────────────────── org_name="INPROA"
+     │           └─────────────────────────────────────── cargo_search="supervisor"
+     └─────────────────────────────────────────────────── query_type="cargo"
+```
+
+### 1. FECHAS (todos los agentes)
+
+**Archivo:** `agents/date_utils.py`
+**Funciones:** `extract_month_year()`, `extract_date_range()`
+
+```
+extract_month_year("nómina de febrero 2026")
+  → mes=2, anio=2026
+
+extract_date_range("ventas del 15 de diciembre 2024 al 15 de enero 2025")
+  → ('2024-12-15', '2025-01-15')
+```
+
+**Patrones soportados (en orden de evaluación):**
+
+| # | Patrón | Ejemplo | Resultado |
+|---|--------|---------|-----------|
+| 1 | `desde [MES] [AÑO] a la fecha` | "desde enero 2025 hasta hoy" | 2025-01-01 → hoy |
+| 2 | `desde [AÑO] a la fecha` | "desde 2024 hasta hoy" | 2024-01-01 → hoy |
+| 3 | `del [AÑO] al [AÑO]` | "del 2024 al 2026" | 2024-01-01 → 2026-12-31 |
+| 4 | `[MES] [AÑO] a [MES] [AÑO]` | "junio 2025 a enero 2026" | 2025-06-01 → 2026-01-31 |
+| 5 | `[DD] de [MES] [AÑO] al [DD] de [MES] [AÑO]` | "15 de dic 2024 al 15 de ene 2025" | 2024-12-15 → 2025-01-15 |
+| 6 | `[MES], [MES] y [MES] [AÑO]` (listado) | "sept, oct y nov 2025" | 2025-09-01 → 2025-11-30 |
+| 7 | `[DD/MM/YYYY] al [DD/MM/YYYY]` | "01/03/2026 al 09/03/2026" | 2026-03-01 → 2026-03-09 |
+| 8 | `hoy` | "ventas de hoy" | hoy → hoy |
+| 9 | `mes actual` / `este mes` | "cobranza del mes actual" | 1er día mes → hoy |
+| 10 | `mes pasado` | "nómina del mes pasado" | mes anterior completo |
+
+**Palabras clave de meses:**
+```
+MESES_MAP = {
+    "enero":1, "febrero":2, "marzo":3, "abril":4, "mayo":5,
+    "junio":6, "julio":7, "agosto":8, "septiembre":9, "setiembre":9,
+    "octubre":10, "noviembre":11, "diciembre":12
+}
+```
+
+**⚠️ Regla importante:** Si "al" está en el mensaje, el patrón #6 (listado de meses) NO aplica — se asume que es un rango, no una lista.
+
+### 2. ORGANIZACIÓN (todos los agentes)
+
+**Función:** `_extract_org_name()` en cada agente
+**Método:** Busca substrings de las 7 organizaciones de Santoni
+
+```python
+_ORG_PATTERNS = [
+    ("inproa", "INPROA"),      # matchea "inproa santoni", "INPROA"
+    ("inpromaiz", "InproMaiz"),
+    ("santoni service", "Santoni Service"),
+    ("agropecuaria", "AGROPECUARIA R.R."),
+    ("agroinproa", "AGROINPROA"),
+    ("inversiones aga", "INVERSIONES AGA"),
+    ("agro import", "Agro Import"),
+]
+```
+
+**Cómo se usa en SQL:**
+```sql
+-- _add_org_name_filter() en idempiere_queries.py
+WHERE i.ad_org_id IN (
+    SELECT ad_org_id FROM adempiere.ad_org
+    WHERE name ILIKE '%INPROA%'
+)
+```
+
+### 3. CARGO / PUESTO (RRHH)
+
+**Función:** `_extract_cargo_search()` en `agents/rrhh.py`
+**Método:** Extrae de la ESTRUCTURA de la oración (no keywords hardcoded)
+
+```
+Patrones:
+  "cuántos [CARGO] hay/tiene"     → extract CARGO
+  "quiénes son los [CARGO]"       → extract CARGO
+  "lista de [CARGO]"              → extract CARGO
+  "cargo de [X]" / "puesto de [X]" → extract X
+```
+
+**Transformaciones aplicadas:**
+1. De-pluralización española: `supervisores → supervisor`, `gerentes → gerente`
+2. Strip acentos: `mecánico → mecanico` (iDempiere no tiene tildes)
+
+**Cómo se usa en SQL:**
+```sql
+-- build_employee_list(cargo_search='supervisor')
+WHERE j.name ILIKE '%supervisor%'  -- j = hr_job
+```
+
+### 4. NOMBRE DE EMPLEADO (RRHH)
+
+**Función:** `_extract_name_search()` en `agents/rrhh.py`
+**Triggers:** "apellido X", "nombre X", "se llama X", "buscar X"
+
+```
+"Buscar empleado de apellido Rodríguez"
+  → name_search = "Rodriguez"  (acentos removidos)
+```
+
+**Transformaciones:**
+- Strip acentos: `á→a, é→e, í→i, ó→o, ú→u, ñ→n`
+
+**Cómo se usa en SQL:**
+```sql
+-- build_employee_list(name_search='Rodriguez')
+WHERE bp.name ILIKE '%Rodriguez%'
+```
+
+### 5. MONEDA (Ventas, Compras)
+
+**Función:** `detect_currency()` en `agents/date_utils.py`
+**Detección:**
+
+| Palabra clave | currency_ids resultado |
+|---------------|----------------------|
+| "dólares", "USD", "en dólares" | [100,1000000,1000003,1000006,1000008,1000009,1000011,1000013,1000017] |
+| "bolívares", "Bs", "en bolívares" | [205] |
+| (nada) | None → todas las monedas |
+
+**Cómo se usa en SQL:**
+```sql
+-- _add_currency_filter()
+WHERE i.c_currency_id IN (100, 1000000, ...)  -- USD
+WHERE i.c_currency_id = 205                    -- VES
+```
+
+### 6. PRODUCTO (Ventas)
+
+**Función:** Detección en `_detect_query_type()` de `agents/ventas.py`
+**Keywords:** "harina", "arroz", "cereal", "avena", "empaque", "producto", "categoría"
+
+```
+"¿Cuánto se vendió de harinas en febrero 2026?"
+  → query_type = "producto"
+  → product_search = "harina"
+```
+
+**⚠️ Cuidado:** "maíz" como keyword standalone usa `\b` word boundary para no matchear dentro de "InproMaiz" (nombre de org).
+
+**Cómo se usa en SQL:**
+```sql
+-- _add_product_search_filter() en idempiere_queries.py
+-- De-pluraliza y normaliza: "harinas" → "harina"
+WHERE (p.name ILIKE '%harina%' OR p.value ILIKE '%harina%')
+```
+
+### 7. CUENTA CONTABLE (Contabilidad)
+
+**Función:** Regex en `agents/contabilidad.py`
+**Formatos aceptados:**
+
+| Input del usuario | Normalización | SQL |
+|-------------------|--------------|-----|
+| `1.01.01.01` | tal cual | `WHERE ev.value = '1.01.01.01'` |
+| `5.01` | tal cual | `WHERE ev.value = '5.01'` |
+| `1101` (sin puntos) | `→ '1%1%01'` | `WHERE ev.value LIKE '1%1%01'` |
+
+**Regex principal:** `r'\b(\d\.\d{2}(?:\.\d{2}){1,3})\b'`
+**Regex compacto:** `r'\bcuenta\s+(\d{4,6})\b'`
+
+### 8. ZONA / REGIÓN (Ventas)
+
+**Función:** `_extract_zona()` en `agents/ventas.py`
+**Keywords:** Matchea nombres de zonas de iDempiere (c_salesregion)
+
+```
+"Ventas en la zona de los Llanos"
+  → zona = "Llanos"
+```
+
+**Cómo se usa en SQL:**
+```sql
+-- En build_sales_summary
+WHERE cz.zona_name ILIKE '%Llanos%'
+```
+
+### 9. VENDEDOR / DISTRIBUIDOR (Ventas)
+
+**Función:** `_extract_vendedor()` en `agents/ventas.py`
+
+```
+"Ventas del distribuidor Carlos Matias"
+  → vendedor = "Carlos Matias"
+```
+
+**Cómo se usa en SQL:**
+```sql
+WHERE sr.name ILIKE '%Carlos Matias%'  -- sr = c_bpartner (salesrep)
+```
+
+### 10. TIPO DE DOCUMENTO (Ventas)
+
+**Función:** `_extract_doctype()` en `agents/ventas.py`
+**Detección:** Letra de serie → nombre de doctype en iDempiere
+
+| Usuario dice | doctype_name |
+|-------------|-------------|
+| "serie A", "factura A" | "Factura Serie A" |
+| "serie B" | "Factura Serie B" |
+| "nota de crédito" | "Nota de Crédito" |
+
+### Diagrama resumen de extracción
+
+```
+                    PREGUNTA DEL USUARIO
+                           │
+          ┌────────────────┼────────────────┐
+          │                │                │
+     date_utils.py    agente.py      keywords.py
+          │                │                │
+    ┌─────┴─────┐    ┌────┴────┐     ┌────┴────┐
+    │ mes/anio  │    │org_name │     │query_   │
+    │ date_from │    │cargo    │     │type     │
+    │ date_to   │    │nombre   │     │(cuál    │
+    │ currency  │    │zona     │     │build_*  │
+    └─────┬─────┘    │vendedor │     │llamar)  │
+          │          │producto │     └────┬────┘
+          │          │cuenta   │          │
+          │          │doctype  │          │
+          │          └────┬────┘          │
+          │               │               │
+          └───────┬───────┘               │
+                  │                       │
+                  ▼                       ▼
+          query_service.build_*(params)
+                  │
+                  ▼
+          idempiere_queries.build_*(params)
+                  │
+                  ▼
+              SQL → iDempiere
+```
+
+---
+
 *Fase 3: Mapa de agentes → pendiente*
 *Fase 4: Mapa de queries → pendiente*
 *Fase 5: Transformaciones → pendiente*
