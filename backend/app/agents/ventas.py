@@ -234,7 +234,12 @@ Datos de ventas de iDempiere:
     def _detect_query_type(cls, msg: str) -> str | None:
         """Detect query type using centralized keywords."""
         msg_lower = msg.lower()
-        # Client queries FIRST (before product, to avoid "InproMaiz" matching "maiz")
+        # Vendedores/distribuidores BEFORE clientes (ambos tienen "top")
+        _vendedor_kw = {"vendedor", "vendedores", "distribuidor", "distribuidores",
+                        "representante", "representantes", "salesrep", "rep comercial"}
+        if any(kw in msg_lower for kw in _vendedor_kw):
+            return "vendedores"
+        # Client queries (before product, to avoid "InproMaiz" matching "maiz")
         if matches_any(msg_lower, VENTAS_CLIENTES):
             return "top"
         # Client status
@@ -400,7 +405,18 @@ Datos de ventas de iDempiere:
             query_type = hist_ctx.get("query_type")
 
         try:
-            if query_type == "producto":
+            if query_type == "vendedores":
+                # Top vendedores internos (ad_user via salesrep_id)
+                data = build_sales_summary(
+                    mes=mes, anio=anio, org_ids=org_ids,
+                    date_from=date_from, date_to=date_to,
+                    currency_ids=currency_ids, org_name=org_name,
+                )
+                if isinstance(data, dict) and data.get("por_distribuidor"):
+                    sections.append(f"## Top Vendedores - {label}")
+                    sections.append(self._format_table(data["por_distribuidor"]))
+
+            elif query_type == "producto":
                 from app.services.query_service import build_sales_by_product
                 # Extract product name from question
                 _prod_names = ["harina", "arroz", "maíz", "maiz", "cereal", "avena", "empaque"]
