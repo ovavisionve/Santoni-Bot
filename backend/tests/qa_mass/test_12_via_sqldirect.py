@@ -70,10 +70,10 @@ def main():
         print(f"  {B}#{case_id}{X} [{agent}] {question[:60]}")
         start = time.time()
         try:
-            # SIN agent_name → pasa por orchestrator → _try_sql_direct
+            # CON agent_name → va al agente → si no tiene datos → fallback sql_direct
             resp = requests.post(
                 f"{args.base_url}/api/chat/",
-                json={"message": question},
+                json={"message": question, "agent_name": agent},
                 headers={"Authorization": f"Bearer {token}"},
                 timeout=180,
             )
