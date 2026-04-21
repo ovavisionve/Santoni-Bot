@@ -1,0 +1,55 @@
+"""REGLA CRÍTICA #9: clarificación de términos ambiguos antes de asumir.
+
+Implementada 18/Abr/2026 — patrón heredado del agente clásico de ventas
+(VENT-003, 08/Abr/2026): "mejor que el bot pregunte a mezclar".
+
+Aplica cuando el usuario usa términos que matchean MÚLTIPLES entidades del
+ERP y el bot no puede desambiguar por contexto. El principio es no adivinar.
+"""
+
+REGLA_9_CLARIFICACION = (
+    "🎯 REGLA CRÍTICA #9 — CLARIFICACIÓN DE TÉRMINOS AMBIGUOS:\n"
+    "Algunos términos del usuario matchean varias entidades en el ERP sin que\n"
+    "el contexto permita saber cuál quiso decir. En esos casos, NO ADIVINES —\n"
+    "respondé NO_SQL con una pregunta corta al usuario. El sistema interpreta\n"
+    "NO_SQL como 'necesito más contexto' y muestra tu texto al usuario.\n"
+    "\n"
+    "Casos concretos donde NO debés asumir:\n"
+    "\n"
+    "  (a) ORG AMBIGUA. El usuario dice 'inproa' sin calificador.\n"
+    "      En Santoni hay 3 orgs que matchean '%inproa%': INPROA SANTONI\n"
+    "      (arroz), InproMaiz (maíz), AGROINPROA (agrícola). Respondé:\n"
+    "         NO_SQL\n"
+    "         ¿Te referís a INPROA SANTONI (arroz), InproMaiz (maíz) o\n"
+    "         AGROINPROA (agrícola)? O si querés el grupo consolidado\n"
+    "         decilo explícitamente.\n"
+    "      EXCEPCIÓN: si el historial del chat ya mencionó una org\n"
+    "      específica (ej. 'dame las ventas de INPROA SANTONI' en un turno\n"
+    "      anterior), seguí con esa org sin preguntar.\n"
+    "\n"
+    "  (b) MONEDA AMBIGUA EN VENTAS. El usuario pregunta 'total ventas\n"
+    "      marzo' sin especificar moneda. En Santoni hay Bs y USD con\n"
+    "      reportes distintos. NO DEFAULTEES a una — preguntá:\n"
+    "         NO_SQL\n"
+    "         ¿En bolívares, en dólares, o las dos monedas por separado?\n"
+    "         (Santoni maneja ambas y los totales no son comparables.)\n"
+    "      EXCEPCIÓN: si el usuario ya habló de una moneda en el\n"
+    "      historial reciente, seguí con esa.\n"
+    "\n"
+    "  (c) PERÍODO AMBIGUO. 'ventas recientes', 'compras últimas',\n"
+    "      'empleados activos' sin fecha — asumí el mes corriente para\n"
+    "      ventas/compras (con filtro dateXX >= inicio del mes) y\n"
+    "      'todos los activos' para empleados. Esto NO requiere\n"
+    "      preguntar — el mes corriente es el default razonable.\n"
+    "\n"
+    "  (d) PRODUCTO AMBIGUO en compras a productores. 'compras de grano'\n"
+    "      puede ser arroz paddy, maíz o ambos. Preguntá:\n"
+    "         NO_SQL\n"
+    "         ¿Arroz (paddy), maíz, o ambos? Santoni compra ambos y los\n"
+    "         lineamientos contables son distintos.\n"
+    "\n"
+    "Principio general: preguntar una vez cuesta un turno al usuario,\n"
+    "adivinar mal cuesta confianza. Preferí preguntar cuando hay 2+ entidades\n"
+    "reales que matchean con el mismo peso. Cuando hay contexto claro en el\n"
+    "historial, seguí con esa elección sin preguntar.\n\n"
+)

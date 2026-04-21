@@ -412,6 +412,47 @@ def compute_confidence_score(
     return overall, breakdown
 
 
+# ── SQL Directo — gating helpers ────────────────────────────────────────
+# Fragmentos de keywords de dominio para detectar follow-ups que SÍ merecen
+# SQL Directo (ej "dame ventas en dólares") vs los que no (ej "sí", "ok").
+_DOMAIN_KEYWORD_FRAGMENTS: frozenset[str] = frozenset({
+    "cuánt", "cuant", "total", "saldo", "emplea", "venta", "vended",
+    "compr", "produc", "factur", "cobr", "banco", "nomina", "nómina",
+    "empaque", "inventa", "stock", "deuda", "vencid", "pendient",
+    "arroz", "maiz", "maíz", "productor", "proveedor", "cliente",
+    "cumpl", "vacacion", "sueldo", "salario", "pago", "movimiento",
+})
+
+
+def _is_greeting(msg_lower: str) -> bool:
+    """True si el mensaje parece saludo (no de datos)."""
+    return any(p in msg_lower for p in _GENERAL_PATTERNS) and len(msg_lower) < 60
+
+
+def _is_short_followup(msg_lower: str) -> bool:
+    """True si el mensaje es un follow-up corto sin keyword de dominio.
+
+    Follow-ups como "sí", "ok", "gracias" necesitan el contexto del
+    agente anterior y no deben ir a SQL Directo.
+    """
+    if len(msg_lower) >= 25:
+        return False
+    return not any(frag in msg_lower for frag in _DOMAIN_KEYWORD_FRAGMENTS)
+
+
+def should_try_sql_direct(message: str) -> bool:
+    """Decide si vale la pena invocar SQL Directo para este mensaje.
+
+    Retorna False para saludos y follow-ups cortos sin keywords de dominio.
+    """
+    msg_lower = message.lower().strip()
+    if _is_greeting(msg_lower):
+        return False
+    if _is_short_followup(msg_lower):
+        return False
+    return True
+
+
 class Orchestrator:
     """Routes user queries to the appropriate specialized agent."""
 
@@ -439,6 +480,50 @@ class Orchestrator:
         """Classify user intent using keyword matching (instant)."""
         return classify_by_keywords(message, allowed_departments, last_agent=last_agent)
 
+    async def _try_sql_direct(
+        self,
+        message: str,
+        user: User,
+        history: list[tuple[str, str]] | None,
+    ) -> dict | None:
+        """Intenta responder con SQL Directo.
+
+        Retorna un dict con response + metadata si SQL Directo resolvió la
+        pregunta. Retorna None si no aplica (saludo/follow-up), si el LLM
+        declinó, si la validación SQL falló, o si hubo error de ejecución
+        — el caller debe caer al flujo normal de agentes.
+        """
+        if not should_try_sql_direct(message):
+            return None
+
+        try:
+            from app.services.sql_direct import process_with_sql_direct
+            sql_result = await process_with_sql_direct(
+                message=message,
+                history=history,
+                org_ids=user.org_ids,
+            )
+        except Exception as exc:
+            logger.warning("SQL Direct failed, falling back to agents: %s", exc)
+            return None
+
+        if sql_result is None:
+            return None
+
+        logger.info(
+            "SQL Direct handled: '%s' → %d rows",
+            message[:60],
+            sql_result.get("metadata", {}).get("rows_returned", 0),
+        )
+        sql_result["confidence_score"] = 1.0
+        sql_result["score_breakdown"] = {
+            "routing": 1.0,
+            "data": 1.0 if sql_result.get("metadata", {}).get("has_data") else 0.2,
+            "overall": 1.0,
+            "match_type": "sql_direct",
+        }
+        return sql_result
+
     async def process(
         self,
         message: str,
@@ -452,6 +537,12 @@ class Orchestrator:
         # If a document is attached, route to document handler
         if document:
             return await self._handle_document(message, document, history)
+
+        # ── SQL DIRECT: intenta responder con SQL generado por el LLM ──
+        # Si aplica y tiene éxito, retorna directo. Si no, cae al flujo normal.
+        sql_result = await self._try_sql_direct(message, user, history)
+        if sql_result is not None:
+            return sql_result
 
         allowed = user.allowed_departments
         user_caps = user.capability_ids  # set[str] | None
@@ -539,6 +630,12 @@ class Orchestrator:
         last_agent: str | None = None,
     ) -> AsyncIterator[str]:
         """Stream response tokens via the appropriate agent."""
+        # ── SQL DIRECT en stream: mismo helper que process() para paridad ──
+        sql_result = await self._try_sql_direct(message, user, history)
+        if sql_result is not None:
+            yield sql_result["response"]
+            return
+
         allowed = user.allowed_departments
         user_caps = user.capability_ids
 
