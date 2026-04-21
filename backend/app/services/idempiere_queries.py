@@ -4099,9 +4099,14 @@ def build_sales_by_product(
     currency_ids: list[int] | None = None,
     org_name: str | None = None,
     product_search: str | None = None,
+    only_skus: bool = False,
     limit: int = 30,
 ) -> dict:
-    """Sales breakdown by product from c_invoiceline."""
+    """Sales breakdown by product from c_invoiceline.
+
+    only_skus: if True, filters m_product_category.iskpi='Y' (KPI products
+    that match the official sales report in iDempiere).
+    """
     db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
     try:
         conditions = [
@@ -4110,6 +4115,8 @@ def build_sales_by_product(
             "i.isactive = 'Y'",
             "dt.docbasetype = 'ARI'",
         ]
+        if only_skus:
+            conditions.append("pc.iskpi = 'Y'")
         params: dict = {"limit": limit}
         _add_org_filter(conditions, params, org_ids, "i")
         _add_org_name_filter(conditions, params, org_name, "i")

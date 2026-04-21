@@ -531,6 +531,21 @@ Datos de ventas de iDempiere:
                 else:
                     sections.append(self._format_summary(data, f"Resumen de Ventas - {label}"))
 
+                # Add product breakdown (SKU only) for better detail
+                try:
+                    from app.services.query_service import build_sales_by_product
+                    product_data = build_sales_by_product(
+                        mes=mes, anio=anio, org_ids=org_ids,
+                        date_from=date_from, date_to=date_to,
+                        currency_ids=currency_ids, org_name=org_name,
+                        only_skus=True, limit=20,
+                    )
+                    if product_data and product_data.get("top_productos"):
+                        sections.append(f"## Desglose por Producto (SKU) - {label}")
+                        sections.append(self._format_table(product_data["top_productos"]))
+                except Exception:
+                    pass
+
                 # When doctype is specified, also include top clients so the
                 # LLM has real client names (prevents hallucination of clients)
                 if doctype_name and not self._is_empty_result(data):

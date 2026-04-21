@@ -1411,6 +1411,7 @@ def build_sales_by_product(
     currency_ids: list[int] | None = None,
     org_name: str | None = None,
     product_search: str | None = None,
+    only_skus: bool = False,
     limit: int = 30,
 ) -> dict:
     """Sales by product - routes to iDempiere."""
