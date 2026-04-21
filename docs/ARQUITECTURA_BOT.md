@@ -803,7 +803,197 @@ PRODUCTORES ├─ build_registered_producers
 
 ---
 
-*Fase 4: Mapa de queries → pendiente*
+---
+
+## FASE 4: Mapa de Queries (build_* → tablas iDempiere)
+
+### Tablas consultadas (43 total)
+
+```
+TABLAS PRINCIPALES (FROM):            TABLAS DE JOIN:
+─────────────────────────             ─────────────────
+ad_org                                ad_org
+ad_user                               c_bank
+btd_effectiveattenda                  c_bp_group
+c_activity                            c_bpartner
+c_allocationline                      c_bpartner_location
+c_bankaccount                         c_city
+c_bpartner                            c_currency
+c_bpartner_location                   c_doctype
+c_currency                            c_elementvalue
+c_elementvalue                        c_invoice
+c_invoice                             c_invoiceline
+c_order                               c_location
+c_orderline                           c_orderline
+c_payment                             c_paymentterm
+c_paymentterm                         c_region
+fact_acct                             c_salesregion
+hr_employee                           c_uom
+hr_movement                           hr_concept
+hr_process                            hr_department
+m_inout                               hr_job
+m_movement                            hr_movement
+m_production                          hr_payroll
+m_productionline                      hr_process
+m_storageonhand                       m_inoutline
+pa_goal                               m_locator
+pp_product_bom                        m_movementline
+pp_product_bomline                    m_product
+                                      m_product_category
+                                      m_productionline
+                                      m_warehouse
+```
+
+### Mapa: build_* → tablas → campos clave
+
+#### VENTAS
+
+| Función | Tablas principales | JOIN | Campo fecha | Campo moneda |
+|---------|--------------------|------|-------------|-------------|
+| `build_sales_summary` | c_invoice | c_bpartner, ad_user, c_bpartner_location, c_salesregion, c_doctype | dateinvoiced | c_currency_id |
+| `build_top_clients` | c_invoice | c_bpartner, c_bpartner_location, c_salesregion, c_doctype | dateinvoiced | c_currency_id |
+| `build_collection_summary` | c_payment | c_allocationline, c_invoice | datetrx | c_currency_id |
+| `build_overdue_receivables` | c_invoice | c_bpartner, c_paymentterm, c_doctype | dateinvoiced | c_currency_id |
+| `build_top_delinquent_clients` | c_invoice | c_bpartner, c_paymentterm, c_doctype | dateinvoiced | c_currency_id |
+| `build_sales_by_product` | c_invoice, c_invoiceline | m_product, m_product_category, c_doctype | dateinvoiced | c_currency_id |
+| `build_client_status` | c_bpartner, c_invoice | ad_org | — | — |
+| `build_client_visits` | c_activity | ad_org | created | — |
+| `build_budget_comparison` | pa_goal | — | — | — |
+| `build_production_vs_sales` | c_invoice, m_inout | m_inoutline | dateinvoiced, movementdate | — |
+
+**Filtros comunes ventas:**
+```sql
+WHERE i.issotrx = 'Y'            -- ventas (no compras)
+  AND i.docstatus IN ('CO','CL')  -- completadas/cerradas
+  AND i.isactive = 'Y'
+  AND dt.docbasetype = 'ARI'      -- factura (no NC)
+```
+
+#### RRHH
+
+| Función | Tablas principales | JOIN | Campo fecha |
+|---------|--------------------|------|-------------|
+| `build_employee_summary` | hr_employee | c_bpartner, ad_org, hr_department, hr_job | — (siempre actual) |
+| `build_employee_list` | hr_employee | c_bpartner, ad_org, hr_job | startdate (para ingresos) |
+| `build_birthday_list` | hr_employee | c_bpartner, ad_user (LATERAL) | ad_user.birthday |
+| `build_payroll_summary` | hr_movement | hr_process, hr_concept, hr_payroll | hp.dateacct |
+| `build_attendance_summary` | hr_movement | hr_process, hr_concept | hp.dateacct |
+| `build_vacation_summary` | hr_movement | hr_process, hr_concept | hp.dateacct |
+| `build_turnover_summary` | hr_employee | c_bpartner, ad_org | enddate |
+| `build_new_hires` | hr_employee | ad_org | startdate |
+| `build_payroll_provisions` | hr_movement | hr_process, hr_concept | hp.dateacct |
+| `build_daily_attendance` | btd_effectiveattenda | ad_org | created |
+
+**Filtros comunes RRHH:**
+```sql
+WHERE e.isactive = 'Y'            -- empleado activo
+  AND bp.isactive = 'Y'           -- tercero activo
+-- Nómina:
+  AND hp.docstatus IN ('CO','CL') -- proceso completado
+```
+
+**⚠️ birthday:** vive en `ad_user.birthday` (NO en c_bpartner). Se accede via LATERAL subquery.
+
+#### CONTABILIDAD
+
+| Función | Tablas principales | JOIN | Campo fecha |
+|---------|--------------------|------|-------------|
+| `build_accounting_summary` | fact_acct | c_elementvalue, ad_org | dateacct |
+| `build_account_detail` | fact_acct | c_elementvalue | dateacct |
+
+**Filtros:**
+```sql
+WHERE fa.isactive = 'Y'
+-- Para cuenta específica:
+  AND ev.value = :code             -- exacto (1.01.01)
+  AND ev.value LIKE :code          -- flexible (1%1%01)
+-- Para tipo de cuenta:
+  AND ev.accounttype IN ('A','L','O','E','R')
+```
+
+**Tipos de cuenta:** A=Activo, L=Pasivo, O=Patrimonio, E=Gasto, R=Ingreso
+
+#### FINANZAS
+
+| Función | Tablas principales | JOIN | Campo fecha |
+|---------|--------------------|------|-------------|
+| `build_financial_summary` | c_bankaccount, c_invoice, c_payment | c_bank, c_currency, c_bpartner | datetrx, dateinvoiced |
+| `build_cobros_pagos_summary` | c_payment | ad_org | datetrx |
+| `build_loan_balances` | c_invoice | c_bpartner, c_doctype | dateinvoiced |
+
+#### PRODUCCIÓN
+
+| Función | Tablas principales | JOIN | Campo fecha |
+|---------|--------------------|------|-------------|
+| `build_production_summary` | m_inout | m_inoutline, m_product, ad_org | movementdate |
+| `build_production_orders` | m_production | m_productionline, m_product | movementdate |
+| `build_production_runs` | m_production | m_productionline, m_product | movementdate |
+| `build_inventory_stock` | m_storageonhand | m_product, m_locator, m_warehouse | — (siempre actual) |
+| `build_bom_info` | pp_product_bom | pp_product_bomline, m_product, c_uom | — |
+| `build_warehouse_movements` | m_movement | m_movementline, m_product, m_locator | movementdate |
+
+#### COMPRAS INSUMOS
+
+| Función | Tablas principales | JOIN | Campo fecha |
+|---------|--------------------|------|-------------|
+| `build_supply_purchases` | c_invoice | c_bpartner, ad_org, c_doctype | dateinvoiced |
+| `build_product_purchase_history` | c_invoiceline | c_invoice, m_product, c_bpartner | dateinvoiced |
+| `build_pending_purchase_orders` | c_order | c_orderline, c_bpartner, m_product | dateordered |
+| `build_supplier_price_comparison` | c_invoiceline | c_invoice, m_product, c_bpartner | dateinvoiced |
+| `build_purchase_payment_status` | c_invoice | c_bpartner, c_allocationline | dateinvoiced |
+
+**Filtros compras:**
+```sql
+WHERE i.issotrx = 'N'            -- compras (no ventas)
+  AND i.docstatus IN ('CO','CL')
+```
+
+#### COMPRAS PRODUCTORES
+
+| Función | Tablas principales | JOIN | Campo fecha |
+|---------|--------------------|------|-------------|
+| `build_producer_purchases` | c_order | c_orderline, c_bpartner, m_product, ad_org | dateordered |
+| `build_registered_producers` | c_bpartner | ad_org | — |
+| `build_producer_pending_payments` | c_order | c_orderline, c_bpartner | dateordered |
+| `build_producer_price_analysis` | c_orderline | c_order, c_bpartner, m_product | dateordered |
+
+**Filtros productores:**
+```sql
+WHERE o.issotrx = 'N'            -- compras
+  AND bp.isagricultor = 'Y'       -- productores agrícolas
+```
+
+### Diagrama: tablas más usadas
+
+```
+                    ┌─────────────┐
+                    │  c_invoice   │ ← Ventas, Compras, Finanzas
+                    │ (449,740)    │
+                    └──────┬──────┘
+                           │
+            ┌──────────────┼──────────────┐
+            │              │              │
+   ┌────────┴───┐  ┌──────┴──────┐ ┌─────┴──────┐
+   │c_invoiceline│  │  c_payment  │ │ c_bpartner │
+   │  (detalle)  │  │  (802,311)  │ │ (clientes) │
+   └─────────────┘  └─────────────┘ └────────────┘
+
+   ┌─────────────┐  ┌─────────────┐ ┌────────────┐
+   │  c_order     │  │  fact_acct  │ │hr_employee │
+   │  (278,870)   │  │(2,800,000) │ │  (RRHH)    │
+   └─────────────┘  └─────────────┘ └────────────┘
+
+   ┌─────────────┐  ┌─────────────┐ ┌────────────┐
+   │  m_inout     │  │hr_movement  │ │m_storage   │
+   │(producción)  │  │  (nómina)   │ │ onhand     │
+   └─────────────┘  └─────────────┘ └────────────┘
+```
+
+---
+
+*Fase 5: Transformaciones → pendiente*
+*Fase 6: Prompt y LLM → pendiente*
+*Fase 7: Keywords y routing → pendiente*
 *Fase 5: Transformaciones → pendiente*
 *Fase 6: Prompt y LLM → pendiente*
 *Fase 7: Keywords y routing → pendiente*
