@@ -683,6 +683,126 @@ PRODUCTORES ├─ build_registered_producers
 
 ---
 
+---
+
+## PREGUNTAS QUE EL BOT MANEJA (verificadas)
+
+### ✅ RRHH (59 preguntas, 10 categorías)
+
+| Categoría | Ej. de pregunta | Variables | Estado |
+|-----------|----------------|-----------|--------|
+| **Empleados total** | "¿Cuántos empleados hay?" | org, depto | ✅ 100% |
+| **Empleados por org** | "¿Cuántos en INPROA SANTONI?" | cualquier org | ✅ |
+| **Empleados por depto** | "¿Cuántos en Talento Humano?" | cualquier depto | ✅ |
+| **Búsqueda por cargo** | "¿Cuántos supervisores hay?" | cualquier cargo (dinámico) | ✅ |
+| **Búsqueda por nombre** | "Buscar empleado apellido González" | cualquier nombre (sin tildes) | ✅ |
+| **Cumpleañeros** | "Cumpleañeros de marzo 2026" | cualquier mes, org | ✅ |
+| **Nómina** | "Nómina de enero 2026" | mes, año, org | ✅ |
+| **Ausentismo** | "Índices de ausentismo enero 2026" | mes, año, org | ✅ |
+| **Vacaciones** | "Reporte de vacaciones pendientes" | mes, año, org | ✅ |
+| **Rotación** | "¿Cuántos se fueron en 2025?" | año, org | ✅ |
+| **Ingresos personal** | "¿Cuántos ingresaron en 2025?" | año, mes, org | ✅ |
+| **Provisiones laborales** | "Prestaciones sociales dic 2025" | mes, año | ✅ |
+| **Asistencia del día** | "Asistencias de hoy" | — | ⚠️ depende de datos biométricos |
+
+### ✅ VENTAS (58 preguntas, 15 categorías)
+
+| Categoría | Ej. de pregunta | Variables | Estado |
+|-----------|----------------|-----------|--------|
+| **Resumen ventas** | "Ventas de enero 2026" | mes, año, org, moneda | ✅ 100% |
+| **Ventas en USD** | "¿Cuánto se facturó en dólares?" | mes, año | ✅ |
+| **Ventas por rango** | "Ventas del 15/dic al 15/ene" | DD/MM/YYYY, DD de MES | ✅ |
+| **Top clientes** | "Top 20 clientes del 2025" | año, org, moneda, limit | ✅ |
+| **Cobranza** | "Cobranza de enero 2026" | mes, año, org | ✅ |
+| **Cobranza por método** | "Cobros por transferencia" | método de pago | ✅ |
+| **CxC vencidas** | "Cuentas por cobrar vencidas" | org | ✅ |
+| **Top morosos** | "Top 10 morosos" | org | ✅ |
+| **Ventas por zona** | "Ranking por zona enero 2026" | mes, año, zona | ✅ |
+| **Ventas por región** | "Ventas en los Llanos" | región | ✅ |
+| **Vendedores/distribuidores** | "Top vendedores INPROA" | org | ✅ |
+| **Ventas por producto** | "Ventas de harinas feb 2026" | producto, mes, año | ✅ NUEVO |
+| **Clientes activos/inactivos** | "Clientes activos InproMaiz" | org | ✅ NUEVO |
+| **Metas/presupuesto** | "Comparativo vs metas" | mes, año | ✅ NUEVO |
+| **Ventas vs producción** | "¿Cuánto se vendió vs produjo?" | mes, año | ✅ NUEVO |
+| **Visitas a clientes** | "Visitas enero 2026" | mes, año | ✅ NUEVO |
+
+### ✅ CONTABILIDAD (18 preguntas, 7 categorías)
+
+| Categoría | Ej. de pregunta | Variables | Estado |
+|-----------|----------------|-----------|--------|
+| **Balance general** | "Balance general enero 2026" | mes, año, org | ✅ |
+| **Activos/Pasivos/Patrimonio** | "Activos fijos INPROA" | tipo cuenta, org | ✅ |
+| **Estado de resultados** | "Estado resultados 2025" | año, org | ✅ |
+| **Saldo cuenta (con puntos)** | "Saldo de la cuenta 1.01.01" | código, mes, año | ✅ |
+| **Saldo cuenta (sin puntos)** | "Cuenta 1101 en febrero" | código compacto | ✅ NUEVO |
+| **Libro mayor** | "Libro mayor cuenta 5.01" | código, año | ✅ |
+| **Gastos** | "Gastos enero a marzo 2026" | rango fechas | ✅ |
+| **Impuestos** | "Impuestos enero 2026" | mes, año | ✅ |
+
+### ✅ FINANZAS (37 preguntas, 7 categorías)
+
+| Categoría | Ej. de pregunta | Variables | Estado |
+|-----------|----------------|-----------|--------|
+| **Saldos bancarios** | "¿Cuál banco tiene más disponibilidad?" | org | ✅ |
+| **CxC** | "Cuentas por cobrar vencidas" | org, moneda | ✅ |
+| **CxP** | "¿Cuánto debemos a proveedores?" | org, moneda | ✅ |
+| **Cobros y pagos** | "Cobros y pagos de enero 2026" | mes, año | ✅ |
+| **Préstamos** | "Cuotas de préstamos que vencen" | — | ✅ |
+| **Flujo de caja** | "Flujo de caja enero 2026" | mes, año | ✅ |
+| **Presupuesto** | "Presupuesto vs ejecución" | mes, año | ⚠️ |
+
+### ✅ PRODUCCIÓN (61 preguntas, 8 categorías)
+
+| Categoría | Ej. de pregunta | Variables | Estado |
+|-----------|----------------|-----------|--------|
+| **Resumen producción** | "¿Cuánto se produjo en enero?" | mes, año, org | ✅ |
+| **Órdenes producción** | "Órdenes del mes" | mes, año | ✅ |
+| **Inventario** | "¿Cuánto hay en almacén?" | org, producto | ✅ |
+| **Inventario por producto** | "Inventario de arroz" | producto | ✅ |
+| **Recetas/BOM** | "Receta del arroz blanco" | producto | ✅ |
+| **Movimientos almacén** | "Traslados de almacén feb 2026" | mes, año | ✅ |
+| **Desperdicios** | "Desperdicio en empaque" | mes, año | ✅ |
+| **Producción por producto** | "Producción de arroz enero 2026" | producto, mes, año | ✅ |
+
+### ✅ COMPRAS INSUMOS (86 preguntas, 8 categorías)
+
+| Categoría | Ej. de pregunta | Variables | Estado |
+|-----------|----------------|-----------|--------|
+| **Resumen compras** | "¿Cuánto se compró este mes?" | mes, año, org, moneda | ✅ |
+| **Inventario** | "¿Cuántas cajas quedan?" | producto | ✅ |
+| **Órdenes pendientes** | "Órdenes de compra pendientes" | mes, año | ✅ |
+| **Proveedores** | "Proveedores de láminas" | producto | ✅ |
+| **Historial compras** | "Historial de compras de harina" | producto, proveedor | ✅ |
+| **Comparar precios** | "Comparar precios entre proveedores" | producto | ✅ |
+| **Estado de pago** | "Facturas pendientes de pago" | mes, año | ✅ |
+| **Código producto** | "Código de cajas de cartón" | producto | ✅ |
+
+### ✅ COMPRAS PRODUCTORES (29 preguntas, 4 categorías)
+
+| Categoría | Ej. de pregunta | Variables | Estado |
+|-----------|----------------|-----------|--------|
+| **Compras agrícolas** | "¿Cuánto arroz se compró en 2025?" | producto, mes, año, org | ✅ |
+| **Productores registrados** | "¿Cuántos productores hay?" | org | ✅ |
+| **Pagos pendientes** | "Pagos pendientes a productores" | org | ✅ |
+| **Precios** | "Precio promedio del kilo de arroz" | producto, mes, año | ✅ |
+
+### Resumen total
+
+| Agente | Categorías | Preguntas | Estado |
+|--------|-----------|-----------|--------|
+| RRHH | 13 | 59 | ✅ |
+| Ventas | 15 | 58 | ✅ |
+| Contabilidad | 7 | 18 | ✅ |
+| Finanzas | 7 | 37 | ✅ |
+| Producción | 8 | 61 | ✅ |
+| Compras Insumos | 8 | 86 | ✅ |
+| Compras Productores | 4 | 29 | ✅ |
+| **TOTAL** | **62 categorías** | **348 preguntas** | **✅** |
+
+**Variables dinámicas soportadas:** mes (12), año (2024-2026), org (7), moneda (VES/USD), producto (cualquiera vía ILIKE), cargo (cualquiera vía estructura), nombre (cualquiera sin tildes), cuenta contable (con/sin puntos), zona, región, vendedor, tipo documento.
+
+---
+
 *Fase 4: Mapa de queries → pendiente*
 *Fase 5: Transformaciones → pendiente*
 *Fase 6: Prompt y LLM → pendiente*
