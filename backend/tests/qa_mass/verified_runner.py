@@ -186,17 +186,28 @@ def _verify_ausentismo(pregunta, mes, anio, org):
     from app.services.idempiere_queries import build_attendance_summary
     data = build_attendance_summary(mes=mes, anio=anio)
     if isinstance(data, dict):
-        total = data.get("total_ausencias", data.get("total", 0))
-        if total:
-            return [("ausencias", total)]
+        totales = data.get("totales", {})
+        ocurrencias = totales.get("total_ocurrencias", 0)
+        empleados = totales.get("empleados_con_ausencias", 0)
+        tasa = totales.get("tasa_ausentismo_pct", 0)
+        if ocurrencias:
+            return [("ausencias", ocurrencias)]
+        if empleados:
+            return [("empleados_ausentes", empleados)]
     return []
 
 
 def _verify_vacaciones(pregunta, mes, anio, org):
     from app.services.idempiere_queries import build_vacation_summary
     data = build_vacation_summary(mes=mes, anio=anio)
-    if isinstance(data, dict) and data.get("total"):
-        return [("vacaciones", data["total"])]
+    if isinstance(data, dict):
+        totales = data.get("totales", {})
+        empleados = totales.get("total_empleados", 0)
+        monto = totales.get("total_monto", 0)
+        if empleados:
+            return [("empleados_vacaciones", empleados)]
+        if monto:
+            return [("monto_vacaciones", monto)]
     return []
 
 
@@ -204,9 +215,13 @@ def _verify_rotacion(pregunta, mes, anio, org):
     from app.services.idempiere_queries import build_turnover_summary
     data = build_turnover_summary(anio=anio)
     if isinstance(data, dict):
-        salidas = data.get("total_salidas", data.get("salidas", 0))
-        if salidas:
-            return [("salidas", salidas)]
+        totales = data.get("totales", {})
+        bajas = totales.get("bajas", 0)
+        tasa = totales.get("tasa_rotacion_pct", 0)
+        if bajas:
+            return [("bajas", bajas)]
+        if tasa:
+            return [("tasa_rotacion", tasa)]
     return []
 
 
@@ -243,23 +258,16 @@ def _verify_resumen_ventas(pregunta, mes, anio, org):
 
 def _verify_cobranza(pregunta, mes, anio, org):
     from app.services.idempiere_queries import build_collection_summary
-    usd = _is_usd_question(pregunta)
     data = build_collection_summary(mes=mes, anio=anio, org_name=org)
     if isinstance(data, dict):
-        por_moneda = data.get("por_moneda", [])
-        if por_moneda and not usd:
-            for entry in por_moneda:
-                if entry.get("moneda") == "Bs.":
-                    total = entry.get("total", entry.get("cantidad", 0))
-                    if total:
-                        return [("cobrado_ves", total)]
-            # Fallback first entry
-            if por_moneda:
-                return [("cobrado", por_moneda[0].get("total", 0))]
+        # collection_summary NO tiene por_moneda — solo totales (mixto VES+USD)
         totals = data.get("totales", {})
         total = totals.get("total_cobrado", 0)
+        recibos = totals.get("total_recibos", 0)
         if total:
             return [("total_cobrado", total)]
+        if recibos:
+            return [("recibos", recibos)]
     return []
 
 
@@ -277,9 +285,8 @@ def _verify_ranking_clientes(pregunta, mes, anio, org):
 def _verify_cxc_vencidas(pregunta, mes, anio, org):
     from app.services.idempiere_queries import build_overdue_receivables
     data = build_overdue_receivables()
-    if isinstance(data, (list, dict)):
-        if isinstance(data, list) and data:
-            return [("nombre_moroso", d.get("cliente", "")) for d in data[:3]]
+    if isinstance(data, list) and data:
+        return [("nombre_moroso", d.get("cliente", d.get("nombre", ""))) for d in data[:3] if d.get("cliente") or d.get("nombre")]
     return []
 
 
@@ -287,9 +294,13 @@ def _verify_balance_general(pregunta, mes, anio, org):
     from app.services.idempiere_queries import build_accounting_summary
     data = build_accounting_summary(mes=mes, anio=anio)
     if isinstance(data, dict):
-        movs = data.get("total_movimientos", 0)
-        if movs:
-            return [("movimientos", movs)]
+        totales = data.get("totales", {})
+        asientos = totales.get("total_asientos", 0)
+        debe = totales.get("total_debe", 0)
+        if asientos:
+            return [("asientos", asientos)]
+        if debe:
+            return [("total_debe", debe)]
     return []
 
 
@@ -298,11 +309,20 @@ def _verify_saldo_cuenta(pregunta, mes, anio, org):
     if not code:
         return []
     from app.services.idempiere_queries import build_account_detail
-    data = build_account_detail(account_value=code, mes=mes, anio=anio)
+    try:
+        data = build_account_detail(account_code=code, mes=mes, anio=anio)
+    except TypeError:
+        try:
+            data = build_account_detail(account_value=code, mes=mes, anio=anio)
+        except TypeError:
+            return []
     if isinstance(data, dict):
-        accounts = data.get("cuentas", data.get("accounts", []))
-        if accounts:
-            return [("nombre_cuenta", accounts[0].get("cuenta", accounts[0].get("name", "")))]
+        accounts = data.get("cuentas", data.get("accounts", data.get("detalle", [])))
+        if accounts and isinstance(accounts, list) and accounts:
+            first = accounts[0]
+            name = first.get("cuenta", first.get("name", first.get("nombre", "")))
+            if name:
+                return [("nombre_cuenta", name.split()[0])]
     return []
 
 
