@@ -235,18 +235,26 @@ Datos de ventas de iDempiere:
     def _detect_query_type(cls, msg: str) -> str | None:
         """Detect query type using centralized keywords."""
         msg_lower = msg.lower()
-        # Product/category queries — check BEFORE general sales
-        _product_kw = {"producto", "productos", "categoría", "categoria", "harina",
-                       "arroz", "maíz", "maiz", "cereal", "avena", "empaque",
-                       "por producto", "por categoría", "por categoria",
-                       "más vendido", "mas vendido", "principales producto"}
-        if any(kw in msg_lower for kw in _product_kw):
-            return "producto"
+        # Client queries FIRST (before product, to avoid "InproMaiz" matching "maiz")
+        if matches_any(msg_lower, VENTAS_CLIENTES):
+            return "top"
         # Client status
         if ("activo" in msg_lower or "inactivo" in msg_lower) and "client" in msg_lower:
             return "cliente_status"
-        if matches_any(msg_lower, VENTAS_CLIENTES):
-            return "top"
+        # Product/category queries — AFTER client check
+        _product_kw = {"producto", "productos", "categoría", "categoria", "harina",
+                       "por producto", "por categoría", "por categoria",
+                       "más vendido", "mas vendido", "principales producto"}
+        # These only match as standalone words, not inside org names
+        _product_standalone = {"arroz", "maíz", "maiz", "cereal", "avena", "empaque"}
+        if any(kw in msg_lower for kw in _product_kw):
+            return "producto"
+        for kw in _product_standalone:
+            if kw in msg_lower and kw not in "inpromaiz":
+                # Verify it's not part of an org name
+                import re as _re
+                if _re.search(rf'\b{kw}\b', msg_lower):
+                    return "producto"
         if matches_any(msg_lower, VENTAS_COBRANZA):
             return "cobranza"
         if matches_any(msg_lower, VENTAS_CXC):

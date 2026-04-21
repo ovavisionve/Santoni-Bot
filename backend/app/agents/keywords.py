@@ -676,7 +676,7 @@ RRHH_NOMINA = frozenset({
 
 RRHH_AUSENTISMO = frozenset({
     # Ausentismo
-    "ausentismo", "ausencia", "ausencias", "asistencia",
+    "ausentismo", "ausentismos", "ausentimos", "ausencia", "ausencias", "asistencia",
     "inasistencia", "inasistencias",
     "falta", "faltas", "faltó", "falto",
     "no asistió", "no asistio", "no asistieron",
