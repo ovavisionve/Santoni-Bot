@@ -503,7 +503,7 @@ def build_sales_summary(
             "ORDER BY bpl.c_bpartner_id, bpl.c_bpartner_location_id DESC) "
         )
         joins = (
-            "LEFT JOIN adempiere.c_bpartner sr "
+            "LEFT JOIN adempiere.ad_user sr "
             "ON i.salesrep_id = sr.ad_user_id "
             "LEFT JOIN client_zone cz "
             "ON i.c_bpartner_id = cz.c_bpartner_id "
@@ -590,10 +590,10 @@ def build_sales_summary(
             for r in db.execute(by_region_q, params).fetchall()
         ]
 
-        # By distributor (salesrep_id tracks distributors, not internal salespeople)
+        # By salesperson (salesrep_id → ad_user = vendedor interno)
         by_distributor_q = text(
             f"{zone_cte}"
-            f"SELECT COALESCE(sr.name, 'Sin Distribuidor') AS distribuidor, "
+            f"SELECT COALESCE(sr.name, 'Sin Vendedor') AS distribuidor, "
             f"SUM(CASE WHEN dt.docbasetype = 'ARI' THEN 1 ELSE 0 END) AS facturas, "
             f"COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal "
             f"WHEN dt.docbasetype = 'ARC' THEN -i.grandtotal ELSE 0 END), 0) AS total "
