@@ -704,7 +704,7 @@ RRHH_CUMPLEANOS = frozenset({
     "nació", "nacio", "nacieron",
     "quién cumple", "quien cumple",
     "quiénes cumplen", "quienes cumplen",
-    "cumple años", "cumplir años",
+    "cumple años", "cumplen años", "cumplir años",
     "aniversario", "aniversarios",
     "felicitar", "felicitaciones",
     "birthday", "birthdays",
