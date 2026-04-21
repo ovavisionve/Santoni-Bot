@@ -230,11 +230,25 @@ Datos de RRHH en iDempiere:
             "nómina", "nomina", "vacaciones", "ausentismo",
         ]
 
+        # De-pluralize Spanish: supervisores→supervisor, obreros→obrero
+        def _deplural(word):
+            w = word.strip()
+            # -ntes/-ltes → remove 's' (gerentes→gerente, asistentes→asistente)
+            if len(w) > 4 and w.endswith('tes') and w[-4] in 'nlaei':
+                return w[:-1]
+            # -dores/-tores → remove 'es' (supervisores→supervisor, coordinadores→coordinador)
+            if len(w) > 4 and w.endswith('es') and w[-3] not in 'aeiouáéíóú':
+                return w[:-2]
+            # -os/-as → remove 's' (obreros→obrero, analistas→analista)
+            if len(w) > 3 and w.endswith('s') and w[-2] in 'aeiouáéíóú':
+                return w[:-1]
+            return w
+
         # Pattern 1: "cuántos/cuantos [CARGO] hay/tiene/tenemos"
         import re
         m = re.search(r'cu[áa]nt[oa]s?\s+(.+?)\s+(?:hay|tiene|tenemos|existen|activo)', msg_lower)
         if m:
-            cargo = m.group(1).strip().rstrip('s')  # de-pluralize basic
+            cargo = _deplural(m.group(1).strip())
             if cargo and len(cargo) >= 3 and cargo not in _not_cargo_phrases:
                 return cargo
 
