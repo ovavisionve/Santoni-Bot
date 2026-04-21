@@ -393,6 +393,11 @@ Datos de RRHH en iDempiere:
 
         # Detect cargo/job search (current message, then history fallback)
         cargo_search = self._extract_cargo_search(message)
+        # Strip accents from cargo — iDempiere stores without accents
+        if cargo_search:
+            _acc = {'á':'a','é':'e','í':'i','ó':'o','ú':'u','ñ':'n',
+                    'Á':'A','É':'E','Í':'I','Ó':'O','Ú':'U','Ñ':'N'}
+            cargo_search = ''.join(_acc.get(c, c) for c in cargo_search)
         # "Calidad de contratación" is NOT a cargo — it's a hiring metric
         _not_cargo = ["calidad de contratación", "calidad de contratacion",
                        "tasa de aceptación", "tasa de aceptacion",
