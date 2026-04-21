@@ -542,6 +542,31 @@ class BaseAgent(ABC):
         "no genero datos estimados ni aproximados.*"
     )
 
+    async def _try_sql_direct_fallback(
+        self,
+        message: str,
+        history: list[tuple[str, str]] | None = None,
+        org_ids: list[int] | None = None,
+    ) -> dict | None:
+        """Fallback: when the agent's hardcoded query returns no data, try
+        sql_direct to generate dynamic SQL against iDempiere.
+
+        Returns a response dict if sql_direct succeeded, None otherwise.
+        """
+        try:
+            from app.services.sql_direct import process_with_sql_direct
+            result = await process_with_sql_direct(
+                message=message,
+                history=history,
+                org_ids=org_ids,
+            )
+            if result and result.get("response"):
+                result["agent_used"] = f"{self.name}+sql_direct"
+                return result
+        except Exception as exc:
+            logger.debug("sql_direct fallback failed for %s: %s", self.name, exc)
+        return None
+
     async def process(
         self,
         message: str,
@@ -556,6 +581,12 @@ class BaseAgent(ABC):
         # When no data was found, skip the LLM entirely to prevent hallucination.
         # This avoids wasting an LLM call that would just fabricate data.
         if not has_data:
+            # ── SQL Direct fallback: try dynamic SQL before giving up ──
+            sql_result = await self._try_sql_direct_fallback(message, history, org_ids)
+            if sql_result is not None:
+                logger.info("sql_direct fallback succeeded for %s", self.name)
+                return sql_result
+
             logger.info(
                 "No data for %s — returning fixed message (skip LLM in process)",
                 self.name,
@@ -645,6 +676,13 @@ class BaseAgent(ABC):
         # In streaming mode we can't un-send tokens, so the safest approach is to
         # never invoke the LLM and yield a deterministic "no results" message.
         if not has_data:
+            # ── SQL Direct fallback: try dynamic SQL before giving up ──
+            sql_result = await self._try_sql_direct_fallback(message, history, org_ids)
+            if sql_result is not None:
+                logger.info("sql_direct fallback succeeded for %s (stream)", self.name)
+                yield sql_result.get("response", self._HALLUCINATION_REPLACEMENT)
+                return
+
             logger.info(
                 "No data for %s — returning fixed message (skip LLM in stream)",
                 self.name,

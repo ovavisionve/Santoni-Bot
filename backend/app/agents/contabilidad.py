@@ -23,6 +23,21 @@ logger = logging.getLogger("santonibot.agents.contabilidad")
 
 # Regex for account codes like 2.01.01.10, 1.01.02, etc.
 _ACCOUNT_CODE_RE = re.compile(r'\b(\d\.\d{2}(?:\.\d{2}){1,3})\b')
+# Also match compact codes: "1101", "50101" (without dots)
+_ACCOUNT_CODE_COMPACT_RE = re.compile(r'\bcuenta\s+(\d{4,6})\b', re.IGNORECASE)
+
+
+def _normalize_account_code(code: str) -> str:
+    """Convert compact code (1101) to dotted format (1.1.01) for iDempiere search."""
+    if '.' in code:
+        return code
+    if len(code) == 4:
+        return f"{code[0]}.{code[1:3]}.{code[2:4]}"
+    if len(code) == 5:
+        return f"{code[0]}.{code[1:3]}.{code[3:5]}"
+    if len(code) == 6:
+        return f"{code[0]}.{code[1:3]}.{code[3:5]}.{code[5:6]}"
+    return code
 
 
 class ContabilidadAgent(BaseAgent):
@@ -361,6 +376,11 @@ Se pueden consultar cuentas específicas por código (ej: 2.01.01.10) con rango 
         # Check if user is asking about a specific account code
         account_match = _ACCOUNT_CODE_RE.search(message)
         account_code = account_match.group(1) if account_match else None
+        # Try compact format if dotted didn't match: "cuenta 1101" → "1.1.01"
+        if not account_code:
+            compact_match = _ACCOUNT_CODE_COMPACT_RE.search(message)
+            if compact_match:
+                account_code = _normalize_account_code(compact_match.group(1))
 
         # Follow-up: if no account code in current message, check history.
         # BUT don't inherit account code if the message is a general query
