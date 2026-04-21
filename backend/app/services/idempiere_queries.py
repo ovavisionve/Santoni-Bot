@@ -4476,3 +4476,67 @@ def build_production_vs_sales(
         }
     finally:
         db.close()
+
+
+def build_vacation_expiry(
+    mes: int | None = None,
+    anio: int | None = None,
+    org_ids: list[int] | None = None,
+    org_name: str | None = None,
+) -> dict:
+    """Employees with vacation expiry in the given month.
+
+    'Vacation expiry' = employees whose hire anniversary falls in that month.
+    In Venezuelan labor law, vacations must be taken within the anniversary year.
+    """
+    db = IdempiereSession()
+    try:
+        conditions = [
+            "e.isactive = 'Y'",
+            "bp.isactive = 'Y'",
+            "(e.enddate IS NULL OR e.enddate > CURRENT_DATE)",
+            "e.startdate IS NOT NULL",
+        ]
+        params: dict = {}
+        _add_org_filter(conditions, params, org_ids, "e")
+        _add_org_name_filter(conditions, params, org_name, "e")
+
+        if mes:
+            conditions.append("EXTRACT(MONTH FROM e.startdate) = :mes")
+            params["mes"] = mes
+
+        where = " AND ".join(conditions)
+
+        q = text(
+            f"SELECT DISTINCT ON (e.c_bpartner_id) "
+            f"bp.name AS nombre, "
+            f"e.startdate AS fecha_ingreso, "
+            f"EXTRACT(YEAR FROM age(CURRENT_DATE, e.startdate))::int AS anos_servicio, "
+            f"COALESCE(j.name, 'Sin Cargo') AS cargo, "
+            f"COALESCE(d.name, 'Sin Depto') AS departamento, "
+            f"o.name AS organizacion "
+            f"FROM adempiere.hr_employee e "
+            f"JOIN adempiere.c_bpartner bp ON e.c_bpartner_id = bp.c_bpartner_id "
+            f"JOIN adempiere.ad_org o ON e.ad_org_id = o.ad_org_id "
+            f"LEFT JOIN adempiere.hr_job j ON e.hr_job_id = j.hr_job_id "
+            f"LEFT JOIN adempiere.hr_department d ON e.hr_department_id = d.hr_department_id "
+            f"WHERE {where} "
+            f"ORDER BY e.c_bpartner_id, e.startdate"
+        )
+        rows = db.execute(q, params).fetchall()
+        return {
+            "totales": {"total_empleados": len(rows)},
+            "empleados": [
+                {
+                    "nombre": r[0],
+                    "fecha_ingreso": r[1].isoformat() if r[1] else None,
+                    "anos_servicio": r[2],
+                    "cargo": r[3],
+                    "departamento": r[4],
+                    "organizacion": r[5],
+                }
+                for r in rows
+            ],
+        }
+    finally:
+        db.close()

@@ -38,6 +38,7 @@ from app.services.query_service import (
     build_new_hires,
     build_payroll_provisions,
     build_daily_attendance,
+    build_vacation_expiry,
 )
 
 
@@ -539,14 +540,29 @@ Datos de RRHH en iDempiere:
 
             if matches_any(msg, RRHH_VACACIONES):
                 try:
-                    data = build_vacation_summary(
-                        mes=mes, anio=anio, org_ids=org_ids,
-                        date_from=date_from, date_to=date_to,
-                        org_name=org_name,
-                    )
-                    sections.append(self._format_summary(
-                        data, f"Resumen de Vacaciones - {label}",
-                    ))
+                    # "vacaciones a vencer" / "pendientes a vencer" = by anniversary
+                    _vencer_kw = ["vencer", "vencen", "vencimiento", "pendientes a vencer",
+                                  "por vencer", "próximas a vencer", "proximas a vencer"]
+                    is_expiry = any(kw in msg for kw in _vencer_kw)
+
+                    if is_expiry:
+                        data = build_vacation_expiry(
+                            mes=mes, anio=anio, org_ids=org_ids, org_name=org_name,
+                        )
+                        if data and data.get("empleados"):
+                            sections.append(f"## Vacaciones a Vencer - {label}")
+                            sections.append(self._format_table(data["empleados"]))
+                        else:
+                            sections.append(f"## Vacaciones a Vencer - {label}\nNo se encontraron empleados.")
+                    else:
+                        data = build_vacation_summary(
+                            mes=mes, anio=anio, org_ids=org_ids,
+                            date_from=date_from, date_to=date_to,
+                            org_name=org_name,
+                        )
+                        sections.append(self._format_summary(
+                            data, f"Resumen de Vacaciones - {label}",
+                        ))
                 except Exception as exc:
                     logger.error("Error en vacaciones: %s: %s", type(exc).__name__, exc, exc_info=True)
                     sections.append(

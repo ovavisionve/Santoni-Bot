@@ -1477,3 +1477,10 @@ def build_production_vs_sales(**kwargs) -> dict:
         from app.services.idempiere_queries import build_production_vs_sales as _prod
         return _prod(**kwargs)
     return {"ventas": {}, "produccion": {}}
+
+
+def build_vacation_expiry(**kwargs) -> dict:
+    if _is_production():
+        from app.services.idempiere_queries import build_vacation_expiry as _prod
+        return _prod(**kwargs)
+    return {"totales": {"total_empleados": 0}, "empleados": []}
