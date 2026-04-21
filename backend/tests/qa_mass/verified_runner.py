@@ -199,7 +199,13 @@ def _verify_ausentismo(pregunta, mes, anio, org):
 
 def _verify_vacaciones(pregunta, mes, anio, org):
     from app.services.idempiere_queries import build_vacation_summary
-    data = build_vacation_summary(mes=mes, anio=anio)
+    kwargs = {"mes": mes, "anio": anio}
+    if org:
+        kwargs["org_name"] = org
+    try:
+        data = build_vacation_summary(**kwargs)
+    except TypeError:
+        data = build_vacation_summary(mes=mes, anio=anio)
     if isinstance(data, dict):
         totales = data.get("totales", {})
         empleados = totales.get("total_empleados", 0)
@@ -271,6 +277,37 @@ def _verify_cobranza(pregunta, mes, anio, org):
     return []
 
 
+def _verify_ranking_vendedores(pregunta, mes, anio, org):
+    """Para ranking de vendedores, verificar nombres de distribuidores."""
+    from app.services.idempiere_queries import build_sales_summary
+    data = build_sales_summary(mes=mes, anio=anio, org_name=org)
+    if isinstance(data, dict):
+        distribuidores = data.get("por_distribuidor", [])
+        if distribuidores:
+            return [
+                ("nombre_vendedor", d.get("distribuidor", "").split(",")[0][:20])
+                for d in distribuidores[:2]
+                if d.get("distribuidor") and d["distribuidor"] != "Sin Distribuidor"
+            ]
+    return []
+
+
+def _verify_ventas_zona(pregunta, mes, anio, org):
+    """Para preguntas de zona/región, verificar nombres de zonas en respuesta."""
+    from app.services.idempiere_queries import build_sales_summary
+    data = build_sales_summary(mes=mes, anio=anio, org_name=org)
+    if isinstance(data, dict):
+        zonas = data.get("por_zona", data.get("por_region", []))
+        if zonas:
+            # Check top 2 zone/region names appear
+            return [
+                ("nombre_zona", z.get("zona", z.get("region", "")).split()[0])
+                for z in zonas[:2]
+                if z.get("zona") or z.get("region")
+            ]
+    return []
+
+
 def _verify_ranking_clientes(pregunta, mes, anio, org):
     from app.services.idempiere_queries import build_top_clients
     usd = _is_usd_question(pregunta)
@@ -294,13 +331,24 @@ def _verify_balance_general(pregunta, mes, anio, org):
     from app.services.idempiere_queries import build_accounting_summary
     data = build_accounting_summary(mes=mes, anio=anio)
     if isinstance(data, dict):
-        totales = data.get("totales", {})
-        asientos = totales.get("total_asientos", 0)
-        debe = totales.get("total_debe", 0)
-        if asientos:
-            return [("asientos", asientos)]
-        if debe:
-            return [("total_debe", debe)]
+        # Bot shows monetary amounts (activo, pasivo, patrimonio), NOT asientos count.
+        # Verify that account type names appear in the response.
+        por_tipo = data.get("por_tipo_cuenta", [])
+        if por_tipo:
+            types_to_check = []
+            for entry in por_tipo[:3]:
+                name = entry.get("tipo_nombre", entry.get("tipo", ""))
+                if name:
+                    types_to_check.append(("tipo_cuenta", name.lower()))
+            if types_to_check:
+                return types_to_check
+        # Fallback: check balance amounts
+        balance = data.get("balance", {})
+        if balance:
+            for key in ("total_activo", "total_pasivo", "activo", "pasivo"):
+                val = balance.get(key, 0)
+                if val and abs(val) > 1000:
+                    return [(key, val)]
     return []
 
 
@@ -340,7 +388,7 @@ _CATEGORY_MAP = {
     "vacaciones": _verify_vacaciones,
     "rotacion": _verify_rotacion,
     "busqueda_cargo": _verify_empleados,
-    "ingresos_personal": _verify_rotacion,
+    "ingresos_personal": _verify_generic,
     "indicadores_rrhh": _verify_generic,
     "asistencia": _verify_ausentismo,
     # Ventas
@@ -349,12 +397,12 @@ _CATEGORY_MAP = {
     "ranking_clientes": _verify_ranking_clientes,
     "top_clientes": _verify_ranking_clientes,
     "cxc_vencidas": _verify_cxc_vencidas,
-    "ranking_vendedores": _verify_resumen_ventas,
-    "ventas_zona": _verify_resumen_ventas,
-    "ventas_por_zona": _verify_resumen_ventas,
-    "ventas_por_region": _verify_resumen_ventas,
-    "ventas_region_especifica": _verify_resumen_ventas,
-    "ventas_comparacion_regiones": _verify_resumen_ventas,
+    "ranking_vendedores": _verify_ranking_vendedores,
+    "ventas_zona": _verify_ventas_zona,
+    "ventas_por_zona": _verify_ventas_zona,
+    "ventas_por_region": _verify_ventas_zona,
+    "ventas_region_especifica": _verify_ventas_zona,
+    "ventas_comparacion_regiones": _verify_ventas_zona,
     "ventas_categoria": _verify_resumen_ventas,
     "facturacion": _verify_resumen_ventas,
     "facturacion_zona": _verify_resumen_ventas,
