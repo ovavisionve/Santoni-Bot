@@ -183,6 +183,22 @@ def extract_date_range(message: str) -> tuple[str | None, str | None]:
         last_day = calendar.monthrange(year, max_month)[1]
         return f"{year}-{min_month:02d}-01", f"{year}-{max_month:02d}-{last_day:02d}"
 
+    # Pattern: "DD de MES YYYY al DD de MES YYYY"
+    # e.g. "15 de diciembre 2024 al 15 de enero 2025"
+    _dd_mes_range = re.compile(
+        r'(\d{1,2})\s+de\s+(\w+)\s+(?:de\s+|del?\s+)?(\d{4})'
+        r'\s+al?\s+'
+        r'(\d{1,2})\s+de\s+(\w+)\s+(?:de\s+|del?\s+)?(\d{4})',
+        re.IGNORECASE,
+    )
+    dd_mes_m = _dd_mes_range.search(msg)
+    if dd_mes_m:
+        d1, m1_name, y1_str, d2, m2_name, y2_str = dd_mes_m.groups()
+        m1 = MESES_MAP.get(m1_name.lower())
+        m2 = MESES_MAP.get(m2_name.lower())
+        if m1 and m2:
+            return f"{int(y1_str)}-{m1:02d}-{int(d1):02d}", f"{int(y2_str)}-{m2:02d}-{int(d2):02d}"
+
     # Standard "al" pattern: "01/01/2026 al 31/01/2026"
     al_match = _AL_RE.search(message)
     if not al_match:
