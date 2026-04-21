@@ -504,7 +504,7 @@ def build_sales_summary(
         )
         joins = (
             "LEFT JOIN adempiere.c_bpartner sr "
-            "ON i.salesrep_id = sr.c_bpartner_id "
+            "ON i.salesrep_id = sr.ad_user_id "
             "LEFT JOIN client_zone cz "
             "ON i.c_bpartner_id = cz.c_bpartner_id "
             "JOIN adempiere.c_doctype dt "
@@ -904,7 +904,7 @@ def build_overdue_receivables(
             "CURRENT_DATE - (i.dateinvoiced + CASE WHEN COALESCE(pterm.netdays, 0) = 0 THEN 30 ELSE pterm.netdays END) AS dias_vencido "
             "FROM adempiere.c_invoice i "
             "JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id "
-            "LEFT JOIN adempiere.c_bpartner sr ON i.salesrep_id = sr.c_bpartner_id "
+            "LEFT JOIN adempiere.ad_user sr ON i.salesrep_id = sr.ad_user_id "
             "LEFT JOIN client_zone cz ON bp.c_bpartner_id = cz.c_bpartner_id "
             "LEFT JOIN adempiere.c_paymentterm pterm ON i.c_paymentterm_id = pterm.c_paymentterm_id "
             "JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id "
