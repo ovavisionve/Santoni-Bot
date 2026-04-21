@@ -442,7 +442,247 @@ WHERE sr.name ILIKE '%Carlos Matias%'  -- sr = c_bpartner (salesrep)
 
 ---
 
-*Fase 3: Mapa de agentes → pendiente*
+---
+
+## FASE 3: Mapa de Agentes (7 agentes × funciones)
+
+### Resumen de capacidades
+
+| Agente | Archivo | query_types | build_* que llama | Parámetros que extrae |
+|--------|---------|-------------|-------------------|-----------------------|
+| **Ventas** | ventas.py (510L) | 8 | 11 funciones | fecha, org, moneda, zona, vendedor, producto, doctype |
+| **RRHH** | rrhh.py (560L) | 6 | 10 funciones | fecha, org, cargo, nombre |
+| **Contabilidad** | contabilidad.py (500L) | 2 | 2 funciones | fecha, org, cuenta, moneda, tipo_cuenta |
+| **Finanzas** | finanzas.py (280L) | 3 | 4 funciones | fecha, org |
+| **Producción** | produccion.py (350L) | 3 | 5 funciones | fecha, org, producto |
+| **Compras Insumos** | compras_insumos.py (690L) | 5 | 6 funciones | fecha, org, moneda, producto, proveedor |
+| **Compras Productores** | compras_productores.py (350L) | 4 | 4 funciones | fecha, org, producto |
+
+---
+
+### VENTAS (ventas.py)
+
+```
+_detect_query_type(message) → query_type:
+  ┌──────────────────────────────────────────────────────────────┐
+  │ VENTAS_CLIENTES  → "top"              (ranking clientes)    │
+  │ "activo/inactivo" → "cliente_status"   (clientes act/inact) │
+  │ "producto/harina" → "producto"         (ventas por producto) │
+  │ VENTAS_COBRANZA  → "cobranza"         (cobros recibidos)    │
+  │ VENTAS_CXC       → "vencidas"         (CxC morosos)         │
+  │ "visita"         → "visitas"          (visitas a clientes)   │
+  │ "meta/presupuesto" → "metas"          (metas vs real)       │
+  │ "produjo+vendió" → "ventas_vs_prod"   (cruce ventas/prod)   │
+  │ VENTAS_FACTURACION → "ventas"         (resumen general)      │
+  │ VENTAS_ZONAS     → "region"           (por zona/región)      │
+  │ (ninguno)        → "ventas"           (default: resumen)     │
+  └──────────────────────────────────────────────────────────────┘
+```
+
+**Flujo fetch_data:**
+```
+query_type?
+  │
+  ├─ "producto"        → build_sales_by_product(product_search, mes, anio, org)
+  ├─ "visitas"         → build_client_visits(mes, anio, org)
+  ├─ "metas"           → build_budget_comparison(mes, anio)
+  ├─ "ventas_vs_prod"  → build_production_vs_sales(mes, anio)
+  ├─ "cliente_status"  → build_client_status(org_name, anio)
+  ├─ "top"             → build_top_clients(limit, zona, vendedor, mes, anio, org, currency, doctype)
+  │                      + fallback año completo si período vacío
+  ├─ "cobranza"        → build_collection_summary(zona, vendedor, mes, anio, org)
+  ├─ "vencidas"        → build_top_delinquent_clients(org) + build_overdue_receivables(org)
+  └─ "ventas"/"region" → build_sales_summary(zona, vendedor, mes, anio, org, currency, doctype)
+                          + fallback año completo si período vacío
+                          + build_top_clients si doctype especificado
+```
+
+**⚠️ Orden importa en _detect_query_type:**
+1. `VENTAS_CLIENTES` se evalúa ANTES de `producto` (para que "Top clientes InproMaiz" no matchee "maiz")
+2. `producto` standalone keywords usan `\b` word boundary
+3. `VENTAS_FACTURACION` es el default fallback
+
+---
+
+### RRHH (rrhh.py)
+
+```
+Routing por keywords (NO usa _detect_query_type, usa matches_any directo):
+  ┌──────────────────────────────────────────────────────────────┐
+  │ PRIORIDAD: cargo_search / name_search (if/elif)              │
+  │                                                              │
+  │ name_search?    → build_employee_list(name_search)           │
+  │ cargo_search?   → build_employee_list(cargo_search)          │
+  │ RRHH_EMPLEADOS  → build_employee_list() (general)            │
+  │                                                              │
+  │ SECCIONES ADICIONALES (if, no elif — pueden combinarse):     │
+  │ RRHH_CUMPLEANOS → build_birthday_list(mes, org)              │
+  │ RRHH_NOMINA     → build_payroll_summary(mes, anio)           │
+  │ RRHH_AUSENTISMO → build_attendance_summary(mes, anio)        │
+  │                   O build_daily_attendance() si "hoy"        │
+  │ RRHH_VACACIONES → build_vacation_summary(mes, anio, org)     │
+  │ RRHH_ROTACION   → build_turnover_summary(anio)               │
+  │                   O build_new_hires() si "ingresaron"        │
+  │ "provisiones"   → build_payroll_provisions(mes, anio)        │
+  │ "calidad contrat" → build_new_hires(anio, mes)               │
+  └──────────────────────────────────────────────────────────────┘
+```
+
+**⚠️ Orden de secciones en respuesta:**
+- Para cumpleaños/ausentismo/nómina: datos específicos VAN PRIMERO, employee summary al final como contexto
+- Para queries generales de empleados: employee summary va primero
+- Razón: el LLM ignora secciones que van después de 2000+ chars
+
+**⚠️ Transformaciones en RRHH:**
+- `cargo_search`: de-pluralización (`supervisores→supervisor`) + strip acentos (`mecánico→mecanico`)
+- `name_search`: strip acentos (`Rodríguez→Rodriguez`)
+
+---
+
+### CONTABILIDAD (contabilidad.py)
+
+```
+Routing:
+  ┌──────────────────────────────────────────────────────────────┐
+  │ account_code detectado?                                      │
+  │  ├─ SÍ (ej: "1.01.01" o "1101")                            │
+  │  │   → build_account_detail(code, mes/anio o date_range)    │
+  │  │                                                           │
+  │  └─ NO → Resumen general                                    │
+  │      → _detect_account_types(message):                       │
+  │         "gastos"      → account_types=['E']                  │
+  │         "ingresos"    → account_types=['R']                  │
+  │         "activos"     → account_types=['A']                  │
+  │         "pasivos"     → account_types=['L']                  │
+  │         "patrimonio"  → account_types=['O']                  │
+  │         "estado resultados" → account_types=['R','E']        │
+  │      → build_accounting_summary(mes, anio, account_types)    │
+  └──────────────────────────────────────────────────────────────┘
+```
+
+**⚠️ Cuenta compacta:** "1101" → `_normalize_account_code()` → "1%1%01" → SQL LIKE
+
+---
+
+### FINANZAS (finanzas.py)
+
+```
+Routing por keywords:
+  ┌──────────────────────────────────────────────────────────────┐
+  │ FINANZAS_CXC     → build_overdue_receivables()              │
+  │ "préstamo/loan"  → build_loan_balances(org)                 │
+  │ "cobros y pagos" → build_cobros_pagos_summary(mes, anio)    │
+  │ (default)        → build_financial_summary(mes, anio, org)   │
+  │                    (saldos bancarios + CxC + CxP)            │
+  └──────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### PRODUCCIÓN (produccion.py)
+
+```
+Routing por keywords:
+  ┌──────────────────────────────────────────────────────────────┐
+  │ "inventario/stock" → build_inventory_stock(org, producto)    │
+  │ "BOM/receta"       → build_bom_info()                       │
+  │ "movimiento"       → build_warehouse_movements(mes, anio)    │
+  │ "producción/runs"  → build_production_runs(mes, anio) +      │
+  │                      build_production_summary(mes, anio) +    │
+  │                      build_production_orders(mes, anio)       │
+  │ (default)          → build_production_summary(mes, anio)      │
+  └──────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### COMPRAS INSUMOS (compras_insumos.py)
+
+```
+Routing por keywords:
+  ┌──────────────────────────────────────────────────────────────┐
+  │ "inventario"       → build_inventory_stock(producto)         │
+  │ "pagos/estado pago" → build_purchase_payment_status(mes,anio)│
+  │ "pendiente/orden"  → build_pending_purchase_orders(mes, anio)│
+  │ "comparar precios" → build_supplier_price_comparison(prod)   │
+  │ "proveedor+prod"   → build_product_purchase_history(prod)    │
+  │ (default)          → build_supply_purchases(mes, anio, org)  │
+  └──────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### COMPRAS PRODUCTORES (compras_productores.py)
+
+```
+Routing por _SECTION_KW_MAP:
+  ┌──────────────────────────────────────────────────────────────┐
+  │ "productores"      → build_registered_producers(org)         │
+  │ "pendientes/pagos" → build_producer_pending_payments(org)    │
+  │ "precios"          → build_producer_price_analysis(mes, anio)│
+  │ (default)          → build_producer_purchases(mes, anio, org)│
+  └──────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### Diagrama: qué agente llama qué función
+
+```
+VENTAS ─────┬─ build_sales_summary
+            ├─ build_top_clients
+            ├─ build_collection_summary
+            ├─ build_overdue_receivables
+            ├─ build_top_delinquent_clients
+            ├─ build_sales_by_product ←── NUEVO
+            ├─ build_client_status ←── NUEVO
+            ├─ build_client_visits ←── NUEVO
+            ├─ build_budget_comparison ←── NUEVO
+            └─ build_production_vs_sales ←── NUEVO
+
+RRHH ───────┬─ build_employee_summary
+            ├─ build_employee_list
+            ├─ build_birthday_list
+            ├─ build_payroll_summary
+            ├─ build_attendance_summary
+            ├─ build_vacation_summary
+            ├─ build_turnover_summary
+            ├─ build_new_hires ←── NUEVO
+            ├─ build_payroll_provisions ←── NUEVO
+            └─ build_daily_attendance ←── NUEVO
+
+CONTABILIDAD ┬─ build_accounting_summary
+             └─ build_account_detail
+
+FINANZAS ───┬─ build_financial_summary
+            ├─ build_overdue_receivables (compartida con ventas)
+            ├─ build_cobros_pagos_summary
+            └─ build_loan_balances
+
+PRODUCCIÓN ─┬─ build_production_summary
+            ├─ build_production_orders
+            ├─ build_production_runs
+            ├─ build_bom_info
+            ├─ build_warehouse_movements
+            └─ build_inventory_stock (compartida con compras_insumos)
+
+COMPRAS     ┬─ build_supply_purchases
+INSUMOS     ├─ build_product_purchase_history
+            ├─ build_pending_purchase_orders
+            ├─ build_supplier_price_comparison
+            ├─ build_purchase_payment_status
+            └─ build_inventory_stock (compartida)
+
+COMPRAS     ┬─ build_producer_purchases
+PRODUCTORES ├─ build_registered_producers
+            ├─ build_producer_pending_payments
+            └─ build_producer_price_analysis
+```
+
+**Total: 35 funciones build_* distintas** (8 nuevas esta sesión)
+
+---
+
 *Fase 4: Mapa de queries → pendiente*
 *Fase 5: Transformaciones → pendiente*
 *Fase 6: Prompt y LLM → pendiente*
