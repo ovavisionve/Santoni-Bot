@@ -259,6 +259,16 @@ Datos de ventas de iDempiere:
             return "cobranza"
         if matches_any(msg_lower, VENTAS_CXC):
             return "vencidas"
+        # Visitas a clientes
+        if "visita" in msg_lower or "visitas" in msg_lower:
+            return "visitas"
+        # Metas / presupuesto
+        if "meta" in msg_lower or "metas" in msg_lower or "presupuesto" in msg_lower:
+            return "metas"
+        # Vendido vs producido
+        if "produj" in msg_lower or "produjo" in msg_lower or "producción" in msg_lower or "producido" in msg_lower:
+            if "vend" in msg_lower or "venta" in msg_lower:
+                return "ventas_vs_produccion"
         if matches_any(msg_lower, VENTAS_FACTURACION):
             return "ventas"
         if matches_any(msg_lower, VENTAS_ZONAS):
@@ -407,6 +417,21 @@ Datos de ventas de iDempiere:
                     product_search=product_search,
                 )
                 sections.append(self._format_summary(data, f"Ventas por Producto - {label}"))
+
+            elif query_type == "visitas":
+                from app.services.query_service import build_client_visits
+                data = build_client_visits(mes=mes, anio=anio, org_name=org_name)
+                sections.append(self._format_summary(data, f"Visitas a Clientes - {label}"))
+
+            elif query_type == "metas":
+                from app.services.query_service import build_budget_comparison
+                data = build_budget_comparison(mes=mes, anio=anio, org_ids=org_ids)
+                sections.append(self._format_summary(data, f"Metas y Presupuesto - {label}"))
+
+            elif query_type == "ventas_vs_produccion":
+                from app.services.query_service import build_production_vs_sales
+                data = build_production_vs_sales(mes=mes, anio=anio, org_ids=org_ids)
+                sections.append(self._format_summary(data, f"Ventas vs Producción - {label}"))
 
             elif query_type == "cliente_status":
                 from app.services.query_service import build_client_status

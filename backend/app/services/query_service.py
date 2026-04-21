@@ -1448,3 +1448,31 @@ def build_payroll_provisions(**kwargs) -> dict:
         from app.services.idempiere_queries import build_payroll_provisions as _prod
         return _prod(**kwargs)
     return {"totales": {"conceptos": 0, "total_monto": 0}}
+
+
+def build_client_visits(**kwargs) -> dict:
+    if _is_production():
+        from app.services.idempiere_queries import build_client_visits as _prod
+        return _prod(**kwargs)
+    return {"totales": {"total_actividades": 0}}
+
+
+def build_daily_attendance(**kwargs) -> dict:
+    if _is_production():
+        from app.services.idempiere_queries import build_daily_attendance as _prod
+        return _prod(**kwargs)
+    return {"totales": {"registros_hoy": 0}}
+
+
+def build_budget_comparison(**kwargs) -> dict:
+    if _is_production():
+        from app.services.idempiere_queries import build_budget_comparison as _prod
+        return _prod(**kwargs)
+    return {"totales": {"total_metas": 0}}
+
+
+def build_production_vs_sales(**kwargs) -> dict:
+    if _is_production():
+        from app.services.idempiere_queries import build_production_vs_sales as _prod
+        return _prod(**kwargs)
+    return {"ventas": {}, "produccion": {}}

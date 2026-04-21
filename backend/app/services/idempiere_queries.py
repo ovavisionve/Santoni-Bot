@@ -4265,3 +4265,190 @@ def build_payroll_provisions(
         }
     finally:
         db.close()
+
+
+def build_client_visits(
+    mes: int | None = None,
+    anio: int | None = None,
+    org_ids: list[int] | None = None,
+    org_name: str | None = None,
+) -> dict:
+    """Client visits/activities from c_activity."""
+    db = IdempiereSession()
+    try:
+        conditions = ["a.isactive = 'Y'"]
+        params: dict = {}
+        if mes:
+            conditions.append("EXTRACT(MONTH FROM a.created) = :mes")
+            params["mes"] = mes
+        if anio:
+            conditions.append("EXTRACT(YEAR FROM a.created) = :anio")
+            params["anio"] = anio
+        if org_name:
+            conditions.append("o.name ILIKE :org_name")
+            params["org_name"] = f"%{org_name}%"
+        where = " AND ".join(conditions)
+        q = text(
+            f"SELECT o.name AS organizacion, a.name AS actividad, "
+            f"COUNT(*) AS registros "
+            f"FROM adempiere.c_activity a "
+            f"JOIN adempiere.ad_org o ON a.ad_org_id = o.ad_org_id "
+            f"WHERE {where} "
+            f"GROUP BY o.name, a.name ORDER BY registros DESC LIMIT 20"
+        )
+        rows = db.execute(q, params).fetchall()
+        return {
+            "totales": {"total_actividades": sum(r[2] for r in rows)},
+            "por_actividad": [
+                {"organizacion": r[0], "actividad": r[1], "registros": r[2]}
+                for r in rows
+            ],
+        }
+    finally:
+        db.close()
+
+
+def build_daily_attendance(
+    org_ids: list[int] | None = None,
+    org_name: str | None = None,
+) -> dict:
+    """Daily attendance from btd_effectiveattendance or lve_asistenciatecnic."""
+    db = IdempiereSession()
+    try:
+        # Try btd_effectiveattenda first
+        try:
+            q = text(
+                "SELECT COUNT(*) FROM information_schema.tables "
+                "WHERE table_schema = 'adempiere' AND table_name = 'btd_effectiveattenda'"
+            )
+            has_btd = db.execute(q).fetchone()[0] > 0
+        except Exception:
+            has_btd = False
+
+        if has_btd:
+            org_clause = ""
+            params: dict = {}
+            if org_name:
+                org_clause = "AND o.name ILIKE :org_name "
+                params["org_name"] = f"%{org_name}%"
+            q = text(f"""
+                SELECT o.name AS organizacion, COUNT(*) AS registros,
+                       MIN(ba.created) AS primer_registro,
+                       MAX(ba.created) AS ultimo_registro
+                FROM adempiere.btd_effectiveattenda ba
+                JOIN adempiere.ad_org o ON ba.ad_org_id = o.ad_org_id
+                WHERE ba.isactive = 'Y'
+                  AND ba.created >= CURRENT_DATE
+                  {org_clause}
+                GROUP BY o.name ORDER BY registros DESC
+            """)
+            rows = db.execute(q, params).fetchall()
+            if rows:
+                return {
+                    "totales": {"registros_hoy": sum(r[1] for r in rows)},
+                    "por_organizacion": [
+                        {"organizacion": r[0], "registros": r[1],
+                         "primer_registro": r[2].isoformat() if r[2] else None,
+                         "ultimo_registro": r[3].isoformat() if r[3] else None}
+                        for r in rows
+                    ],
+                }
+
+        return {
+            "totales": {"registros_hoy": 0},
+            "nota": "No se encontraron registros de asistencia para hoy. "
+                    "Los datos de asistencia biométrica pueden tener un retraso en la sincronización.",
+        }
+    finally:
+        db.close()
+
+
+def build_budget_comparison(
+    mes: int | None = None,
+    anio: int | None = None,
+    org_ids: list[int] | None = None,
+) -> dict:
+    """Budget/goals comparison from pa_goal or gl_budget."""
+    db = IdempiereSession()
+    try:
+        # Check if pa_goal has data
+        q = text(
+            "SELECT g.name AS meta, g.measureactual AS actual, "
+            "g.measuretarget AS objetivo, "
+            "CASE WHEN g.measuretarget > 0 "
+            "THEN ROUND((g.measureactual / g.measuretarget * 100)::numeric, 2) "
+            "ELSE 0 END AS cumplimiento_pct "
+            "FROM adempiere.pa_goal g "
+            "WHERE g.isactive = 'Y' "
+            "ORDER BY g.updated DESC LIMIT 20"
+        )
+        rows = db.execute(q).fetchall()
+        if rows:
+            return {
+                "totales": {"total_metas": len(rows)},
+                "metas": [
+                    {"meta": r[0], "actual": float(r[1]) if r[1] else 0,
+                     "objetivo": float(r[2]) if r[2] else 0,
+                     "cumplimiento_pct": float(r[3]) if r[3] else 0}
+                    for r in rows
+                ],
+            }
+        return {
+            "totales": {"total_metas": 0},
+            "nota": "No se encontraron metas/presupuestos configurados en el sistema.",
+        }
+    finally:
+        db.close()
+
+
+def build_production_vs_sales(
+    mes: int | None = None,
+    anio: int | None = None,
+    org_ids: list[int] | None = None,
+) -> dict:
+    """Cross-data: production output vs sales for the same period."""
+    db = IdempiereSession()
+    try:
+        params: dict = {}
+        date_cond = ""
+        if mes and anio:
+            date_cond = "AND EXTRACT(MONTH FROM dateacct) = :mes AND EXTRACT(YEAR FROM dateacct) = :anio "
+            params["mes"] = mes
+            params["anio"] = anio
+        elif anio:
+            date_cond = "AND EXTRACT(YEAR FROM dateacct) = :anio "
+            params["anio"] = anio
+
+        # Sales total
+        sales_q = text(f"""
+            SELECT COUNT(*) AS facturas,
+                   COALESCE(SUM(grandtotal), 0) AS total_ventas
+            FROM adempiere.c_invoice
+            WHERE issotrx = 'Y' AND docstatus IN ('CO','CL') AND isactive = 'Y'
+            {date_cond.replace('dateacct', 'dateinvoiced')}
+        """)
+        sales_row = db.execute(sales_q, params).fetchone()
+
+        # Production total (from m_production or m_inout)
+        prod_q = text(f"""
+            SELECT COUNT(*) AS entregas,
+                   COALESCE(SUM(ABS(ml.movementqty)), 0) AS cantidad_producida
+            FROM adempiere.m_inout mi
+            JOIN adempiere.m_inoutline ml ON mi.m_inout_id = ml.m_inout_id
+            WHERE mi.issotrx = 'N' AND mi.docstatus IN ('CO','CL')
+            {date_cond.replace('dateacct', 'mi.movementdate')}
+        """)
+        prod_row = db.execute(prod_q, params).fetchone()
+
+        return {
+            "ventas": {
+                "facturas": sales_row[0] if sales_row else 0,
+                "total_bs": float(sales_row[1]) if sales_row else 0,
+            },
+            "produccion": {
+                "entregas": prod_row[0] if prod_row else 0,
+                "cantidad_producida": float(prod_row[1]) if prod_row else 0,
+            },
+        }
+    finally:
+        db.close()

@@ -37,6 +37,7 @@ from app.services.query_service import (
     build_vacation_summary,
     build_new_hires,
     build_payroll_provisions,
+    build_daily_attendance,
 )
 
 
@@ -437,13 +438,18 @@ Datos de RRHH en iDempiere:
 
             if matches_any(msg, RRHH_AUSENTISMO):
                 try:
-                    data = build_attendance_summary(
-                        mes=mes, anio=anio, org_ids=org_ids,
-                        date_from=date_from, date_to=date_to,
-                    )
-                    sections.append(self._format_summary(
-                        data, f"Indicadores de Ausentismo - {label}",
-                    ))
+                    # "asistencias del día de hoy" → daily attendance
+                    if "hoy" in msg or "del día" in msg or "del dia" in msg:
+                        data = build_daily_attendance(org_ids=org_ids, org_name=org_name)
+                        sections.append(self._format_summary(data, "Asistencias del Día"))
+                    else:
+                        data = build_attendance_summary(
+                            mes=mes, anio=anio, org_ids=org_ids,
+                            date_from=date_from, date_to=date_to,
+                        )
+                        sections.append(self._format_summary(
+                            data, f"Indicadores de Ausentismo - {label}",
+                        ))
                 except Exception as exc:
                     logger.error("Error en ausentismo: %s: %s", type(exc).__name__, exc, exc_info=True)
                     sections.append(
