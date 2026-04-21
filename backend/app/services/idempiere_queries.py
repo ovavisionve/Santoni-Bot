@@ -4061,3 +4061,113 @@ def build_inventory_stock(
         }
     finally:
         db.close()
+
+
+def build_sales_by_product(
+    mes: int | None = None,
+    anio: int | None = None,
+    org_ids: list[int] | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    currency_ids: list[int] | None = None,
+    org_name: str | None = None,
+    product_search: str | None = None,
+    limit: int = 30,
+) -> dict:
+    """Sales breakdown by product from c_invoiceline."""
+    db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
+    try:
+        conditions = [
+            "i.issotrx = 'Y'",
+            "i.docstatus IN ('CO', 'CL')",
+            "i.isactive = 'Y'",
+            "dt.docbasetype = 'ARI'",
+        ]
+        params: dict = {"limit": limit}
+        _add_org_filter(conditions, params, org_ids, "i")
+        _add_org_name_filter(conditions, params, org_name, "i")
+        _add_currency_filter(conditions, params, currency_ids, "i")
+        _add_date_filter(conditions, params, date_from, date_to, mes, anio, "i.dateinvoiced")
+
+        if product_search:
+            _add_product_search_filter(conditions, params, product_search)
+
+        where = " AND ".join(conditions)
+        cur_label = _currency_label("i")
+
+        q = text(
+            f"SELECT p.value AS codigo, p.name AS producto, "
+            f"COALESCE(pc.name, 'Sin Categoría') AS categoria, "
+            f"{cur_label} AS moneda, "
+            f"SUM(il.qtyinvoiced) AS cantidad, "
+            f"COALESCE(SUM(il.linenetamt), 0) AS total_neto "
+            f"FROM adempiere.c_invoice i "
+            f"JOIN adempiere.c_invoiceline il ON i.c_invoice_id = il.c_invoice_id "
+            f"JOIN adempiere.m_product p ON il.m_product_id = p.m_product_id "
+            f"LEFT JOIN adempiere.m_product_category pc ON p.m_product_category_id = pc.m_product_category_id "
+            f"JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id "
+            f"WHERE {where} "
+            f"GROUP BY p.value, p.name, pc.name, {cur_label} "
+            f"ORDER BY total_neto DESC "
+            f"LIMIT :limit"
+        )
+        products = [
+            {
+                "codigo": r[0], "producto": r[1], "categoria": r[2],
+                "moneda": r[3], "cantidad": float(r[4]) if r[4] else 0,
+                "total_neto": float(r[5]),
+            }
+            for r in db.execute(q, params).fetchall()
+        ]
+
+        return {"anio": anio, "top_productos": products}
+    finally:
+        db.close()
+
+
+def build_client_status(
+    org_name: str | None = None,
+    anio: int | None = None,
+) -> dict:
+    """Clientes activos vs inactivos, con conteo de facturación reciente."""
+    db = IdempiereSession()
+    try:
+        org_clause = ""
+        params: dict = {}
+        if org_name:
+            org_clause = "AND o.name ILIKE :org_name "
+            params["org_name"] = f"%{org_name}%"
+
+        # Active/inactive counts
+        status_q = text(f"""
+            SELECT
+                CASE WHEN bp.isactive = 'Y' THEN 'Activo' ELSE 'Inactivo' END AS estado,
+                COUNT(*) AS clientes
+            FROM adempiere.c_bpartner bp
+            JOIN adempiere.ad_org o ON bp.ad_org_id = o.ad_org_id
+            WHERE bp.iscustomer = 'Y'
+            {org_clause}
+            GROUP BY bp.isactive
+        """)
+        status_rows = db.execute(status_q, params).fetchall()
+
+        # Recent activity (clients with invoices in current year)
+        year = anio or 2026
+        active_q = text(f"""
+            SELECT COUNT(DISTINCT i.c_bpartner_id) AS clientes_con_facturacion
+            FROM adempiere.c_invoice i
+            JOIN adempiere.ad_org o ON i.ad_org_id = o.ad_org_id
+            WHERE i.issotrx = 'Y'
+              AND i.docstatus IN ('CO', 'CL')
+              AND EXTRACT(YEAR FROM i.dateinvoiced) = :anio
+              {org_clause}
+        """)
+        active_row = db.execute(active_q, {**params, "anio": year}).fetchone()
+
+        return {
+            "por_estado": [{"estado": r[0], "clientes": r[1]} for r in status_rows],
+            "clientes_con_facturacion_reciente": active_row[0] if active_row else 0,
+            "anio_referencia": year,
+        }
+    finally:
+        db.close()

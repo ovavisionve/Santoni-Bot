@@ -235,6 +235,16 @@ Datos de ventas de iDempiere:
     def _detect_query_type(cls, msg: str) -> str | None:
         """Detect query type using centralized keywords."""
         msg_lower = msg.lower()
+        # Product/category queries — check BEFORE general sales
+        _product_kw = {"producto", "productos", "categoría", "categoria", "harina",
+                       "arroz", "maíz", "maiz", "cereal", "avena", "empaque",
+                       "por producto", "por categoría", "por categoria",
+                       "más vendido", "mas vendido", "principales producto"}
+        if any(kw in msg_lower for kw in _product_kw):
+            return "producto"
+        # Client status
+        if ("activo" in msg_lower or "inactivo" in msg_lower) and "client" in msg_lower:
+            return "cliente_status"
         if matches_any(msg_lower, VENTAS_CLIENTES):
             return "top"
         if matches_any(msg_lower, VENTAS_COBRANZA):
@@ -373,7 +383,29 @@ Datos de ventas de iDempiere:
             query_type = hist_ctx.get("query_type")
 
         try:
-            if query_type == "top" or matches_any(msg, VENTAS_CLIENTES):
+            if query_type == "producto":
+                from app.services.query_service import build_sales_by_product
+                # Extract product name from question
+                _prod_names = ["harina", "arroz", "maíz", "maiz", "cereal", "avena", "empaque"]
+                product_search = None
+                for pn in _prod_names:
+                    if pn in msg:
+                        product_search = pn
+                        break
+                data = build_sales_by_product(
+                    mes=mes, anio=anio, org_ids=org_ids,
+                    date_from=date_from, date_to=date_to,
+                    currency_ids=currency_ids, org_name=org_name,
+                    product_search=product_search,
+                )
+                sections.append(self._format_summary(data, f"Ventas por Producto - {label}"))
+
+            elif query_type == "cliente_status":
+                from app.services.query_service import build_client_status
+                data = build_client_status(org_name=org_name, anio=anio)
+                sections.append(self._format_summary(data, f"Estado de Clientes - {org_name or 'Todas'}"))
+
+            elif query_type == "top" or matches_any(msg, VENTAS_CLIENTES):
                 limit = 20
                 limit_match = re.search(r'top\s*(\d+)', msg)
                 if limit_match:
