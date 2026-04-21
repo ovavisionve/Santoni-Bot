@@ -735,6 +735,8 @@ RRHH_ROTACION = frozenset({
     "nuevo ingreso", "nuevos ingresos",
     "cuántos renunciaron", "cuantos renunciaron",
     "cuántos ingresaron", "cuantos ingresaron",
+    "se fueron", "se han ido", "se fue", "dejaron la empresa",
+    "cuántos salieron", "cuantos salieron",
     "cuántos salieron", "cuantos salieron",
     "índice de rotación", "indice de rotacion",
     "tasa de rotación", "tasa de rotacion",
