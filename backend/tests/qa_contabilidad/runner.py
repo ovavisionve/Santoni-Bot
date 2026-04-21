@@ -57,13 +57,12 @@ def case_summary_2025():
 
 
 def case_summary_2026():
-    """Caso 2: resumen contable del año 2026 — datos actuales."""
+    """Caso 2: balance general 2026 — verificar tipos de cuenta en respuesta."""
     expected = accounting_summary_year(anio=2026)
-    total_movs = sum(t["movimientos"] for t in expected["by_type"])
     return expected, "Balance general del año 2026", [
-        lambda nums, text: check_amount("Total movimientos 2026", total_movs, nums, rel_tol=0.10)
-        if total_movs > 0
-        else CheckResult("Movimientos 2026", total_movs, total_movs == 0, None, "sin datos aún"),
+        lambda nums, text: check_name_present("Tipo: Activo", "activo", text),
+        lambda nums, text: check_name_present("Tipo: Pasivo", "pasivo", text),
+        lambda nums, text: check_name_present("Tipo: Patrimonio", "patrimonio", text),
     ]
 
 

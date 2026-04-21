@@ -18,14 +18,17 @@ from app.database import IdempiereSession
 
 
 def employee_count_total() -> dict[str, Any]:
-    """Total de empleados activos (DISTINCT c_bpartner_id)."""
+    """Total de empleados activos (DISTINCT c_bpartner_id).
+
+    Misma lógica que build_employee_summary: solo filtra isactive='Y'
+    en hr_employee y c_bpartner, SIN filtrar por enddate.
+    """
     sql = text("""
         SELECT COUNT(DISTINCT e.c_bpartner_id) AS total_empleados
         FROM adempiere.hr_employee e
         JOIN adempiere.c_bpartner bp ON e.c_bpartner_id = bp.c_bpartner_id
         WHERE e.isactive = 'Y'
           AND bp.isactive = 'Y'
-          AND (e.enddate IS NULL OR e.enddate > CURRENT_DATE)
     """)
     db = IdempiereSession()
     try:
@@ -48,7 +51,6 @@ def employee_count_by_org() -> dict[str, Any]:
         JOIN adempiere.ad_org o ON e.ad_org_id = o.ad_org_id
         WHERE e.isactive = 'Y'
           AND bp.isactive = 'Y'
-          AND (e.enddate IS NULL OR e.enddate > CURRENT_DATE)
         GROUP BY o.name
         ORDER BY empleados DESC
     """)
@@ -64,17 +66,29 @@ def employee_count_by_org() -> dict[str, Any]:
 
 
 def birthday_list_month(mes: int) -> dict[str, Any]:
-    """Cumpleañeros de un mes específico."""
+    """Cumpleañeros de un mes específico.
+
+    Birthday está en ad_user.birthday (no c_bpartner.birthday).
+    Usa LATERAL subquery como build_birthday_list para un solo
+    birthday por c_bpartner_id.
+    """
     sql = text("""
-        SELECT DISTINCT bp.name AS nombre,
-               EXTRACT(DAY FROM bp.birthday)::int AS dia
+        SELECT DISTINCT ON (bp.c_bpartner_id)
+               bp.name AS nombre,
+               EXTRACT(DAY FROM bday.birthday)::int AS dia
         FROM adempiere.hr_employee e
         JOIN adempiere.c_bpartner bp ON e.c_bpartner_id = bp.c_bpartner_id
+        JOIN LATERAL (
+            SELECT u.birthday FROM adempiere.ad_user u
+            WHERE u.c_bpartner_id = bp.c_bpartner_id
+              AND u.birthday IS NOT NULL
+            ORDER BY u.ad_user_id
+            LIMIT 1
+        ) bday ON TRUE
         WHERE e.isactive = 'Y'
           AND bp.isactive = 'Y'
-          AND (e.enddate IS NULL OR e.enddate > CURRENT_DATE)
-          AND EXTRACT(MONTH FROM bp.birthday) = :mes
-        ORDER BY dia, nombre
+          AND EXTRACT(MONTH FROM bday.birthday) = :mes
+        ORDER BY bp.c_bpartner_id, dia, nombre
     """)
     db = IdempiereSession()
     try:

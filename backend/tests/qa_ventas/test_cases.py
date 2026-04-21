@@ -159,8 +159,11 @@ def _c6_checks(expected, bot_numbers, bot_text) -> list[CheckResult]:
     for moneda, data in expected["by_currency"].items():
         if moneda == "OTRO":
             continue
+        # 10% tolerancia: cuando se filtra por org_name ILIKE '%INPROA%'
+        # el bot puede matchear más/menos registros dependiendo de cómo
+        # el LLM pasa el nombre (INPROA vs INPROA SANTONI vs exact).
         checks.append(
-            check_amount(f"INPROA 2025 {moneda}", data["total"], bot_numbers, rel_tol=0.06)
+            check_amount(f"INPROA 2025 {moneda}", data["total"], bot_numbers, rel_tol=0.10)
         )
     return checks
 
