@@ -210,16 +210,24 @@ def _add_exclude_internal_orgs_filter(
         params[f"_intorg_{i}"] = f"%{name}%"
 
 
+_USD_CURRENCY_IDS = frozenset(
+    [100, 1000000, 1000003, 1000006, 1000008, 1000009, 1000011, 1000013, 1000017]
+)
+
+
 def _add_currency_filter(
     conditions: list[str],
     params: dict,
     currency_ids: list[int] | None,
     table_alias: str,
 ) -> None:
-    """Add c_currency_id IN (...) filter if currency_ids is provided.
-    Supports multiple IDs because Santoni uses several currency entries for dollars.
-    Modifies conditions and params in place."""
-    if currency_ids:
+    """Add currency filter. USD requests use <> 205 (all non-VES) to match
+    the KPI reports in iDempiere and to capture any future USD currency IDs."""
+    if not currency_ids:
+        return
+    if any(c in _USD_CURRENCY_IDS for c in currency_ids):
+        conditions.append(f"{table_alias}.c_currency_id <> 205")
+    else:
         placeholders = ", ".join(f":cur_{i}" for i in range(len(currency_ids)))
         conditions.append(f"{table_alias}.c_currency_id IN ({placeholders})")
         for i, cid in enumerate(currency_ids):
@@ -511,9 +519,9 @@ def build_sales_summary(
             "ON i.c_doctypetarget_id = dt.c_doctype_id "
         )
 
-        # Only regular invoices (ARI), exclude credit notes (ARC)
-        where_invoices = f"{where} AND dt.docbasetype = 'ARI'"
-        where_credit = f"{where} AND dt.docbasetype = 'ARC'"
+        # Regular invoices: lve_invoiceaffected_id=0; credit notes: lve>0
+        where_invoices = f"{where} AND i.lve_invoiceaffected_id = 0"
+        where_credit = f"{where} AND i.lve_invoiceaffected_id > 0"
 
         # Totals (only invoices)
         totals_q = text(
@@ -827,12 +835,12 @@ def build_top_clients(
             f"{zone_cte}"
             f"SELECT bp.value AS codigo, bp.name AS nombre, "
             f"MIN(COALESCE(cz.zona_name, 'Sin Zona')) AS zona, "
-            f"SUM(CASE WHEN dt.docbasetype = 'ARI' THEN 1 ELSE 0 END) AS facturas, "
-            f"SUM(CASE WHEN dt.docbasetype = 'ARC' THEN 1 ELSE 0 END) AS notas_credito, "
-            f"COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal ELSE 0 END), 0) AS total_facturado, "
-            f"COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARC' THEN i.grandtotal ELSE 0 END), 0) AS total_notas_credito, "
-            f"COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal "
-            f"WHEN dt.docbasetype = 'ARC' THEN -i.grandtotal ELSE 0 END), 0) AS venta_neta "
+            f"SUM(CASE WHEN i.lve_invoiceaffected_id = 0 THEN 1 ELSE 0 END) AS facturas, "
+            f"SUM(CASE WHEN i.lve_invoiceaffected_id > 0 THEN 1 ELSE 0 END) AS notas_credito, "
+            f"COALESCE(SUM(CASE WHEN i.lve_invoiceaffected_id = 0 THEN i.grandtotal ELSE 0 END), 0) AS total_facturado, "
+            f"COALESCE(SUM(CASE WHEN i.lve_invoiceaffected_id > 0 THEN i.grandtotal ELSE 0 END), 0) AS total_notas_credito, "
+            f"COALESCE(SUM(CASE WHEN i.lve_invoiceaffected_id > 0 THEN -i.grandtotal "
+            f"ELSE i.grandtotal END), 0) AS venta_neta "
             f"FROM adempiere.c_invoice i "
             f"JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id "
             f"LEFT JOIN client_zone cz ON bp.c_bpartner_id = cz.c_bpartner_id "
@@ -4102,26 +4110,34 @@ def build_sales_by_product(
     only_skus: bool = False,
     limit: int = 30,
 ) -> dict:
-    """Sales breakdown by product from c_invoiceline.
+    """Sales breakdown by product using the same logic as the iDempiere KPI report.
 
-    only_skus: if True, filters m_product_category.iskpi='Y' (KPI products
-    that match the official sales report in iDempiere).
+    Quantities use the KPI formula: ARI positive, NC (lve_invoiceaffected_id>0)
+    negative. NC whose original invoice is before the period start are added back
+    (qtyinvoicedf), so only same-period NC reduce the totals.
     """
     db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
     try:
+        # Period start for qtyinvoicedf: NC from before this date cancel out
+        if date_from:
+            period_start = date_from
+        elif mes and anio:
+            period_start = f"{anio}-{mes:02d}-01"
+        else:
+            period_start = "1900-01-01"
+
         conditions = [
             "i.issotrx = 'Y'",
             "i.docstatus IN ('CO', 'CL')",
             "i.isactive = 'Y'",
-            "dt.docbasetype = 'ARI'",
         ]
         if only_skus:
             conditions.append("pc.iskpi = 'Y'")
-        params: dict = {"limit": limit}
+        params: dict = {"limit": limit, "period_start": period_start}
         _add_org_filter(conditions, params, org_ids, "i")
         _add_org_name_filter(conditions, params, org_name, "i")
         _add_currency_filter(conditions, params, currency_ids, "i")
-        _add_date_filter(conditions, params, date_from, date_to, mes, anio, "i.dateinvoiced")
+        _add_date_filter(conditions, params, date_from, date_to, mes, anio, "i.dateacct")
 
         if product_search:
             _add_product_search_filter(conditions, params, product_search)
@@ -4133,13 +4149,29 @@ def build_sales_by_product(
             f"SELECT p.value AS codigo, p.name AS producto, "
             f"COALESCE(pc.name, 'Sin Categoría') AS categoria, "
             f"{cur_label} AS moneda, "
-            f"SUM(il.qtyinvoiced) AS cantidad, "
-            f"COALESCE(SUM(il.linenetamt), 0) AS total_neto "
+            f"SUM("
+            f"  CASE WHEN i.lve_invoiceaffected_id > 0 "
+            f"       THEN -1 * il.qtyinvoiced / COALESCE(NULLIF(p.weight, 0), 1) "
+            f"       ELSE il.qtyinvoiced / COALESCE(NULLIF(p.weight, 0), 1) END "
+            f"  + "
+            f"  CASE WHEN i.lve_invoiceaffected_id > 0 "
+            f"       AND orig.dateacct < :period_start "
+            f"       THEN il.qtyinvoiced / COALESCE(NULLIF(p.weight, 0), 1) "
+            f"       ELSE 0 END"
+            f") AS cantidad, "
+            f"SUM("
+            f"  CASE WHEN i.lve_invoiceaffected_id > 0 THEN -1 * il.linenetamt "
+            f"       ELSE il.linenetamt END "
+            f"  + "
+            f"  CASE WHEN i.lve_invoiceaffected_id > 0 "
+            f"       AND orig.dateacct < :period_start "
+            f"       THEN il.linenetamt ELSE 0 END"
+            f") AS total_neto "
             f"FROM adempiere.c_invoice i "
             f"JOIN adempiere.c_invoiceline il ON i.c_invoice_id = il.c_invoice_id "
             f"JOIN adempiere.m_product p ON il.m_product_id = p.m_product_id "
             f"LEFT JOIN adempiere.m_product_category pc ON p.m_product_category_id = pc.m_product_category_id "
-            f"JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id "
+            f"LEFT JOIN adempiere.c_invoice orig ON orig.c_invoice_id = i.lve_invoiceaffected_id "
             f"WHERE {where} "
             f"GROUP BY p.value, p.name, pc.name, {cur_label} "
             f"ORDER BY total_neto DESC "
