@@ -74,8 +74,7 @@ CONTEXTO iDEMPIERE:
 - Cobros: c_payment (isreceipt='Y', docstatus IN ('CO','CL'))
 - Clientes: c_bpartner - campos: ismayorista, isclap, ispublico, codigoventas
 - Zonas: c_salesregion (vinculado via c_bpartner_location, una zona por cliente)
-- Distribuidores: salesrep_id en c_invoice apunta a c_bpartner (son distribuidores/intermediarios, NO vendedores internos)
-- NOTA: Los vendedores internos (Carlos Matias, Lenny Silva, etc.) NO están vinculados a las facturas en iDempiere
+- Vendedores: salesrep_id en c_invoice apunta a ad_user (vendedores/representantes comerciales internos)
 - Monedas: VES (Bolívares, ID 205), USD (Dólares, IDs múltiples)
 - Organizaciones: INPROA SANTONI, AGROINPROA, AGROPECUARIA R.R., Agro Import, INVERSIONES AGA, InproMaiz, AGA AGRICOLA, Santoni Service
 - Campos fiscales: lve_controlnumber, withholdingamt (retenciones IVA)
