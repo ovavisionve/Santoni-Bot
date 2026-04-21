@@ -295,7 +295,7 @@ Se crearon cuestionarios para que cada departamento valide las respuestas del bo
 
 | Agente | Estado | Verificado | Resultado | Notas |
 |--------|--------|------------|-----------|-------|
-| **Ventas** | ✅ Funcional | Sí | Datos correctos | Top clientes, facturación, cobranza, CxC vencidas |
+| **Ventas** | ✅ Funcional | Sí | Datos correctos (KPI exacto) | Lógica `lve_invoiceaffected_id` + `qtyinvoicedf` + `dateacct`. Diferencia residual 0.04% en ventas por producto. |
 | **Finanzas** | ✅ Funcional | Sí | Datos correctos | Saldos bancarios 100% exactos, CxC top morosos exactos |
 | **RRHH** | ⚠️ Parcial | Parcial | Mayormente correcto | 702 empleados global OK. Conteo por org InproMaiz muestra 109 pero real es 94. `build_vacation_expiry` NUEVO (21/Abr) — verificado contra reporte iDempiere |
 | **Producción** | ✅ Funcional | Sí | Datos plausibles | Proporciones ene vs año cuadran (~40-47%) |
@@ -372,9 +372,9 @@ git reset --hard pre-keywords-integration  # Vuelve a commit 69575e4
 - ~~**URGENTE**: Fix contabilidad~~ ✅ Resuelto (IdempiereSession directo)
 - ~~**ALTO**: Compras productores~~ ✅ Resuelto (qtyordered=1, MAIZ BLANCO aparece)
 - ~~**ALTO**: Anti-hallucination streaming~~ ✅ Resuelto (skip LLM cuando no hay datos)
+- ~~**MEDIO**: Ventas por producto~~ ✅ Resuelto (fórmula KPI exacta, 0.04% residual por m_substitute). Ver hallazgos 21/Abr.
 - **MEDIO**: Compras insumos — LLM a veces ignora datos reales en streaming (mitigado con skip-LLM sin datos)
 - **MEDIO**: RRHH — Conteo de empleados por org incorrecto (109 vs 94 real para InproMaiz). Ver sección de hallazgos 21/Abr abajo.
-- **BAJO**: Ventas por producto — diferencia 0.2% vs KPI iDempiere (74,979 vs 74,822.75). Causa: el reporte KPI usa lógica interna en `GEO_PrecioPromedio.jrxml`. Ver sección abajo.
 - Mapeo completo de tablas iDempiere
 - Tests E2E
 - Sentry (monitoreo de errores)
@@ -421,31 +421,33 @@ WHERE ad_org_id IN (SELECT ad_org_id FROM adempiere.ad_org WHERE name ILIKE '%In
 
 ---
 
-### 3. Ventas por producto vs KPI iDempiere — INVESTIGACIÓN EN CURSO ⚠️
+### 3. Ventas por producto vs KPI iDempiere — IMPLEMENTADO ✅ (diferencia residual 0.04%)
 
-**Problema**: Bot muestra 74,979 bultos para HBL-920 (HARINA ALMOHADA) en marzo 2026 USD.
+**Problema original**: Bot mostraba 74,979 bultos para HBL-920 (HARINA ALMOHADA) en marzo 2026 USD.
 iDempiere KPI muestra 74,822.75. Diferencia: **156.25 bultos (0.2%)**.
 
-**Intentos**:
-- Restar todas las NC (ARC=675.25) → da 74,303.75 — PEOR, diferencia mayor
-- Solo ARI → da 74,979 — más cercano (0.2% error)
-- **Revertido a ARI solo** (el intento de NC empeoró el resultado)
+**Investigación**: Se extrajo el archivo `GEO_PrecioPromedio.jrxml` del attachment ZIP almacenado
+en `adempiere.ad_attachment` (attachment_id=1038842 para `kpi_general`). El SQL del Jasper usa:
+- `lve_invoiceaffected_id > 0` para identificar NCs (en vez de `docbasetype = 'ARC'`)
+- `qtyinvoicedf`: NCs cuyo `orig.dateacct < period_start` se añaden de vuelta (cancelan la NC; solo NC del mismo período restan)
+- `i.c_currency_id <> 205` para filtrar USD (en vez de lista de IDs explícita)
+- `i.dateacct` para filtrar período (en vez de `dateinvoiced`)
 
-**Causa probable**: El KPI no resta TODAS las NC, solo un subconjunto (devoluciones físicas, no ajustes de precio). Los 17 registros ARC incluyen devoluciones parciales (min=0.25, max=337).
-
-**Reportes KPI en iDempiere**:
-- `kpi_general`, `kpi_comercial`, `kpi_corte` → todos usan `GEO_PrecioPromedio.jrxml` (stored as attachment en `ad_process`)
-- El Jasper `.jrxml` contiene el SQL exacto — necesita ser extraído del attachment de la DB
-
-**Próximo paso**: Extraer el Jasper XML del attachment para ver el SQL exacto:
-```sql
-SELECT encode(binarydata, 'escape') 
-FROM adempiere.ad_attachment aa
-JOIN adempiere.ad_attachmentnote an ON aa.ad_attachment_id = an.ad_attachment_id
-WHERE an.title ILIKE '%GEO_PrecioPromedio%'
-LIMIT 1;
+**Fórmula implementada**:
 ```
-O buscar el archivo `.jrxml` en el sistema de archivos del servidor iDempiere (192.168.1.73).
+cantidad_neta = ARI_qty + NC_qty(-) + if(NC.orig.dateacct < period_start): NC_qty(+)
+```
+Resultado post-implementación: **74,855** vs KPI **74,822.75** (diff=32.25, **0.04%**).
+
+**Diferencia residual (0.04%)**: Atribuida a mapeo `m_substitute` en el KPI cuando `weight > 0`.
+El KPI usa un paso de sustitución de productos que el bot no replica. Aceptado como dentro de tolerancia.
+
+**Qué se cambió** (branch `claude/review-merge-history-eRCmp`, 21/Abr/2026):
+- `_USD_CURRENCY_IDS` → frozenset con los 9 IDs de dólar
+- `_add_currency_filter()` → USD usa `<> 205` (excluye VES) en vez de lista explícita
+- `build_sales_by_product()` → fórmula KPI exacta con `lve_invoiceaffected_id` + `qtyinvoicedf` + `dateacct`
+- `build_top_clients()` → NC via `lve_invoiceaffected_id = 0 / > 0` (en vez de `docbasetype`)
+- `build_sales_summary()` → todos los sub-queries (por zona, región, vendedor, mes, moneda) usando `lve_invoiceaffected_id`
 
 ---
 
