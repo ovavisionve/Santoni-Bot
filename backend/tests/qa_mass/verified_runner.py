@@ -92,13 +92,40 @@ def _extract_account_code(pregunta: str) -> str | None:
     return None
 
 
+# ── Currency detection ────────────────────────────────────────────────────
+
+def _is_usd_question(pregunta: str) -> bool:
+    """True si la pregunta pide datos en dólares."""
+    t = pregunta.lower()
+    return any(w in t for w in ["dólar", "dolar", "dolares", "usd", "en dólares", "en dolares"])
+
+
+def _get_por_moneda_total(data: dict, moneda: str = "Bs.") -> float:
+    """Extrae el total de una moneda específica del dict por_moneda."""
+    for entry in data.get("por_moneda", []):
+        if entry.get("moneda") == moneda:
+            return entry.get("total_facturado", entry.get("total", entry.get("venta_neta", 0)))
+    return 0
+
+
+def _get_por_moneda_facturas(data: dict, moneda: str = "Bs.") -> int:
+    """Extrae las facturas de una moneda del dict por_moneda."""
+    for entry in data.get("por_moneda", []):
+        if entry.get("moneda") == moneda:
+            return entry.get("facturas", entry.get("cantidad", 0))
+    return 0
+
+
 # ── Category → verification function mapping ─────────────────────────────
 
 def _verify_empleados(pregunta, mes, anio, org):
     from app.services.idempiere_queries import build_employee_summary
-    data = build_employee_summary()
+    data = build_employee_summary(org_ids=None)
     if isinstance(data, dict):
-        return [("total_empleados", data.get("total", data.get("activos", 0)))]
+        totales = data.get("totales", {})
+        total = totales.get("total", totales.get("activos", 0))
+        if total:
+            return [("total_empleados", total)]
     return []
 
 
@@ -114,9 +141,14 @@ def _verify_nomina(pregunta, mes, anio, org):
 
 def _verify_cumpleanos(pregunta, mes, anio, org):
     from app.services.idempiere_queries import build_birthday_list
-    data = build_birthday_list(mes=mes)
+    data = build_birthday_list(mes=mes, org_name=org)
     if isinstance(data, list):
-        return [("total_cumpleañeros", len(data))]
+        names = [d.get("nombre", d.get("name", "")) for d in data[:3]]
+        checks = [("total_cumpleañeros", len(data))]
+        for n in names:
+            if n:
+                checks.append(("nombre_cumple", " ".join(n.split()[:2])))
+        return checks
     return []
 
 
@@ -150,24 +182,50 @@ def _verify_rotacion(pregunta, mes, anio, org):
 
 def _verify_resumen_ventas(pregunta, mes, anio, org):
     from app.services.idempiere_queries import build_sales_summary
-    data = build_sales_summary(mes=mes, anio=anio, org_name=org)
+    usd = _is_usd_question(pregunta)
+    currency_ids = [100, 1000000, 1000003, 1000006, 1000008, 1000009, 1000011, 1000013, 1000017] if usd else None
+    data = build_sales_summary(mes=mes, anio=anio, org_name=org, currency_ids=currency_ids)
     if isinstance(data, dict):
+        # Use per-currency breakdown when available (avoids mixed totals)
+        por_moneda = data.get("por_moneda", [])
+        if por_moneda and not usd:
+            # Get VES entry (Bs.) — this is what the bot typically shows
+            ves_total = _get_por_moneda_total(data, "Bs.")
+            ves_facturas = _get_por_moneda_facturas(data, "Bs.")
+            if ves_total:
+                return [("ventas_ves", ves_total)]
+            # Fallback to first entry
+            if por_moneda:
+                entry = por_moneda[0]
+                return [("ventas", entry.get("total_facturado", entry.get("venta_neta", 0)))]
+        elif usd:
+            usd_total = _get_por_moneda_total(data, "USD")
+            if usd_total:
+                return [("ventas_usd", usd_total)]
+        # Fallback to totales
         totals = data.get("totales", {})
         total = totals.get("total_facturado", 0)
         facturas = totals.get("total_facturas", 0)
-        vals = []
         if total:
-            vals.append(("total_facturado", total))
-        if facturas:
-            vals.append(("facturas", facturas))
-        return vals
+            return [("total_facturado", total)]
     return []
 
 
 def _verify_cobranza(pregunta, mes, anio, org):
     from app.services.idempiere_queries import build_collection_summary
+    usd = _is_usd_question(pregunta)
     data = build_collection_summary(mes=mes, anio=anio, org_name=org)
     if isinstance(data, dict):
+        por_moneda = data.get("por_moneda", [])
+        if por_moneda and not usd:
+            for entry in por_moneda:
+                if entry.get("moneda") == "Bs.":
+                    total = entry.get("total", entry.get("cantidad", 0))
+                    if total:
+                        return [("cobrado_ves", total)]
+            # Fallback first entry
+            if por_moneda:
+                return [("cobrado", por_moneda[0].get("total", 0))]
         totals = data.get("totales", {})
         total = totals.get("total_cobrado", 0)
         if total:
@@ -177,10 +235,12 @@ def _verify_cobranza(pregunta, mes, anio, org):
 
 def _verify_ranking_clientes(pregunta, mes, anio, org):
     from app.services.idempiere_queries import build_top_clients
-    data = build_top_clients(anio=anio, org_name=org, currency_ids=[205])
+    usd = _is_usd_question(pregunta)
+    cids = [100, 1000000, 1000003, 1000006, 1000008, 1000009, 1000011, 1000013, 1000017] if usd else [205]
+    mes_q = _extract_mes_anio(pregunta)[0]
+    data = build_top_clients(anio=anio, mes=mes_q, org_name=org, currency_ids=cids)
     if isinstance(data, list) and data:
-        # Check top 3 client names
-        return [("nombre_cliente", d.get("cliente", d.get("nombre", ""))) for d in data[:3]]
+        return [("nombre_cliente", " ".join(d.get("cliente", d.get("nombre", "")).split()[:3])) for d in data[:3]]
     return []
 
 
