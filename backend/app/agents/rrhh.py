@@ -421,6 +421,8 @@ Datos de RRHH en iDempiere:
                 matches_any(msg, RRHH_CUMPLEANOS)
                 or matches_any(msg, RRHH_AUSENTISMO)
                 or matches_any(msg, RRHH_NOMINA)
+                or matches_any(msg, RRHH_VACACIONES)
+                or matches_any(msg, RRHH_ROTACION)
             )
 
             # Employee summary (included unless name search or specific query goes first)

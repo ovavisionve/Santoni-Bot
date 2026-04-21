@@ -147,6 +147,8 @@ class BaseAgent(ABC):
             "'dame mas detalle', 'y del mes pasado?'), usa el historial para entender el contexto.\n"
             "- Si pide COMPARACION entre periodos, presenta tabla comparativa "
             "con columnas: Concepto | Periodo 1 | Periodo 2 | Variacion | %.\n"
+            "- SIEMPRE lee TODOS los datos proporcionados HASTA EL FINAL antes de decidir tu respuesta.\n"
+            "- Si hay múltiples secciones (##), PRESENTA CADA UNA. No te detengas en la primera.\n"
             "- Formato venezolano: punto=miles, coma=decimal (ej: 1.234.567,89).\n"
             "\nREGLAS ANTI-INVENCIÓN (OBLIGATORIAS):\n"
             "- Presenta SOLO los datos que recibes en 'DATOS REALES DE LA BASE DE DATOS'. NO agregues datos adicionales.\n"

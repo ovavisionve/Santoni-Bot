@@ -569,5 +569,14 @@ Datos de ventas de iDempiere:
                     "NO existe datos de Bs. en esta consulta. NO inventes ni agregues datos de otra moneda."
                 )
             sections.insert(0, currency_note)
+        elif sections and not currency_ids:
+            # No currency filter → data includes BOTH VES and USD
+            # Tell LLM to present BOTH currencies from por_moneda
+            currency_note = (
+                "⚠️ DATOS EN MÚLTIPLES MONEDAS: Los datos incluyen Bs. (VES) Y USD. "
+                "DEBES presentar los totales SEPARADOS por moneda usando la sección 'por_moneda'. "
+                "NO mezcles montos de Bs. y USD en un solo total. Muestra: 'En Bs.: X / En USD: Y'."
+            )
+            sections.insert(0, currency_note)
 
         return "\n\n".join(sections) if sections else None

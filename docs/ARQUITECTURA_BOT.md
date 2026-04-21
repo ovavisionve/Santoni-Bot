@@ -1442,3 +1442,52 @@ PREGUNTA: "¿Cuántos supervisores tiene INPROA SANTONI?"
 | "ausentimos" (typo) no matcheaba | solo tenía "ausentismo" | Agregado "ausentimos", "ausentismos" |
 | "se fueron" no matcheaba RRHH_ROTACION | no estaba en el set | Agregado "se fueron", "se han ido" |
 | "supervisores" contaba como 2 hits (supervisor+supervisores) | cargo_hits >= 2 → None | Cambio a extracción por estructura |
+
+---
+
+## RIESGOS CONOCIDOS Y MITIGACIONES
+
+### R1. Follow-ups y herencia de contexto
+
+Cuando un usuario dice "¿Y de InproMaiz?" el agente hereda del historial:
+- `mes`, `anio`, `org_name`, `currency_ids`, `cargo_search`, `query_type`
+
+**Código:** Bloque `if history:` dentro de `fetch_data()` de cada agente.
+**Riesgo:** Herencia incorrecta = respuesta con período/org equivocado.
+**Mitigación:** `_strip_tables_from_history()` limpia tablas del historial.
+
+### R2. Moneda mezclada en totales (FIX APLICADO)
+
+`build_sales_summary().totales.total_facturado` suma VES+USD (sin sentido).
+**Fix:** Instrucción al LLM: "presenta totales SEPARADOS por moneda usando por_moneda".
+
+### R3. LLM non-determinístico (FIX APLICADO)
+
+Misma pregunta → respuestas diferentes. LLM ignora secciones.
+**Fix:** Prompt: "Lee TODOS los datos HASTA EL FINAL" + "PRESENTA CADA sección".
+**Fix RRHH:** Datos específicos PRIMERO, employee summary AL FINAL.
+
+### R4. Drift de wrappers (SCRIPT DE DETECCIÓN)
+
+**Script:** `python scripts/check_wrapper_drift.py` — correr antes de cada deploy.
+
+### R5. Routing histórico (_get_session)
+
+`HISTORICAL_DATA_ENABLED=true` + fecha < cutoff → DB local (puede ser incompleta).
+Funciones que SIEMPRE van a iDempiere: overdue_receivables, employee_summary, inventory_stock, accounting.
+
+### R6. Colisiones substring (SCRIPT DE AUDITORÍA)
+
+**Script:** `python scripts/audit_keyword_collisions.py`
+
+### R7. Año default
+
+"nómina de enero" sin año → usa `datetime.now().year`. Con historial, hereda año anterior.
+
+### R8. Secciones enterradas (FIX APLICADO)
+
+RRHH: cumpleaños/ausentismo/nómina/vacaciones/rotación van PRIMERO. Employee summary al FINAL.
+
+### R9. USD invisible (FIX APLICADO)
+
+Sin filtro de moneda → instrucción: "DATOS EN MÚLTIPLES MONEDAS: presenta SEPARADOS".
