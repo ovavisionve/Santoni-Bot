@@ -1036,59 +1036,53 @@ def build_financial_summary(
         mes = None
     db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
     try:
-        # Bank balances (filtered by org if applicable)
-        bank_conditions = ["ba.isactive = 'Y'"]
+        # Bank balances using lve_disponibilidadbancariagerencia (saldo disponible real)
+        # total = currentbalance + payamt (pagos/cobros en proceso, igual que tesorería)
+        # montomext > 0 → cuenta USD con monto en dólares; montomext = 0 → cuenta VES
+        bank_conditions = ["(g.total != 0 OR g.currentbalance != 0)"]
         bank_params: dict = {}
-        _add_org_filter(bank_conditions, bank_params, org_ids, "ba")
+        _add_org_filter(bank_conditions, bank_params, org_ids, "g")
         bank_where = " AND ".join(bank_conditions)
-        # Group all USD iso_codes (DOL, DoL, Dol, USA, dol, DLA, Dla, US.)
-        # into a single 'USD' label, same as _currency_label but for banks.
-        bank_currency = (
-            "CASE WHEN ba.c_currency_id = 205 THEN 'VES' "
-            "WHEN ba.c_currency_id IN "
-            "(100,1000000,1000003,1000006,1000008,1000009,1000011,1000013,1000017) "
-            "THEN 'USD' ELSE 'Otro' END"
-        )
         bank_q = text(
-            f"SELECT b.name AS banco, ba.accountno AS numero_cuenta, "
-            f"CASE WHEN ba.bankaccounttype = 'C' THEN 'Corriente' "
-            f"     WHEN ba.bankaccounttype = 'S' THEN 'Ahorro' "
-            f"     WHEN ba.bankaccounttype = 'I' THEN 'Inversión' "
-            f"     ELSE ba.bankaccounttype END AS tipo, "
-            f"{bank_currency} AS moneda, "
-            f"ba.currentbalance AS saldo, "
-            f"o.name AS organizacion "
-            f"FROM adempiere.c_bankaccount ba "
-            f"JOIN adempiere.c_bank b ON ba.c_bank_id = b.c_bank_id "
-            f"LEFT JOIN adempiere.c_currency c ON ba.c_currency_id = c.c_currency_id "
-            f"LEFT JOIN adempiere.ad_org o ON ba.ad_org_id = o.ad_org_id "
+            "SELECT DISTINCT ON (g.name) "
+            "g.description AS banco, "
+            "g.name AS numero_cuenta, "
+            "COALESCE(o.name, g.organizacion) AS organizacion, "
+            "COALESCE(g.currentbalance, 0) AS saldo_contable, "
+            "COALESCE(g.payamt, 0) AS pagos_proceso, "
+            "COALESCE(g.total, 0) AS disponible_bs, "
+            "COALESCE(g.montomext, 0) AS disponible_usd, "
+            "CASE WHEN COALESCE(g.montomext, 0) != 0 THEN 'USD' ELSE 'VES' END AS moneda "
+            "FROM adempiere.lve_disponibilidadbancariagerencia g "
+            "LEFT JOIN adempiere.ad_org o ON g.ad_org_id = o.ad_org_id "
             f"WHERE {bank_where} "
-            f"ORDER BY moneda, b.name"
+            "ORDER BY g.name, g.statementdate DESC NULLS LAST"
         )
         banks = [
             {
                 "banco": r[0],
                 "numero_cuenta": r[1],
-                "tipo": r[2],
-                "moneda": r[3],
-                "saldo": float(r[4]) if r[4] else 0.0,
-                "organizacion": r[5] or "Sin asignar",
+                "organizacion": r[2] or "Sin asignar",
+                "saldo_contable": float(r[3]),
+                "pagos_proceso": float(r[4]),
+                "saldo": float(r[6]) if r[7] == "USD" else float(r[5]),
+                "saldo_disponible_bs": float(r[5]),
+                "saldo_usd": float(r[6]),
+                "moneda": r[7],
             }
             for r in db.execute(bank_q, bank_params).fetchall()
         ]
 
-        # Separate totals by currency
-        totals_by_currency: dict[str, float] = {}
-        for b in banks:
-            cur = b["moneda"]
-            totals_by_currency[cur] = totals_by_currency.get(cur, 0.0) + b["saldo"]
-
-        # Group banks by currency for clearer presentation
+        # Group by currency
         banks_ves = [b for b in banks if b["moneda"] == "VES"]
         banks_usd = [b for b in banks if b["moneda"] == "USD"]
-        banks_other = [b for b in banks if b["moneda"] not in ("VES", "USD")]
+        banks_other: list = []
 
-        total_saldo_bancario = sum(b["saldo"] for b in banks)
+        totals_by_currency: dict[str, float] = {
+            "VES": sum(b["saldo_disponible_bs"] for b in banks_ves),
+            "USD": sum(b["saldo_usd"] for b in banks_usd),
+        }
+        total_saldo_bancario = totals_by_currency["VES"]
 
         # Accounts receivable (unpaid sales invoices) - separated by currency
         # lve_invoiceaffected_id=0: solo facturas regulares, no NCs sin aplicar
