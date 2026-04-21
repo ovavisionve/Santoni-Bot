@@ -1251,4 +1251,194 @@ LLM genera respuesta
 
 ---
 
-*Fase 7: Keywords y routing → pendiente*
+---
+
+## FASE 7: Keywords y Routing
+
+### Archivo: `agents/keywords.py` (~1,220 líneas)
+
+**63 frozensets** con **2,200+ keywords** organizados por dominio.
+
+### Mapa de frozensets por agente
+
+```
+RRHH (6 sets, 390 keywords):
+  RRHH_EMPLEADOS ......... 61 kw   "empleados", "trabajadores", "personal"
+  RRHH_CARGOS ........... 135 kw   "supervisor", "obrero", "chofer", "gerente"...
+  RRHH_NOMINA ............. 60 kw   "nómina", "devengado", "deducciones", "sueldo"
+  RRHH_AUSENTISMO ......... 45 kw   "ausentismo", "ausencia", "falta", "reposo"
+  RRHH_CUMPLEANOS ......... 25 kw   "cumpleaños", "cumplen años", "cumpleañeros"
+  RRHH_VACACIONES ......... 21 kw   "vacaciones", "días de disfrute"
+  RRHH_ROTACION ........... 43 kw   "rotación", "renuncia", "se fueron", "bajas"
+
+VENTAS (6 sets, 252 keywords):
+  VENTAS_CLIENTES ......... 45 kw   "top clientes", "mejores clientes", "ranking"
+  VENTAS_COBRANZA ......... 45 kw   "cobranza", "cobros", "pagos recibidos"
+  VENTAS_CXC .............. 45 kw   "vencidas", "morosos", "deuda", "pendiente"
+  VENTAS_FACTURACION ...... 39 kw   "facturación", "vendió", "facturó"
+  VENTAS_VENDEDORES ....... 20 kw   "vendedor", "distribuidor"
+  VENTAS_ZONAS ............ 58 kw   "zona", "región", "territorial"
+
+COMPRAS INSUMOS (6 sets, 355 keywords):
+  COMPRAS_GENERAL ......... 53 kw   "compras", "insumos", "proveedores"
+  COMPRAS_HISTORIAL ....... 27 kw   "historial", "últimas compras"
+  COMPRAS_INVENTARIO ...... 75 kw   "inventario", "stock", "existencia"
+  COMPRAS_ORDENES ......... 48 kw   "orden de compra", "pendiente entrega"
+  COMPRAS_PAGOS ........... 85 kw   "factura pendiente", "estado de pago"
+  COMPRAS_PRECIOS ......... 67 kw   "precio", "comparar precios", "costo"
+
+COMPRAS PRODUCTORES (3 sets, 106 keywords):
+  PRODUCTORES_GENERAL ..... 32 kw   "productor", "registrado", "agrícola"
+  PRODUCTORES_COMPRAS ..... 57 kw   "arroz paddy", "maíz", "compra agrícola"
+  PRODUCTORES_PAGOS ....... 17 kw   "pago pendiente", "deuda productor"
+
+PRODUCCIÓN (6 sets, 214 keywords):
+  PRODUCCION_GENERAL ...... 52 kw   "producción", "produjo", "planta"
+  PRODUCCION_ALMACENES .... 34 kw   "almacén", "traslado", "movimiento"
+  PRODUCCION_DESPERDICIO .. 30 kw   "desperdicio", "merma", "pérdida"
+  PRODUCCION_DOCUMENTOS ... 21 kw   "orden producción", "lote"
+  PRODUCCION_MATERIA_PRIMA  45 kw   "materia prima", "MP", "insumo producción"
+  PRODUCCION_RECETAS ...... 32 kw   "receta", "BOM", "fórmula"
+
+CONTABILIDAD (5 sets, 108 keywords):
+  CONTABILIDAD_BALANCE .... 18 kw   "balance general", "activos", "pasivos"
+  CONTABILIDAD_COSTOS ..... 20 kw   "costos", "costo de ventas"
+  CONTABILIDAD_CUENTAS .... 19 kw   "cuenta contable", "saldo", "plan de cuentas"
+  CONTABILIDAD_LIBROS ..... 24 kw   "libro mayor", "libro diario"
+  CONTABILIDAD_RESULTADOS . 27 kw   "estado de resultados", "ingresos", "gastos"
+
+FINANZAS (5 sets, 91 keywords):
+  FINANZAS_BANCOS ......... 23 kw   "saldo bancario", "banco", "disponibilidad"
+  FINANZAS_CXC ............ 15 kw   "cuentas por cobrar"
+  FINANZAS_CXP ............ 14 kw   "cuentas por pagar"
+  FINANZAS_FLUJO .......... 13 kw   "flujo de caja"
+  FINANZAS_PRESTAMOS ...... 26 kw   "préstamo", "cuota", "crédito"
+
+TRANSVERSALES (16 sets, 684 keywords):
+  ORGANIZACIONES .......... 52 kw   "INPROA", "InproMaiz", "Santoni Service"
+  MONEDA_USD .............. 29 kw   "dólares", "USD", "$"
+  MONEDA_VES .............. 25 kw   "bolívares", "Bs", "VES"
+  PRODUCTOS_ARROZ ......... 21 kw   "arroz", "paddy", "descascarado"
+  PRODUCTOS_MAIZ .......... 15 kw   "maíz", "maíz blanco"
+  PRODUCTOS_INSUMOS ....... 93 kw   "harina", "aceite", "empaque", "bolsa"
+  PRODUCTOS_EMPAQUES ...... 35 kw   "caja", "saco", "bolsa", "empaque"
+  PRODUCTOS_SNACKS ........ 11 kw   "snack", "tostón", "chicharrón"
+  TEMPORALIDAD_HOY ........ 15 kw   "hoy", "día de hoy"
+  TEMPORALIDAD_AYER .......  8 kw   "ayer"
+  TEMPORALIDAD_MES ........ 37 kw   "este mes", "mes actual", "mes pasado"
+  TEMPORALIDAD_SEMANA ..... 15 kw   "esta semana", "semana pasada"
+  TEMPORALIDAD_TRIMESTRE .. 19 kw   "trimestre", "Q1", "Q2"
+  TEMPORALIDAD_ANO ........ 25 kw   "este año", "año pasado", "2025"
+  TEMPORALIDAD_RANGO ...... 19 kw   "desde", "hasta", "entre"
+  VERBOS_SOLICITUD ....... 114 kw   "dame", "muéstrame", "indícame", "dime"
+```
+
+### Función `matches_any()`
+
+```python
+def matches_any(text: str, keyword_set: frozenset) -> bool:
+    """True si CUALQUIER keyword del set es substring del text."""
+    return any(kw in text for kw in keyword_set)
+```
+
+**⚠️ Es substring, no word boundary.** "maiz" matchea dentro de "InproMaiz".
+Por eso ventas usa `\b` word boundary para producto standalone.
+
+### Flujo de routing completo
+
+```
+PREGUNTA: "¿Cuántos supervisores tiene INPROA SANTONI?"
+                │
+                ▼
+┌── FRONTEND: usuario seleccionó pestaña "RRHH" ──────────┐
+│   agent_name = "rrhh"                                     │
+└──────────────────────────┬────────────────────────────────┘
+                           │
+                           ▼
+┌── API chat.py ───────────────────────────────────────────┐
+│   agent_name in _VALID_AGENTS? → SÍ                      │
+│   agent_name in user.allowed_departments? → SÍ           │
+│   → Llama rrhh_agent.stream(message, history, org_ids)   │
+└──────────────────────────┬────────────────────────────────┘
+                           │
+                           ▼
+┌── RRHH Agent fetch_data() ───────────────────────────────┐
+│                                                           │
+│   1. Extrae parámetros:                                   │
+│      mes=None, anio=2026 (default)                       │
+│      org_name="INPROA" (de _extract_org_name)            │
+│      cargo_search="supervisor" (de _extract_cargo_search)│
+│        → "supervisores" deplural → "supervisor"          │
+│        → strip acentos (no aplica)                       │
+│                                                           │
+│   2. Routing por keywords:                                │
+│      cargo_search is not None → rama "cargo"             │
+│      → build_employee_list(cargo_search="supervisor")    │
+│      → SQL: WHERE hr_job.name ILIKE '%supervisor%'       │
+│      → 37 resultados                                      │
+│                                                           │
+│   3. Format sections:                                     │
+│      "## Empleados con cargo 'SUPERVISOR' (37)"          │
+│      | Nombre | Cargo | Organización |                   │
+│      | ...    | ...   | ...          |                   │
+│                                                           │
+│   4. Retorna string con datos (3000+ chars)              │
+└──────────────────────────┬────────────────────────────────┘
+                           │
+                           ▼
+┌── BaseAgent._build_messages() ───────────────────────────┐
+│   has_data = True                                         │
+│   → Arma SystemMessage con datos reales                  │
+│   → Envía al LLM                                         │
+└──────────────────────────┬────────────────────────────────┘
+                           │
+                           ▼
+┌── LLM (DeepSeek) ───────────────────────────────────────┐
+│   "La empresa tiene 37 supervisores activos..."          │
+└──────────────────────────────────────────────────────────┘
+```
+
+### Prioridad de evaluación por agente
+
+**VENTAS** (if/return — primera que matchea gana):
+```
+1. VENTAS_CLIENTES     (top/ranking clientes)
+2. "activo/inactivo"   (clientes activos)
+3. producto keywords   (harina, arroz — con word boundary)
+4. VENTAS_COBRANZA     (cobranza, cobros)
+5. VENTAS_CXC          (vencidas, morosos)
+6. "visita"            (visitas a clientes)
+7. "meta/presupuesto"  (metas)
+8. "produjo+vendió"    (ventas vs producción)
+9. VENTAS_FACTURACION  (facturación — default ventas)
+10. VENTAS_ZONAS       (zonas, regiones)
+```
+
+**RRHH** (if sin elif — múltiples secciones pueden combinarse):
+```
+1. name_search?     → lista por nombre (exclusivo)
+2. cargo_search?    → lista por cargo (exclusivo)
+3. RRHH_EMPLEADOS   → lista general
+4. RRHH_CUMPLEANOS  → cumpleañeros (se suma a secciones)
+5. RRHH_NOMINA      → nómina (se suma)
+6. RRHH_AUSENTISMO  → ausentismo o asistencia diaria (se suma)
+7. RRHH_VACACIONES  → vacaciones (se suma)
+8. RRHH_ROTACION    → rotación o ingresos (se suma)
+9. "provisiones"    → provisiones laborales (se suma)
+10. "calidad contrat" → indicadores contratación (se suma)
+```
+
+**⚠️ Diferencia clave:**
+- Ventas: `if/return` — solo UNA sección por respuesta
+- RRHH: `if` (sin elif) — MÚLTIPLES secciones se combinan
+- Pero para cumpleaños/ausentismo/nómina: datos específicos van PRIMERO, employee summary al FINAL
+
+### Bugs conocidos resueltos en keywords
+
+| Bug | Causa | Fix |
+|-----|-------|-----|
+| "InproMaiz" matcheaba "maiz" como producto | substring match sin boundary | `\b` word boundary para standalone |
+| "cumplen años" no matcheaba RRHH_CUMPLEANOS | solo tenía "cumple años" (singular) | Agregado "cumplen años" |
+| "ausentimos" (typo) no matcheaba | solo tenía "ausentismo" | Agregado "ausentimos", "ausentismos" |
+| "se fueron" no matcheaba RRHH_ROTACION | no estaba en el set | Agregado "se fueron", "se han ido" |
+| "supervisores" contaba como 2 hits (supervisor+supervisores) | cargo_hits >= 2 → None | Cambio a extracción por estructura |
