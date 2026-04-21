@@ -4113,7 +4113,7 @@ def build_sales_by_product(
             "i.issotrx = 'Y'",
             "i.docstatus IN ('CO', 'CL')",
             "i.isactive = 'Y'",
-            "dt.docbasetype IN ('ARI', 'ARC')",
+            "dt.docbasetype = 'ARI'",
         ]
         if only_skus:
             conditions.append("pc.iskpi = 'Y'")
@@ -4129,15 +4129,12 @@ def build_sales_by_product(
         where = " AND ".join(conditions)
         cur_label = _currency_label("i")
 
-        # Net = ARI (invoices) - ARC (credit notes) for both quantity and amount
         q = text(
             f"SELECT p.value AS codigo, p.name AS producto, "
             f"COALESCE(pc.name, 'Sin Categoría') AS categoria, "
             f"{cur_label} AS moneda, "
-            f"SUM(CASE WHEN dt.docbasetype = 'ARI' THEN il.qtyinvoiced "
-            f"         WHEN dt.docbasetype = 'ARC' THEN -il.qtyinvoiced ELSE 0 END) AS cantidad, "
-            f"COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN il.linenetamt "
-            f"                  WHEN dt.docbasetype = 'ARC' THEN -il.linenetamt ELSE 0 END), 0) AS total_neto "
+            f"SUM(il.qtyinvoiced) AS cantidad, "
+            f"COALESCE(SUM(il.linenetamt), 0) AS total_neto "
             f"FROM adempiere.c_invoice i "
             f"JOIN adempiere.c_invoiceline il ON i.c_invoice_id = il.c_invoice_id "
             f"JOIN adempiere.m_product p ON il.m_product_id = p.m_product_id "
