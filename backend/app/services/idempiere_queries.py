@@ -1400,13 +1400,19 @@ def build_cobros_pagos_summary(
 # RRHH (Human Resources)
 # ---------------------------------------------------------------------------
 
-def build_employee_summary(org_ids: list[int] | None = None) -> dict:
+def build_employee_summary(
+    org_ids: list[int] | None = None,
+    org_name: str | None = None,
+) -> dict:
     """Employee summary from iDempiere hr_employee (with DISTINCT to avoid duplicates).
 
     hr_employee has multiple rows per person (one per payroll period), so we use
     COUNT(DISTINCT e.c_bpartner_id) for accurate counts.  Organization is taken
     from hr_employee.ad_org_id (correctly assigned) instead of c_bpartner.ad_org_id
     (which often points to the wildcard '*' org).
+
+    When org_name is provided, ALL sections (totals, departments, cargos) are
+    filtered to that org — not just the total.
     """
     db = IdempiereSession()
     try:
@@ -1414,6 +1420,7 @@ def build_employee_summary(org_ids: list[int] | None = None) -> dict:
         conditions = ["e.isactive = 'Y'", "bp.isactive = 'Y'"]
         params: dict = {}
         _add_org_filter(conditions, params, org_ids, "e")
+        _add_org_name_filter(conditions, params, org_name, "e")
         where = " AND ".join(conditions)
         bp_join = "JOIN adempiere.c_bpartner bp ON e.c_bpartner_id = bp.c_bpartner_id"
 

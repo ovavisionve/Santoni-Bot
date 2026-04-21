@@ -940,11 +940,11 @@ def build_cobros_pagos_summary(
 # Pre-built queries: RRHH (Human Resources)
 # ---------------------------------------------------------------------------
 
-def build_employee_summary(org_ids: list[int] | None = None) -> dict:
+def build_employee_summary(org_ids: list[int] | None = None, org_name: str | None = None) -> dict:
     """Employee summary - routes to demo or iDempiere."""
     if _is_production():
         from app.services.idempiere_queries import build_employee_summary as _prod
-        return _prod(org_ids=org_ids)
+        return _prod(org_ids=org_ids, org_name=org_name)
 
     db = SessionLocal()
     try:

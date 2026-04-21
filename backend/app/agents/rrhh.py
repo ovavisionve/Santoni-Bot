@@ -427,7 +427,7 @@ Datos de RRHH en iDempiere:
 
             # Employee summary (included unless name search or specific query goes first)
             if not name_search and not _is_specific:
-                summary = build_employee_summary(org_ids=org_ids)
+                summary = build_employee_summary(org_ids=org_ids, org_name=org_name)
                 sections.append(self._format_summary(summary, "Resumen de Personal"))
 
             if name_search:
@@ -601,7 +601,7 @@ Datos de RRHH en iDempiere:
 
             # For specific queries, add employee summary at the END (context, not primary)
             if _is_specific and not name_search:
-                summary = build_employee_summary(org_ids=org_ids)
+                summary = build_employee_summary(org_ids=org_ids, org_name=org_name)
                 sections.append(self._format_summary(summary, "Contexto: Resumen de Personal"))
 
         except Exception as exc:
