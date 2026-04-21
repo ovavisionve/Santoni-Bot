@@ -915,10 +915,9 @@ def build_overdue_receivables(
             "LEFT JOIN adempiere.ad_user sr ON i.salesrep_id = sr.ad_user_id "
             "LEFT JOIN client_zone cz ON bp.c_bpartner_id = cz.c_bpartner_id "
             "LEFT JOIN adempiere.c_paymentterm pterm ON i.c_paymentterm_id = pterm.c_paymentterm_id "
-            "JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id "
             "WHERE i.issotrx = 'Y' AND i.docstatus IN ('CO', 'CL') AND i.ispaid = 'N' "
             "AND i.isactive = 'Y' "
-            "AND dt.docbasetype = 'ARI' "
+            "AND i.lve_invoiceaffected_id = 0 "
             "AND i.dateinvoiced >= (CURRENT_DATE - INTERVAL '3 years') "
             "AND i.grandtotal > 100 "
             f"{org_clause}"
@@ -992,10 +991,9 @@ def build_top_delinquent_clients(
             "JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id "
             "LEFT JOIN client_zone cz ON bp.c_bpartner_id = cz.c_bpartner_id "
             "LEFT JOIN adempiere.c_paymentterm pterm ON i.c_paymentterm_id = pterm.c_paymentterm_id "
-            "JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id "
             "WHERE i.issotrx = 'Y' AND i.docstatus IN ('CO', 'CL') AND i.ispaid = 'N' "
             "AND i.isactive = 'Y' "
-            "AND dt.docbasetype = 'ARI' "
+            "AND i.lve_invoiceaffected_id = 0 "
             "AND i.dateinvoiced >= (CURRENT_DATE - INTERVAL '3 years') "
             "AND i.grandtotal > 100 "
             f"{org_clause}"
@@ -1093,12 +1091,14 @@ def build_financial_summary(
         total_saldo_bancario = sum(b["saldo"] for b in banks)
 
         # Accounts receivable (unpaid sales invoices) - separated by currency
+        # lve_invoiceaffected_id=0: solo facturas regulares, no NCs sin aplicar
         cur_label = _currency_label("i")
         ar_conditions = [
             "i.issotrx = 'Y'",
             "i.docstatus IN ('CO', 'CL')",
             "i.ispaid = 'N'",
             "i.isactive = 'Y'",
+            "i.lve_invoiceaffected_id = 0",
         ]
         ar_params: dict = {}
         _add_org_filter(ar_conditions, ar_params, org_ids, "i")
@@ -1128,6 +1128,7 @@ def build_financial_summary(
             "i.docstatus IN ('CO', 'CL')",
             "i.ispaid = 'N'",
             "i.isactive = 'Y'",
+            "i.lve_invoiceaffected_id = 0",
             "(i.dateinvoiced + CASE WHEN COALESCE(pt.netdays, 0) = 0 THEN 30 ELSE pt.netdays END) < CURRENT_DATE",
         ]
         overdue_params: dict = {}
@@ -1151,11 +1152,13 @@ def build_financial_summary(
         ]
 
         # Accounts payable (unpaid purchase invoices) - separated by currency
+        # lve_invoiceaffected_id=0: solo facturas de proveedor, no NCs de proveedor
         ap_conditions = [
             "i.issotrx = 'N'",
             "i.docstatus IN ('CO', 'CL')",
             "i.ispaid = 'N'",
             "i.isactive = 'Y'",
+            "i.lve_invoiceaffected_id = 0",
         ]
         ap_params: dict = {}
         _add_org_filter(ap_conditions, ap_params, org_ids, "i")
@@ -1185,6 +1188,7 @@ def build_financial_summary(
             "i.docstatus IN ('CO', 'CL')",
             "i.ispaid = 'N'",
             "i.isactive = 'Y'",
+            "i.lve_invoiceaffected_id = 0",
             "(i.dateinvoiced + CASE WHEN COALESCE(pt.netdays, 0) = 0 THEN 30 ELSE pt.netdays END) < CURRENT_DATE",
         ]
         overdue_ap_params: dict = {}
@@ -1213,6 +1217,7 @@ def build_financial_summary(
             "i.docstatus IN ('CO', 'CL')",
             "i.ispaid = 'N'",
             "i.isactive = 'Y'",
+            "i.lve_invoiceaffected_id = 0",
             "(i.dateinvoiced + CASE WHEN COALESCE(pt.netdays, 0) = 0 THEN 30 ELSE pt.netdays END) < CURRENT_DATE",
         ]
         top_ap_params: dict = {}
@@ -1412,35 +1417,27 @@ def build_employee_summary(
     org_ids: list[int] | None = None,
     org_name: str | None = None,
 ) -> dict:
-    """Employee summary from iDempiere hr_employee (with DISTINCT to avoid duplicates).
+    """Employee summary using the official iDempiere view lve_empleadosactivos.
 
-    hr_employee has multiple rows per person (one per payroll period), so we use
-    COUNT(DISTINCT e.c_bpartner_id) for accurate counts.  Organization is taken
-    from hr_employee.ad_org_id (correctly assigned) instead of c_bpartner.ad_org_id
-    (which often points to the wildcard '*' org).
+    Uses lve_empleadosactivos instead of querying hr_employee directly.
+    The view applies the same filters iDempiere uses in its own reports,
+    giving counts that match what users see in iDempiere screens.
 
     When org_name is provided, ALL sections (totals, departments, cargos) are
     filtered to that org — not just the total.
     """
     db = IdempiereSession()
     try:
-        # Overall counts (unique employees) — only active, exclude retired
-        conditions = [
-            "e.isactive = 'Y'",
-            "bp.isactive = 'Y'",
-            "(e.enddate IS NULL OR e.enddate > CURRENT_DATE)",
-        ]
+        conditions: list[str] = []
         params: dict = {}
         _add_org_filter(conditions, params, org_ids, "e")
         _add_org_name_filter(conditions, params, org_name, "e")
-        where = " AND ".join(conditions)
-        bp_join = "JOIN adempiere.c_bpartner bp ON e.c_bpartner_id = bp.c_bpartner_id"
+        where = " AND ".join(conditions) if conditions else "1=1"
 
+        # Total count from official iDempiere view
         totals_q = text(
-            f"SELECT "
-            f"COUNT(DISTINCT e.c_bpartner_id) AS total "
-            f"FROM adempiere.hr_employee e "
-            f"{bp_join} "
+            f"SELECT COUNT(DISTINCT e.c_bpartner_id) AS total "
+            f"FROM adempiere.lve_empleadosactivos e "
             f"WHERE {where}"
         )
         row = db.execute(totals_q, params).fetchone()
@@ -1450,13 +1447,12 @@ def build_employee_summary(
             "inactivos": 0,
         }
 
-        # By organization (unique employees per org)
+        # By organization
         by_org_q = text(
             f"SELECT COALESCE(o.name, 'Sin Organización') AS organizacion, "
             f"COUNT(DISTINCT e.c_bpartner_id) AS total, "
             f"COUNT(DISTINCT e.c_bpartner_id) AS activos "
-            f"FROM adempiere.hr_employee e "
-            f"{bp_join} "
+            f"FROM adempiere.lve_empleadosactivos e "
             f"LEFT JOIN adempiere.ad_org o ON e.ad_org_id = o.ad_org_id "
             f"WHERE {where} "
             f"GROUP BY o.name ORDER BY total DESC"
@@ -1466,32 +1462,28 @@ def build_employee_summary(
             for r in db.execute(by_org_q, params).fetchall()
         ]
 
-        # By department (from hr_department)
+        # By department (view exposes 'departamento' column directly)
         by_dept_q = text(
-            f"SELECT COALESCE(d.name, 'Sin Departamento') AS departamento, "
+            f"SELECT COALESCE(e.departamento, 'Sin Departamento') AS departamento, "
             f"COUNT(DISTINCT e.c_bpartner_id) AS total, "
             f"COUNT(DISTINCT e.c_bpartner_id) AS activos "
-            f"FROM adempiere.hr_employee e "
-            f"{bp_join} "
-            f"LEFT JOIN adempiere.hr_department d ON e.hr_department_id = d.hr_department_id "
+            f"FROM adempiere.lve_empleadosactivos e "
             f"WHERE {where} "
-            f"GROUP BY d.name ORDER BY total DESC LIMIT 20"
+            f"GROUP BY e.departamento ORDER BY total DESC LIMIT 20"
         )
         by_dept = [
             {"departamento": r[0], "total": r[1], "activos": r[2]}
             for r in db.execute(by_dept_q, params).fetchall()
         ]
 
-        # By job/cargo (from hr_job)
+        # By job/cargo (view exposes 'cargo' column directly)
         by_job_q = text(
-            f"SELECT COALESCE(j.name, 'Sin Cargo') AS cargo, "
+            f"SELECT COALESCE(e.cargo, 'Sin Cargo') AS cargo, "
             f"COUNT(DISTINCT e.c_bpartner_id) AS total, "
             f"COUNT(DISTINCT e.c_bpartner_id) AS activos "
-            f"FROM adempiere.hr_employee e "
-            f"{bp_join} "
-            f"LEFT JOIN adempiere.hr_job j ON e.hr_job_id = j.hr_job_id "
+            f"FROM adempiere.lve_empleadosactivos e "
             f"WHERE {where} "
-            f"GROUP BY j.name ORDER BY total DESC LIMIT 30"
+            f"GROUP BY e.cargo ORDER BY total DESC LIMIT 30"
         )
         by_job = [
             {"cargo": r[0], "total": r[1], "activos": r[2]}
@@ -2996,31 +2988,41 @@ def build_supply_purchases(
         cur_label = _currency_label("i")
         where = " AND ".join(conditions)
 
-        # Totals separated by currency
+        # Totals separated by currency — facturas vs NCs de proveedor, monto neto
         totals_q = text(
             f"SELECT {cur_label} AS moneda, "
-            f"COUNT(DISTINCT i.c_invoice_id) AS total_facturas, "
-            f"COALESCE(SUM(i.grandtotal), 0) AS total_monto "
+            f"SUM(CASE WHEN i.lve_invoiceaffected_id = 0 THEN 1 ELSE 0 END) AS total_facturas, "
+            f"SUM(CASE WHEN i.lve_invoiceaffected_id > 0 THEN 1 ELSE 0 END) AS total_nc, "
+            f"COALESCE(SUM(CASE WHEN i.lve_invoiceaffected_id = 0 THEN i.grandtotal ELSE 0 END), 0) AS monto_facturas, "
+            f"COALESCE(SUM(CASE WHEN i.lve_invoiceaffected_id > 0 THEN i.grandtotal ELSE 0 END), 0) AS monto_nc, "
+            f"COALESCE(SUM(CASE WHEN i.lve_invoiceaffected_id = 0 THEN i.grandtotal "
+            f"WHEN i.lve_invoiceaffected_id > 0 THEN -i.grandtotal ELSE 0 END), 0) AS total_neto "
             f"FROM adempiere.c_invoice i WHERE {where} "
-            f"GROUP BY {cur_label} ORDER BY total_monto DESC"
+            f"GROUP BY {cur_label} ORDER BY total_neto DESC"
         )
         totals_rows = db.execute(totals_q, params).fetchall()
         totales_por_moneda = [
-            {"moneda": r[0], "total_facturas": r[1], "total_monto": float(r[2])}
+            {
+                "moneda": r[0], "total_facturas": r[1], "total_nc": r[2],
+                "monto_facturas": float(r[3]), "monto_nc": float(r[4]),
+                "total_neto": float(r[5]),
+            }
             for r in totals_rows
         ]
         totals = {
             "total_facturas": sum(r["total_facturas"] for r in totales_por_moneda),
-            "total_monto_mixto": sum(r["total_monto"] for r in totales_por_moneda),
+            "total_nc": sum(r["total_nc"] for r in totales_por_moneda),
+            "total_neto_mixto": sum(r["total_neto"] for r in totales_por_moneda),
             "por_moneda": totales_por_moneda,
         }
 
-        # By supplier (top 20) — include currency column
+        # By supplier (top 20) — net amount (facturas - NCs de ese proveedor)
         by_supplier_q = text(
             f"SELECT bp.name AS proveedor, "
             f"{cur_label} AS moneda, "
-            f"COUNT(DISTINCT i.c_invoice_id) AS facturas, "
-            f"COALESCE(SUM(i.grandtotal), 0) AS total "
+            f"SUM(CASE WHEN i.lve_invoiceaffected_id = 0 THEN 1 ELSE 0 END) AS facturas, "
+            f"COALESCE(SUM(CASE WHEN i.lve_invoiceaffected_id = 0 THEN i.grandtotal "
+            f"WHEN i.lve_invoiceaffected_id > 0 THEN -i.grandtotal ELSE 0 END), 0) AS total "
             f"FROM adempiere.c_invoice i "
             f"JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id "
             f"WHERE {where} "
@@ -3031,13 +3033,14 @@ def build_supply_purchases(
             for r in db.execute(by_supplier_q, params).fetchall()
         ]
 
-        # By month — include currency column
+        # By month — net amount
         by_month_q = text(
             f"SELECT EXTRACT(YEAR FROM i.dateinvoiced)::int AS anio, "
             f"EXTRACT(MONTH FROM i.dateinvoiced)::int AS mes, "
             f"{cur_label} AS moneda, "
-            f"COUNT(DISTINCT i.c_invoice_id) AS facturas, "
-            f"COALESCE(SUM(i.grandtotal), 0) AS total "
+            f"SUM(CASE WHEN i.lve_invoiceaffected_id = 0 THEN 1 ELSE 0 END) AS facturas, "
+            f"COALESCE(SUM(CASE WHEN i.lve_invoiceaffected_id = 0 THEN i.grandtotal "
+            f"WHEN i.lve_invoiceaffected_id > 0 THEN -i.grandtotal ELSE 0 END), 0) AS total "
             f"FROM adempiere.c_invoice i WHERE {where} "
             f"GROUP BY EXTRACT(YEAR FROM i.dateinvoiced), "
             f"EXTRACT(MONTH FROM i.dateinvoiced), {cur_label} "
@@ -3048,7 +3051,7 @@ def build_supply_purchases(
             for r in db.execute(by_month_q, params).fetchall()
         ]
 
-        # By product (top 20) — include currency column
+        # By product (top 20) — only from regular invoices (not NCs)
         by_product_q = text(
             f"SELECT p.value AS codigo, p.name AS producto, "
             f"{cur_label} AS moneda, "
@@ -3056,7 +3059,7 @@ def build_supply_purchases(
             f"FROM adempiere.c_invoice i "
             f"JOIN adempiere.c_invoiceline il ON i.c_invoice_id = il.c_invoice_id "
             f"JOIN adempiere.m_product p ON il.m_product_id = p.m_product_id "
-            f"WHERE {where} "
+            f"WHERE {where} AND i.lve_invoiceaffected_id = 0 "
             f"GROUP BY p.value, p.name, {cur_label} ORDER BY total DESC LIMIT 20"
         )
         by_product = [
@@ -3104,6 +3107,7 @@ def build_product_purchase_history(
             "i.issotrx = 'N'",
             "i.docstatus IN ('CO', 'CL')",
             "i.isactive = 'Y'",
+            "i.lve_invoiceaffected_id = 0",
         ]
         params: dict = {}
         _add_org_filter(conditions, params, org_ids, "i")
@@ -3302,6 +3306,7 @@ def build_supplier_price_comparison(
             "i.issotrx = 'N'",
             "i.docstatus IN ('CO', 'CL')",
             "i.isactive = 'Y'",
+            "i.lve_invoiceaffected_id = 0",
         ]
         params: dict = {}
         _add_org_filter(conditions, params, org_ids, "i")
@@ -3368,6 +3373,7 @@ def build_purchase_payment_status(
             "i.issotrx = 'N'",
             "i.docstatus IN ('CO', 'CL')",
             "i.isactive = 'Y'",
+            "i.lve_invoiceaffected_id = 0",
         ]
         params: dict = {}
         _add_org_filter(conditions, params, org_ids, "i")
