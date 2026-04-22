@@ -102,9 +102,43 @@ def create_llm(
 
     elif chosen == "gemini":
         from langchain_google_genai import ChatGoogleGenerativeAI
+        from langchain_core.messages import SystemMessage
+
+        class _GeminiMergeSystem(ChatGoogleGenerativeAI):
+            """Gemini solo acepta un SystemMessage en posición 0.
+            Los agentes de Santoni emiten varios SystemMessages (prompt base +
+            catalog + RAG + etc.). Esta subclase los fusiona en uno antes de
+            enviar al API, conservando todo el contenido."""
+
+            @staticmethod
+            def _merge_system_messages(messages):
+                system_parts = []
+                other = []
+                for m in messages:
+                    if isinstance(m, SystemMessage):
+                        system_parts.append(m.content)
+                    else:
+                        other.append(m)
+                if system_parts:
+                    merged = SystemMessage(content="\n\n---\n\n".join(system_parts))
+                    return [merged] + other
+                return other
+
+            def _generate(self, messages, *args, **kwargs):
+                return super()._generate(self._merge_system_messages(messages), *args, **kwargs)
+
+            async def _agenerate(self, messages, *args, **kwargs):
+                return await super()._agenerate(self._merge_system_messages(messages), *args, **kwargs)
+
+            def _stream(self, messages, *args, **kwargs):
+                yield from super()._stream(self._merge_system_messages(messages), *args, **kwargs)
+
+            async def _astream(self, messages, *args, **kwargs):
+                async for chunk in super()._astream(self._merge_system_messages(messages), *args, **kwargs):
+                    yield chunk
 
         logger.info("Using Gemini (%s) for %s", settings.gemini_model, purpose)
-        return ChatGoogleGenerativeAI(
+        return _GeminiMergeSystem(
             google_api_key=settings.gemini_api_key,
             model=settings.gemini_model,
             temperature=temperature,
