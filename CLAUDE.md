@@ -284,19 +284,20 @@ Se crearon cuestionarios para que cada departamento valide las respuestas del bo
 
 ---
 
-## Estado Actual del Proyecto (16/Mar/2026)
+## Estado Actual del Proyecto (21/Abr/2026)
 
-### Branch de desarrollo: `claude/general-session-YZXaU`
+### Branch de desarrollo (servidor): `feat/sql-direct-deepseek`
+### Branch de sesión actual: `claude/review-merge-history-eRCmp`
+### Último merge a main: PR #8 `Feat/sql direct deepseek` (21-Abr-2026 16:48)
 ### Tag de seguridad: `pre-keywords-integration` → commit `69575e4` (estado antes de keywords.py)
-### HEAD actual: `d7d8130` (incluye fix compras productores: outliers + deduplicación)
 
-### Estado de Validación por Agente (verificado contra `docs/DATOS_VERIFICACION_IDEMPIERE.md` del 13/Mar)
+### Estado de Validación por Agente (verificado contra `docs/DATOS_VERIFICACION_IDEMPIERE.md`)
 
 | Agente | Estado | Verificado | Resultado | Notas |
 |--------|--------|------------|-----------|-------|
-| **Ventas** | ✅ Funcional | Sí | Datos correctos | Top clientes, facturación, cobranza, CxC vencidas |
+| **Ventas** | ✅ Funcional | Sí | Datos correctos (KPI exacto) | Lógica `lve_invoiceaffected_id` + `qtyinvoicedf` + `dateacct`. Diferencia residual 0.04% en ventas por producto. |
 | **Finanzas** | ✅ Funcional | Sí | Datos correctos | Saldos bancarios 100% exactos, CxC top morosos exactos |
-| **RRHH** | ✅ Funcional | Sí | Datos correctos | 702 empleados exacto, nómina enero exacta |
+| **RRHH** | ⚠️ Parcial | Parcial | Mayormente correcto | 702 empleados global OK. Conteo por org InproMaiz muestra 109 pero real es 94. `build_vacation_expiry` NUEVO (21/Abr) — verificado contra reporte iDempiere |
 | **Producción** | ✅ Funcional | Sí | Datos plausibles | Proporciones ene vs año cuadran (~40-47%) |
 | **Contabilidad** | ✅ Funcional | Sí | Datos correctos | build_accounting_summary y build_account_detail usan IdempiereSession() directo (fix ya aplicado) |
 | **Compras Insumos** | ⚠️ Parcial | Parcial | Datos correctos, LLM a veces alucina | Anti-hallucination: skip LLM cuando no hay datos (16/Mar) |
@@ -371,11 +372,82 @@ git reset --hard pre-keywords-integration  # Vuelve a commit 69575e4
 - ~~**URGENTE**: Fix contabilidad~~ ✅ Resuelto (IdempiereSession directo)
 - ~~**ALTO**: Compras productores~~ ✅ Resuelto (qtyordered=1, MAIZ BLANCO aparece)
 - ~~**ALTO**: Anti-hallucination streaming~~ ✅ Resuelto (skip LLM cuando no hay datos)
+- ~~**MEDIO**: Ventas por producto~~ ✅ Resuelto (fórmula KPI exacta, 0.04% residual por m_substitute). Ver hallazgos 21/Abr.
 - **MEDIO**: Compras insumos — LLM a veces ignora datos reales en streaming (mitigado con skip-LLM sin datos)
+- **MEDIO**: RRHH — Conteo de empleados por org incorrecto (109 vs 94 real para InproMaiz). Ver sección de hallazgos 21/Abr abajo.
 - Mapeo completo de tablas iDempiere
 - Tests E2E
 - Sentry (monitoreo de errores)
 - WhatsApp (Fase 2, post-lanzamiento)
+
+---
+
+## Hallazgos de Sesión 21/Abr/2026
+
+### 1. Vacaciones a vencer — IMPLEMENTADO ✅
+
+**Qué hace**: Detecta empleados cuyo mes de aniversario de ingreso coincide con el mes consultado.
+**Lógica**: `EXTRACT(MONTH FROM e.startdate) = :mes` con `DISTINCT ON (e.c_bpartner_id)`.
+**Verificado**: 20 empleados para InproMaiz en mayo — ESCORCHE PEREZ, VIZCAYA PEREZ, GALINDEZ RODRIGUEZ coinciden exactamente con reporte de iDempiere.
+**Keywords que activan**: "vacaciones a vencer", "vacaciones por vencer", "vacaciones pendientes a vencer".
+**Función**: `build_vacation_expiry(mes, anio, org_name)` en `idempiere_queries.py`.
+**Agente**: `rrhh.py` — detecta en `fetch_data()` antes de las otras keywords de vacaciones.
+
+---
+
+### 2. Conteo de empleados por org — PENDIENTE ⚠️
+
+**Problema**: Bot muestra 109 para InproMaiz pero el real reportado en iDempiere es 94.
+
+**Fuentes consultadas**:
+| Fuente | Resultado | Diferencia |
+|--------|-----------|------------|
+| `hr_employee` sin dedup | 117+ | +23 |
+| `hr_employee DISTINCT ON (c_bpartner_id)` | 109 | +15 |
+| `lve_empleadosactivos` (vista oficial) | 102 | +8 |
+| Reporte iDempiere real | 94 | — |
+
+**Vista `lve_empleadosactivos`** tiene columnas: `ad_client_id, ad_org_id, value, name, c_bpartner_id, taxid, codnomina, hr_payroll_id, nomina, startdate, hr_department_id, departamento, hr_job_id, cargo, birthday, phone2, email, ctaprincipal, ctafideicomiso, ctaalterna, sueldo, asignacion, direccion, edad, tservicio, bonoali, total, gender, tallac, tallap, tallab, asigveh`.
+
+**Próximo paso**: Identificar qué filtro adicional aplica el reporte de iDempiere para llegar a 94. Posibles causas: tipo de nómina específico (`hr_payroll_id`), exclusión de aprendices INCES (4 registros), exclusión de contratos temporales.
+
+**Opción a probar**:
+```sql
+-- Intentar con lve_empleadosactivos filtrando aprendices
+SELECT COUNT(*) FROM adempiere.lve_empleadosactivos
+WHERE ad_org_id IN (SELECT ad_org_id FROM adempiere.ad_org WHERE name ILIKE '%InproMaiz%')
+  AND departamento NOT ILIKE '%APRENDIZ%' AND departamento NOT ILIKE '%INCES%'
+```
+
+---
+
+### 3. Ventas por producto vs KPI iDempiere — IMPLEMENTADO ✅ (diferencia residual 0.04%)
+
+**Problema original**: Bot mostraba 74,979 bultos para HBL-920 (HARINA ALMOHADA) en marzo 2026 USD.
+iDempiere KPI muestra 74,822.75. Diferencia: **156.25 bultos (0.2%)**.
+
+**Investigación**: Se extrajo el archivo `GEO_PrecioPromedio.jrxml` del attachment ZIP almacenado
+en `adempiere.ad_attachment` (attachment_id=1038842 para `kpi_general`). El SQL del Jasper usa:
+- `lve_invoiceaffected_id > 0` para identificar NCs (en vez de `docbasetype = 'ARC'`)
+- `qtyinvoicedf`: NCs cuyo `orig.dateacct < period_start` se añaden de vuelta (cancelan la NC; solo NC del mismo período restan)
+- `i.c_currency_id <> 205` para filtrar USD (en vez de lista de IDs explícita)
+- `i.dateacct` para filtrar período (en vez de `dateinvoiced`)
+
+**Fórmula implementada**:
+```
+cantidad_neta = ARI_qty + NC_qty(-) + if(NC.orig.dateacct < period_start): NC_qty(+)
+```
+Resultado post-implementación: **74,855** vs KPI **74,822.75** (diff=32.25, **0.04%**).
+
+**Diferencia residual (0.04%)**: Atribuida a mapeo `m_substitute` en el KPI cuando `weight > 0`.
+El KPI usa un paso de sustitución de productos que el bot no replica. Aceptado como dentro de tolerancia.
+
+**Qué se cambió** (branch `claude/review-merge-history-eRCmp`, 21/Abr/2026):
+- `_USD_CURRENCY_IDS` → frozenset con los 9 IDs de dólar
+- `_add_currency_filter()` → USD usa `<> 205` (excluye VES) en vez de lista explícita
+- `build_sales_by_product()` → fórmula KPI exacta con `lve_invoiceaffected_id` + `qtyinvoicedf` + `dateacct`
+- `build_top_clients()` → NC via `lve_invoiceaffected_id = 0 / > 0` (en vez de `docbasetype`)
+- `build_sales_summary()` → todos los sub-queries (por zona, región, vendedor, mes, moneda) usando `lve_invoiceaffected_id`
 
 ---
 
@@ -497,7 +569,7 @@ Auditoría completa de los 7 agentes + orchestrator + base_agent.
 - **Ventas**: `build_top_clients`, `build_sales_summary`, `build_collection_summary`, `build_overdue_receivables`
 - **Finanzas**: `build_financial_summary`, `build_overdue_receivables`
 - **Contabilidad**: `build_accounting_summary`, `build_account_detail`
-- **RRHH**: `build_employee_summary`, `build_employee_list`, `build_birthday_list`, `build_payroll_summary`, `build_attendance_summary`, `build_turnover_summary`, `build_vacation_summary`
+- **RRHH**: `build_employee_summary`, `build_employee_list`, `build_birthday_list`, `build_payroll_summary`, `build_attendance_summary`, `build_turnover_summary`, `build_vacation_summary`, `build_vacation_expiry` *(nuevo 21/Abr — vacaciones a vencer por mes de aniversario)*
 - **Producción**: `build_production_summary`, `build_production_orders`, `build_inventory_stock`
 - **Compras Insumos**: `build_supply_purchases`, `build_product_purchase_history`, `build_inventory_stock`, `build_pending_purchase_orders`, `build_supplier_price_comparison`, `build_purchase_payment_status`
 - **Compras Productores**: `build_producer_purchases`, `build_registered_producers`, `build_producer_pending_payments`, `build_producer_price_analysis`

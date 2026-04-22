@@ -520,7 +520,9 @@ Routing por keywords (NO usa _detect_query_type, usa matches_any directo):
   │ RRHH_NOMINA     → build_payroll_summary(mes, anio)           │
   │ RRHH_AUSENTISMO → build_attendance_summary(mes, anio)        │
   │                   O build_daily_attendance() si "hoy"        │
-  │ RRHH_VACACIONES → build_vacation_summary(mes, anio, org)     │
+  │ RRHH_VACACIONES → "a vencer"/"por vencer"?                    │
+  │                   → build_vacation_expiry(mes, anio, org) ←NUEVO│
+  │                   → build_vacation_summary(mes, anio, org)    │
   │ RRHH_ROTACION   → build_turnover_summary(anio)               │
   │                   O build_new_hires() si "ingresaron"        │
   │ "provisiones"   → build_payroll_provisions(mes, anio)        │
@@ -646,6 +648,7 @@ RRHH ───────┬─ build_employee_summary
             ├─ build_payroll_summary
             ├─ build_attendance_summary
             ├─ build_vacation_summary
+            ├─ build_vacation_expiry ←── NUEVO 21/Abr (vacaciones a vencer)
             ├─ build_turnover_summary
             ├─ build_new_hires ←── NUEVO
             ├─ build_payroll_provisions ←── NUEVO
@@ -679,7 +682,7 @@ PRODUCTORES ├─ build_registered_producers
             └─ build_producer_price_analysis
 ```
 
-**Total: 35 funciones build_* distintas** (8 nuevas esta sesión)
+**Total: 36 funciones build_* distintas** (build_vacation_expiry agregada 21/Abr)
 
 ---
 
@@ -879,6 +882,7 @@ WHERE i.issotrx = 'Y'            -- ventas (no compras)
 | `build_payroll_summary` | hr_movement | hr_process, hr_concept, hr_payroll | hp.dateacct |
 | `build_attendance_summary` | hr_movement | hr_process, hr_concept | hp.dateacct |
 | `build_vacation_summary` | hr_movement | hr_process, hr_concept | hp.dateacct |
+| `build_vacation_expiry` *(nuevo)* | hr_employee | c_bpartner, ad_org, hr_job, hr_department | EXTRACT(MONTH FROM startdate) |
 | `build_turnover_summary` | hr_employee | c_bpartner, ad_org | enddate |
 | `build_new_hires` | hr_employee | ad_org | startdate |
 | `build_payroll_provisions` | hr_movement | hr_process, hr_concept | hp.dateacct |
@@ -1491,3 +1495,63 @@ RRHH: cumpleaños/ausentismo/nómina/vacaciones/rotación van PRIMERO. Employee 
 ### R9. USD invisible (FIX APLICADO)
 
 Sin filtro de moneda → instrucción: "DATOS EN MÚLTIPLES MONEDAS: presenta SEPARADOS".
+
+### R10. Conteo de empleados por org — PENDIENTE (21/Abr)
+
+`build_employee_summary` usa `hr_employee DISTINCT ON (c_bpartner_id)` → da 109 para InproMaiz.
+Real (reporte iDempiere): 94. Vista `lve_empleadosactivos` da 102 (más cercano).
+**Próximo fix:** Identificar filtro del reporte iDempiere. Candidatos: excluir aprendices INCES (4 registros), filtrar por `hr_payroll_id` específico.
+Vista `lve_empleadosactivos` tiene `nomina`, `hr_payroll_id`, `codnomina` — posibles filtros adicionales.
+
+### R11. Diferencia 0.2% en bultos ventas por producto — BAJO RIESGO (21/Abr)
+
+`build_sales_by_product` usa solo facturas ARI (docbasetype='ARI'), da 74,979 bultos.
+KPI iDempiere da 74,822.75. Diferencia: 156.25 bultos (= NC parciales, NO todas las NC).
+Intentar restar TODAS las NC (ARC=675.25) empeora el resultado → 74,303.75.
+**Estado:** Dejado en ARI solo (0.2% error). Para exactitud: extraer SQL de `GEO_PrecioPromedio.jrxml`
+(attachment en `ad_process` — todos los kpi_* lo usan) para entender qué NC resta el KPI exactamente.
+
+---
+
+## Funciones de build_vacation_expiry (21/Abr/2026)
+
+### Qué hace
+
+Detecta empleados cuyo mes de aniversario de ingreso = mes consultado.
+"Vacaciones a vencer" = empleados que cumplen aniversario en ese mes.
+
+### SQL
+
+```sql
+SELECT DISTINCT ON (e.c_bpartner_id)
+       bp.name, e.startdate,
+       EXTRACT(YEAR FROM age(CURRENT_DATE, e.startdate))::int as anos,
+       COALESCE(j.name, 'Sin Cargo') as cargo,
+       COALESCE(d.name, 'Sin Depto') as depto
+FROM adempiere.hr_employee e
+JOIN adempiere.c_bpartner bp ON e.c_bpartner_id = bp.c_bpartner_id
+JOIN adempiere.ad_org o ON e.ad_org_id = o.ad_org_id
+LEFT JOIN adempiere.hr_job j ON e.hr_job_id = j.hr_job_id
+LEFT JOIN adempiere.hr_department d ON e.hr_department_id = d.hr_department_id
+WHERE e.isactive = 'Y'
+  AND (e.enddate IS NULL OR e.enddate > CURRENT_DATE)
+  AND EXTRACT(MONTH FROM e.startdate) = :mes
+  [AND o.name ILIKE '%org_name%' -- si org_name especificado]
+ORDER BY e.c_bpartner_id, e.startdate
+```
+
+### Routing en rrhh.py
+
+```python
+# En fetch_data(), dentro del bloque RRHH_VACACIONES:
+if matches_any(msg_lower, RRHH_VACACIONES):
+    if any(kw in msg_lower for kw in ("a vencer", "por vencer", "pendientes a vencer")):
+        sections.append(build_vacation_expiry(mes=mes, anio=anio, org_name=org_name))
+    else:
+        sections.append(build_vacation_summary(mes=mes, anio=anio, org_name=org_name))
+```
+
+### Verificación
+
+- InproMaiz, mayo: **20 empleados** — ESCORCHE PEREZ ✅, VIZCAYA PEREZ ✅, GALINDEZ RODRIGUEZ ✅, ALVARADO MENDOZA ✅ (coincide con reporte iDempiere)
+- Funciona con cualquier mes (1-12) y cualquier org

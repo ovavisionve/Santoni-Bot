@@ -210,16 +210,24 @@ def _add_exclude_internal_orgs_filter(
         params[f"_intorg_{i}"] = f"%{name}%"
 
 
+_USD_CURRENCY_IDS = frozenset(
+    [100, 1000000, 1000003, 1000006, 1000008, 1000009, 1000011, 1000013, 1000017]
+)
+
+
 def _add_currency_filter(
     conditions: list[str],
     params: dict,
     currency_ids: list[int] | None,
     table_alias: str,
 ) -> None:
-    """Add c_currency_id IN (...) filter if currency_ids is provided.
-    Supports multiple IDs because Santoni uses several currency entries for dollars.
-    Modifies conditions and params in place."""
-    if currency_ids:
+    """Add currency filter. USD requests use <> 205 (all non-VES) to match
+    the KPI reports in iDempiere and to capture any future USD currency IDs."""
+    if not currency_ids:
+        return
+    if any(c in _USD_CURRENCY_IDS for c in currency_ids):
+        conditions.append(f"{table_alias}.c_currency_id <> 205")
+    else:
         placeholders = ", ".join(f":cur_{i}" for i in range(len(currency_ids)))
         conditions.append(f"{table_alias}.c_currency_id IN ({placeholders})")
         for i, cid in enumerate(currency_ids):
@@ -511,9 +519,9 @@ def build_sales_summary(
             "ON i.c_doctypetarget_id = dt.c_doctype_id "
         )
 
-        # Only regular invoices (ARI), exclude credit notes (ARC)
-        where_invoices = f"{where} AND dt.docbasetype = 'ARI'"
-        where_credit = f"{where} AND dt.docbasetype = 'ARC'"
+        # Regular invoices: lve_invoiceaffected_id=0; credit notes: lve>0
+        where_invoices = f"{where} AND i.lve_invoiceaffected_id = 0"
+        where_credit = f"{where} AND i.lve_invoiceaffected_id > 0"
 
         # Totals (only invoices)
         totals_q = text(
@@ -556,11 +564,11 @@ def build_sales_summary(
         by_zone_q = text(
             f"{zone_cte}"
             f"SELECT COALESCE(cz.zona_name, 'Sin Zona') AS zona, "
-            f"SUM(CASE WHEN dt.docbasetype = 'ARI' THEN 1 ELSE 0 END) AS facturas, "
-            f"COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal ELSE 0 END), 0) AS total_bruto, "
-            f"COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARC' THEN i.grandtotal ELSE 0 END), 0) AS total_nc, "
-            f"COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal "
-            f"WHEN dt.docbasetype = 'ARC' THEN -i.grandtotal ELSE 0 END), 0) AS total_neto "
+            f"SUM(CASE WHEN i.lve_invoiceaffected_id = 0 THEN 1 ELSE 0 END) AS facturas, "
+            f"COALESCE(SUM(CASE WHEN i.lve_invoiceaffected_id = 0 THEN i.grandtotal ELSE 0 END), 0) AS total_bruto, "
+            f"COALESCE(SUM(CASE WHEN i.lve_invoiceaffected_id > 0 THEN i.grandtotal ELSE 0 END), 0) AS total_nc, "
+            f"COALESCE(SUM(CASE WHEN i.lve_invoiceaffected_id = 0 THEN i.grandtotal "
+            f"WHEN i.lve_invoiceaffected_id > 0 THEN -i.grandtotal ELSE 0 END), 0) AS total_neto "
             f"FROM adempiere.c_invoice i "
             f"{joins}"
             f"WHERE {where} "
@@ -577,9 +585,9 @@ def build_sales_summary(
         by_region_q = text(
             f"{zone_cte}"
             f"SELECT {region_case} AS region, "
-            f"SUM(CASE WHEN dt.docbasetype = 'ARI' THEN 1 ELSE 0 END) AS facturas, "
-            f"COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal "
-            f"WHEN dt.docbasetype = 'ARC' THEN -i.grandtotal ELSE 0 END), 0) AS total "
+            f"SUM(CASE WHEN i.lve_invoiceaffected_id = 0 THEN 1 ELSE 0 END) AS facturas, "
+            f"COALESCE(SUM(CASE WHEN i.lve_invoiceaffected_id = 0 THEN i.grandtotal "
+            f"WHEN i.lve_invoiceaffected_id > 0 THEN -i.grandtotal ELSE 0 END), 0) AS total "
             f"FROM adempiere.c_invoice i "
             f"{joins}"
             f"WHERE {where} "
@@ -594,9 +602,9 @@ def build_sales_summary(
         by_distributor_q = text(
             f"{zone_cte}"
             f"SELECT COALESCE(sr.name, 'Sin Vendedor') AS distribuidor, "
-            f"SUM(CASE WHEN dt.docbasetype = 'ARI' THEN 1 ELSE 0 END) AS facturas, "
-            f"COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal "
-            f"WHEN dt.docbasetype = 'ARC' THEN -i.grandtotal ELSE 0 END), 0) AS total "
+            f"SUM(CASE WHEN i.lve_invoiceaffected_id = 0 THEN 1 ELSE 0 END) AS facturas, "
+            f"COALESCE(SUM(CASE WHEN i.lve_invoiceaffected_id = 0 THEN i.grandtotal "
+            f"WHEN i.lve_invoiceaffected_id > 0 THEN -i.grandtotal ELSE 0 END), 0) AS total "
             f"FROM adempiere.c_invoice i "
             f"{joins}"
             f"WHERE {where} "
@@ -612,10 +620,10 @@ def build_sales_summary(
             f"{zone_cte}"
             f"SELECT EXTRACT(YEAR FROM i.dateinvoiced)::int AS anio, "
             f"EXTRACT(MONTH FROM i.dateinvoiced)::int AS mes, "
-            f"SUM(CASE WHEN dt.docbasetype = 'ARI' THEN 1 ELSE 0 END) AS facturas, "
-            f"SUM(CASE WHEN dt.docbasetype = 'ARC' THEN 1 ELSE 0 END) AS notas_credito, "
-            f"COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal "
-            f"WHEN dt.docbasetype = 'ARC' THEN -i.grandtotal ELSE 0 END), 0) AS total "
+            f"SUM(CASE WHEN i.lve_invoiceaffected_id = 0 THEN 1 ELSE 0 END) AS facturas, "
+            f"SUM(CASE WHEN i.lve_invoiceaffected_id > 0 THEN 1 ELSE 0 END) AS notas_credito, "
+            f"COALESCE(SUM(CASE WHEN i.lve_invoiceaffected_id = 0 THEN i.grandtotal "
+            f"WHEN i.lve_invoiceaffected_id > 0 THEN -i.grandtotal ELSE 0 END), 0) AS total "
             f"FROM adempiere.c_invoice i "
             f"{joins}"
             f"WHERE {where} "
@@ -632,12 +640,12 @@ def build_sales_summary(
         by_currency_q = text(
             f"{zone_cte}"
             f"SELECT {cur_label} AS moneda, "
-            f"SUM(CASE WHEN dt.docbasetype = 'ARI' THEN 1 ELSE 0 END) AS facturas, "
-            f"SUM(CASE WHEN dt.docbasetype = 'ARC' THEN 1 ELSE 0 END) AS notas_credito, "
-            f"COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal ELSE 0 END), 0) AS total_facturado, "
-            f"COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARC' THEN i.grandtotal ELSE 0 END), 0) AS monto_nc, "
-            f"COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal "
-            f"WHEN dt.docbasetype = 'ARC' THEN -i.grandtotal ELSE 0 END), 0) AS venta_neta "
+            f"SUM(CASE WHEN i.lve_invoiceaffected_id = 0 THEN 1 ELSE 0 END) AS facturas, "
+            f"SUM(CASE WHEN i.lve_invoiceaffected_id > 0 THEN 1 ELSE 0 END) AS notas_credito, "
+            f"COALESCE(SUM(CASE WHEN i.lve_invoiceaffected_id = 0 THEN i.grandtotal ELSE 0 END), 0) AS total_facturado, "
+            f"COALESCE(SUM(CASE WHEN i.lve_invoiceaffected_id > 0 THEN i.grandtotal ELSE 0 END), 0) AS monto_nc, "
+            f"COALESCE(SUM(CASE WHEN i.lve_invoiceaffected_id = 0 THEN i.grandtotal "
+            f"WHEN i.lve_invoiceaffected_id > 0 THEN -i.grandtotal ELSE 0 END), 0) AS venta_neta "
             f"FROM adempiere.c_invoice i "
             f"{joins}"
             f"WHERE {where} "
@@ -827,12 +835,12 @@ def build_top_clients(
             f"{zone_cte}"
             f"SELECT bp.value AS codigo, bp.name AS nombre, "
             f"MIN(COALESCE(cz.zona_name, 'Sin Zona')) AS zona, "
-            f"SUM(CASE WHEN dt.docbasetype = 'ARI' THEN 1 ELSE 0 END) AS facturas, "
-            f"SUM(CASE WHEN dt.docbasetype = 'ARC' THEN 1 ELSE 0 END) AS notas_credito, "
-            f"COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal ELSE 0 END), 0) AS total_facturado, "
-            f"COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARC' THEN i.grandtotal ELSE 0 END), 0) AS total_notas_credito, "
-            f"COALESCE(SUM(CASE WHEN dt.docbasetype = 'ARI' THEN i.grandtotal "
-            f"WHEN dt.docbasetype = 'ARC' THEN -i.grandtotal ELSE 0 END), 0) AS venta_neta "
+            f"SUM(CASE WHEN i.lve_invoiceaffected_id = 0 THEN 1 ELSE 0 END) AS facturas, "
+            f"SUM(CASE WHEN i.lve_invoiceaffected_id > 0 THEN 1 ELSE 0 END) AS notas_credito, "
+            f"COALESCE(SUM(CASE WHEN i.lve_invoiceaffected_id = 0 THEN i.grandtotal ELSE 0 END), 0) AS total_facturado, "
+            f"COALESCE(SUM(CASE WHEN i.lve_invoiceaffected_id > 0 THEN i.grandtotal ELSE 0 END), 0) AS total_notas_credito, "
+            f"COALESCE(SUM(CASE WHEN i.lve_invoiceaffected_id > 0 THEN -i.grandtotal "
+            f"ELSE i.grandtotal END), 0) AS venta_neta "
             f"FROM adempiere.c_invoice i "
             f"JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id "
             f"LEFT JOIN client_zone cz ON bp.c_bpartner_id = cz.c_bpartner_id "
@@ -907,10 +915,9 @@ def build_overdue_receivables(
             "LEFT JOIN adempiere.ad_user sr ON i.salesrep_id = sr.ad_user_id "
             "LEFT JOIN client_zone cz ON bp.c_bpartner_id = cz.c_bpartner_id "
             "LEFT JOIN adempiere.c_paymentterm pterm ON i.c_paymentterm_id = pterm.c_paymentterm_id "
-            "JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id "
             "WHERE i.issotrx = 'Y' AND i.docstatus IN ('CO', 'CL') AND i.ispaid = 'N' "
             "AND i.isactive = 'Y' "
-            "AND dt.docbasetype = 'ARI' "
+            "AND i.lve_invoiceaffected_id = 0 "
             "AND i.dateinvoiced >= (CURRENT_DATE - INTERVAL '3 years') "
             "AND i.grandtotal > 100 "
             f"{org_clause}"
@@ -984,10 +991,9 @@ def build_top_delinquent_clients(
             "JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id "
             "LEFT JOIN client_zone cz ON bp.c_bpartner_id = cz.c_bpartner_id "
             "LEFT JOIN adempiere.c_paymentterm pterm ON i.c_paymentterm_id = pterm.c_paymentterm_id "
-            "JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id "
             "WHERE i.issotrx = 'Y' AND i.docstatus IN ('CO', 'CL') AND i.ispaid = 'N' "
             "AND i.isactive = 'Y' "
-            "AND dt.docbasetype = 'ARI' "
+            "AND i.lve_invoiceaffected_id = 0 "
             "AND i.dateinvoiced >= (CURRENT_DATE - INTERVAL '3 years') "
             "AND i.grandtotal > 100 "
             f"{org_clause}"
@@ -1030,67 +1036,63 @@ def build_financial_summary(
         mes = None
     db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
     try:
-        # Bank balances (filtered by org if applicable)
-        bank_conditions = ["ba.isactive = 'Y'"]
+        # Bank balances using lve_disponibilidadbancariagerencia (saldo disponible real)
+        # total = currentbalance + payamt (pagos/cobros en proceso, igual que tesorería)
+        # montomext > 0 → cuenta USD con monto en dólares; montomext = 0 → cuenta VES
+        bank_conditions = ["(g.total != 0 OR g.currentbalance != 0)"]
         bank_params: dict = {}
-        _add_org_filter(bank_conditions, bank_params, org_ids, "ba")
+        _add_org_filter(bank_conditions, bank_params, org_ids, "g")
         bank_where = " AND ".join(bank_conditions)
-        # Group all USD iso_codes (DOL, DoL, Dol, USA, dol, DLA, Dla, US.)
-        # into a single 'USD' label, same as _currency_label but for banks.
-        bank_currency = (
-            "CASE WHEN ba.c_currency_id = 205 THEN 'VES' "
-            "WHEN ba.c_currency_id IN "
-            "(100,1000000,1000003,1000006,1000008,1000009,1000011,1000013,1000017) "
-            "THEN 'USD' ELSE 'Otro' END"
-        )
         bank_q = text(
-            f"SELECT b.name AS banco, ba.accountno AS numero_cuenta, "
-            f"CASE WHEN ba.bankaccounttype = 'C' THEN 'Corriente' "
-            f"     WHEN ba.bankaccounttype = 'S' THEN 'Ahorro' "
-            f"     WHEN ba.bankaccounttype = 'I' THEN 'Inversión' "
-            f"     ELSE ba.bankaccounttype END AS tipo, "
-            f"{bank_currency} AS moneda, "
-            f"ba.currentbalance AS saldo, "
-            f"o.name AS organizacion "
-            f"FROM adempiere.c_bankaccount ba "
-            f"JOIN adempiere.c_bank b ON ba.c_bank_id = b.c_bank_id "
-            f"LEFT JOIN adempiere.c_currency c ON ba.c_currency_id = c.c_currency_id "
-            f"LEFT JOIN adempiere.ad_org o ON ba.ad_org_id = o.ad_org_id "
+            "SELECT DISTINCT ON (g.name) "
+            "g.description AS banco, "
+            "g.name AS numero_cuenta, "
+            "COALESCE(o.name, g.organizacion) AS organizacion, "
+            "COALESCE(g.currentbalance, 0) AS saldo_contable, "
+            "COALESCE(g.payamt, 0) AS pagos_proceso, "
+            "COALESCE(g.total, 0) AS disponible_bs, "
+            "COALESCE(g.montomext, 0) AS disponible_usd, "
+            "CASE WHEN COALESCE(g.montomext, 0) != 0 THEN 'USD' ELSE 'VES' END AS moneda "
+            "FROM adempiere.lve_disponibilidadbancariagerencia g "
+            "LEFT JOIN adempiere.ad_org o ON g.ad_org_id = o.ad_org_id "
             f"WHERE {bank_where} "
-            f"ORDER BY moneda, b.name"
+            "ORDER BY g.name, g.statementdate DESC NULLS LAST"
         )
         banks = [
             {
                 "banco": r[0],
                 "numero_cuenta": r[1],
-                "tipo": r[2],
-                "moneda": r[3],
-                "saldo": float(r[4]) if r[4] else 0.0,
-                "organizacion": r[5] or "Sin asignar",
+                "organizacion": r[2] or "Sin asignar",
+                "saldo_contable": float(r[3]),
+                "pagos_proceso": float(r[4]),
+                "saldo": float(r[6]) if r[7] == "USD" else float(r[5]),
+                "saldo_disponible_bs": float(r[5]),
+                "saldo_usd": float(r[6]),
+                "moneda": r[7],
             }
             for r in db.execute(bank_q, bank_params).fetchall()
         ]
 
-        # Separate totals by currency
-        totals_by_currency: dict[str, float] = {}
-        for b in banks:
-            cur = b["moneda"]
-            totals_by_currency[cur] = totals_by_currency.get(cur, 0.0) + b["saldo"]
-
-        # Group banks by currency for clearer presentation
+        # Group by currency
         banks_ves = [b for b in banks if b["moneda"] == "VES"]
         banks_usd = [b for b in banks if b["moneda"] == "USD"]
-        banks_other = [b for b in banks if b["moneda"] not in ("VES", "USD")]
+        banks_other: list = []
 
-        total_saldo_bancario = sum(b["saldo"] for b in banks)
+        totals_by_currency: dict[str, float] = {
+            "VES": sum(b["saldo_disponible_bs"] for b in banks_ves),
+            "USD": sum(b["saldo_usd"] for b in banks_usd),
+        }
+        total_saldo_bancario = totals_by_currency["VES"]
 
         # Accounts receivable (unpaid sales invoices) - separated by currency
+        # lve_invoiceaffected_id=0: solo facturas regulares, no NCs sin aplicar
         cur_label = _currency_label("i")
         ar_conditions = [
             "i.issotrx = 'Y'",
             "i.docstatus IN ('CO', 'CL')",
             "i.ispaid = 'N'",
             "i.isactive = 'Y'",
+            "i.lve_invoiceaffected_id = 0",
         ]
         ar_params: dict = {}
         _add_org_filter(ar_conditions, ar_params, org_ids, "i")
@@ -1120,6 +1122,7 @@ def build_financial_summary(
             "i.docstatus IN ('CO', 'CL')",
             "i.ispaid = 'N'",
             "i.isactive = 'Y'",
+            "i.lve_invoiceaffected_id = 0",
             "(i.dateinvoiced + CASE WHEN COALESCE(pt.netdays, 0) = 0 THEN 30 ELSE pt.netdays END) < CURRENT_DATE",
         ]
         overdue_params: dict = {}
@@ -1143,11 +1146,13 @@ def build_financial_summary(
         ]
 
         # Accounts payable (unpaid purchase invoices) - separated by currency
+        # lve_invoiceaffected_id=0: solo facturas de proveedor, no NCs de proveedor
         ap_conditions = [
             "i.issotrx = 'N'",
             "i.docstatus IN ('CO', 'CL')",
             "i.ispaid = 'N'",
             "i.isactive = 'Y'",
+            "i.lve_invoiceaffected_id = 0",
         ]
         ap_params: dict = {}
         _add_org_filter(ap_conditions, ap_params, org_ids, "i")
@@ -1177,6 +1182,7 @@ def build_financial_summary(
             "i.docstatus IN ('CO', 'CL')",
             "i.ispaid = 'N'",
             "i.isactive = 'Y'",
+            "i.lve_invoiceaffected_id = 0",
             "(i.dateinvoiced + CASE WHEN COALESCE(pt.netdays, 0) = 0 THEN 30 ELSE pt.netdays END) < CURRENT_DATE",
         ]
         overdue_ap_params: dict = {}
@@ -1205,6 +1211,7 @@ def build_financial_summary(
             "i.docstatus IN ('CO', 'CL')",
             "i.ispaid = 'N'",
             "i.isactive = 'Y'",
+            "i.lve_invoiceaffected_id = 0",
             "(i.dateinvoiced + CASE WHEN COALESCE(pt.netdays, 0) = 0 THEN 30 ELSE pt.netdays END) < CURRENT_DATE",
         ]
         top_ap_params: dict = {}
@@ -1404,35 +1411,27 @@ def build_employee_summary(
     org_ids: list[int] | None = None,
     org_name: str | None = None,
 ) -> dict:
-    """Employee summary from iDempiere hr_employee (with DISTINCT to avoid duplicates).
+    """Employee summary using the official iDempiere view lve_empleadosactivos.
 
-    hr_employee has multiple rows per person (one per payroll period), so we use
-    COUNT(DISTINCT e.c_bpartner_id) for accurate counts.  Organization is taken
-    from hr_employee.ad_org_id (correctly assigned) instead of c_bpartner.ad_org_id
-    (which often points to the wildcard '*' org).
+    Uses lve_empleadosactivos instead of querying hr_employee directly.
+    The view applies the same filters iDempiere uses in its own reports,
+    giving counts that match what users see in iDempiere screens.
 
     When org_name is provided, ALL sections (totals, departments, cargos) are
     filtered to that org — not just the total.
     """
     db = IdempiereSession()
     try:
-        # Overall counts (unique employees) — only active, exclude retired
-        conditions = [
-            "e.isactive = 'Y'",
-            "bp.isactive = 'Y'",
-            "(e.enddate IS NULL OR e.enddate > CURRENT_DATE)",
-        ]
+        conditions: list[str] = []
         params: dict = {}
         _add_org_filter(conditions, params, org_ids, "e")
         _add_org_name_filter(conditions, params, org_name, "e")
-        where = " AND ".join(conditions)
-        bp_join = "JOIN adempiere.c_bpartner bp ON e.c_bpartner_id = bp.c_bpartner_id"
+        where = " AND ".join(conditions) if conditions else "1=1"
 
+        # Total count from official iDempiere view
         totals_q = text(
-            f"SELECT "
-            f"COUNT(DISTINCT e.c_bpartner_id) AS total "
-            f"FROM adempiere.hr_employee e "
-            f"{bp_join} "
+            f"SELECT COUNT(DISTINCT e.c_bpartner_id) AS total "
+            f"FROM adempiere.lve_empleadosactivos e "
             f"WHERE {where}"
         )
         row = db.execute(totals_q, params).fetchone()
@@ -1442,13 +1441,12 @@ def build_employee_summary(
             "inactivos": 0,
         }
 
-        # By organization (unique employees per org)
+        # By organization
         by_org_q = text(
             f"SELECT COALESCE(o.name, 'Sin Organización') AS organizacion, "
             f"COUNT(DISTINCT e.c_bpartner_id) AS total, "
             f"COUNT(DISTINCT e.c_bpartner_id) AS activos "
-            f"FROM adempiere.hr_employee e "
-            f"{bp_join} "
+            f"FROM adempiere.lve_empleadosactivos e "
             f"LEFT JOIN adempiere.ad_org o ON e.ad_org_id = o.ad_org_id "
             f"WHERE {where} "
             f"GROUP BY o.name ORDER BY total DESC"
@@ -1458,32 +1456,28 @@ def build_employee_summary(
             for r in db.execute(by_org_q, params).fetchall()
         ]
 
-        # By department (from hr_department)
+        # By department (view exposes 'departamento' column directly)
         by_dept_q = text(
-            f"SELECT COALESCE(d.name, 'Sin Departamento') AS departamento, "
+            f"SELECT COALESCE(e.departamento, 'Sin Departamento') AS departamento, "
             f"COUNT(DISTINCT e.c_bpartner_id) AS total, "
             f"COUNT(DISTINCT e.c_bpartner_id) AS activos "
-            f"FROM adempiere.hr_employee e "
-            f"{bp_join} "
-            f"LEFT JOIN adempiere.hr_department d ON e.hr_department_id = d.hr_department_id "
+            f"FROM adempiere.lve_empleadosactivos e "
             f"WHERE {where} "
-            f"GROUP BY d.name ORDER BY total DESC LIMIT 20"
+            f"GROUP BY e.departamento ORDER BY total DESC LIMIT 20"
         )
         by_dept = [
             {"departamento": r[0], "total": r[1], "activos": r[2]}
             for r in db.execute(by_dept_q, params).fetchall()
         ]
 
-        # By job/cargo (from hr_job)
+        # By job/cargo (view exposes 'cargo' column directly)
         by_job_q = text(
-            f"SELECT COALESCE(j.name, 'Sin Cargo') AS cargo, "
+            f"SELECT COALESCE(e.cargo, 'Sin Cargo') AS cargo, "
             f"COUNT(DISTINCT e.c_bpartner_id) AS total, "
             f"COUNT(DISTINCT e.c_bpartner_id) AS activos "
-            f"FROM adempiere.hr_employee e "
-            f"{bp_join} "
-            f"LEFT JOIN adempiere.hr_job j ON e.hr_job_id = j.hr_job_id "
+            f"FROM adempiere.lve_empleadosactivos e "
             f"WHERE {where} "
-            f"GROUP BY j.name ORDER BY total DESC LIMIT 30"
+            f"GROUP BY e.cargo ORDER BY total DESC LIMIT 30"
         )
         by_job = [
             {"cargo": r[0], "total": r[1], "activos": r[2]}
@@ -2988,31 +2982,41 @@ def build_supply_purchases(
         cur_label = _currency_label("i")
         where = " AND ".join(conditions)
 
-        # Totals separated by currency
+        # Totals separated by currency — facturas vs NCs de proveedor, monto neto
         totals_q = text(
             f"SELECT {cur_label} AS moneda, "
-            f"COUNT(DISTINCT i.c_invoice_id) AS total_facturas, "
-            f"COALESCE(SUM(i.grandtotal), 0) AS total_monto "
+            f"SUM(CASE WHEN i.lve_invoiceaffected_id = 0 THEN 1 ELSE 0 END) AS total_facturas, "
+            f"SUM(CASE WHEN i.lve_invoiceaffected_id > 0 THEN 1 ELSE 0 END) AS total_nc, "
+            f"COALESCE(SUM(CASE WHEN i.lve_invoiceaffected_id = 0 THEN i.grandtotal ELSE 0 END), 0) AS monto_facturas, "
+            f"COALESCE(SUM(CASE WHEN i.lve_invoiceaffected_id > 0 THEN i.grandtotal ELSE 0 END), 0) AS monto_nc, "
+            f"COALESCE(SUM(CASE WHEN i.lve_invoiceaffected_id = 0 THEN i.grandtotal "
+            f"WHEN i.lve_invoiceaffected_id > 0 THEN -i.grandtotal ELSE 0 END), 0) AS total_neto "
             f"FROM adempiere.c_invoice i WHERE {where} "
-            f"GROUP BY {cur_label} ORDER BY total_monto DESC"
+            f"GROUP BY {cur_label} ORDER BY total_neto DESC"
         )
         totals_rows = db.execute(totals_q, params).fetchall()
         totales_por_moneda = [
-            {"moneda": r[0], "total_facturas": r[1], "total_monto": float(r[2])}
+            {
+                "moneda": r[0], "total_facturas": r[1], "total_nc": r[2],
+                "monto_facturas": float(r[3]), "monto_nc": float(r[4]),
+                "total_neto": float(r[5]),
+            }
             for r in totals_rows
         ]
         totals = {
             "total_facturas": sum(r["total_facturas"] for r in totales_por_moneda),
-            "total_monto_mixto": sum(r["total_monto"] for r in totales_por_moneda),
+            "total_nc": sum(r["total_nc"] for r in totales_por_moneda),
+            "total_neto_mixto": sum(r["total_neto"] for r in totales_por_moneda),
             "por_moneda": totales_por_moneda,
         }
 
-        # By supplier (top 20) — include currency column
+        # By supplier (top 20) — net amount (facturas - NCs de ese proveedor)
         by_supplier_q = text(
             f"SELECT bp.name AS proveedor, "
             f"{cur_label} AS moneda, "
-            f"COUNT(DISTINCT i.c_invoice_id) AS facturas, "
-            f"COALESCE(SUM(i.grandtotal), 0) AS total "
+            f"SUM(CASE WHEN i.lve_invoiceaffected_id = 0 THEN 1 ELSE 0 END) AS facturas, "
+            f"COALESCE(SUM(CASE WHEN i.lve_invoiceaffected_id = 0 THEN i.grandtotal "
+            f"WHEN i.lve_invoiceaffected_id > 0 THEN -i.grandtotal ELSE 0 END), 0) AS total "
             f"FROM adempiere.c_invoice i "
             f"JOIN adempiere.c_bpartner bp ON i.c_bpartner_id = bp.c_bpartner_id "
             f"WHERE {where} "
@@ -3023,13 +3027,14 @@ def build_supply_purchases(
             for r in db.execute(by_supplier_q, params).fetchall()
         ]
 
-        # By month — include currency column
+        # By month — net amount
         by_month_q = text(
             f"SELECT EXTRACT(YEAR FROM i.dateinvoiced)::int AS anio, "
             f"EXTRACT(MONTH FROM i.dateinvoiced)::int AS mes, "
             f"{cur_label} AS moneda, "
-            f"COUNT(DISTINCT i.c_invoice_id) AS facturas, "
-            f"COALESCE(SUM(i.grandtotal), 0) AS total "
+            f"SUM(CASE WHEN i.lve_invoiceaffected_id = 0 THEN 1 ELSE 0 END) AS facturas, "
+            f"COALESCE(SUM(CASE WHEN i.lve_invoiceaffected_id = 0 THEN i.grandtotal "
+            f"WHEN i.lve_invoiceaffected_id > 0 THEN -i.grandtotal ELSE 0 END), 0) AS total "
             f"FROM adempiere.c_invoice i WHERE {where} "
             f"GROUP BY EXTRACT(YEAR FROM i.dateinvoiced), "
             f"EXTRACT(MONTH FROM i.dateinvoiced), {cur_label} "
@@ -3040,7 +3045,7 @@ def build_supply_purchases(
             for r in db.execute(by_month_q, params).fetchall()
         ]
 
-        # By product (top 20) — include currency column
+        # By product (top 20) — only from regular invoices (not NCs)
         by_product_q = text(
             f"SELECT p.value AS codigo, p.name AS producto, "
             f"{cur_label} AS moneda, "
@@ -3048,7 +3053,7 @@ def build_supply_purchases(
             f"FROM adempiere.c_invoice i "
             f"JOIN adempiere.c_invoiceline il ON i.c_invoice_id = il.c_invoice_id "
             f"JOIN adempiere.m_product p ON il.m_product_id = p.m_product_id "
-            f"WHERE {where} "
+            f"WHERE {where} AND i.lve_invoiceaffected_id = 0 "
             f"GROUP BY p.value, p.name, {cur_label} ORDER BY total DESC LIMIT 20"
         )
         by_product = [
@@ -3096,6 +3101,7 @@ def build_product_purchase_history(
             "i.issotrx = 'N'",
             "i.docstatus IN ('CO', 'CL')",
             "i.isactive = 'Y'",
+            "i.lve_invoiceaffected_id = 0",
         ]
         params: dict = {}
         _add_org_filter(conditions, params, org_ids, "i")
@@ -3294,6 +3300,7 @@ def build_supplier_price_comparison(
             "i.issotrx = 'N'",
             "i.docstatus IN ('CO', 'CL')",
             "i.isactive = 'Y'",
+            "i.lve_invoiceaffected_id = 0",
         ]
         params: dict = {}
         _add_org_filter(conditions, params, org_ids, "i")
@@ -3360,6 +3367,7 @@ def build_purchase_payment_status(
             "i.issotrx = 'N'",
             "i.docstatus IN ('CO', 'CL')",
             "i.isactive = 'Y'",
+            "i.lve_invoiceaffected_id = 0",
         ]
         params: dict = {}
         _add_org_filter(conditions, params, org_ids, "i")
@@ -4102,26 +4110,34 @@ def build_sales_by_product(
     only_skus: bool = False,
     limit: int = 30,
 ) -> dict:
-    """Sales breakdown by product from c_invoiceline.
+    """Sales breakdown by product using the same logic as the iDempiere KPI report.
 
-    only_skus: if True, filters m_product_category.iskpi='Y' (KPI products
-    that match the official sales report in iDempiere).
+    Quantities use the KPI formula: ARI positive, NC (lve_invoiceaffected_id>0)
+    negative. NC whose original invoice is before the period start are added back
+    (qtyinvoicedf), so only same-period NC reduce the totals.
     """
     db = _get_session(date_from=date_from, date_to=date_to, mes=mes, anio=anio)
     try:
+        # Period start for qtyinvoicedf: NC from before this date cancel out
+        if date_from:
+            period_start = date_from
+        elif mes and anio:
+            period_start = f"{anio}-{mes:02d}-01"
+        else:
+            period_start = "1900-01-01"
+
         conditions = [
             "i.issotrx = 'Y'",
             "i.docstatus IN ('CO', 'CL')",
             "i.isactive = 'Y'",
-            "dt.docbasetype = 'ARI'",
         ]
         if only_skus:
             conditions.append("pc.iskpi = 'Y'")
-        params: dict = {"limit": limit}
+        params: dict = {"limit": limit, "period_start": period_start}
         _add_org_filter(conditions, params, org_ids, "i")
         _add_org_name_filter(conditions, params, org_name, "i")
         _add_currency_filter(conditions, params, currency_ids, "i")
-        _add_date_filter(conditions, params, date_from, date_to, mes, anio, "i.dateinvoiced")
+        _add_date_filter(conditions, params, date_from, date_to, mes, anio, "i.dateacct")
 
         if product_search:
             _add_product_search_filter(conditions, params, product_search)
@@ -4133,13 +4149,29 @@ def build_sales_by_product(
             f"SELECT p.value AS codigo, p.name AS producto, "
             f"COALESCE(pc.name, 'Sin Categoría') AS categoria, "
             f"{cur_label} AS moneda, "
-            f"SUM(il.qtyinvoiced) AS cantidad, "
-            f"COALESCE(SUM(il.linenetamt), 0) AS total_neto "
+            f"SUM("
+            f"  CASE WHEN i.lve_invoiceaffected_id > 0 "
+            f"       THEN -1 * il.qtyinvoiced / COALESCE(NULLIF(p.weight, 0), 1) "
+            f"       ELSE il.qtyinvoiced / COALESCE(NULLIF(p.weight, 0), 1) END "
+            f"  + "
+            f"  CASE WHEN i.lve_invoiceaffected_id > 0 "
+            f"       AND orig.dateacct < :period_start "
+            f"       THEN il.qtyinvoiced / COALESCE(NULLIF(p.weight, 0), 1) "
+            f"       ELSE 0 END"
+            f") AS cantidad, "
+            f"SUM("
+            f"  CASE WHEN i.lve_invoiceaffected_id > 0 THEN -1 * il.linenetamt "
+            f"       ELSE il.linenetamt END "
+            f"  + "
+            f"  CASE WHEN i.lve_invoiceaffected_id > 0 "
+            f"       AND orig.dateacct < :period_start "
+            f"       THEN il.linenetamt ELSE 0 END"
+            f") AS total_neto "
             f"FROM adempiere.c_invoice i "
             f"JOIN adempiere.c_invoiceline il ON i.c_invoice_id = il.c_invoice_id "
             f"JOIN adempiere.m_product p ON il.m_product_id = p.m_product_id "
             f"LEFT JOIN adempiere.m_product_category pc ON p.m_product_category_id = pc.m_product_category_id "
-            f"JOIN adempiere.c_doctype dt ON i.c_doctypetarget_id = dt.c_doctype_id "
+            f"LEFT JOIN adempiere.c_invoice orig ON orig.c_invoice_id = i.lve_invoiceaffected_id "
             f"WHERE {where} "
             f"GROUP BY p.value, p.name, pc.name, {cur_label} "
             f"ORDER BY total_neto DESC "
