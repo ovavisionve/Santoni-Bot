@@ -71,6 +71,19 @@ def _extract_mes_anio(pregunta: str) -> tuple[int | None, int | None]:
     return mes, anio
 
 
+def _extract_date_range(pregunta: str) -> tuple[str | None, str | None]:
+    """Parsea rangos de fecha igual que el bot.
+
+    Delega en app.agents.date_utils.extract_date_range para usar la misma
+    lógica que el bot. Devuelve ('YYYY-MM-DD', 'YYYY-MM-DD') o (None, None).
+    """
+    try:
+        from app.agents.date_utils import extract_date_range
+        return extract_date_range(pregunta)
+    except Exception:
+        return None, None
+
+
 def _extract_org(pregunta: str) -> str | None:
     """Extrae nombre de organización de la pregunta."""
     text = pregunta.lower()
@@ -125,43 +138,46 @@ def _verify_empleados(pregunta, mes, anio, org):
     if not isinstance(data, dict):
         return []
     totales = data.get("totales", {})
-
-    # If question asks for specific org, check org breakdown
-    if org:
-        for entry in data.get("por_organizacion", []):
-            org_name = entry.get("organizacion", "").lower()
-            if org.lower() in org_name:
-                return [("empleados_org", entry.get("total", entry.get("activos", 0)))]
-
-    # If question asks for specific cargo/department, verify name presence instead
     pregunta_lower = pregunta.lower()
+
+    # Priority 1: "tiempos de servicio" — no hay un número fijo, solo verificar nombre de org
+    if "tiempo" in pregunta_lower and "servicio" in pregunta_lower:
+        if org:
+            return [("nombre_org", org)]
+        return []
+
+    # Priority 2: cargo específico (obrero/chofer/etc) — verificar nombre del cargo aparezca,
+    # no el total de empleados (que es otra cosa)
     cargo_keywords = ["obrero", "chofer", "analista", "gerente", "supervisor", "operador",
                        "asistente", "coordinador", "jefe", "director", "técnico", "ingeniero"]
     for kw in cargo_keywords:
         if kw in pregunta_lower:
-            # Just verify cargo name appears, not the total (which varies by org)
             return [("nombre_cargo", kw)]
 
-    # "tiempos de servicio" — verify org name appears
-    if "tiempo" in pregunta_lower and "servicio" in pregunta_lower and org:
-        return [("nombre_org", org)]
-
-    # "cuántos departamentos" — check count or presence of department names
+    # Priority 3: "cuántos departamentos"
     if "departamento" in pregunta_lower and ("cuánto" in pregunta_lower or "cuanto" in pregunta_lower):
         por_dept = data.get("por_departamento", [])
         if por_dept:
             return [("total_deptos", len(por_dept))]
 
+    # Priority 4: departamento específico (talento/nómina/etc)
     dept_keywords = ["talento", "nómina", "nomina", "administración", "producción",
                       "logística", "ventas", "compras", "contabilidad", "mantenimiento"]
     for kw in dept_keywords:
         if kw in pregunta_lower:
             return [("nombre_depto", kw)]
 
-    # If asks "buscar empleado apellido X", check name presence
+    # Priority 5: búsqueda por apellido
     m = re.search(r'apellido\s+(\w+)', pregunta_lower)
     if m:
         return [("nombre_empleado", m.group(1))]
+
+    # Priority 6: org específica → usar conteo de esa org
+    if org:
+        for entry in data.get("por_organizacion", []):
+            org_name = entry.get("organizacion", "").lower()
+            if org.lower() in org_name:
+                return [("empleados_org", entry.get("total", entry.get("activos", 0)))]
 
     # Default: total empleados
     total = totales.get("total", totales.get("activos", 0))
@@ -196,15 +212,29 @@ def _verify_cumpleanos(pregunta, mes, anio, org):
 def _verify_ausentismo(pregunta, mes, anio, org):
     from app.services.idempiere_queries import build_attendance_summary
     data = build_attendance_summary(mes=mes, anio=anio)
-    if isinstance(data, dict):
-        totales = data.get("totales", {})
-        ocurrencias = totales.get("total_ocurrencias", 0)
-        empleados = totales.get("empleados_con_ausencias", 0)
-        tasa = totales.get("tasa_ausentismo_pct", 0)
-        if ocurrencias:
-            return [("ausencias", ocurrencias)]
-        if empleados:
-            return [("empleados_ausentes", empleados)]
+    if not isinstance(data, dict):
+        return []
+
+    # Si se especifica una org, usar las ocurrencias de esa org (no el total global)
+    if org:
+        for entry in data.get("por_organizacion", []):
+            org_name = entry.get("organizacion", "").lower()
+            if org.lower() in org_name:
+                ocurrencias_org = entry.get("ocurrencias", 0)
+                if ocurrencias_org:
+                    return [("ausencias_org", ocurrencias_org)]
+                emp_org = entry.get("empleados_afectados", 0)
+                if emp_org:
+                    return [("empleados_ausentes_org", emp_org)]
+                return []
+
+    totales = data.get("totales", {})
+    ocurrencias = totales.get("total_ocurrencias", 0)
+    empleados = totales.get("empleados_con_ausencias", 0)
+    if ocurrencias:
+        return [("ausencias", ocurrencias)]
+    if empleados:
+        return [("empleados_ausentes", empleados)]
     return []
 
 
@@ -246,7 +276,17 @@ def _verify_resumen_ventas(pregunta, mes, anio, org):
     from app.services.idempiere_queries import build_sales_summary
     usd = _is_usd_question(pregunta)
     currency_ids = [100, 1000000, 1000003, 1000006, 1000008, 1000009, 1000011, 1000013, 1000017] if usd else None
-    data = build_sales_summary(mes=mes, anio=anio, org_name=org, currency_ids=currency_ids)
+
+    # Parsear rango de fechas si la pregunta lo contiene (ej: "01/03/2026 al 09/03/2026").
+    # Si hay rango, usar date_from/date_to y anular mes/anio (el bot hace lo mismo).
+    date_from, date_to = _extract_date_range(pregunta)
+    if date_from and date_to:
+        data = build_sales_summary(
+            date_from=date_from, date_to=date_to,
+            org_name=org, currency_ids=currency_ids,
+        )
+    else:
+        data = build_sales_summary(mes=mes, anio=anio, org_name=org, currency_ids=currency_ids)
     if isinstance(data, dict):
         # Use per-currency breakdown when available (avoids mixed totals)
         por_moneda = data.get("por_moneda", [])
@@ -276,7 +316,18 @@ def _verify_resumen_ventas(pregunta, mes, anio, org):
 def _verify_cobranza(pregunta, mes, anio, org):
     from app.services.idempiere_queries import build_collection_summary
     pregunta_lower = pregunta.lower()
-    data = build_collection_summary(mes=mes, anio=anio, org_name=org)
+
+    # Parsear rango de fechas (igual que el bot)
+    date_from, date_to = _extract_date_range(pregunta)
+    if date_from and date_to:
+        data = build_collection_summary(date_from=date_from, date_to=date_to, org_name=org)
+    elif "diaria" in pregunta_lower and ("hoy" in pregunta_lower or "del día" in pregunta_lower):
+        # "Cobranza diaria de hoy" — no sumar todo el año
+        from datetime import datetime
+        today = datetime.now().strftime("%Y-%m-%d")
+        data = build_collection_summary(date_from=today, date_to=today, org_name=org)
+    else:
+        data = build_collection_summary(mes=mes, anio=anio, org_name=org)
     if isinstance(data, dict):
         # If question asks for specific payment method, verify method name presence
         metodos_especificos = [
@@ -321,7 +372,11 @@ def _verify_ventas_categoria(pregunta, mes, anio, org):
 def _verify_ranking_vendedores(pregunta, mes, anio, org):
     """Para ranking de vendedores, verificar nombres de distribuidores."""
     from app.services.idempiere_queries import build_sales_summary
-    data = build_sales_summary(mes=mes, anio=anio, org_name=org)
+    date_from, date_to = _extract_date_range(pregunta)
+    if date_from and date_to:
+        data = build_sales_summary(date_from=date_from, date_to=date_to, org_name=org)
+    else:
+        data = build_sales_summary(mes=mes, anio=anio, org_name=org)
     if isinstance(data, dict):
         distribuidores = data.get("por_distribuidor", [])
         valid = [d for d in distribuidores
@@ -335,25 +390,41 @@ def _verify_ranking_vendedores(pregunta, mes, anio, org):
 
 
 def _verify_ventas_zona(pregunta, mes, anio, org):
-    """Para preguntas de zona/región, verificar nombres de zonas en respuesta."""
+    """Para preguntas de zona/región, verificar nombres de zonas en respuesta.
+
+    Excluye "Otra", "Otras", "Sin Región", "Sin Zona" — son placeholders,
+    no regiones reales que el bot vaya a mencionar.
+    """
     from app.services.idempiere_queries import build_sales_summary
-    data = build_sales_summary(mes=mes, anio=anio, org_name=org)
+    date_from, date_to = _extract_date_range(pregunta)
+    if date_from and date_to:
+        data = build_sales_summary(date_from=date_from, date_to=date_to, org_name=org)
+    else:
+        data = build_sales_summary(mes=mes, anio=anio, org_name=org)
+
+    _placeholders = {
+        "sin región", "sin region", "sin zona", "otra", "otras", "otro", "otros", "",
+    }
+
     if isinstance(data, dict):
-        # Try por_region first (more meaningful names)
+        # Intentar por_region primero (nombres más útiles)
         regiones = data.get("por_region", [])
-        valid_reg = [r for r in regiones
-                     if r.get("region") and r["region"] not in ("Sin Región", "Sin Region", "")]
+        valid_reg = [
+            r for r in regiones
+            if r.get("region") and r["region"].strip().lower() not in _placeholders
+        ]
         if valid_reg:
-            return [("nombre_region", valid_reg[0]["region"].split()[0]) for _ in [0]]
+            # Top-1 full name (runner truncates a 15 caracteres para matchear)
+            return [("nombre_region", valid_reg[0]["region"])]
 
-        # Then try por_zona
         zonas = data.get("por_zona", [])
-        valid_zona = [z for z in zonas
-                      if z.get("zona") and z["zona"] not in ("Sin Zona", "")]
+        valid_zona = [
+            z for z in zonas
+            if z.get("zona") and z["zona"].strip().lower() not in _placeholders
+        ]
         if valid_zona:
-            return [("nombre_zona", valid_zona[0]["zona"].split()[0])]
+            return [("nombre_zona", valid_zona[0]["zona"])]
 
-    # Fallback: verify VES total
     return _verify_resumen_ventas(pregunta, mes, anio, org)
 
 
