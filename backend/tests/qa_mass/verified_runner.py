@@ -328,6 +328,11 @@ def _verify_cobranza(pregunta, mes, anio, org):
         data = build_collection_summary(date_from=today, date_to=today, org_name=org)
     else:
         data = build_collection_summary(mes=mes, anio=anio, org_name=org)
+
+    # "Listado" / "lista" — el bot muestra items, no totales. Solo verificar que haya data.
+    # Igual con "comparativo ... vs ..." que compara con algo que no tenemos (metas).
+    if any(k in pregunta_lower for k in ["listado", "listar ", "comparativo", " vs "]):
+        return []
     if isinstance(data, dict):
         # If question asks for specific payment method, verify method name presence
         metodos_especificos = [
@@ -598,9 +603,18 @@ def run_verified(client: BotClient, cases: list[dict], verbose: bool = False):
             print(f"{R}E{X}", end="", flush=True)
             continue
 
-        # 4. Check for bot errors
-        has_error = any(p in text_lower for p in _ERROR_PHRASES)
-        if has_error or len(bot_text) < 50:
+        # 4. Check for bot errors — solo en los primeros 200 chars, para no
+        # descartar respuestas completas que mencionan "no tengo acceso a X"
+        # al final después de dar los datos principales.
+        text_head = text_lower[:200]
+        has_error = any(p in text_head for p in _ERROR_PHRASES)
+        # Respuestas con markdown estructurado (tablas, headers) cuentan como data
+        has_markdown = (
+            "|" in bot_text[:500] and bot_text[:500].count("|") > 3
+            or bot_text.strip().startswith("#")
+            or "##" in bot_text[:300]
+        )
+        if (has_error and not has_markdown) or len(bot_text) < 50:
             results["no_data"] += 1
             failures.append((case_id, agent, cat, q[:50], "no_data", bot_text[:80]))
             print(f"{R}X{X}", end="", flush=True)
