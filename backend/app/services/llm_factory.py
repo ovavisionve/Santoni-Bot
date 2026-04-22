@@ -2,8 +2,9 @@
 LLM Factory: Creates the correct LLM instance based on configuration.
 
 Supported providers:
-- AI_PROVIDER=groq       → Groq (free tier, 100K tokens/day limit)
+- AI_PROVIDER=groq       → Groq (free tier, 100K tokens/day, 30 req/min)
 - AI_PROVIDER=openrouter  → OpenRouter (many models, pay-as-you-go, recommended)
+- AI_PROVIDER=gemini      → Google Gemini (free 1500 req/día, 15 req/min)
 - AI_PROVIDER=anthropic   → Claude (premium, best for documents)
 
 Use create_llm() for regular queries (uses AI_PROVIDER setting).
@@ -53,6 +54,12 @@ def create_llm(
         )
         chosen = "groq"
 
+    if chosen == "gemini" and not settings.gemini_api_key:
+        logger.warning(
+            "Gemini requested but GEMINI_API_KEY is empty. Falling back to Groq."
+        )
+        chosen = "groq"
+
     if chosen == "anthropic":
         from langchain_anthropic import ChatAnthropic
 
@@ -92,6 +99,17 @@ def create_llm(
         if extra_body:
             kwargs_or["model_kwargs"] = {"extra_body": extra_body}
         return ChatOpenAI(**kwargs_or)
+
+    elif chosen == "gemini":
+        from langchain_google_genai import ChatGoogleGenerativeAI
+
+        logger.info("Using Gemini (%s) for %s", settings.gemini_model, purpose)
+        return ChatGoogleGenerativeAI(
+            google_api_key=settings.gemini_api_key,
+            model=settings.gemini_model,
+            temperature=temperature,
+            max_output_tokens=max_tokens,
+        )
 
     else:
         from langchain_groq import ChatGroq

@@ -41,13 +41,16 @@ class Settings(BaseSettings):
     idempiere_db_password: str = ""
 
     # AI Providers
-    # ai_provider: "groq" (free, limited), "openrouter" (cheap, recommended), or "anthropic" (Claude)
+    # ai_provider: "groq" (free, limited), "openrouter" (cheap, recommended),
+    # "gemini" (Google Gemini, free 1500 req/día), o "anthropic" (Claude)
     ai_provider: str = "groq"
     groq_api_key: str = ""
     groq_model: str = "llama-3.3-70b-versatile"
     openrouter_api_key: str = ""
     openrouter_model: str = "google/gemini-2.0-flash-001"
     openrouter_providers: str = ""  # Comma-separated provider names (e.g., "NovitaAI,AtlasCloud")
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-2.0-flash"
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-sonnet-4-5"  # Sonnet 4.5 (estable). Cambiar a "claude-sonnet-4-6" o "claude-opus-4-6" para más precisión.
     anthropic_base_url: str = ""  # Proxy URL for Claude API (e.g., Cloudflare Worker)
